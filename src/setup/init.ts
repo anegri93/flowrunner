@@ -18,7 +18,7 @@ import { claudeLoggedIn, doctor } from "../cli/doctor.ts";
 import { installLaunchd, plistPath } from "../cli/launchd.ts";
 import { gitRootOf, projectNameFor, updateGlobalConfig } from "../cli/project.ts";
 import { BIN } from "../cli/runs.ts";
-import { ASK_RULES, installSkill } from "../cli/skill.ts";
+import { installSkill, skillUpToDate } from "../cli/skill.ts";
 import { flowrunnerHome, loadRepoConfig } from "../config/load.ts";
 import { ConfigError } from "../config/schemas.ts";
 import { fetchOrigin, git, GitError, pushBranch, removeWorktree } from "../git/git.ts";
@@ -61,19 +61,6 @@ async function githubUser(env: NodeJS.ProcessEnv): Promise<string | undefined> {
   });
   const login = out.stdout.trim();
   return out.code === 0 && login !== "" ? login : undefined;
-}
-
-function skillInstalled(env: NodeJS.ProcessEnv): boolean {
-  const claude = join(env.HOME ?? homedir(), ".claude");
-  if (!existsSync(join(claude, "skills", "flowrunner", "SKILL.md"))) return false;
-  try {
-    const settings = JSON.parse(readFileSync(join(claude, "settings.json"), "utf8")) as {
-      permissions?: { ask?: string[] };
-    };
-    return ASK_RULES.every((r) => settings.permissions?.ask?.includes(r) === true);
-  } catch {
-    return false;
-  }
 }
 
 /** La carpeta del PATH donde init deja el comando: ~/.local/bin, solo si ya está en el PATH. */
@@ -270,7 +257,7 @@ export async function init(path: string, env: NodeJS.ProcessEnv, aplicar: boolea
     ],
     [
       "skill de Claude Code",
-      skillInstalled(env),
+      skillUpToDate(env),
       () => Promise.resolve(installSkill(env, true).skill),
     ],
     [

@@ -12,6 +12,8 @@ import { learnOne, tick } from "./tick.ts";
 import { describeDoctor, doctor } from "./doctor.ts";
 import { installLaunchd, uninstallLaunchd } from "./launchd.ts";
 import { installSkill } from "./skill.ts";
+import { hookOutput, sessionStartContext } from "./hook.ts";
+import { readFileSync } from "node:fs";
 import { describeInit, init } from "../setup/init.ts";
 import { describeStats, stats } from "../report/stats.ts";
 import {
@@ -41,7 +43,8 @@ const USAGE = `uso: flowrunner <comando> [--json]
   learn <run>                    revisa la PR de un run y aprende en el momento
   doctor                         qué le falta a esta máquina para correr runs
   launchd install|uninstall      instala o quita el job que corre tick
-  skill install [--confirmar]    instala la skill de Claude Code; con --confirmar, las reglas ask
+  skill install [--confirmar]    instala la skill de Claude Code; con --confirmar, las reglas ask y el hook
+  hook session-start             el hook de Claude Code: avisa a la sesión si el repo usa flowrunner
   stats [proyecto]               qué fase reintenta más, motivos, costo y lecciones
   project add <ruta>             registra un repo [--nombre n] [--github-user u]
   brain init <ruta>              escribe las plantillas de .flowrunner/ sin pisar nada`;
@@ -98,6 +101,17 @@ export async function main(
   try {
     const [command, first, ...rest] = positionals;
     switch (command) {
+      case "hook": {
+        if (first !== "session-start") break;
+        // Un hook que falla no puede trabar el arranque de una sesión: cualquier error es no decir nada.
+        try {
+          const context = await sessionStartContext(readFileSync(0, "utf8"), env);
+          if (context !== undefined) io.out(hookOutput(context));
+        } catch {
+          // sin contexto
+        }
+        return 0;
+      }
       case "init": {
         const aplicar = values.aplicar === true;
         const result = await init(need(first, "la ruta del repo"), env, aplicar);
@@ -203,10 +217,10 @@ export async function main(
         const done = installSkill(env, values.confirmar === true);
         const rules =
           done.pendientes.length > 0
-            ? `\nPara que Claude Code te pregunte antes de aprobar, corré de nuevo con --confirmar; agrega a ~/.claude/settings.json:\n  ${done.pendientes.join("\n  ")}`
+            ? `\nPara que Claude Code te pregunte antes de aprobar y sepa qué repos usan flowrunner, corré de nuevo con --confirmar; agrega a ~/.claude/settings.json:\n  ${done.pendientes.join("\n  ")}`
             : done.agregadas.length > 0
-              ? `\nReglas ask agregadas: ${done.agregadas.join(", ")}`
-              : "\nLas reglas ask ya estaban.";
+              ? `\nAgregado a ~/.claude/settings.json: ${done.agregadas.join(", ")}`
+              : "\nLas reglas ask y el hook ya estaban.";
         print(done, `skill instalada en ${done.skill}${rules}`);
         return 0;
       }

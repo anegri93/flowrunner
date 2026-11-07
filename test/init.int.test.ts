@@ -1,7 +1,7 @@
 // flowrunner init: infiere la config de un repo real, comprueba la base y, con --aplicar, deja la
 // máquina y el repo listos. Con repos en tmpdir, el gh y el claude falsos, y un HOME de prueba.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { parse } from "yaml";
 import { describe, expect, test } from "vitest";
@@ -124,6 +124,16 @@ describe("init", () => {
       projects: unknown[];
     };
     expect(after.projects).toHaveLength(1);
+
+    // Una skill vieja, como la que deja un flowrunner anterior, se ve pendiente y --aplicar la renueva.
+    appendFileSync(join(w.home, ".claude", "skills", "flowrunner", "SKILL.md"), "\nvieja\n");
+    expect(
+      paso(runCli(["init", w.work, "--json"], w.env).stdout, "skill de Claude Code"),
+    ).toMatchObject({
+      estado: "pendiente",
+    });
+    const renewed = runCli(["init", w.work, "--aplicar", "--json"], w.env);
+    expect(paso(renewed.stdout, "skill de Claude Code")).toMatchObject({ estado: "hecho" });
   }, 180_000);
 
   // Si regresiona, init abre una PR sobre una base roja y el primer run se detiene en preparar.

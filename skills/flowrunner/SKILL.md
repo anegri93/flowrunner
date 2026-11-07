@@ -1,6 +1,6 @@
 ---
 name: flowrunner
-description: Operá flowrunner desde esta sesión de Claude Code. Escribir una feature conversando, lanzar runs, ver cómo van, revisar y aprobar el plan, leer qué hace una sub-task, explicar el informe y las estadísticas, aprender de una PR mergeada. Usala cuando la persona hable de flowrunner, de un run, de una feature para flowrunner o de un plan que espera aprobación.
+description: Operá flowrunner desde esta sesión de Claude Code. Escribir una feature conversando, lanzar runs, ver cómo van, revisar y aprobar el plan, leer qué hace una sub-task, explicar el informe y las estadísticas, aprender de una PR mergeada. Usala cuando la persona hable de flowrunner, de un run o de un plan que espera aprobación, y también cuando pida una feature nueva o un cambio de comportamiento en un repo que usa flowrunner (tiene .flowrunner/ o el arranque de la sesión dice que lo usa).
 ---
 
 # flowrunner desde Claude Code
@@ -8,6 +8,10 @@ description: Operá flowrunner desde esta sesión de Claude Code. Escribir una f
 flowrunner corre cada run como un proceso propio y desatendido. Esta sesión es la consola: no ejecuta el trabajo, lo lanza, lo sigue y lo explica. Cerrar la sesión no frena ningún run.
 
 Usá siempre el CLI con `--json` y leé esa salida; no adivines el estado por otro lado. Si un comando sale 1, su JSON trae `error.message` y, si hay, `error.next` con el comando para seguir: decíselo a la persona en tus palabras.
+
+## En un repo que usa flowrunner
+
+Si el repo tiene `.flowrunner/`, o el arranque de la sesión avisa que usa flowrunner, una feature nueva o un cambio de comportamiento va por flowrunner: escribí la feature con la persona y lanzala como run. No la implementes directo en esta sesión, salvo que la persona lo pida explícitamente. Si dudás de si algo es una feature, preguntale si va por flowrunner.
 
 ## Reglas que no se negocian
 

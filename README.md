@@ -31,6 +31,9 @@ flowrunner init <ruta-del-repo>             # revisa, infiere y dice qué falta;
 flowrunner init <ruta-del-repo> --aplicar   # config, skill, launchd y la PR con el cerebro
 ```
 
+`init` también instala la skill de Claude Code y un hook de inicio de sesión: en un repo registrado, la
+sesión arranca sabiendo que las features nuevas van por flowrunner.
+
 `init` infiere el setup, el `verify.sh` y dónde van los tests a partir del `package.json` y de los
 archivos del repo, y comprueba que la base esté en verde antes de abrir la PR. Completá
 `contexto.md`, `convenciones.md` y `que-es-bien.md` en esa PR antes de mergearla.

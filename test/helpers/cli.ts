@@ -13,7 +13,7 @@ export interface CliResult {
   readonly stderr: string;
 }
 
-export function runCli(args: readonly string[], env: NodeJS.ProcessEnv): CliResult {
+export function runCli(args: readonly string[], env: NodeJS.ProcessEnv, input?: string): CliResult {
   const result = spawnSync(
     process.execPath,
     ["--disable-warning=ExperimentalWarning", BIN, ...args],
@@ -21,6 +21,7 @@ export function runCli(args: readonly string[], env: NodeJS.ProcessEnv): CliResu
       env,
       encoding: "utf8",
       timeout: 60_000,
+      ...(input === undefined ? {} : { input }),
     },
   );
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };

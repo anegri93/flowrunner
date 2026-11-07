@@ -702,6 +702,16 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. Reusa `doctor`, `installSkill`, `installLaunchd`, `initBrain`, `runVerify`, `pushBranch` y `createPr`; la escritura de la config global se extrajo de `project add` a `updateGlobalConfig` en lugar de duplicarla. El borrador del cerebro con un agente queda fuera hasta que la persona lo pida.
 - **Desbloquea:** Gate F9
 
+### T9.4 · La sesión de Claude Code sabe que el repo usa flowrunner
+- **Estado:** `[x] Hecho`
+- **Descripción:** con flowrunner instalado, una sesión en pizarra-en-vivo implementó dos features a mano porque nada le decía que el repo usaba flowrunner, y la skill instalada era una versión vieja. Ahora `skill install --confirmar` agrega un hook SessionStart, `flowrunner hook session-start`, que en un repo registrado le dice a la sesión que las features van por la skill. La descripción de la skill la activa en repos con `.flowrunner/`, e `init` reinstala una skill vieja o sin hook.
+- **Lint:** `pnpm lint`.
+- **Test:** `test/hook.int.test.ts`: en un repo registrado, también desde una subcarpeta, devuelve el contexto con el proyecto y la skill; fuera de un repo registrado, sin config o con una entrada que no es JSON, sale 0 sin decir nada. `test/skill.int.test.ts`: `--confirmar` agrega el hook una sola vez y conserva los hooks propios; `skillUpToDate` da falso con el SKILL.md cambiado o sin el hook. `test/init.int.test.ts`: una skill vieja queda pendiente y `--aplicar` la renueva.
+- **Canario:** no comparar el contenido del SKILL.md puso en rojo 2 tests; un hook que nunca devuelve contexto puso en rojo el de repo registrado. Los 4 tests nuevos fallaron antes de la implementación. Restaurado.
+- **Criterio de aprobación:** al abrir Claude Code en pizarra-en-vivo y pedir una feature, la sesión propone hacerla con flowrunner en lugar de implementarla directo.
+- **Revisión ponytail:** a mano. El hook reusa `loadGlobalConfig`; la lectura de settings.json quedó en una sola función para `installSkill` y `skillUpToDate`.
+- **Desbloquea:** Gate final
+
 ### Gate Fase 9
 - **Estado:** `[~] En progreso` — falta correrlo sobre un repo real
 - **Validación de lint:** `pnpm lint` verde.

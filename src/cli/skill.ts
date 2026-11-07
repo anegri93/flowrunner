@@ -3,37 +3,88 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { shellQuote } from "../agent/env.ts";
 import { UserError } from "./output.ts";
+import { BIN } from "./runs.ts";
 
 const SKILL_DIR = join(import.meta.dirname, "..", "..", "skills", "flowrunner");
 export const ASK_RULES = ["Bash(flowrunner approve:*)", "Bash(flowrunner changes:*)"] as const;
+/** El hook SessionStart: con la ruta del bin, para no depender del PATH con que arranca Claude Code. */
+export const SESSION_HOOK = `${shellQuote(BIN)} hook session-start`;
+
+interface HookEntry {
+  matcher?: string;
+  hooks?: { type?: string; command?: string }[];
+}
+
+const claudeDir = (env: NodeJS.ProcessEnv) => join(env.HOME ?? homedir(), ".claude");
+
+function readSettings(file: string): Record<string, unknown> {
+  if (!existsSync(file)) return {};
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+  } catch {
+    throw new UserError(`${file} no es JSON válido: no lo toco`);
+  }
+}
+
+function sessionStart(settings: Record<string, unknown>): HookEntry[] {
+  const hooks = (settings.hooks ?? {}) as Record<string, unknown>;
+  return Array.isArray(hooks.SessionStart) ? (hooks.SessionStart as HookEntry[]) : [];
+}
+
+const hasSessionHook = (settings: Record<string, unknown>) =>
+  sessionStart(settings).some((e) => e.hooks?.some((h) => h.command === SESSION_HOOK) === true);
+
+/** La skill instalada es la de este flowrunner, y las reglas ask y el hook están en settings.json. */
+export function skillUpToDate(env: NodeJS.ProcessEnv): boolean {
+  const claude = claudeDir(env);
+  const installed = join(claude, "skills", "flowrunner", "SKILL.md");
+  if (!existsSync(installed)) return false;
+  if (readFileSync(installed, "utf8") !== readFileSync(join(SKILL_DIR, "SKILL.md"), "utf8")) {
+    return false;
+  }
+  let settings: Record<string, unknown>;
+  try {
+    settings = readSettings(join(claude, "settings.json"));
+  } catch {
+    return false;
+  }
+  const ask = ((settings.permissions ?? {}) as { ask?: unknown }).ask;
+  return Array.isArray(ask) && ASK_RULES.every((r) => ask.includes(r)) && hasSessionHook(settings);
+}
 
 export function installSkill(env: NodeJS.ProcessEnv, confirmed: boolean) {
-  const claude = join(env.HOME ?? homedir(), ".claude");
+  const claude = claudeDir(env);
   const target = join(claude, "skills", "flowrunner");
   mkdirSync(target, { recursive: true });
   cpSync(SKILL_DIR, target, { recursive: true });
   const settingsFile = join(claude, "settings.json");
-  let settings: Record<string, unknown> = {};
-  if (existsSync(settingsFile)) {
-    try {
-      settings = JSON.parse(readFileSync(settingsFile, "utf8")) as Record<string, unknown>;
-    } catch {
-      throw new UserError(`${settingsFile} no es JSON válido: no lo toco`);
-    }
-  }
+  const settings = readSettings(settingsFile);
   const permissions = (settings.permissions ?? {}) as Record<string, unknown>;
   const ask = Array.isArray(permissions.ask) ? (permissions.ask as string[]) : [];
-  const missing = ASK_RULES.filter((r) => !ask.includes(r));
-  if (confirmed && missing.length > 0) {
+  const missing: string[] = ASK_RULES.filter((r) => !ask.includes(r));
+  const hookMissing = !hasSessionHook(settings);
+  if (confirmed && (missing.length > 0 || hookMissing)) {
     settings.permissions = { ...permissions, ask: [...ask, ...missing] };
+    if (hookMissing) {
+      const hooks = (settings.hooks ?? {}) as Record<string, unknown>;
+      settings.hooks = {
+        ...hooks,
+        SessionStart: [
+          ...sessionStart(settings),
+          { hooks: [{ type: "command", command: SESSION_HOOK, timeout: 10 }] },
+        ],
+      };
+    }
     writeFileSync(settingsFile, `${JSON.stringify(settings, null, 2)}\n`);
   }
+  const pending = [...missing, ...(hookMissing ? [`hook SessionStart: ${SESSION_HOOK}`] : [])];
   return {
     ok: true as const,
     skill: target,
     reglas: [...ASK_RULES],
-    agregadas: confirmed ? missing : [],
-    pendientes: confirmed ? [] : missing,
+    agregadas: confirmed ? pending : [],
+    pendientes: confirmed ? [] : pending,
   };
 }

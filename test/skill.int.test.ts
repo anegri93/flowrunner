@@ -1,10 +1,11 @@
 // T8.1: la skill de consola y sus reglas ask en ~/.claude/settings.json, con un HOME de prueba.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { runCli, TEST_BIN } from "./helpers/cli.ts";
+import { skillUpToDate } from "../src/cli/skill.ts";
+import { BIN, runCli, TEST_BIN } from "./helpers/cli.ts";
 import { tempDir } from "./helpers/git.ts";
 
 const SKILL = join(import.meta.dirname, "..", "skills", "flowrunner", "SKILL.md");
@@ -21,6 +22,7 @@ const settingsOf = (env: NodeJS.ProcessEnv) =>
   JSON.parse(readFileSync(join(env.HOME ?? "", ".claude", "settings.json"), "utf8")) as {
     permissions: { allow?: string[]; ask: string[] };
     model?: string;
+    hooks?: Record<string, { hooks: { type: string; command: string }[] }[]>;
   };
 
 describe("skill install", () => {
@@ -69,5 +71,43 @@ describe("skill install", () => {
     const out = runCli(["skill", "install"], env);
     expect(out.stdout).toContain("Bash(flowrunner approve:*)");
     expect(readFileSync(join(env.HOME ?? "", ".claude", "settings.json"), "utf8")).toBe(before);
+  });
+
+  // Si regresiona, una sesión nueva en un repo con flowrunner no se entera y hace las features a mano.
+  test("--confirmar agrega el hook SessionStart de flowrunner, conserva los propios y no lo duplica", () => {
+    const env = home({
+      hooks: {
+        SessionStart: [{ hooks: [{ type: "command", command: "echo mio" }] }],
+        Stop: [{ hooks: [{ type: "command", command: "echo fin" }] }],
+      },
+    });
+    runCli(["skill", "install", "--confirmar"], env);
+    runCli(["skill", "install", "--confirmar"], env);
+    const hooks = settingsOf(env).hooks ?? {};
+    expect(hooks.Stop).toEqual([{ hooks: [{ type: "command", command: "echo fin" }] }]);
+    const commands = (hooks.SessionStart ?? []).flatMap((e) => e.hooks.map((h) => h.command));
+    expect(commands[0]).toBe("echo mio");
+    expect(commands.filter((c) => c.includes("hook session-start"))).toEqual([
+      `'${BIN}' hook session-start`,
+    ]);
+  });
+
+  // Si regresiona, init da por instalada una skill vieja y la sesión sigue con las instrucciones de antes.
+  test("skillUpToDate: recién instalada, sí; con el SKILL.md cambiado o sin el hook, no", () => {
+    const env = home({});
+    expect(skillUpToDate(env)).toBe(false);
+    runCli(["skill", "install", "--confirmar"], env);
+    expect(skillUpToDate(env)).toBe(true);
+    appendFileSync(
+      join(env.HOME ?? "", ".claude", "skills", "flowrunner", "SKILL.md"),
+      "\nvieja\n",
+    );
+    expect(skillUpToDate(env)).toBe(false);
+    runCli(["skill", "install", "--confirmar"], env);
+    const file = join(env.HOME ?? "", ".claude", "settings.json");
+    const settings = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+    delete settings.hooks;
+    writeFileSync(file, JSON.stringify(settings));
+    expect(skillUpToDate(env)).toBe(false);
   });
 });

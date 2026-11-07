@@ -420,9 +420,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - Una que depende de otra no integrada → no arranca aunque haya lugar.
   - Al integrarse la dependencia → arranca.
   - Una sub-task fallida definitivamente → sus dependientes nunca arrancan y el run se detiene.
-- **Canario:** a comprobar: considerar "commiteada" igual que "integrada" pone en rojo el tercer caso.
-- **Criterio de aprobación:** el orden de arranque de un plan de fixture con un diamante de dependencias es el esperado.
-- **Revisión ponytail:** pendiente.
+- **Canario:** tomar como lista una dependencia que está corriendo, todavía no integrada, puso en rojo `un diamante arranca en el orden esperado`; ignorar las que ya corren al contar lugares puso en rojo `con una corriendo y max_parallel 2 arranca una más`. Restaurados; 7 de 7 verdes.
+- **Criterio de aprobación:** el diamante ST-1 → ST-2 y ST-3 → ST-4 arranca en ese orden: primero ST-1, después ST-2 y ST-3 juntas, ST-4 al final. Una dependencia que no es parte de la ronda, porque se integró antes, cuenta como lista.
+- **Revisión ponytail:** a mano; sin hallazgos.
 - **Desbloquea:** T5.2
 
 ### T5.2 · Fase implementar

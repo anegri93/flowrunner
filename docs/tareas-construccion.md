@@ -54,13 +54,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T0.2
 
 ### T0.2 · Punto abierto 1: el token en los subprocesos de Bash
-- **Estado:** `[ ] Pendiente`
-- **Descripción:** comprobar con el SDK real si una sesión iniciada con `CLAUDE_CODE_OAUTH_TOKEN` en su `env` le pasa esa variable a los procesos que lanza su herramienta Bash. Si la pasa, implementar la mitigación en `src/agent/env.ts`: entorno mínimo para el SDK y entorno limpio para los subprocesos, o `apiKeyHelper` si el SDK no permite separarlos. El resultado y la mitigación elegida quedan en el ADR 0013.
+- **Estado:** `[x] Hecho`
+- **Descripción:** comprobar con el SDK real si una sesión iniciada con `CLAUDE_CODE_OAUTH_TOKEN` en su `env` le pasa esa variable a los procesos que lanza su herramienta Bash. Si la pasa, implementar la mitigación en `src/agent/env.ts`: entorno mínimo para el SDK y entorno limpio para los subprocesos, o `apiKeyHelper` si el SDK no permite separarlos. El resultado y la mitigación elegida quedan en el ADR 0013. **Resultado:** la sesión pasa su entorno a Bash; mitigación: el hook reescribe cada comando con `env -u` sobre `SECRET_ENV_VARS`, implementado en `src/agent/env.ts`.
 - **Lint:** `pnpm lint`.
 - **Test:** smoke `smoke/env-leak.smoke.ts`: una sesión real con un token centinela corre `env` por Bash; afirma que la salida no contiene el nombre ni el valor del token. Comentario: si regresiona, el código que escribe el agente puede leer la credencial de la suscripción.
-- **Canario:** a comprobar: sin la mitigación, el smoke se pone rojo con el centinela visible en la salida.
-- **Criterio de aprobación:** ADR 0013 mergeado con la salida real de la sesión y la mitigación; el smoke verde.
-- **Revisión ponytail:** pendiente.
+- **Canario:** el propio smoke trae el caso sin reescritura, que ve el centinela: el test distingue la fuga. Además, en unit, quitar los `-u` de `scrubCommand` puso en rojo `el comando reescrito no ve las variables secretas`; restaurado.
+- **Criterio de aprobación:** ADR 0013 con la salida real de las sesiones: sin reescritura Bash ve el entorno de la sesión, `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` no limpia variables arbitrarias, y la reescritura con `env -u` sí. Smoke verde: 2 de 2.
+- **Revisión ponytail:** a mano contra la escalera; sin hallazgos. Se descartó usar el modo scrub del CLI: no se puede verificar qué limpia sin un token real.
 - **Desbloquea:** T0.3
 
 ### T0.3 · Puntos abiertos 2 y 3: aislamiento, señal de límite y fixtures reales

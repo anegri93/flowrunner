@@ -495,6 +495,16 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. Las señales de entorno son una lista de expresiones; el diagnóstico reusa el hook de tripwires y el esquema de salida estructurada; el tope sigue siendo el de vueltas de verificar.
 - **Desbloquea:** Gate final
 
+### T5.6 · Dependencias válidas, de desarrollo aparte, y sub-tasks que no avanzan
+- **Estado:** `[x] Hecho`
+- **Descripción:** en el replan de PIZ-2, el plan pidió `jsqr (devDependency)` como dependencia, y flowrunner armó `npm install uqr jsqr (devDependency)`, que el shell rechaza. ST-1 no pudo instalar y gastó 3 intentos en «no cambió ningún archivo». Ahora cada dependencia tiene que ser un nombre de paquete con versión opcional, o el plan se rechaza con un motivo que dice dónde va la de desarrollo. Las de desarrollo van en `dependencias_dev` y se instalan con `-D`, y si el manifiesto del repo fija todas sus versiones, se instalan con `-E`. Una sub-task que no cambia nada dos intentos seguidos se corta, con lo último que dijo en el motivo.
+- **Lint:** `pnpm lint`.
+- **Test:** `src/gates/plan.test.ts`: una dependencia con aclaraciones se rechaza y el motivo nombra `dependencias_dev`; nombres con scope y versión pasan; un nombre con `;` no. `src/phases/implementar.test.ts`: `-D` y `-E` según el lockfile y el manifiesto; `prefersExact` con versiones exactas y rangos; una sub-task que no avanza dos intentos se corta con lo que dijo.
+- **Canario:** los cinco tests fallaron antes de la implementación. El test existente de una sub-task que falla definitivamente pasó a esperar el corte en dos intentos: su intención, que la otra sub-task se integre, sigue igual.
+- **Criterio de aprobación:** con el arreglo, replanificar PIZ-2 da un plan con `uqr` en `dependencias` y `jsqr` en `dependencias_dev`, y ST-1 instala con `npm install -E uqr` y `npm install -D -E jsqr`.
+- **Revisión ponytail:** a mano. Una expresión para el nombre de paquete y un campo opcional, compatible con los planes anteriores.
+- **Desbloquea:** Gate final
+
 ### Gate Fase 5
 - **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.

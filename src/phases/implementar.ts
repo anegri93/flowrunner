@@ -1,12 +1,13 @@
 // Implementar: las sub-tasks en paralelo, cada una en su worktree y su sesión, con los tripwires.
 // flowrunner hace un commit por sub-task y lo integra por cherry-pick sobre la rama de la feature.
-import { realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { join } from "node:path";
 import { runSession } from "../agent/session.ts";
 import { loadBrain } from "../brain/brain.ts";
 import { loadRepoConfig } from "../config/load.ts";
 import type { RepoConfig } from "../config/schemas.ts";
 import { blockedByFailure, readyToStart } from "../engine/scheduler.ts";
-import type { Subtask } from "../gates/plan.ts";
+import { allDependencies, type Subtask } from "../gates/plan.ts";
 import {
   addWorktree,
   changesSince,
@@ -40,25 +41,59 @@ export function currentEntry(events: readonly RunEvent[]): RunEvent[] {
   return events.slice(start + 1);
 }
 
-/** El comando de instalar dependencias según el lockfile del repo. */
-export function installCommand(config: RepoConfig, deps: readonly string[]): string | undefined {
-  if (deps.length === 0) return undefined;
+/** Una versión fija, como `1.2.3` o `4.0.0-rc.1`. */
+const EXACT = /^\d+\.\d+\.\d+([-+][\w.]+)?$/;
+/** Una versión de registro: un número o un rango. `workspace:`, `file:` o una URL no cuentan. */
+const REGISTRY = /^[\d^~<>=*]/;
+
+/** El repo fija versiones si todas las de registro de su manifiesto son exactas. */
+export function prefersExact(manifest: string): boolean {
+  let pkg: { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+  try {
+    pkg = JSON.parse(manifest) as typeof pkg;
+  } catch {
+    return false;
+  }
+  const versions = [
+    ...Object.values(pkg.dependencies ?? {}),
+    ...Object.values(pkg.devDependencies ?? {}),
+  ].filter((v) => REGISTRY.test(v));
+  return versions.length > 0 && versions.every((v) => EXACT.test(v));
+}
+
+/** Las dependencias de una sub-task como texto para su prompt. */
+function dependencyText(task: Subtask): string {
+  const dev = task.dependencias_dev ?? [];
+  if (task.dependencias.length === 0 && dev.length === 0) return "(ninguna)";
+  return [
+    ...(task.dependencias.length > 0 ? [task.dependencias.join(", ")] : []),
+    ...(dev.length > 0 ? [`de desarrollo: ${dev.join(", ")}`] : []),
+  ].join("; ");
+}
+
+/** Los comandos de instalar las dependencias de la sub-task, según el lockfile y el estilo del repo. */
+export function installCommands(config: RepoConfig, task: Subtask, exact: boolean): string[] {
   const lock = config.lockfiles.join(" ");
   const tool = lock.includes("pnpm-lock")
     ? "pnpm add"
     : lock.includes("yarn.lock")
       ? "yarn add"
       : "npm install";
-  return `${tool} ${deps.join(" ")}`;
+  const pin = exact ? " -E" : "";
+  const dev = task.dependencias_dev ?? [];
+  return [
+    ...(task.dependencias.length > 0 ? [`${tool}${pin} ${task.dependencias.join(" ")}`] : []),
+    ...(dev.length > 0 ? [`${tool} -D${pin} ${dev.join(" ")}`] : []),
+  ];
 }
 
 export function unitCommands(
   config: RepoConfig,
   task: Subtask,
   acCommands: readonly string[],
+  exact: boolean,
 ): string[] {
   const verify = config.verify.replace(/^\.\//, "");
-  const install = installCommand(config, task.dependencias);
   return [
     ...acCommands,
     verify,
@@ -66,7 +101,7 @@ export function unitCommands(
     "git status",
     "git diff",
     "git log --oneline -10",
-    ...(install === undefined ? [] : [install]),
+    ...installCommands(config, task, exact),
   ];
 }
 
@@ -86,7 +121,7 @@ export function unitScope(
     harness: config.harness_files,
     lockfiles: config.lockfiles,
     manifests: config.manifests,
-    depsDeclared: task.dependencias.length > 0,
+    depsDeclared: allDependencies(task).length > 0,
     testGlobs: config.tests_globs,
     bash,
   };
@@ -103,6 +138,8 @@ export const implementar: PhaseFn = async (ctx) => {
   const feature = runFeature(run);
   const plan = readPlan(run);
   const locked = Object.keys(plan.locked);
+  const manifest = join(featureWt, "package.json");
+  const exact = existsSync(manifest) && prefersExact(readFileSync(manifest, "utf8"));
   const entry = currentEntry(ctx.events).filter((e): e is UnitEvent => e.tipo === "unidad");
   const lastOf = (id: string) => entry.findLast((e) => e.unidad === id);
   const todo = plan.subtareas.filter(
@@ -125,6 +162,7 @@ export const implementar: PhaseFn = async (ctx) => {
       config,
       task,
       acs.map((c) => c.comando),
+      exact,
     );
     const previous = lastOf(task.id);
     // Retomado con el commit hecho y sin integrar: se integra ese commit, sin otra sesión.
@@ -144,6 +182,7 @@ export const implementar: PhaseFn = async (ctx) => {
     }
     let motivo = action.unidades?.includes(task.id) === true ? action.instruccion : undefined;
     const tried = entry.filter((e) => e.unidad === task.id && e.estado === "iniciada").length;
+    let stalled = false;
     for (let attempt = tried + 1; attempt <= MAX_UNIT_ATTEMPTS; attempt++) {
       const start = await headSha(featureWt, deps.env);
       await addWorktree(state.repo, wt, branch, start, deps.env);
@@ -178,8 +217,7 @@ export const implementar: PhaseFn = async (ctx) => {
               acs.length === 0
                 ? "(ninguno directo)"
                 : acs.map((c) => `${c.id}: \`${c.comando}\``).join(", "),
-            dependencias:
-              task.dependencias.length === 0 ? "(ninguna)" : task.dependencias.join(", "),
+            dependencias: dependencyText(task),
             bloqueados: locked.join(", "),
             comandos: bash.map((c) => `\`${c}\``).join(", "),
             instruccion:
@@ -231,9 +269,25 @@ export const implementar: PhaseFn = async (ctx) => {
           await removeWorktree(state.repo, wt, deps.env);
           return { ok: true };
         }
-        motivo = `${task.id} no cambió ningún archivo`;
+        const said = result.texto.trim();
+        const why = `no cambió ningún archivo${said === "" ? "" : `. Lo último que dijo: ${said.slice(0, 400)}`}`;
+        // Dos intentos seguidos sin avanzar: un tercero no va a ser distinto.
+        if (stalled) {
+          const stop = `${task.id} no avanzó en dos intentos seguidos: ${why}`;
+          emit({
+            tipo: "unidad",
+            fase: "implementar",
+            unidad: task.id,
+            estado: "fallida",
+            motivo: stop,
+          });
+          return { ok: false, motivo: stop };
+        }
+        stalled = true;
+        motivo = `${task.id} ${why}`;
         continue;
       }
+      stalled = false;
       if (violations.length > 0) {
         motivo = `el diff de ${task.id} rompe las reglas:\n${violations.map((v) => `- ${v.motivo}`).join("\n")}`;
         for (const v of violations)

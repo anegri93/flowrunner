@@ -2,7 +2,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { subtaskSchema } from "../gates/plan.ts";
+import { allDependencies, subtaskSchema } from "../gates/plan.ts";
 import { git } from "../git/git.ts";
 import { prepared } from "../phases/inputs.ts";
 import { readPlan } from "../phases/planificar.ts";
@@ -56,7 +56,7 @@ export function describePlan(view: z.infer<typeof planViewSchema>): string {
       (t) =>
         `  ${t.id}  ${t.titulo}  ${t.alcance.join(", ")}` +
         (t.depende_de.length > 0 ? `  depende de ${t.depende_de.join(", ")}` : "") +
-        (t.dependencias.length > 0 ? `  agrega ${t.dependencias.join(", ")}` : ""),
+        (allDependencies(t).length > 0 ? `  agrega ${allDependencies(t).join(", ")}` : ""),
     ),
     "",
     ...view.criterios.map((c) => `  ${c.id} → ${c.subtarea}: ${c.comando}`),

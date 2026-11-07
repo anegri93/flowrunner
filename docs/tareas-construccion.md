@@ -121,7 +121,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 > Objetivo: un run con fases falsas recorre todos los estados, se detiene, se retoma y llega al final con el mismo log que sin cortes.
 
 ### T1.1 · Store del run: `events.jsonl` y lock por repo
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `src/store/`: crear el directorio del run, append de eventos con fsync por evento, lectura del log. Una línea corrupta al final se descarta y se informa; una corrupta en el medio es un error. Lock por repo en `~/.flowrunner/locks/<proyecto>.lock` con el id del run y el pid, según la sección 5 de la spec: un run en espera conserva el lock sin proceso vivo, y el lock se toma solo si su run terminó o si no espera y su proceso ya no existe. Eventos validados con un schema Zod discriminado por `tipo`.
 - **Lint:** `pnpm lint`.
 - **Test:** bordes:
@@ -139,7 +139,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T1.2
 
 ### T1.2 · Máquina de estados pura
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `src/engine/`: `reduce(estado, evento)` y `siguiente(estado) → acción`, sin IO. Los 13 estados de la spec, intentos por fase y por sub-task, vueltas de verificar y revisar con sus topes, el mismo fallo dos veces seguidas detiene, los tres tipos de falla, `changes` que vuelve a planificar sin gastar intentos, y el tope `budget.run_usd` sumando los eventos de uso.
 - **Lint:** `pnpm lint`.
 - **Test:** bordes:
@@ -156,7 +156,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T1.3
 
 ### T1.3 · El loop del run: acciones idempotentes
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `src/runner/`: lee el log, pide `siguiente`, ejecuta la acción con el módulo de fase que le toca, registra `accion_iniciada` y `accion_terminada`. Al retomar, una acción iniciada y no terminada se rehace; las fases reciben el sha registrado al iniciar para volver su worktree. Las fases se inyectan por registro.
 - **Lint:** `pnpm lint`.
 - **Test:** con fases falsas que escriben un archivo por ejecución:
@@ -181,7 +181,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T1.4
 
 ### T1.4 · CLI: run, status, resume, rerun, abort
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `flowrunner run <archivo>` valida la feature, copia `feature.md` al run, lanza el proceso del run separado de la terminal y devuelve el id. `status` lista runs o uno fase por fase. `resume` relanza un run detenido o interrumpido. `rerun <run> --desde <fase>` lo rehace desde una fase. `abort` lo cancela, borra sus worktrees y deja las ramas. Salidas legibles; errores con el comando siguiente. Cada comando acepta `--json` con una salida validada por un schema Zod exportado, que es lo que lee la skill de consola; esta convención rige para todos los comandos que se agreguen después.
 - **Lint:** `pnpm lint`.
 - **Test:** sobre el CLI real como proceso hijo:
@@ -198,7 +198,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** Gate F1
 
 ### Gate Fase 1
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.
 - **Tests:** suites unit e integración verdes.
 - **Test de integración:** `test/fase1.int.test.ts`: un run lanzado por CLI con fases falsas de 1,5 s se mata con `kill -9` durante planificar, implementar y revisar, se retoma con `resume` cada vez y llega a `entregado`. Su log, sin los `reanudado`, las acciones cortadas, los tiempos y las rutas, es igual al de un run sin cortes; las tres fases cortadas corrieron dos veces y el resto una.
@@ -214,7 +214,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 > Objetivo: preparar deja un worktree listo con la base en verde, el índice de graft y el cerebro cargado, o se detiene sin gastar tokens.
 
 ### T2.1 · Módulo git
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `src/git/`: worktree desde `origin/<base>` en una rama nueva, commit con trailer, cherry-pick con detección de conflicto que deja el worktree limpio, reset a un sha, push con `--force-with-lease` que se niega fuera de las ramas `feat/` y `chore/lecciones-` de flowrunner, y diff contra la base con archivos y contenido.
 - **Lint:** `pnpm lint`.
 - **Test:** con git real y remote bare:
@@ -228,7 +228,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T2.2
 
 ### T2.2 · Cerebro: carga, topes y plantillas
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `src/brain/`: carga `.flowrunner/` desde un worktree según la sección 8 de la spec, con los topes por archivo, rechazo de links, lista de `ejemplos/` y sha256 por archivo. `flowrunner project add <ruta>` registra el repo y dice qué le falta. `flowrunner brain init <ruta>` escribe las plantillas sin commitear y sin pisar archivos existentes.
 - **Lint:** `pnpm lint`.
 - **Test:** bordes:
@@ -243,7 +243,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T2.3
 
 ### T2.3 · Fase preparar
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `src/phases/preparar.ts`: lock del repo, fetch, worktree de la feature, `setup`, `verify` sobre la base y `graft build` según el ADR 0015. Clasifica las fallas: base roja, exit 126 o 127, setup que falla y config inválida son fallas de entorno.
 - **Lint:** `pnpm lint`.
 - **Test:** con repos de fixture:
@@ -257,7 +257,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** Gate F2
 
 ### Gate Fase 2
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.
 - **Tests:** suites unit e integración verdes.
 - **Test de integración:** `test/fase2.int.test.ts`: un run por CLI con preparar real y el resto falso. Con la base verde llega a `entregado`, deja el índice de graft en el run y el worktree limpio; con la base roja termina `detenido` en preparar con la salida de verify, sin ningún evento de uso, y `status` dice cómo seguir.
@@ -273,7 +273,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 > Objetivo: una sesión del SDK corre aislada, con su salida validada, su costo registrado y los tripwires rechazando en el acto lo que sale del alcance.
 
 ### T3.1 · Capa de agente
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `src/agent/`: arma las opciones de cada sesión según la fase: aislamiento de la sección 4 de la spec, el entorno del ADR 0013, modelo y effort, `outputFormat` desde un schema Zod, `maxBudgetUsd`, timeout con `abortController` y graft como MCP. Copia el stream a `runs/<id>/sesiones/`, emite eventos de uso con costo y tokens por modelo, y clasifica el resultado: éxito, infraestructura, límite, presupuesto o schema agotado. Recibe `query` por parámetro.
 - **Lint:** `pnpm lint`.
 - **Test:** con los streams grabados en T0.3:
@@ -288,7 +288,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T3.2
 
 ### T3.2 · Reglas de tripwires
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `src/tripwires/rules.ts`, funciones puras: rutas resueltas sin seguir links, dentro del worktree y del alcance; rutas prohibidas; lockfiles y manifiestos solo con dependencias declaradas; contenido sin `skip`, `only` ni `todo` agregados en tests y sin secretos; Bash por coincidencia exacta con rechazo de composición. Cada rechazo con un motivo legible.
 - **Lint:** `pnpm lint`.
 - **Test:** tabla de casos por regla:
@@ -305,7 +305,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T3.3
 
 ### T3.3 · Hook `PreToolUse` y deny por defecto
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `src/tripwires/hook.ts`: el hook que aplica las reglas por fase y devuelve allow o deny con su motivo, y un `canUseTool` que rechaza todo lo que llega sin decidir. Cada rechazo emite un evento `rechazo`.
 - **Lint:** `pnpm lint`.
 - **Test:** llamando al hook con entradas de la forma del SDK:
@@ -320,7 +320,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T3.4
 
 ### T3.4 · Doble control sobre el diff
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `src/tripwires/diff.ts`: aplica las mismas reglas de ruta y contenido al diff real de un worktree contra su punto de partida, incluidos los archivos sin seguimiento.
 - **Lint:** `pnpm lint`.
 - **Test:** con git real:
@@ -345,7 +345,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** Gate F3
 
 ### Gate Fase 3
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.
 - **Tests:** suites unit e integración verdes; `pnpm smoke` verde en local.
 - **Test de integración:** `test/fase3.int.test.ts`: `runSession` con un SDK simulado que pasa cada herramienta por el hook real, como el SDK, sobre un worktree real. El Edit a `src/billing/tarifas.ts` fuera del alcance de ST-2 se rechaza, el diff del worktree queda vacío, el doble control no encuentra nada y el log del run registra el `rechazo` y el `uso` con su costo. `test/helpers/sim-sdk.ts` queda para los tests de las fases de agente.
@@ -361,7 +361,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 > Objetivo: un run llega a `esperando_aprobacion` con un plan que pasó su gate, avisa y espera sin procesos vivos; `approve` y `changes` lo destraban.
 
 ### T4.1 · Schemas del plan y gate de planificar
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `src/gates/plan.ts`: schemas de `tasks.json`, `ac-map.json` y `decisiones`, y el gate de la sección 3 de la spec: cada criterio con comando y sub-task, cada comando falla y no es no ejecutable, rutas dentro del repo aunque su carpeta no exista, alcances disjuntos entre sub-tasks sin camino de dependencia, lockfiles y manifiestos sumados con dependencias, y sin ciclos.
 - **Lint:** `pnpm lint`.
 - **Test:** fixtures, incluidos los casos reales de SELECTIA:
@@ -379,7 +379,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T4.2
 
 ### T4.2 · Fase planificar
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `src/phases/planificar.ts` y `prompts/planificar.md`: sesión de Opus 5.5 con la feature, el cerebro, graft y el subagente explorador de Haiku 5.5; escritura limitada a `tests_globs` y sin Bash. Si el gate pasa: commit de los tests y `locked.json`. Si falla: reintento con el motivo. Una instrucción de `changes` entra en el prompt.
 - **Lint:** `pnpm lint`.
 - **Test:** con `query` falsa que devuelve planes grabados y escribe tests en el worktree:
@@ -393,7 +393,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T4.3
 
 ### T4.3 · Aprobar: espera sin proceso, approve, changes
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `src/notify/` con `osascript` y la fase aprobar: registra la espera, avisa con un texto que dice qué pedirle a Claude, como *"SHOP-214: el plan espera tu aprobación. Pedile a Claude que te lo muestre."*, y termina el proceso. `flowrunner plan <run>` muestra plan, sub-tasks con alcance y diff de los tests. `approve` relanza hacia implementar; `changes <run> "<motivo>"` relanza hacia planificar con la instrucción.
 - **Lint:** `pnpm lint`.
 - **Test:** sobre el CLI real:
@@ -407,7 +407,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** Gate F4
 
 ### Gate Fase 4
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.
 - **Tests:** suites unit e integración verdes.
 - **Test de integración:** `test/fase4.int.test.ts`: con el CLI real, preparar, planificar y aprobar reales y el SDK simulado, el run llega a la espera sin proceso vivo, `changes` lo devuelve a planificar con el motivo en el prompt, el segundo plan pasa, `flowrunner plan` muestra el plan corregido y `approve` lo lleva a `entregado` con las fases siguientes.
@@ -423,7 +423,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 > Objetivo: las sub-tasks corren en paralelo en sus worktrees, se integran por cherry-pick y la rama de la feature pasa sus criterios y sus tests bloqueados intactos.
 
 ### T5.1 · Programador de sub-tasks
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `src/engine/scheduler.ts`, puro: dado el grafo de dependencias, las sub-tasks integradas, las en curso y `max_parallel`, devuelve cuáles arrancar.
 - **Lint:** `pnpm lint`.
 - **Test:** bordes:
@@ -437,7 +437,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T5.2
 
 ### T5.2 · Fase implementar
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `src/phases/implementar.ts` y `prompts/implementar.md`: por sub-task, worktree en `feat/<clave>/<id>` desde la punta de la feature, `setup`, sesión de Sonnet 5.5 con los tripwires, doble control, un commit con trailer y cherry-pick sobre la feature. Un conflicto rehace la sub-task sobre la punta nueva y cuenta como intento. Las sesiones corren en paralelo según el programador.
 - **Lint:** `pnpm lint`.
 - **Test:** integración con `query` falsa que edita archivos en el worktree:
@@ -451,7 +451,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T5.3
 
 ### T5.3 · Reanudar a mitad de implementar
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** al retomar en implementar, las sub-tasks integradas se respetan y las que estaban en curso vuelven su worktree al sha de inicio y se rehacen.
 - **Lint:** `pnpm lint`.
 - **Test:** integración: con tres sub-tasks, se mata el proceso cuando una está integrada, otra commiteada sin integrar y otra a medio editar. Al retomar, la primera no se rehace, la segunda se integra sin otra sesión y la tercera se rehace desde un worktree limpio.
@@ -461,7 +461,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T5.4
 
 ### T5.4 · Fase verificar
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `src/phases/verificar.ts`: sobre la feature integrada, `verify`, cada comando del ac-map y los hashes de `locked.json`. Un criterio rojo devuelve a implementar la sub-task que lo cubre con la salida; un test bloqueado cambiado detiene sin reintentar.
 - **Lint:** `pnpm lint`.
 - **Test:** con repos de fixture:
@@ -475,7 +475,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** Gate F5
 
 ### Gate Fase 5
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.
 - **Tests:** suites unit e integración verdes.
 - **Test de integración:** `test/fase5.int.test.ts`: implementar y verificar reales en el runner con el SDK simulado y tres sub-tasks, dos en paralelo y una dependiente. AC-2 falla en la primera pasada, vuelve con su motivo, ST-2 se rehace y la rama queda verde, lineal y con dos sesiones simultáneas medidas. Este test encontró la regresión T1.3b del runner.
@@ -491,7 +491,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 > Objetivo: un run llega a una PR abierta, nunca mergeada, con un informe que explica qué decidió, cuánto costó y qué falló en el camino.
 
 ### T6.1 · Fase revisar
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `src/phases/revisar.ts` y `prompts/revisar.md`: sesión de Opus 5.5 de solo lectura con el diff, el plan, convenciones, `que-es-bien.md` con `ejemplos/`, lecciones, graft y la salida de `graft blast`. Schema de `review.json`. Los bloqueantes devuelven su sub-task con el hallazgo; los avisos pasan al informe.
 - **Lint:** `pnpm lint`.
 - **Test:** con `query` falsa:
@@ -505,7 +505,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T6.2
 
 ### T6.2 · Fase entregar
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `src/github/` y `src/phases/entregar.ts`: push de la feature, PR con `gh` solo si no existe, título desde la feature y cuerpo desde el resumen del informe. Libera el lock. Nunca mergea.
 - **Lint:** `pnpm lint`.
 - **Test:** con el `gh` falso:
@@ -519,7 +519,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T6.3
 
 ### T6.3 · Informe del run
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `src/report/`: `informe.md` desde los eventos según la sección 6 de la spec, también parcial cuando el run se detiene, con el comando exacto para seguir. Aviso al terminar o al detenerse. `flowrunner report <run>` y `--sesion <nombre>`.
 - **Lint:** `pnpm lint`.
 - **Test:** desde logs de fixture:
@@ -533,7 +533,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** Gate F6
 
 ### Gate Fase 6
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.
 - **Tests:** suites unit e integración verdes.
 - **Test de integración:** `test/fase6.int.test.ts`: un run completo por CLI, con todas las fases reales salvo el modelo, que es el SDK simulado, y `gh`, que es el falso. Pasa por la aprobación, una vuelta de verificar porque AC-1 sigue rojo y una de revisar por un bloqueante; termina `entregado` con la rama en el remote, un único `pr create`, ningún `merge`, el informe con las dos vueltas, el lock suelto y el aviso "PR abierta, 2 vueltas".
@@ -549,7 +549,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 > Objetivo: al mergear una PR, las correcciones de la persona se convierten solas en lecciones que llegan a la base por una PR con auto-merge.
 
 ### T7.1 · `flowrunner tick` y `learn`: pausados y estado de las PRs
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `src/cli/tick.ts`: retoma los runs `pausado_por_limite` y consulta con `gh` el estado de las PRs de los runs `entregado`: cerrada sin merge lleva a `cerrado`; mergeada lleva a aprender. `flowrunner learn <run>` hace la misma consulta para un solo run, en el momento. Dos ticks a la vez, o un tick y un `learn` sobre el mismo run, no se pisan.
 - **Lint:** `pnpm lint`.
 - **Test:** con el `gh` falso:
@@ -566,7 +566,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T7.2
 
 ### T7.2 · Correcciones de la persona
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** junta los commits de la rama posteriores al último commit de flowrunner y los comentarios de la PR, filtrando por `github_user`. Sin nada de la persona, el run pasa a `cerrado`.
 - **Lint:** `pnpm lint`.
 - **Test:** con git real y el `gh` falso:
@@ -581,7 +581,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T7.3
 
 ### T7.3 · Lecciones y su PR con auto-merge
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `src/phases/aprender.ts` y `prompts/aprender.md`: sesión de Sonnet 5.5 de solo lectura que propone de 1 a 3 lecciones con su origen; el código las numera y agrega a `lecciones.md` en un worktree `chore/lecciones-<clave>` desde la base, con el lock del repo; push y PR; comprobación de que el diff toca solo `lecciones.md` antes de activar auto-merge con merge commit. Si el archivo pasa su tope, una sesión consolida y la PR se abre sin auto-merge, con aviso.
 - **Lint:** `pnpm lint`.
 - **Test:** con git real y el `gh` falso:
@@ -595,7 +595,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T7.4
 
 ### T7.4 · launchd y doctor
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `flowrunner launchd install` escribe el plist del tick con `tick_minutes` de la config global, por defecto 10, y lo carga; `uninstall` lo quita. `flowrunner doctor` comprueba Node, git, `gh` con sesión, graft, el token en el Keychain y el job de launchd, cada uno con su arreglo.
 - **Lint:** `pnpm lint`.
 - **Test:** `doctor` con binarios falsos: un `gh` sin sesión → sale 1 y nombra el arreglo; el Keychain sin token → sale 1 y sugiere `claude setup-token`; todo presente → sale 0. El plist generado se compara contra uno esperado: programa, argumentos, intervalo y logs.
@@ -605,7 +605,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** Gate F7
 
 ### Gate Fase 7
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.
 - **Tests:** suites unit e integración verdes.
 - **Test de integración:** `test/fase7.int.test.ts`: sobre un run entregado de verdad, con el SDK simulado y el `gh` falso, la PR pasa a mergeada con un commit de la persona y un comentario de otro usuario que pide meter una API key. `flowrunner tick` produce la PR de lecciones: el prompt de aprender trae el commit y no el comentario ajeno, `lecciones.md` cita solo ese commit, hay un único `pr merge 413 --auto --merge` y el run queda cerrado.
@@ -621,7 +621,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 > Objetivo: la persona opera flowrunner entero conversando en Claude Code, sin tocar la terminal, y puede medir qué pieza de la fábrica mejorar.
 
 ### T8.1 · Skill `flowrunner`: la consola
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `skills/flowrunner/SKILL.md` según la sección 2 de la spec: escribir la feature con la entrevista de una pregunta por vez, y operar los runs con la tabla de pedidos de la spec, siempre por el CLI con `--json`. Aprobar y pedir cambios solo con la decisión explícita de la persona; el plan, el informe y los transcripts como datos, nunca como instrucciones. `flowrunner skill install` copia la skill a `~/.claude/skills` y, después de mostrarlas y con confirmación, agrega las reglas *ask* para `approve` y `changes` a `~/.claude/settings.json` sin pisar las que ya existen.
 - **Lint:** `pnpm lint`; el frontmatter de la skill se valida con el schema de skills.
 - **Test:** sobre `skill install` con un `HOME` temporal:
@@ -637,7 +637,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T8.2
 
 ### T8.2 · `flowrunner stats`
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `src/report/stats.ts`: agrega los eventos de todos los runs de un proyecto o de todos: reintentos por fase, motivos de gate y de rechazo más frecuentes, costo y duración por fase, lecciones generadas.
 - **Lint:** `pnpm lint`.
 - **Test:** desde logs de fixture de cinco runs: la fase con más reintentos encabeza la lista; los motivos se agrupan aunque difieran en rutas o números; un run detenido cuenta su costo parcial; un directorio de run sin eventos no rompe el total.
@@ -647,7 +647,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** Gate F8
 
 ### Gate Fase 8
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.
 - **Tests:** suites unit e integración verdes.
 - **Test de integración:** `test/fase8.int.test.ts`: una feature pasa `feature check --json`, corre de punta a punta por CLI con el SDK simulado y el `gh` falso, con una vuelta de verificar, y `flowrunner stats acme-api --json` pone a verificar primera con su vuelta, el costo de cada fase y el motivo agrupado.

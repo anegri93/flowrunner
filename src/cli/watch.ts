@@ -40,7 +40,7 @@ function detailLines(home: string, row: Selectable, width: number, height: numbe
     const node = nodes.find((n) => n.nombre === name);
     return node === undefined ? [] : [{ node, steps: loadSteps(home, row.run, name) }];
   });
-  return renderDetail(`${tree.clave} · ${row.key.slice(row.run.length + 1)}`, sessions, {
+  return renderDetail(`${tree.clave} › ${row.key.slice(row.run.length + 1)}`, sessions, {
     width,
     height,
     color: true,

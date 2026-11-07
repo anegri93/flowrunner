@@ -1,10 +1,11 @@
 import { describe, expect, test } from "vitest";
-import { duration, modelName, renderBoard, renderDetail, tokenCount } from "./render.ts";
+import { duration, modelTag, renderBoard, renderDetail, tokenCount } from "./render.ts";
 import type { PhaseNode, RunTree, SessionNode } from "./tree.ts";
 
 const session = (nombre: string, extra: Partial<SessionNode> = {}): SessionNode => ({
   nombre,
   modelo: "claude-sonnet-5-5",
+  esfuerzo: "high",
   corriendo: false,
   costoUsd: 0.15,
   tokens: 100_000,
@@ -33,18 +34,19 @@ const tree: RunTree = {
   status: "en_curso",
   costoUsd: 1.24,
   segundos: 540,
+  haceSegundos: undefined,
   motivo: undefined,
   siguiente: undefined,
   fases: [
     phase("planificar", {
       estado: "ok",
-      segundos: 120,
+      segundos: 163,
       costoUsd: 0.93,
       sesiones: [
-        session("planificar-1", { modelo: "claude-opus-5-5", costoUsd: 0.93, tokens: 737_540 }),
+        session("planificar-1", { modelo: "claude-opus-5-5", costoUsd: 0.93, tokens: 700_000 }),
       ],
     }),
-    phase("aprobar", { estado: "ok", segundos: 180 }),
+    phase("aprobar", { estado: "ok", segundos: 207 }),
     phase("implementar", {
       estado: "corriendo",
       segundos: 200,
@@ -67,7 +69,7 @@ const tree: RunTree = {
             session("implementar-ST-2-2", {
               corriendo: true,
               costoUsd: undefined,
-              tokens: 20_000,
+              tokens: 100_000,
               ultimo: "Edit src/Fichas.tsx",
             }),
           ],
@@ -102,46 +104,70 @@ const rowOf = (lines: string[], text: string) => lines.find((l) => l.includes(te
 const cols = (row: string) => row.trim().split(/ {2,}/);
 
 describe("renderBoard", () => {
-  // Si regresiona, la vista no dice de un vistazo cuánto costó cada etapa, quién trabaja ni quién te espera.
-  test("resumen por estado, columnas, y cada fase y sub-task con modelo, tokens, USD, tiempo y estado", () => {
-    const { lines } = renderBoard([tree, waiting], { width: 140, color: false });
-    expect(lines[0]).toBe("● 1 en curso  ⏸ 1 te espera");
-    expect(cols(lines[1] ?? "")).toEqual(["MODELO", "TOKENS", "≈ USD", "TIEMPO", "ESTADO"]);
-    expect(lines).toContain("pizarra-en-vivo");
-    expect(lines).toContain("api");
-    expect(cols(rowOf(lines, "PIZ-1"))).toEqual([
-      "● PIZ-1",
-      "Cambios de un toque",
-      "958k",
-      "1.24",
-      "9m",
-      "en curso",
+  // Si regresiona, la vista no dice de un vistazo quién te espera, quién trabaja y qué costó cada etapa.
+  test("cabecera con resumen y columnas, proyectos agrupados con lo urgente primero, y cada fila con sus números", () => {
+    const { lines } = renderBoard([tree, waiting], { width: 160, color: false });
+    expect(cols(lines[0] ?? "")).toEqual([
+      "▲ 1 te espera",
+      "● 1 en curso",
+      "ID",
+      "MODELO (ESFUERZO)",
+      "TOKENS",
+      "≈ USD",
+      "TIEMPO",
+      "ESTADO",
     ]);
+    expect(lines.indexOf("api")).toBeLessThan(lines.indexOf("pizarra-en-vivo"));
+    expect(cols(rowOf(lines, "Exportar CSV"))).toEqual([
+      "▲ Exportar CSV",
+      "API-7",
+      "–",
+      "1.24",
+      "9m00s",
+      "te espera",
+    ]);
+    expect(rowOf(lines, "para seguir")).toContain("para seguir: flowrunner plan API-7-x");
     expect(cols(rowOf(lines, "planificar"))).toEqual([
       "├─ ✓ planificar",
-      "Opus 5.5",
-      "738k",
+      "opus-5-5 (high)",
+      "━━━━━━──",
+      "700k",
       "0.93",
-      "2m",
+      "2m43s",
       "listo",
     ]);
     const st2 = rowOf(lines, "ST-2 Lista");
     expect(st2).toContain("│  ├─ ● ST-2 Lista de pedidos ×2");
-    expect(cols(st2).slice(-5)).toEqual([
-      "Sonnet 5.5",
-      "120k",
+    expect(cols(st2).slice(-6)).toEqual([
+      "sonnet-5-5 (high)",
+      "━━──────",
+      "200k",
       "0.16",
-      "1m",
-      "▸ Edit src/Fichas.tsx",
+      "1m20s",
+      "trabajando",
     ]);
-    expect(rowOf(lines, "ST-3")).toMatch(/espera a ST-2$/);
-    expect(lines.some((l) => l.endsWith("esperando tu aprobación"))).toBe(true);
-    expect(lines).toContain("   Para seguir: flowrunner plan API-7-x");
+    expect(lines[lines.indexOf(st2) + 1]?.trim()).toBe("│  │    ▸ Edit src/Fichas.tsx");
+    const st3 = rowOf(lines, "ST-3");
+    expect(st3).toContain("│  └─ · ST-3 Aplicar al tocar");
+    expect(cols(st3).slice(-3)).toEqual(["–", "–", "espera ST-2"]);
+  });
+
+  test("un run terminado dice hace cuánto, y un modelo único se nombra una vez en la cabecera", () => {
+    const closed: RunTree = {
+      ...tree,
+      status: "cerrado",
+      haceSegundos: 1_360,
+      fases: [tree.fases[0] ?? phase("planificar")],
+    };
+    const { lines } = renderBoard([closed], { width: 160, color: false });
+    expect(lines[0]).toMatch(/^✓ 1 cerrado {2}· opus-5-5 \(high\)/);
+    expect(lines[0]).not.toContain("MODELO");
+    expect(rowOf(lines, "Cambios de un toque")).toMatch(/hace 22m40s {2}cerrado$/);
   });
 
   // Si regresiona, en una terminal angosta las líneas se parten y la tabla se vuelve ilegible.
-  test("ninguna línea pasa el ancho; con poco ancho se pierden el modelo y después los tokens", () => {
-    for (const width of [140, 90, 70]) {
+  test("ninguna línea pasa el ancho; con poco lugar se pierde el modelo antes que el nombre", () => {
+    for (const width of [160, 100, 70]) {
       const { lines } = renderBoard([tree, waiting], {
         width,
         color: true,
@@ -149,11 +175,8 @@ describe("renderBoard", () => {
       });
       for (const l of lines) expect(Array.from(strip(l)).length).toBeLessThanOrEqual(width);
     }
-    const header = (width: number) => renderBoard([tree], { width, color: false }).lines[1] ?? "";
-    expect(header(100)).toContain("MODELO");
-    expect(header(90)).not.toContain("MODELO");
-    expect(header(90)).toContain("TOKENS");
-    expect(header(70)).not.toContain("TOKENS");
+    expect(renderBoard([tree], { width: 160, color: false }).lines[0]).toContain("MODELO");
+    expect(renderBoard([tree], { width: 100, color: false }).lines[0]).not.toContain("MODELO");
   });
 
   // Si regresiona, un motivo de varias líneas rompe la tabla, o texto de un modelo controla la terminal.
@@ -169,26 +192,28 @@ describe("renderBoard", () => {
       ],
     };
     const { lines } = renderBoard([hostile], { width: 200, color: false });
-    expect(rowOf(lines, "revisar")).toContain("volvió: bloqueantes: - ST-2");
+    expect(rowOf(lines, "revisar")).toMatch(/volvió$/);
+    expect(rowOf(lines, "bloqueantes")).toContain("bloqueantes: - ST-2");
     // eslint-disable-next-line no-control-regex
     expect(lines.join("\n")).not.toMatch(/[\x00-\x08\x0b-\x1f\x7f]/);
   });
 
-  test("se eligen las filas con sesiones, en orden, y la elegida se marca", () => {
-    const { lines, selectable } = renderBoard([tree], {
-      width: 140,
-      color: false,
-      selected: "PIZ-1-x:ST-1",
-    });
+  test("se eligen las filas con sesiones, en orden, y la elegida va resaltada entera", () => {
+    const { selectable } = renderBoard([tree], { width: 160, color: false });
     expect(selectable.map((s) => s.key)).toEqual([
       "PIZ-1-x:planificar",
       "PIZ-1-x:ST-1",
       "PIZ-1-x:ST-2",
     ]);
     expect(selectable[2]?.sessions).toEqual(["implementar-ST-2-1", "implementar-ST-2-2"]);
-    const plain = renderBoard([tree], { width: 140, color: false }).lines;
-    const marked = lines.filter((l) => l.startsWith("›"));
-    expect(marked).toEqual([`›${rowOf(plain, "ST-1").slice(1)}`]);
+    const plain = renderBoard([tree], { width: 160, color: false }).lines;
+    const colored = renderBoard([tree], {
+      width: 160,
+      color: true,
+      selected: "PIZ-1-x:ST-1",
+    }).lines;
+    const marked = colored.filter((l) => l.startsWith("\x1b[30;46m"));
+    expect(marked.map(strip).map((l) => l.trimEnd())).toEqual([rowOf(plain, "ST-1")]);
   });
 
   test("sin runs lo dice", () => {
@@ -203,7 +228,7 @@ describe("renderDetail", () => {
       texto: `Read paso-${String(i)}`,
     }));
     const lines = renderDetail(
-      "PIZ-1 · ST-2",
+      "PIZ-1 › ST-2",
       [
         { node: session("implementar-ST-2-1"), steps },
         {
@@ -213,25 +238,33 @@ describe("renderDetail", () => {
       ],
       { width: 100, height: 7, color: false },
     );
-    expect(lines[0]).toBe("PIZ-1 · ST-2");
+    expect(lines[0]).toBe("PIZ-1 › ST-2");
     expect(lines[1]).toBe("  … 4 líneas antes");
     expect(lines.slice(2)).toEqual([
       "  ▸ Read paso-3",
       "  ▸ Read paso-4",
       "  ▸ Read paso-5",
-      "implementar-ST-2-2  Sonnet 5.5 · 2k tokens · ≈ USD – · 40s",
+      "implementar-ST-2-2 · sonnet-5-5 (high) · 2k tokens · ≈ USD – · 40s",
       "  ▸ Read paso-0",
     ]);
   });
 });
 
-test("duration, tokenCount y modelName", () => {
-  expect([duration(38), duration(540), duration(3_900)]).toEqual(["38s", "9m", "1h5m"]);
+test("duration, tokenCount y modelTag", () => {
+  expect([duration(38), duration(163), duration(3_900), duration(200_000)]).toEqual([
+    "38s",
+    "2m43s",
+    "1h05m",
+    "2d07h",
+  ]);
   expect([tokenCount(0), tokenCount(950), tokenCount(737_540), tokenCount(1_900_000)]).toEqual([
     "–",
     "950",
     "738k",
     "1.9M",
   ]);
-  expect(modelName("claude-opus-5-5")).toBe("Opus 5.5");
+  expect([modelTag("claude-opus-5-5", "high"), modelTag(undefined)]).toEqual([
+    "opus-5-5 (high)",
+    "–",
+  ]);
 });

@@ -677,6 +677,16 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. Las filas salen del mismo árbol; las columnas, de una función de layout de seis líneas.
 - **Desbloquea:** Gate final
 
+### T8.5 · `watch` con el estilo de agents-tree
+- **Estado:** `[x] Hecho`
+- **Descripción:** la persona prefirió la vista de agents-tree. `watch` copia su forma: cabecera en video inverso con el resumen y las columnas, proyectos en azul con lo urgente primero, íconos y colores por estado (▲ te espera, ● trabaja, ○ espera, ✓ listo, ✗ falló), el título como nombre y la clave como ID, modelo con su esfuerzo, una barra fina de qué parte de los tokens del run se llevó cada fila, tiempo con segundos o "hace X", y la fila elegida en cian. Lo largo, como la herramienta en uso o un motivo, va en una nota gris debajo. Un modelo único se nombra una vez en la cabecera, y con poco ancho se pierde antes que el nombre.
+- **Lint:** `pnpm lint`.
+- **Test:** `src/watch/tree.test.ts`: el esfuerzo de cada fase y hace cuánto terminó un run. `src/watch/render.test.ts`: cabecera, grupos por urgencia, números por fila, barra, nota de la herramienta, run terminado, modelo único, ancho, texto de modelo sin control, selección y detalle. `test/watch.int.test.ts`: la vista por CLI.
+- **Canario:** mostrar siempre la columna de modelo y ordenar sin urgencia pusieron en rojo sus tests; los dos de esfuerzo y "hace" fallaron antes de implementarlos.
+- **Criterio de aprobación:** sobre PIZ-1 en una pseudo-terminal de 150 columnas, la vista sale con la cabecera inversa, la columna de modelo y esfuerzo y las barras, la fila de ST-2 se elige en cian y abre sus pasos, y `q` restaura la terminal.
+- **Revisión ponytail:** a mano. Sigue el render de agents-tree regla por regla, sin dependencias.
+- **Desbloquea:** Gate final
+
 ### Gate Fase 8
 - **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.

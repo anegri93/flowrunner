@@ -61,7 +61,6 @@ export async function main(
     options: {
       json: { type: "boolean", default: false },
       desde: { type: "string" },
-      tick: { type: "boolean", default: false },
     },
   });
   const json = values.json === true;
@@ -110,12 +109,7 @@ export async function main(
         return 0;
       }
       case "_run": {
-        const final = await runProcess(
-          home,
-          need(first, "el id del run"),
-          env,
-          values.tick === true,
-        );
+        const final = await runProcess(home, need(first, "el id del run"), env);
         io.out(`run ${final.runId} quedó ${final.status}`);
         return 0;
       }

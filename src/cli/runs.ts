@@ -24,11 +24,11 @@ import { UserError } from "./output.ts";
 export const BIN = join(import.meta.dirname, "..", "..", "bin", "flowrunner.js");
 
 /** Lanza el proceso del run separado de la terminal; su salida va a `run.log`. */
-function spawnRunProcess(run: RunPaths, env: NodeJS.ProcessEnv, tick = false): number {
+function spawnRunProcess(run: RunPaths, env: NodeJS.ProcessEnv): number {
   const log = openSync(join(run.dir, "run.log"), "a");
   const child = spawn(
     process.execPath,
-    ["--disable-warning=ExperimentalWarning", BIN, "_run", run.id, ...(tick ? ["--tick"] : [])],
+    ["--disable-warning=ExperimentalWarning", BIN, "_run", run.id],
     { detached: true, stdio: ["ignore", log, log], env },
   );
   child.unref();
@@ -192,13 +192,13 @@ export function abortRun(home: string, id: string) {
 }
 
 /** El proceso del run: toma el lock, avanza hasta detenerse y suelta el lock si terminó. */
-export async function runProcess(home: string, id: string, env: NodeJS.ProcessEnv, tick: boolean) {
+export async function runProcess(home: string, id: string, env: NodeJS.ProcessEnv) {
   const state = loadState(home, id);
   acquireLock(home, state.proyecto, id, process.pid, (other) => holderStatus(home, other));
   const { deps, phases } = await productionRuntime(env, (title, body) => {
     notifyMac(title, body, env);
   });
-  const final = await runUntilStop(runPaths(home, id), phases, deps, { tick });
+  const final = await runUntilStop(runPaths(home, id), phases, deps);
   if (holderStatus(home, id) === "terminado") releaseLock(home, final.proyecto, id);
   return final;
 }

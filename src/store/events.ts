@@ -103,7 +103,6 @@ export const eventSchema = z.discriminatedUnion("tipo", [
   z.strictObject({ tipo: z.literal("pr_cerrada"), at, mergeada: z.boolean() }),
 ]);
 export type RunEvent = z.infer<typeof eventSchema>;
-export type EventType = RunEvent["tipo"];
 /** Un evento sin `at`: lo completa el store al escribirlo. */
 export type NewEvent = RunEvent extends infer E
   ? E extends RunEvent

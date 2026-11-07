@@ -190,10 +190,10 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Estado:** `[ ] Pendiente`
 - **Validación de lint:** `pnpm lint` verde.
 - **Tests:** suites unit e integración verdes.
-- **Test de integración:** un run con todas las fases falsas se lanza por CLI, se mata con `kill -9` en tres puntos distintos, se retoma con `resume` cada vez y llega a `entregado`; su log, sin los eventos de reanudación, es igual al de un run sin cortes.
-- **Canario:** re-canario sobre 2-3 tests de la fase al azar.
-- **Criterio de aprobación:** demo en terminal: lanzar, matar, retomar y ver el estado final con `status`.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff acumulado + `/ponytail-debt` + listado de `test-debt:`.
+- **Test de integración:** `test/fase1.int.test.ts`: un run lanzado por CLI con fases falsas de 1,5 s se mata con `kill -9` durante planificar, implementar y revisar, se retoma con `resume` cada vez y llega a `entregado`. Su log, sin los `reanudado`, las acciones cortadas, los tiempos y las rutas, es igual al de un run sin cortes; las tres fases cortadas corrieron dos veces y el resto una.
+- **Canario:** re-canario sobre tres tests: anular la regla del mismo motivo dos veces puso en rojo su test del engine; volver a emitir `accion_iniciada` en una acción interrumpida puso en rojo el test del runner. El tercero, sacar el estado de espera de `holderStatus`, siguió verde: no había test de `holderStatus`. Se agregó `src/store/runs.test.ts` y con ese test la mutación se puso roja. Restaurados.
+- **Criterio de aprobación:** demo hecha por el test de integración con el CLI real: lanzar, matar, retomar y ver el estado final; `flowrunner status <run>` muestra cada paso con su resultado.
+- **Revisión ponytail:** sobre el diff acumulado de la fase: 2 cortes aplicados, el tipo `EventType` sin uso y el modo `--tick` del proceso del run, que nadie usaba todavía y vuelve con T7.1. `ponytail:` nuevos: ninguno. `test-debt:` nuevos: ninguno.
 - **Desbloquea:** Fase 2
 
 ---

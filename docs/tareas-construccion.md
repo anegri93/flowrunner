@@ -478,10 +478,10 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Estado:** `[ ] Pendiente`
 - **Validación de lint:** `pnpm lint` verde.
 - **Tests:** suites unit e integración verdes.
-- **Test de integración:** un plan de fixture con tres sub-tasks, dos en paralelo y una dependiente, recorre implementar y verificar con `query` falsa: un criterio falla en la primera pasada, vuelve, se arregla y la rama queda verde con un commit por sub-task.
-- **Canario:** re-canario sobre 2-3 tests de la fase al azar.
-- **Criterio de aprobación:** smoke real sobre el repo de juguete con una feature de dos sub-tasks paralelas.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff acumulado + `/ponytail-debt` + listado de `test-debt:`.
+- **Test de integración:** `test/fase5.int.test.ts`: implementar y verificar reales en el runner con el SDK simulado y tres sub-tasks, dos en paralelo y una dependiente. AC-2 falla en la primera pasada, vuelve con su motivo, ST-2 se rehace y la rama queda verde, lineal y con dos sesiones simultáneas medidas. Este test encontró la regresión T1.3b del runner.
+- **Canario:** re-canario sobre tres piezas, todas en el test de integración: que verificar devuelva todas las sub-tasks, revertir el arreglo de T1.3b e integrar por merge pusieron el test en rojo. Restaurados.
+- **Criterio de aprobación:** `smoke/implementar.smoke.ts` verde con el SDK real: Haiku implementó en paralelo `confirmados` y `cancelados` sobre el repo de juguete, cada una en su worktree; se integraron por cherry-pick y verificar corrió los dos criterios y verify en verde.
+- **Revisión ponytail:** sobre el diff acumulado: sin exports sin uso. `ponytail:` nuevos: 2, worktrees de sub-tasks fallidas que quedan para mirarlos y un verify rojo atribuido a todas las sub-tasks. `test-debt:` nuevos: ninguno.
 - **Desbloquea:** Fase 6
 
 ---

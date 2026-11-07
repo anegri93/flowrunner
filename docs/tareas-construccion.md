@@ -657,6 +657,16 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano; sin hallazgos. Reusa `phaseSummaries` del informe en lugar de recontar eventos.
 - **Desbloquea:** Gate F8
 
+### T8.3 · `flowrunner watch`: el run en vivo
+- **Estado:** `[x] Hecho`
+- **Descripción:** con un run lanzado, la persona no tenía cómo ver qué pasaba. `flowrunner watch [run|clave] [--once]` dibuja el árbol del run: fases, sub-tasks y sesiones, con modelo, costo, tiempo y la última herramienta de la sesión que corre. Se refresca cada 2 segundos; con las flechas y Enter se ven los pasos de una sesión. Lee el log, `tasks.json` y los transcripts que cada sesión escribe mientras corre.
+- **Lint:** `pnpm lint`.
+- **Test:** `src/watch/tree.test.ts`: esperando aprobación, implementando con una sub-task que volvió de revisar y se rehace, un run detenido con su motivo, aprobar cerrado por la aprobación y los pasos legibles del detalle. `src/watch/render.test.ts`: el árbol con quién corre y a quién espera, ninguna línea pasa el ancho, el texto de un modelo sale en una línea y sin caracteres de control, la selección y el detalle. `test/watch.int.test.ts`: por CLI, por clave, sin runs activos y con un run que no existe.
+- **Canario:** ignorar la sesión que corre al calcular el estado de una sub-task puso en rojo el test de implementando, después de endurecerlo: la primera versión no lo detectaba. Los tests de aprobar cerrado, de caracteres de control y de pasos legibles fallaron antes de su arreglo.
+- **Criterio de aprobación:** sobre el run real PIZ-1 de pizarra-en-vivo, `watch` mostró en vivo la vuelta de revisar a ST-2 y la sesión que la rehacía; en una pseudo-terminal, las flechas eligieron una sesión, Enter mostró sus pasos y `q` restauró la terminal.
+- **Revisión ponytail:** a mano. El estado del run sale de `stateOf`; los pasos, de `transcriptSteps`. Sin dependencias nuevas: ANSI a mano.
+- **Desbloquea:** Gate final
+
 ### Gate Fase 8
 - **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.

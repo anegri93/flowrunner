@@ -14,6 +14,7 @@ import { installLaunchd, uninstallLaunchd } from "./launchd.ts";
 import { installSkill } from "./skill.ts";
 import { hookOutput, sessionStartContext } from "./hook.ts";
 import { readFileSync } from "node:fs";
+import { renderRuns, watchLive, watchTargets } from "./watch.ts";
 import { describeInit, init } from "../setup/init.ts";
 import { describeStats, stats } from "../report/stats.ts";
 import {
@@ -32,6 +33,7 @@ const USAGE = `uso: flowrunner <comando> [--json]
   feature check <archivo>        valida una feature, su proyecto y la config del repo
   run <archivo>                  lanza un run en segundo plano y devuelve su id
   status [run]                   lista los runs, o un run fase por fase
+  watch [run] [--once]           el árbol de un run, o de los activos, en vivo; run puede ser la clave
   resume <run>                   retoma un run detenido o interrumpido
   rerun <run> --desde <fase>     rehace un run desde una fase
   abort <run>                    cancela un run y borra sus worktrees; las ramas quedan
@@ -90,6 +92,7 @@ export async function main(
       sesion: { type: "string" },
       confirmar: { type: "boolean", default: false },
       aplicar: { type: "boolean", default: false },
+      once: { type: "boolean", default: false },
       "github-user": { type: "string" },
     },
   });
@@ -101,6 +104,21 @@ export async function main(
   try {
     const [command, first, ...rest] = positionals;
     switch (command) {
+      case "watch": {
+        const targets = watchTargets(home, first);
+        const tty = process.stdout.isTTY && process.stdin.isTTY;
+        if (values.once === true || !tty) {
+          const { lines } = renderRuns(home, targets(), {
+            width: process.stdout.columns > 0 ? process.stdout.columns : 120,
+            color: process.stdout.isTTY,
+            now: Date.now(),
+          });
+          io.out(lines.join("\n"));
+          return 0;
+        }
+        await watchLive(home, targets);
+        return 0;
+      }
       case "hook": {
         if (first !== "session-start") break;
         // Un hook que falla no puede trabar el arranque de una sesión: cualquier error es no decir nada.

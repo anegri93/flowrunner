@@ -317,9 +317,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - Un test bloqueado modificado → rechazo.
   - Un diff dentro del alcance → aprobado.
   - Un archivo sin seguimiento fuera del alcance → rechazo.
-- **Canario:** a comprobar: mirar solo los archivos con seguimiento pone en rojo el último caso.
-- **Criterio de aprobación:** el diff de una sub-task falsa que hace trampa por Bash se rechaza con el archivo y la regla.
-- **Revisión ponytail:** pendiente.
+- **Canario:** sacar los archivos sin seguimiento de `changesSince` puso en rojo `un archivo sin seguimiento fuera del alcance: violación`. Restaurado; 5 de 5 verdes.
+- **Criterio de aprobación:** el diff de una sub-task que crea un archivo por fuera de Edit, en `src/billing/`, se rechaza con el archivo y la regla; también un test bloqueado modificado y un secreto agregado dentro del alcance.
+- **Revisión ponytail:** a mano; sin hallazgos. El doble control reusa las reglas del hook; no tiene reglas propias.
 - **Desbloquea:** Gate F3
 
 ### Gate Fase 3

@@ -181,9 +181,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - `rerun --desde` con una fase que no existe sale 1 y lista las fases válidas.
   - `status --json` valida contra su schema, y un error con `--json` también sale como JSON.
   - `abort` sobre un run en curso termina su proceso y lo deja `abortado`.
-- **Canario:** a comprobar: leer la feature del archivo original en lugar de la copia pone en rojo el test de edición.
-- **Criterio de aprobación:** desde una terminal, `flowrunner run` vuelve al prompt al instante y `flowrunner status` muestra el avance.
-- **Revisión ponytail:** pendiente.
+- **Canario:** guardar la feature del run como link al original puso en rojo `editar el archivo original después de run no cambia la copia del run`. Sacar el `kill` del abort primero no puso el test en rojo, porque el run igual se detiene solo al releer el log cuando termina la fase; el test se endureció para exigir que el proceso muera en menos de 1,5 s con una fase de 3 s, y ahí se puso rojo. Restaurados; 8 de 8 verdes.
+- **Criterio de aprobación:** `flowrunner run` vuelve al prompt al instante con el id, el proceso del run sigue vivo, toma el lock con su propio pid y `flowrunner status` muestra el avance fase por fase. Un segundo run sobre el mismo repo se niega y nombra el que tiene el lock.
+- **Revisión ponytail:** a mano; sin hallazgos. La única costura de test es `FLOWRUNNER_TEST_HOOKS`, documentada en `src/runner/production.ts`; sin framework de inyección.
 - **Desbloquea:** Gate F1
 
 ### Gate Fase 1

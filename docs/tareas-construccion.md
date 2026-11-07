@@ -513,9 +513,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - Retomar después de crear la PR → ningún segundo `create`.
   - El registro de argumentos de `gh` nunca contiene `merge` en una PR de feature.
   - El lock queda libre al terminar.
-- **Canario:** a comprobar: crear la PR sin chequear si existe pone en rojo el segundo caso.
-- **Criterio de aprobación:** la PR aparece en el remote bare de prueba con la rama y el título esperados.
-- **Revisión ponytail:** pendiente.
+- **Canario:** crear la PR sin buscar si existe puso en rojo `retomar después de crear la PR no hace un segundo create` y `una PR ya mergeada no se vuelve a abrir`. Restaurado; 5 de 5 verdes.
+- **Criterio de aprobación:** la rama llega al remote bare de prueba y el `gh` falso registra un único `pr create` con la rama, la base y el título esperados; ningún `merge`. El lock lo suelta el proceso del run al quedar entregado, cubierto por el gate de la Fase 6.
+- **Revisión ponytail:** a mano; sin hallazgos. El `gh` falso guarda su estado en un JSON del HOME del test para que aprender pueda reusarlo.
 - **Desbloquea:** T6.3
 
 ### T6.3 · Informe del run

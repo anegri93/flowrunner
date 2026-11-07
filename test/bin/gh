@@ -1,0 +1,81 @@
+#!/usr/bin/env node
+// gh falso para los tests: guarda las PRs en $HOME/gh-state.json y cada llamada en $HOME/gh.log.
+import fs from "node:fs";
+import path from "node:path";
+const home = process.env.HOME || "/tmp";
+const stateFile = path.join(home, "gh-state.json");
+const args = process.argv.slice(2);
+fs.appendFileSync(path.join(home, "gh.log"), `${JSON.stringify(args)}\n`);
+const load = () =>
+  fs.existsSync(stateFile) ? JSON.parse(fs.readFileSync(stateFile, "utf8")) : { prs: [] };
+const save = (s) => fs.writeFileSync(stateFile, JSON.stringify(s, null, 2));
+const flag = (name) => {
+  const i = args.indexOf(name);
+  return i >= 0 ? args[i + 1] : undefined;
+};
+const pick = (pr, fields) =>
+  Object.fromEntries(
+    (fields || "")
+      .split(",")
+      .filter(Boolean)
+      .map((f) => [f, pr[f]]),
+  );
+const [a, b, c] = args;
+const s = load();
+if (a === "auth" && b === "status") process.exit(process.env.FAKE_GH_NOAUTH ? 1 : 0);
+if (a === "pr" && b === "list") {
+  const head = flag("--head");
+  console.log(
+    JSON.stringify(s.prs.filter((p) => p.headRefName === head).map((p) => pick(p, flag("--json")))),
+  );
+  process.exit(0);
+}
+if (a === "pr" && b === "create") {
+  if (process.env.FAKE_GH_FAIL_CREATE) {
+    console.error("HTTP 502");
+    process.exit(1);
+  }
+  const number = s.prs.length + 412;
+  const body = flag("--body-file")
+    ? fs.readFileSync(flag("--body-file"), "utf8")
+    : flag("--body") || "";
+  const pr = {
+    number,
+    url: `https://github.com/acme/acme-api/pull/${number}`,
+    headRefName: flag("--head"),
+    baseRefName: flag("--base"),
+    title: flag("--title"),
+    body,
+    state: "OPEN",
+    mergedAt: null,
+    autoMerge: false,
+    comments: [],
+    commits: [],
+  };
+  s.prs.push(pr);
+  save(s);
+  console.log(pr.url);
+  process.exit(0);
+}
+if (a === "pr" && b === "view") {
+  const pr = s.prs.find((p) => String(p.number) === c || p.headRefName === c);
+  if (!pr) {
+    console.error("no pull requests found");
+    process.exit(1);
+  }
+  console.log(JSON.stringify(pick(pr, flag("--json"))));
+  process.exit(0);
+}
+if (a === "pr" && b === "merge") {
+  const pr = s.prs.find((p) => String(p.number) === c);
+  if (!pr) process.exit(1);
+  if (args.includes("--auto")) pr.autoMerge = true;
+  else {
+    pr.state = "MERGED";
+    pr.mergedAt = new Date().toISOString();
+  }
+  save(s);
+  process.exit(0);
+}
+console.error(`gh falso: comando no soportado: ${args.join(" ")}`);
+process.exit(2);

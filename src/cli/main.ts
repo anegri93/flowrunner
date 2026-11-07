@@ -7,6 +7,7 @@ import { checkFeature, describeCheckedFeature } from "./feature-check.ts";
 import { processIo, reportError, UserError, type Io } from "./output.ts";
 import { addProject, initRepoBrain } from "./project.ts";
 import { approveRun, describePlan, requestChanges, showPlan } from "./approval.ts";
+import { showReport, showSession } from "./report.ts";
 import {
   abortRun,
   rerunRun,
@@ -28,6 +29,7 @@ const USAGE = `uso: flowrunner <comando> [--json]
   plan <run>                     muestra el plan que espera aprobación
   approve <run>                  aprueba el plan y sigue a implementar
   changes <run> "<motivo>"       vuelve a planificar con tu instrucción
+  report <run> [--sesion s]      el informe del run, o el transcript de una sesión
   project add <ruta>             registra un repo [--nombre n] [--github-user u]
   brain init <ruta>              escribe las plantillas de .flowrunner/ sin pisar nada`;
 
@@ -69,6 +71,7 @@ export async function main(
       json: { type: "boolean", default: false },
       desde: { type: "string" },
       nombre: { type: "string" },
+      sesion: { type: "string" },
       "github-user": { type: "string" },
     },
   });
@@ -130,6 +133,20 @@ export async function main(
       case "changes": {
         const changed = requestChanges(home, need(first, "el id del run"), rest.join(" "), env);
         print(changed, `run ${changed.id} ${changed.accion}`);
+        return 0;
+      }
+      case "report": {
+        const id = need(first, "el id del run");
+        if (typeof values.sesion === "string") {
+          const session = showSession(home, id, values.sesion);
+          print(session, session.texto);
+        } else {
+          const report = showReport(home, id);
+          print(
+            report,
+            `${report.informe}\nSesiones: ${report.sesiones.join(", ") || "(ninguna)"}`,
+          );
+        }
         return 0;
       }
       case "project": {

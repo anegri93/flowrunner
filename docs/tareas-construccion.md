@@ -527,9 +527,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - Run detenido en verificar → informe parcial con el motivo y `flowrunner resume <run>`.
   - Las fallas de infraestructura y de gate aparecen separadas.
   - Un texto de modelo con HTML aparece como texto, sin interpretarse.
-- **Canario:** a comprobar: omitir el comando siguiente en el informe parcial pone en rojo el segundo caso.
-- **Criterio de aprobación:** el informe de un run del repo de juguete se entiende sin abrir ningún otro archivo.
-- **Revisión ponytail:** pendiente.
+- **Canario:** quitar el comando siguiente del informe parcial puso en rojo `un run detenido en verificar trae el motivo y el comando para seguir`; mostrar el texto del modelo sin escapar puso en rojo `un texto de modelo con HTML aparece como texto`. Restaurados; 5 de 5 verdes.
+- **Criterio de aprobación:** el informe sale del log solo: estado, PR, costo, decisiones por fase, duración y costo por fase, vueltas, reintentos por gate separados de las fallas de infraestructura, rechazos y avisos; parcial si se detuvo, con el comando para seguir. El proceso del run lo escribe siempre al terminar; `flowrunner report <run>` lo regenera y `--sesion` muestra un transcript como pasos de texto. El aviso al entregar lo emite entregar, T6.2; al detenerse, el runner, T1.3.
+- **Revisión ponytail:** a mano; sin hallazgos. El informe usa listas y no tablas, por la preferencia de la persona para reportes.
 - **Desbloquea:** Gate F6
 
 ### Gate Fase 6

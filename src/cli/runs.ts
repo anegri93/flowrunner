@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { stateOf, type RunState } from "../engine/engine.ts";
 import { notifyMac } from "../notify/notify.ts";
 import { productionRuntime } from "../runner/production.ts";
+import { writeReport } from "../report/report.ts";
 import { runUntilStop } from "../runner/runner.ts";
 import type { RunPaths } from "../runner/types.ts";
 import { PHASES, type Phase } from "../store/events.ts";
@@ -203,7 +204,10 @@ export async function runProcess(home: string, id: string, env: NodeJS.ProcessEn
   const { deps, phases } = await productionRuntime(env, (title, body) => {
     notifyMac(title, body, env);
   });
-  const final = await runUntilStop(runPaths(home, id), phases, deps);
+  const run = runPaths(home, id);
+  const final = await runUntilStop(run, phases, deps);
+  // El informe se escribe siempre al terminar el proceso: completo o parcial si se detuvo.
+  writeReport(run, readLog(run.dir).events);
   if (holderStatus(home, id) === "terminado") releaseLock(home, final.proyecto, id);
   return final;
 }

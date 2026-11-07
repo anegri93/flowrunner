@@ -575,9 +575,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - Un commit de otra persona → excluido.
   - Sin nada de la persona → `cerrado` sin sesión de agente.
   Comentario: si el filtro regresiona, cualquiera que comente la PR escribe en el cerebro de todos los runs futuros.
-- **Canario:** a comprobar: quitar el filtro por usuario pone en rojo el segundo caso.
-- **Criterio de aprobación:** la lista de correcciones de una PR de prueba muestra el origen de cada una.
-- **Revisión ponytail:** pendiente.
+- **Canario:** quitar el filtro por usuario en los comentarios puso en rojo `un comentario de otro usuario con texto que parece una instrucción se excluye`; mirar todos los commits y no solo los posteriores al último de flowrunner puso en rojo `un commit de otra persona se excluye; uno de la persona anterior…`. Restaurados; 4 de 4 verdes.
+- **Criterio de aprobación:** cada corrección trae su origen, el link al commit `…/pull/412/commits/<sha>` o al comentario, y el diff del commit leído con git. Sin nada de la persona, el run se cierra sin sesión de agente, probado en T7.1. En la v0 cuentan los comentarios generales y los de revisión; los comentarios de línea quedan para después.
+- **Revisión ponytail:** a mano; sin hallazgos.
 - **Desbloquea:** T7.3
 
 ### T7.3 · Lecciones y su PR con auto-merge

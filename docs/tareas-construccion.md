@@ -485,6 +485,16 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. Un `git diff --name-only` contra la base y el mismo setup de preparar.
 - **Desbloquea:** Gate final
 
+### T5.5 · Diagnosticar en vez de reintentar a ciegas
+- **Estado:** `[x] Hecho`
+- **Descripción:** en PIZ-2, verificar le devolvió tres veces a ST-1 un error que estaba en el entorno, y ST-1 gastó sus reintentos sin nada que cambiar. Ahora: una señal de entorno en la salida de un criterio hace que verificar reinstale y repita, y si persiste se detiene como entorno; una sub-task devuelta que no cambia nada queda `sin_cambios`, sin reintentos; y si el ciclo no converge, porque una sub-task devuelta no cambió nada o el mismo criterio falló dos vueltas seguidas, una sesión de solo lectura diagnostica si el problema es de código, y de qué sub-task, de entorno o del plan. Código devuelve a la sub-task correcta con una instrucción; entorno y plan se detienen con cómo seguir. `watch` muestra resuelto lo que el run dejó atrás.
+- **Lint:** `pnpm lint`.
+- **Test:** `src/phases/diagnosticar.test.ts`: las señales de entorno y que una aserción no lo es. `test/diagnosticar.int.test.ts`: una señal de entorno se resuelve reinstalando sin vueltas; una sub-task devuelta sin cambios queda `sin_cambios` y el diagnóstico manda el trabajo a la sub-task culpable hasta entregar; un diagnóstico de plan detiene el run con el comando para replanificar. `src/watch/tree.test.ts`: una fase que el run dejó atrás se ve resuelta.
+- **Canario:** sin el remedio de entorno, sin el corte de `sin_cambios` y sin el diagnóstico, cada uno puso en rojo su test; el de la vista falló antes del arreglo.
+- **Criterio de aprobación:** con PIZ-2, `watch` muestra implementar resuelto con la nota de la corrida anterior y ST-1 integrada.
+- **Revisión ponytail:** a mano. Las señales de entorno son una lista de expresiones; el diagnóstico reusa el hook de tripwires y el esquema de salida estructurada; el tope sigue siendo el de vueltas de verificar.
+- **Desbloquea:** Gate final
+
 ### Gate Fase 5
 - **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.

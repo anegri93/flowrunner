@@ -41,6 +41,24 @@ archivos del repo, y comprueba que la base esté en verde antes de abrir la PR. 
 Después, abrí una sesión de Claude Code y pedile que escriba y lance una feature: la skill
 `flowrunner` hace el resto con el CLI.
 
+## Qué pasa cuando algo falla
+
+flowrunner reintenta, pero no a ciegas. Una sub-task que falla se reintenta hasta 3 veces con el
+motivo, y verificar y revisar pueden devolver trabajo hasta 2 vueltas. Cuando reintentar no tiene
+sentido, se corta antes:
+
+- **Una señal de entorno** en la salida de un criterio, como `Cannot find package` o `command not
+found`, no se le devuelve a una sub-task: verificar reinstala y repite. Si sigue, se detiene y dice
+  qué falta.
+- **Una sub-task devuelta que no encuentra nada que cambiar** no gasta reintentos: su código queda
+  integrado y verificar decide de qué lado está el problema.
+- **Si el ciclo no converge**, porque pasó lo anterior o el mismo criterio falló dos vueltas
+  seguidas, una sesión de solo lectura diagnostica la causa: el código de alguna sub-task, que puede
+  no ser la que se culpó; el entorno; o el plan. Con código, devuelve el trabajo a la sub-task
+  correcta con una instrucción precisa; con entorno o plan, se detiene y dice cómo seguir.
+
+Todo tiene tope: al agotarse, el run se detiene con el motivo y el comando exacto para continuar.
+
 ## Cómo aprende el cerebro
 
 El cerebro aprende de dos fuentes, y en las dos decide la persona:

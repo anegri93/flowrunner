@@ -131,7 +131,7 @@ function phaseRow(p: PhaseNode): { kind: Kind; status: string; note: string | un
     case "ok": {
       const status =
         p.fase === "aprobar" ? "aprobado" : p.fase === "entregar" ? "PR creada" : "listo";
-      return { kind: "done", status, note: undefined };
+      return { kind: "done", status, note: p.nota };
     }
     case "espera":
       return p.fase === "aprobar"
@@ -158,6 +158,8 @@ function unitRow(
       return { kind: "done", status: u.estado, note: undefined };
     case "fallida":
       return { kind: "failed", status: "falló", note: undefined };
+    case "sin_cambios":
+      return { kind: "done", status: "sin cambios", note: undefined };
     case "pendiente": {
       const waiting = u.dependeDe.filter(
         (d) => all.find((x) => x.id === d)?.estado !== "integrada",

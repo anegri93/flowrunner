@@ -90,7 +90,8 @@ export const eventSchema = z.discriminatedUnion("tipo", [
     at,
     fase: phaseSchema,
     unidad: z.string(),
-    estado: z.enum(["iniciada", "commiteada", "integrada", "fallida"]),
+    /** sin_cambios: devuelta por verificar o revisar, no encontró nada que cambiar en su código. */
+    estado: z.enum(["iniciada", "commiteada", "integrada", "fallida", "sin_cambios"]),
     sha: z.string().optional(),
     motivo: z.string().optional(),
   }),

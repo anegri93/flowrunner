@@ -1,5 +1,6 @@
 // Verificar: sobre la feature integrada, los tests bloqueados intactos, cada criterio en verde y
-// verify en verde. Un criterio rojo vuelve a implementar con la sub-task que lo cubre.
+// verify en verde. Un criterio rojo vuelve a implementar con la sub-task que lo cubre. Si la feature
+// cambió lockfiles o manifiestos, primero reinstala: el setup de preparar corrió con los de la base.
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -7,7 +8,9 @@ import { loadRepoConfig } from "../config/load.ts";
 import { ACCEPTANCE_TIMEOUT_MS } from "../gates/plan.ts";
 import { runShell, tail } from "../proc/proc.ts";
 import type { PhaseFn } from "../runner/types.ts";
-import { featureWorktree } from "./inputs.ts";
+import { git } from "../git/git.ts";
+import { featureWorktree, prepared } from "./inputs.ts";
+import { SETUP_TIMEOUT_MS } from "./preparar.ts";
 import { readPlan } from "./planificar.ts";
 import { runVerify } from "./verify.ts";
 
@@ -18,6 +21,27 @@ export const verificar: PhaseFn = async (ctx) => {
   const worktree = featureWorktree(run);
   const config = loadRepoConfig(worktree);
   const plan = readPlan(run);
+
+  const depFiles = new Set([...config.lockfiles, ...config.manifests]);
+  const changed = (
+    await git(worktree, ["diff", "--name-only", prepared(ctx.events).base_sha, "HEAD"], deps.env)
+  )
+    .split("\n")
+    .filter((f) => depFiles.has(f));
+  if (changed.length > 0) {
+    const setup = await runShell(config.setup, {
+      cwd: worktree,
+      env: deps.env,
+      timeoutMs: SETUP_TIMEOUT_MS,
+    });
+    if (setup.code !== 0) {
+      return {
+        tipo: "falla",
+        clase: "entorno",
+        motivo: `la feature cambió ${changed.join(", ")} y el setup \`${config.setup}\` salió ${String(setup.code)} al reinstalar:\n${tail(setup)}`,
+      };
+    }
+  }
 
   for (const [path, hash] of Object.entries(plan.locked)) {
     const file = join(worktree, path);

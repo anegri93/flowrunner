@@ -226,9 +226,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - Un repo sin `.flowrunner/` → error que sugiere `brain init`.
   - `brain init` sobre un repo con `lecciones.md` existente no lo pisa.
   - El sha256 registrado cambia si cambia un byte.
-- **Canario:** a comprobar: un `>` por `>=` en el tope pone en rojo el test del tope exacto.
-- **Criterio de aprobación:** `brain init` sobre el repo de juguete deja plantillas que `project add` acepta.
-- **Revisión ponytail:** pendiente.
+- **Canario:** `>=` en lugar de `>` en el tope puso en rojo `un archivo en su tope exacto se carga`; copiar las plantillas sin chequear si existen puso en rojo `no pisa archivos existentes`. Restaurados; 5 de 5 verdes, más 2 de integración en `test/project.int.test.ts`.
+- **Criterio de aprobación:** `brain init` sobre un repo deja plantillas que `project add` da por listas: `faltan` vacío. Sin config global, `project add` exige `--github-user`, que aprender necesita para filtrar correcciones.
+- **Revisión ponytail:** a mano; sin hallazgos. Las plantillas son archivos en `templates/brain/`, no strings en el código.
 - **Desbloquea:** T2.3
 
 ### T2.3 · Fase preparar

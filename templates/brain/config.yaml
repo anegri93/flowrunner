@@ -1,0 +1,15 @@
+# Config de flowrunner para este repo. Se revisa por PR como el código.
+base_branch: main
+# Lo que trae lo que git no trae, en cada worktree.
+setup: pnpm install --frozen-lockfile
+# El script que dice si el repo está en verde: formato, lint, tipos y tests.
+verify: .flowrunner/verify.sh
+# Dónde puede escribir planificar los tests de aceptación.
+tests_globs: ["test/**", "tests/**", "src/**/*.test.ts"]
+# Archivos del harness de tests que ninguna sub-task puede tocar.
+harness_files: ["vitest.config.ts"]
+lockfiles: ["pnpm-lock.yaml"]
+manifests: ["package.json"]
+max_parallel: 3
+budget:
+  run_usd: 25

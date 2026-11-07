@@ -5,6 +5,7 @@ import type { z } from "zod";
 import type { statusListSchema, statusRunSchema } from "./contracts.ts";
 import { checkFeature, describeCheckedFeature } from "./feature-check.ts";
 import { processIo, reportError, UserError, type Io } from "./output.ts";
+import { addProject, initRepoBrain } from "./project.ts";
 import {
   abortRun,
   rerunRun,
@@ -22,7 +23,9 @@ const USAGE = `uso: flowrunner <comando> [--json]
   status [run]                   lista los runs, o un run fase por fase
   resume <run>                   retoma un run detenido o interrumpido
   rerun <run> --desde <fase>     rehace un run desde una fase
-  abort <run>                    cancela un run y borra sus worktrees; las ramas quedan`;
+  abort <run>                    cancela un run y borra sus worktrees; las ramas quedan
+  project add <ruta>             registra un repo [--nombre n] [--github-user u]
+  brain init <ruta>              escribe las plantillas de .flowrunner/ sin pisar nada`;
 
 function describeList(list: z.infer<typeof statusListSchema>): string {
   if (list.runs.length === 0) return "no hay runs";
@@ -61,6 +64,8 @@ export async function main(
     options: {
       json: { type: "boolean", default: false },
       desde: { type: "string" },
+      nombre: { type: "string" },
+      "github-user": { type: "string" },
     },
   });
   const json = values.json === true;
@@ -106,6 +111,30 @@ export async function main(
       case "abort": {
         const aborted = abortRun(home, need(first, "el id del run"));
         print(aborted, `run ${aborted.id} ${aborted.accion}`);
+        return 0;
+      }
+      case "project": {
+        if (first !== "add") break;
+        const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+        const added = await addProject(
+          need(rest[0], "la ruta del repo"),
+          { name: str(values.nombre), githubUser: str(values["github-user"]) },
+          env,
+        );
+        const pending =
+          added.faltan.length === 0
+            ? "listo para correr runs"
+            : `falta:\n  ${added.faltan.join("\n  ")}`;
+        print(added, `proyecto ${added.proyecto} registrado en ${added.repo}; ${pending}`);
+        return 0;
+      }
+      case "brain": {
+        if (first !== "init") break;
+        const init = await initRepoBrain(need(rest[0], "la ruta del repo"), env);
+        print(
+          init,
+          `creados en ${init.repo}:\n  ${init.creados.join("\n  ") || "(nada: ya existía todo)"}`,
+        );
         return 0;
       }
       case "_run": {

@@ -599,9 +599,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Descripción:** `flowrunner launchd install` escribe el plist del tick con `tick_minutes` de la config global, por defecto 10, y lo carga; `uninstall` lo quita. `flowrunner doctor` comprueba Node, git, `gh` con sesión, graft, el token en el Keychain y el job de launchd, cada uno con su arreglo.
 - **Lint:** `pnpm lint`.
 - **Test:** `doctor` con binarios falsos: un `gh` sin sesión → sale 1 y nombra el arreglo; el Keychain sin token → sale 1 y sugiere `claude setup-token`; todo presente → sale 0. El plist generado se compara contra uno esperado: programa, argumentos, intervalo y logs.
-- **Canario:** a comprobar: ignorar el exit de `gh auth status` pone en rojo el primer caso.
-- **Criterio de aprobación:** con el job instalado, `launchctl list` lo muestra y su log registra un tick.
-- **Revisión ponytail:** pendiente.
+- **Canario:** ignorar el exit de `gh auth status` puso en rojo `gh sin sesión: sale 1 y dice cómo arreglarlo`; un intervalo fijo de 600 s puso en rojo el test del plist, que espera 420 s con `tick_minutes: 7`. Restaurados; 4 de 4 verdes.
+- **Criterio de aprobación:** con el `launchctl` falso, `launchd install` escribe el plist con `tick`, el intervalo de la config y el log, y lo carga con `bootout` y `bootstrap`; `uninstall` lo quita. Los tests escriben en un LaunchAgents de prueba con `FLOWRUNNER_LAUNCH_AGENTS`. Instalarlo de verdad en la Mac de la persona, y ver el tick en `launchctl list`, queda para cuando lo pida.
+- **Revisión ponytail:** a mano; sin hallazgos. El plist se escribe como texto con escape XML, sin librería.
 - **Desbloquea:** Gate F7
 
 ### Gate Fase 7

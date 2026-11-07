@@ -9,6 +9,8 @@ import { addProject, initRepoBrain } from "./project.ts";
 import { approveRun, describePlan, requestChanges, showPlan } from "./approval.ts";
 import { showReport, showSession } from "./report.ts";
 import { learnOne, tick } from "./tick.ts";
+import { describeDoctor, doctor } from "./doctor.ts";
+import { installLaunchd, uninstallLaunchd } from "./launchd.ts";
 import {
   abortRun,
   rerunRun,
@@ -33,6 +35,8 @@ const USAGE = `uso: flowrunner <comando> [--json]
   report <run> [--sesion s]      el informe del run, o el transcript de una sesión
   tick                           lo que corre launchd: retoma pausados y aprende de PRs mergeadas
   learn <run>                    revisa la PR de un run y aprende en el momento
+  doctor                         qué le falta a esta máquina para correr runs
+  launchd install|uninstall      instala o quita el job que corre tick
   project add <ruta>             registra un repo [--nombre n] [--github-user u]
   brain init <ruta>              escribe las plantillas de .flowrunner/ sin pisar nada`;
 
@@ -161,6 +165,24 @@ export async function main(
         const learned = await learnOne(home, need(first, "el id del run"), env);
         print(learned, `${learned.id}: ${learned.resultado}`);
         return 0;
+      }
+      case "doctor": {
+        const result = await doctor(env);
+        print(result, describeDoctor(result));
+        return result.ok ? 0 : 1;
+      }
+      case "launchd": {
+        if (first === "install") {
+          const done = await installLaunchd(env);
+          print(done, `instalado ${done.plist}: tick cada ${String(done.cada_minutos)} minutos`);
+          return 0;
+        }
+        if (first === "uninstall") {
+          const done = await uninstallLaunchd(env);
+          print(done, `quitado ${done.plist}`);
+          return 0;
+        }
+        break;
       }
       case "project": {
         if (first !== "add") break;

@@ -1,0 +1,3 @@
+#!/bin/sh
+# launchctl falso: registra los argumentos en launchctl.log en lugar de cargar nada.
+printf '%s\n' "$*" >> "${FAKE_LOG_DIR:-$HOME}/launchctl.log"

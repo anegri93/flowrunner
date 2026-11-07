@@ -1,7 +1,13 @@
 import { describe, expect, test } from "vitest";
 import { repoWith } from "../../test/helpers/git.ts";
 import type { Feature } from "../feature/feature.ts";
-import { checkCommandsFail, checkPlanShape, type Plan, type Subtask } from "./plan.ts";
+import {
+  checkCommandsFail,
+  checkPlanShape,
+  subtaskSchema,
+  type Plan,
+  type Subtask,
+} from "./plan.ts";
 
 const feature = {
   clave: "SHOP-214",
@@ -111,6 +117,34 @@ describe("forma del plan", () => {
       task("ST-2", ["src/y.ts"], { depende_de: ["ST-1"] }),
     ]);
     expect(shape(p)).toEqual(["hay un ciclo de dependencias: ST-1 → ST-2 → ST-1"]);
+  });
+});
+
+describe("las dependencias del plan", () => {
+  const withDeps = (deps: Partial<Subtask>) =>
+    subtaskSchema.safeParse({
+      id: "ST-1",
+      titulo: "t",
+      descripcion: "d",
+      alcance: ["src/"],
+      dependencias: [],
+      depende_de: [],
+      ...deps,
+    });
+
+  // Si regresiona, un texto como «jsqr (devDependency)» llega pegado al comando de instalación y la sub-task se traba.
+  test("una dependencia con aclaraciones se rechaza, con un motivo que dice dónde va la de desarrollo", () => {
+    const result = withDeps({ dependencias: ["uqr", "jsqr (devDependency)"] });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toContain("dependencias_dev");
+  });
+
+  test("acepta nombres con scope y versión, y las de desarrollo aparte", () => {
+    expect(
+      withDeps({ dependencias: ["@scope/qr", "jsqr@1.4.0"], dependencias_dev: ["@types/qrcode"] })
+        .success,
+    ).toBe(true);
+    expect(withDeps({ dependencias_dev: ["jsqr; rm -rf /"] }).success).toBe(false);
   });
 });
 

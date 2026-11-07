@@ -7,7 +7,8 @@ import { contextFor, testDeps } from "../../test/helpers/project.ts";
 import { simQuery, type SimScript } from "../../test/helpers/sim-sdk.ts";
 import type { Plan, Subtask } from "../gates/plan.ts";
 import { readLog } from "../store/run-log.ts";
-import { implementar } from "./implementar.ts";
+import { repoConfigSchema } from "../config/schemas.ts";
+import { implementar, prefersExact, unitCommands } from "./implementar.ts";
 
 const st = (id: string, alcance: string[], extra: Partial<Subtask> = {}): Subtask => ({
   id,
@@ -51,7 +52,46 @@ function byUnit(scripts: Record<string, SimScript[]>) {
 const unitEvents = (dir: string) =>
   readLog(dir).events.flatMap((e) => (e.tipo === "unidad" ? [`${e.unidad}:${e.estado}`] : []));
 
+describe("instalar dependencias", () => {
+  const config = (lock: string) =>
+    repoConfigSchema.parse({ setup: "true", tests_globs: ["tests/**"], lockfiles: [lock] });
+  const task = st("ST-1", ["src/"], { dependencias: ["uqr"], dependencias_dev: ["jsqr"] });
+
+  // Si regresiona, una dependencia de desarrollo entra como de producción, o sin la versión exacta que usa el repo.
+  test("las de desarrollo van con -D y, si el repo fija versiones, todas con -E", () => {
+    expect(unitCommands(config("package-lock.json"), task, [], true)).toEqual(
+      expect.arrayContaining(["npm install -E uqr", "npm install -D -E jsqr"]),
+    );
+    expect(unitCommands(config("pnpm-lock.yaml"), task, [], false)).toEqual(
+      expect.arrayContaining(["pnpm add uqr", "pnpm add -D jsqr"]),
+    );
+  });
+
+  test("prefersExact: sí si todas las versiones del manifiesto son exactas, no si alguna es un rango", () => {
+    expect(
+      prefersExact('{"dependencies":{"a":"1.2.3"},"devDependencies":{"b":"4.0.0-rc.1"}}'),
+    ).toBe(true);
+    expect(prefersExact('{"dependencies":{"a":"^1.2.3"}}')).toBe(false);
+    expect(prefersExact("{}")).toBe(false);
+  });
+});
+
 describe("implementar", () => {
+  // Si regresiona, una sub-task trabada gasta todos sus intentos sin decir por qué, como en PIZ-2.
+  test("una sub-task que no avanza dos intentos seguidos se corta con lo último que dijo", async () => {
+    const sim = simQuery(
+      byUnit({ "ST-1": [{ text: "No pude instalar jsqr: ese comando no está permitido." }] }),
+    );
+    const deps = testDeps({ query: sim.query });
+    const { run } = await plannedRun(planWith([st("ST-1", ["src/a/"])]), TESTS, deps);
+    const outcome = await implementar(contextFor(run, "implementar", deps));
+    expect(outcome).toMatchObject({ tipo: "falla", clase: "gate" });
+    const motivo = outcome.tipo === "falla" ? outcome.motivo : "";
+    expect(motivo).toContain("no avanzó en dos intentos seguidos");
+    expect(motivo).toContain("No pude instalar jsqr");
+    expect(unitEvents(run.dir).filter((e) => e === "ST-1:iniciada")).toHaveLength(2);
+  });
+
   // Si regresiona, las sub-tasks independientes corren de a una y el run tarda el doble.
   test("dos sub-tasks independientes corren a la vez y dejan un commit cada una, con su trailer", async () => {
     const sim = simQuery(
@@ -175,7 +215,9 @@ describe("implementar", () => {
     );
     const outcome = await implementar(contextFor(run, "implementar", deps));
     expect(outcome).toMatchObject({ tipo: "falla", clase: "gate" });
-    expect(outcome.tipo === "falla" && outcome.motivo).toMatch(/ST-1 no salió en 3 intentos/);
+    expect(outcome.tipo === "falla" && outcome.motivo).toMatch(
+      /ST-1 no avanzó en dos intentos seguidos/,
+    );
     expect(unitEvents(run.dir)).toContain("ST-2:integrada");
     expect(unitEvents(run.dir)).toContain("ST-1:fallida");
   });

@@ -5,17 +5,34 @@ import type { Feature } from "../feature/feature.ts";
 import { isUnrunnable, runShell, tail } from "../proc/proc.ts";
 import { insideRoot, type Scope } from "../tripwires/rules.ts";
 
+/** Un nombre de paquete, con scope y versión opcionales: `jsqr`, `@types/qrcode`, `jsqr@1.4.0`. */
+const PACKAGE = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*(@[0-9A-Za-z.^~*+-]+)?$/;
+const packageName = z
+  .string()
+  .regex(
+    PACKAGE,
+    "tiene que ser solo un nombre de paquete, con versión opcional: `jsqr` o `jsqr@1.4.0`. Una dependencia de desarrollo va en `dependencias_dev`, sin aclaraciones",
+  );
+
 export const subtaskSchema = z.object({
   id: z.string().regex(/^ST-\d+$/, "tiene que ser ST-n"),
   titulo: z.string().min(1),
   descripcion: z.string().min(1),
   /** Rutas concretas, archivos o carpetas, relativas al repo. Nunca globs. */
   alcance: z.array(z.string().min(1)).min(1),
-  /** Paquetes que puede agregar; vacío si no agrega ninguno. */
-  dependencias: z.array(z.string().min(1)),
+  /** Paquetes que usa en ejecución y puede agregar; vacío si no agrega ninguno. */
+  dependencias: z.array(packageName),
+  /** Paquetes de desarrollo y de tests que puede agregar. */
+  dependencias_dev: z.array(packageName).optional(),
   depende_de: z.array(z.string()),
 });
 export type Subtask = z.infer<typeof subtaskSchema>;
+
+/** Todas las dependencias que puede agregar una sub-task, de ejecución y de desarrollo. */
+export const allDependencies = (task: Subtask) => [
+  ...task.dependencias,
+  ...(task.dependencias_dev ?? []),
+];
 
 export const decisionSchema = z.object({ que: z.string().min(1), por_que: z.string().min(1) });
 
@@ -50,7 +67,7 @@ const overlaps = (a: string, b: string) =>
 /** El alcance efectivo: lo que declaró, más lockfiles y manifiestos si agrega dependencias. */
 export function effectiveScope(task: Subtask, rules: PlanRepoRules): string[] {
   const own = task.alcance.map(normalize);
-  return task.dependencias.length > 0 ? [...own, ...rules.lockfiles, ...rules.manifests] : own;
+  return allDependencies(task).length > 0 ? [...own, ...rules.lockfiles, ...rules.manifests] : own;
 }
 
 /** Las sub-tasks de las que depende `id`, directa o indirectamente. */

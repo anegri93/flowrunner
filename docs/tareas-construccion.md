@@ -169,6 +169,17 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano; sin hallazgos. El backoff de infraestructura es una función de una línea, no una política configurable.
 - **Desbloquea:** T1.4
 
+### T1.3b · Regresión: la fase recibía el log sin su propia accion_iniciada
+- **Estado:** `[x] Hecho`
+- **Regresión de:** T1.3 — el gate de la Fase 5 mostró que, al volver de verificar, implementar no hacía nada: leía el log de antes de su `accion_iniciada`, encontraba la entrada anterior y daba por integrada la sub-task que tenía que rehacer.
+- **Descripción:** el runner pasa a la fase el log con la `accion_iniciada` que acaba de emitir.
+- **Lint:** `pnpm lint`.
+- **Test:** `la fase recibe el log con su propia accion_iniciada al final`, en `src/runner/runner.test.ts`.
+- **Canario:** gratis: el test se escribió contra el código con el bug y salió rojo; con el arreglo, verde.
+- **Criterio de aprobación:** `test/fase5.int.test.ts` hace una sola vuelta de verificar y rehace ST-2 en la primera devolución.
+- **Revisión ponytail:** a mano; sin hallazgos.
+- **Desbloquea:** T1.4
+
 ### T1.4 · CLI: run, status, resume, rerun, abort
 - **Estado:** `[ ] Pendiente`
 - **Descripción:** `flowrunner run <archivo>` valida la feature, copia `feature.md` al run, lanza el proceso del run separado de la terminal y devuelve el id. `status` lista runs o uno fase por fase. `resume` relanza un run detenido o interrumpido. `rerun <run> --desde <fase>` lo rehace desde una fase. `abort` lo cancela, borra sus worktrees y deja las ramas. Salidas legibles; errores con el comando siguiente. Cada comando acepta `--json` con una salida validada por un schema Zod exportado, que es lo que lee la skill de consola; esta convención rige para todos los comandos que se agreguen después.

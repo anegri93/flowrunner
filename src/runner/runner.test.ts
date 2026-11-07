@@ -97,6 +97,19 @@ describe("runUntilStop", () => {
     expect(notified).toContain("SHOP-1: el run se detuvo");
   });
 
+  // Regresión T1.3b: implementar busca su entrada en el log; con eventos viejos tomaba la anterior.
+  test("la fase recibe el log con su propia accion_iniciada al final", async () => {
+    const run = newRun();
+    const phases = recordingPhases(run);
+    let lastSeen: unknown;
+    phases.preparar = (ctx) => {
+      lastSeen = ctx.events.at(-1);
+      return Promise.resolve({ tipo: "falla", clase: "entorno", motivo: "corte" });
+    };
+    await runUntilStop(run, phases, deps);
+    expect(lastSeen).toMatchObject({ tipo: "accion_iniciada", fase: "preparar" });
+  });
+
   test("aprobar que espera termina el loop sin proceso esperando", async () => {
     const run = newRun();
     const state = await runUntilStop(

@@ -43,8 +43,11 @@ export async function runUntilStop(
     }
     const emit = (event: Parameters<typeof appendEvent>[1]) =>
       appendEvent(run.dir, event, deps.now);
-    if (!state.interrumpida) emit({ tipo: "accion_iniciada", fase: action.fase });
-    const outcome = await runPhase(registry, { run, state, action, events, emit, deps });
+    // La fase recibe el log con su propia `accion_iniciada`: así encuentra su entrada actual.
+    const current = state.interrumpida
+      ? events
+      : [...events, emit({ tipo: "accion_iniciada", fase: action.fase })];
+    const outcome = await runPhase(registry, { run, state, action, events: current, emit, deps });
     emit({ tipo: "accion_terminada", fase: action.fase, resultado: outcome });
     if (outcome.tipo === "falla" && outcome.clase === "infra") {
       await deps.sleep(infraBackoffMs(state.infra + 1));

@@ -458,9 +458,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - AC-2 rojo → vuelve a implementar solo la sub-task de AC-2, con la salida en el motivo.
   - Tercera vuelta → detiene.
   - Un byte cambiado en un test bloqueado → detiene con el archivo.
-- **Canario:** a comprobar: devolver todas las sub-tasks y no solo la de AC-2 pone en rojo el segundo caso.
-- **Criterio de aprobación:** el motivo de vuelta muestra el criterio, el comando y su salida.
-- **Revisión ponytail:** pendiente.
+- **Canario:** devolver todas las sub-tasks en lugar de la del criterio puso en rojo `AC-2 rojo: vuelve solo ST-2`; no comparar los hashes puso en rojo `un byte cambiado en un test bloqueado detiene como invariante`. Restaurados; 4 de 4 verdes. La tercera vuelta la corta el engine, probado en T1.2.
+- **Criterio de aprobación:** el motivo de vuelta muestra el criterio, el comando y su salida, por ejemplo `AC-2 sigue en rojo: \`node tests/ac2.mjs\` salió 1:` seguido de `esperaba 403`. Un verify rojo con criterios verdes vuelve con todas las sub-tasks, como atajo marcado con `ponytail:`.
+- **Revisión ponytail:** a mano; 1 atajo deliberado: no se intenta atribuir un verify rojo a una sub-task.
 - **Desbloquea:** Gate F5
 
 ### Gate Fase 5

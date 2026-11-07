@@ -322,6 +322,8 @@ export function describeInit(result: Awaited<ReturnType<typeof init>>, aplicar: 
   const lines = result.pasos.map(
     (p) => `${MARK[p.estado]} ${p.que}${p.detalle === "" ? "" : `: ${p.detalle}`}`,
   );
-  if (!aplicar && result.ok) lines.push("", "Para aplicarlo: flowrunner init <repo> --aplicar");
+  const pending = result.pasos.some((p) => p.estado === "pendiente");
+  if (!aplicar && result.ok && pending)
+    lines.push("", "Para aplicarlo: flowrunner init <repo> --aplicar");
   return lines.join("\n");
 }

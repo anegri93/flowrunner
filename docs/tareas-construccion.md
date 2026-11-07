@@ -288,9 +288,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - `it.only(` agregado → rechazo; un `only` en un string de otra línea → permitido.
   - Una clave privada en el contenido → rechazo.
   - El comando exacto del ac-map → permitido; el mismo con `&& curl …` → rechazo.
-- **Canario:** a comprobar: resolver rutas sin realpath pone en rojo el caso del link.
-- **Criterio de aprobación:** cada regla de la sección 4 de la spec tiene al menos un caso permitido y uno rechazado.
-- **Revisión ponytail:** pendiente.
+- **Canario:** resolver rutas sin realpath puso en rojo `una carpeta que es un link hacia afuera`; no reconocer archivos de test puso en rojo `it.only( agregado en un test`. Restaurados; 13 de 13 verdes.
+- **Criterio de aprobación:** cada regla de la sección 4 de la spec tiene al menos un caso permitido y uno rechazado en `src/tripwires/rules.test.ts`: alcance, `..`, links, protegidos, bloqueados, harness, lockfiles con y sin dependencias, globs de planificar, lectura fuera del worktree, tests desactivados, secretos y Bash exacto o compuesto.
+- **Revisión ponytail:** a mano; sin hallazgos. Los globs usan `path.matchesGlob` de Node, sin dependencia.
 - **Desbloquea:** T3.3
 
 ### T3.3 · Hook `PreToolUse` y deny por defecto

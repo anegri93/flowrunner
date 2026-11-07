@@ -444,9 +444,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Descripción:** al retomar en implementar, las sub-tasks integradas se respetan y las que estaban en curso vuelven su worktree al sha de inicio y se rehacen.
 - **Lint:** `pnpm lint`.
 - **Test:** integración: con tres sub-tasks, se mata el proceso cuando una está integrada, otra commiteada sin integrar y otra a medio editar. Al retomar, la primera no se rehace, la segunda se integra sin otra sesión y la tercera se rehace desde un worktree limpio.
-- **Canario:** a comprobar: rehacer todas al retomar pone en rojo la aserción de la primera.
-- **Criterio de aprobación:** el informe muestra una sola sesión para la sub-task que ya estaba integrada.
-- **Revisión ponytail:** pendiente.
+- **Canario:** no reconocer las integradas al retomar puso en rojo el test, porque rehízo ST-1; anular la integración directa de una commiteada también, porque ST-2 abrió otra sesión. Restaurados; 1 de 1 verde.
+- **Criterio de aprobación:** con ST-1 integrada, ST-2 commiteada sin integrar y ST-3 cortada con un archivo a medias y basura en su worktree, retomar abre una sola sesión, la de ST-3. ST-2 se integra con su commit grabado, ST-3 se rehace desde un worktree limpio, la basura no llega a la feature y el historial queda ST-1, ST-2, ST-3.
+- **Revisión ponytail:** a mano; sin hallazgos. No hizo falta código nuevo: la reanudación sale de leer los eventos `unidad` de la entrada actual, ya escrita en T5.2.
 - **Desbloquea:** T5.4
 
 ### T5.4 · Fase verificar

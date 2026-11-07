@@ -224,6 +224,13 @@ export const implementar: PhaseFn = async (ctx) => {
       const changes = await changesSince(wt, start, deps.env);
       const violations = checkChanges(scope, changes);
       if (changes.length === 0) {
+        // Devuelta y sin nada que cambiar: su código ya está integrado y la sub-task lo sostiene.
+        // Reintentarla no arregla nada; verificar decide de qué lado está el problema.
+        if (action.unidades?.includes(task.id) === true) {
+          emit({ tipo: "unidad", fase: "implementar", unidad: task.id, estado: "sin_cambios" });
+          await removeWorktree(state.repo, wt, deps.env);
+          return { ok: true };
+        }
         motivo = `${task.id} no cambió ningún archivo`;
         continue;
       }

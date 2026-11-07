@@ -27,7 +27,8 @@ export interface SessionNode {
   readonly ultimo: string | undefined;
 }
 
-export type UnitState = "pendiente" | "corriendo" | "commiteada" | "integrada" | "fallida";
+export type UnitState =
+  "pendiente" | "corriendo" | "commiteada" | "integrada" | "fallida" | "sin_cambios";
 
 export interface UnitNode {
   readonly id: string;
@@ -45,6 +46,8 @@ export interface PhaseNode {
   readonly segundos: number | undefined;
   readonly costoUsd: number;
   readonly detalle: string | undefined;
+  /** Por qué se ve resuelta una fase que falló: el run la dejó atrás. */
+  readonly nota?: string | undefined;
   readonly sesiones: SessionNode[];
   readonly unidades: UnitNode[];
 }
@@ -191,6 +194,7 @@ const UNIT_STATE = {
   commiteada: "commiteada",
   integrada: "integrada",
   fallida: "fallida",
+  sin_cambios: "sin_cambios",
 } as const;
 
 export function runTree(input: TreeInput): RunTree {
@@ -209,7 +213,14 @@ export function runTree(input: TreeInput): RunTree {
   const unitStates = new Map<string, UnitState>();
   for (const e of events) if (e.tipo === "unidad") unitStates.set(e.unidad, UNIT_STATE[e.estado]);
 
-  const fases = PHASES.map((fase): PhaseNode => {
+  /** Cuándo empezó por última vez cada fase: lo que dice si el run dejó atrás una falla. */
+  const lastStart = new Map<Phase, number>();
+  for (const e of events) if (e.tipo === "accion_iniciada") lastStart.set(e.fase, Date.parse(e.at));
+  const everIntegrated = new Set(
+    events.flatMap((e) => (e.tipo === "unidad" && e.estado === "integrada" ? [e.unidad] : [])),
+  );
+
+  const fases = PHASES.map((fase, index): PhaseNode => {
     let started: number | undefined;
     let ended:
       | { at: number; resultado: Extract<RunEvent, { tipo: "accion_terminada" }>["resultado"] }
@@ -238,7 +249,12 @@ export function runTree(input: TreeInput): RunTree {
       }
     }
     const r = ended?.resultado;
-    const estado: PhaseState =
+    // Una falla o una vuelta que el run dejó atrás: una fase posterior corrió después.
+    const overtaken =
+      ended !== undefined && (r?.tipo === "falla" || r?.tipo === "vuelve")
+        ? PHASES.slice(index + 1).find((q) => (lastStart.get(q) ?? -1) >= ended.at)
+        : undefined;
+    const raw: PhaseState =
       started === undefined
         ? // Entregado, aprender corre recién cuando el tick ve la PR mergeada.
           fase === "aprender" && state.status === "entregado"
@@ -249,7 +265,15 @@ export function runTree(input: TreeInput): RunTree {
           : r.tipo === "limite"
             ? "pausa"
             : r.tipo;
-    const detalle = r?.tipo === "falla" || r?.tipo === "vuelve" ? r.motivo : undefined;
+    const estado: PhaseState = overtaken === undefined ? raw : "ok";
+    const nota =
+      overtaken === undefined
+        ? undefined
+        : `${r?.tipo === "falla" ? "falló" : "volvió"} en una corrida anterior; el run siguió desde ${overtaken}`;
+    const detalle =
+      overtaken === undefined && (r?.tipo === "falla" || r?.tipo === "vuelve")
+        ? r.motivo
+        : undefined;
     const mine = sessions.filter((s) => s.owner?.fase === fase);
     const unidades =
       fase === "implementar"
@@ -259,7 +283,11 @@ export function runTree(input: TreeInput): RunTree {
             return {
               id: t.id,
               titulo: t.titulo,
-              estado: running ? "corriendo" : (unitStates.get(t.id) ?? "pendiente"),
+              estado: running
+                ? "corriendo"
+                : overtaken !== undefined && everIntegrated.has(t.id)
+                  ? "integrada"
+                  : (unitStates.get(t.id) ?? "pendiente"),
               dependeDe: t.depende_de,
               sesiones: own,
             };
@@ -272,6 +300,7 @@ export function runTree(input: TreeInput): RunTree {
         started === undefined ? undefined : Math.round(((ended?.at ?? now) - started) / 1000),
       costoUsd,
       detalle,
+      nota,
       sesiones: fase === "implementar" ? [] : mine.map((s) => s.node),
       unidades,
     };

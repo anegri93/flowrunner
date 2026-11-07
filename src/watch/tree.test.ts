@@ -308,4 +308,50 @@ describe("runTree", () => {
     expect(tree.fases[1]?.sesiones[0]?.esfuerzo).toBe("high");
     expect(tree.haceSegundos).toBeUndefined();
   });
+
+  // Si regresiona, watch muestra como fallado algo que el run ya resolvió y siguió adelante.
+  test("una fase que falló pero que el run dejó atrás se ve resuelta, y su sub-task integrada también", () => {
+    const tree = runTree({
+      events: [
+        ...base,
+        { tipo: "accion_terminada", at: at(161), fase: "aprobar", resultado: { tipo: "ok" } },
+        { tipo: "accion_iniciada", at: at(200), fase: "implementar" },
+        {
+          tipo: "unidad",
+          at: at(210),
+          fase: "implementar",
+          unidad: "ST-1",
+          estado: "integrada",
+          sha: "a",
+        },
+        {
+          tipo: "unidad",
+          at: at(260),
+          fase: "implementar",
+          unidad: "ST-1",
+          estado: "fallida",
+          motivo: "sin cambios",
+        },
+        {
+          tipo: "accion_terminada",
+          at: at(300),
+          fase: "implementar",
+          resultado: { tipo: "falla", clase: "gate", motivo: "ST-1 no salió en 3 intentos" },
+        },
+        { tipo: "rehacer", at: at(400), desde: "verificar" },
+        { tipo: "accion_iniciada", at: at(400), fase: "verificar" },
+        { tipo: "accion_terminada", at: at(440), fase: "verificar", resultado: { tipo: "ok" } },
+      ],
+      tasks,
+      titulo: "x",
+      sessions: new Map(),
+      now: T0 + 500_000,
+    });
+    const impl = tree.fases.find((f) => f.fase === "implementar");
+    expect(impl).toMatchObject({
+      estado: "ok",
+      nota: "falló en una corrida anterior; el run siguió desde verificar",
+    });
+    expect(impl?.unidades[0]?.estado).toBe("integrada");
+  });
 });

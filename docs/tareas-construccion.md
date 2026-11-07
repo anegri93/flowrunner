@@ -641,9 +641,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Descripción:** `src/report/stats.ts`: agrega los eventos de todos los runs de un proyecto o de todos: reintentos por fase, motivos de gate y de rechazo más frecuentes, costo y duración por fase, lecciones generadas.
 - **Lint:** `pnpm lint`.
 - **Test:** desde logs de fixture de cinco runs: la fase con más reintentos encabeza la lista; los motivos se agrupan aunque difieran en rutas o números; un run detenido cuenta su costo parcial; un directorio de run sin eventos no rompe el total.
-- **Canario:** a comprobar: agrupar por el texto exacto del motivo pone en rojo el caso de los motivos con rutas distintas.
-- **Criterio de aprobación:** `flowrunner stats` sobre los runs del smoke señala la pieza a mejorar en una pantalla.
-- **Revisión ponytail:** pendiente.
+- **Canario:** agrupar por el texto exacto del motivo puso en rojo `la fase con más reintentos encabeza y los motivos se agrupan aunque cambien rutas y números` y `motiveKey quita rutas, ids y números`. Restaurado; 4 de 4 verdes.
+- **Criterio de aprobación:** `flowrunner stats` muestra en una pantalla la fase que más reintenta y vuelve, sus motivos agrupados sin rutas, ids ni números, los rechazos de tripwires, el costo y la duración por fase y las lecciones generadas; filtra por proyecto.
+- **Revisión ponytail:** a mano; sin hallazgos. Reusa `phaseSummaries` del informe en lugar de recontar eventos.
 - **Desbloquea:** Gate F8
 
 ### Gate Fase 8

@@ -12,6 +12,7 @@ import { learnOne, tick } from "./tick.ts";
 import { describeDoctor, doctor } from "./doctor.ts";
 import { installLaunchd, uninstallLaunchd } from "./launchd.ts";
 import { installSkill } from "./skill.ts";
+import { describeStats, stats } from "../report/stats.ts";
 import {
   abortRun,
   rerunRun,
@@ -39,6 +40,7 @@ const USAGE = `uso: flowrunner <comando> [--json]
   doctor                         qué le falta a esta máquina para correr runs
   launchd install|uninstall      instala o quita el job que corre tick
   skill install [--confirmar]    instala la skill de Claude Code; con --confirmar, las reglas ask
+  stats [proyecto]               qué fase reintenta más, motivos, costo y lecciones
   project add <ruta>             registra un repo [--nombre n] [--github-user u]
   brain init <ruta>              escribe las plantillas de .flowrunner/ sin pisar nada`;
 
@@ -197,6 +199,11 @@ export async function main(
               ? `\nReglas ask agregadas: ${done.agregadas.join(", ")}`
               : "\nLas reglas ask ya estaban.";
         print(done, `skill instalada en ${done.skill}${rules}`);
+        return 0;
+      }
+      case "stats": {
+        const result = stats(home, first);
+        print(result, describeStats(result));
         return 0;
       }
       case "project": {

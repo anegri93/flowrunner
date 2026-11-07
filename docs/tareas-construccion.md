@@ -271,9 +271,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - Timeout → falla de infraestructura y el stream parcial queda copiado.
   - Error de límite → evento de pausa.
   - Las opciones construidas para cada fase tienen `settingSources` vacío y un único MCP.
-- **Canario:** a comprobar: clasificar el timeout como gate pone en rojo su test; dejar `settingSources` por defecto pone en rojo el de opciones.
-- **Criterio de aprobación:** el stream copiado de una sesión se lee como texto con `flowrunner report`.
-- **Revisión ponytail:** pendiente.
+- **Canario:** clasificar el timeout como gate puso en rojo `el timeout es falla de infraestructura`; quitar `settingSources: []` puso en rojo `las opciones llevan settingSources vacío`. Restaurados; 9 de 9 verdes en `src/agent/session.test.ts`.
+- **Criterio de aprobación:** cada sesión copia su stream a `runs/<id>/sesiones/<nombre>.jsonl` y emite un evento `uso` con costo, tokens por modelo y duración. Sin token en el Keychain, la sesión falla como entorno con el comando para generarlo y nunca llega a llamar al SDK. La lectura del stream como texto con `flowrunner report --sesion` llega con T6.3.
+- **Revisión ponytail:** a mano; sin hallazgos. `runSession` es el único lugar que arma opciones del SDK; las fases solo describen su sesión.
 - **Desbloquea:** T3.2
 
 ### T3.2 · Reglas de tripwires

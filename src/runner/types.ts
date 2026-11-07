@@ -1,12 +1,10 @@
 // Lo que recibe una fase y lo que necesita el runner del mundo exterior, inyectado.
-import type { Query } from "@anthropic-ai/claude-agent-sdk";
+import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Action, RunState } from "../engine/engine.ts";
 import type { NewEvent, Outcome, Phase, RunEvent } from "../store/events.ts";
 
-export type QueryFn = (params: {
-  prompt: string;
-  options?: import("@anthropic-ai/claude-agent-sdk").Options;
-}) => Query;
+/** La forma de `query` del SDK que usa flowrunner: un prompt, opciones y un stream de mensajes. */
+export type QueryFn = (params: { prompt: string; options?: Options }) => AsyncIterable<SDKMessage>;
 
 export interface Deps {
   readonly now: () => Date;

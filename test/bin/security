@@ -1,0 +1,8 @@
+#!/bin/sh
+# Keychain falso: devuelve FAKE_KEYCHAIN_TOKEN si está definido, como `security -w`.
+if [ "$1" = "find-generic-password" ] && [ -n "$FAKE_KEYCHAIN_TOKEN" ]; then
+  echo "$FAKE_KEYCHAIN_TOKEN"
+  exit 0
+fi
+echo "security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain." >&2
+exit 44

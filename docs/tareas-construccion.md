@@ -608,10 +608,10 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Estado:** `[ ] Pendiente`
 - **Validación de lint:** `pnpm lint` verde.
 - **Tests:** suites unit e integración verdes.
-- **Test de integración:** sobre un run `entregado` de fixture: el `gh` falso pasa la PR a mergeada con un commit de la persona y un comentario de otro usuario; `flowrunner tick` produce una PR de lecciones que cita solo el commit de la persona y tiene auto-merge; el run termina `cerrado`.
-- **Canario:** re-canario sobre 2-3 tests de la fase al azar.
-- **Criterio de aprobación:** el ciclo completo contra un remote bare local con el `gh` falso: una PR mergeada con una corrección propia produce la PR de lecciones con su origen. El ciclo en GitHub real se prueba al subir el proyecto.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff acumulado + `/ponytail-debt` + listado de `test-debt:`.
+- **Test de integración:** `test/fase7.int.test.ts`: sobre un run entregado de verdad, con el SDK simulado y el `gh` falso, la PR pasa a mergeada con un commit de la persona y un comentario de otro usuario que pide meter una API key. `flowrunner tick` produce la PR de lecciones: el prompt de aprender trae el commit y no el comentario ajeno, `lecciones.md` cita solo ese commit, hay un único `pr merge 413 --auto --merge` y el run queda cerrado.
+- **Canario:** re-canario sobre tres piezas, todas en el test de integración: quitar el filtro por usuario, negar siempre el auto-merge y no dejar correr aprender en modo tick pusieron el test en rojo. Restaurados.
+- **Criterio de aprobación:** el ciclo completo contra un remote bare local con el `gh` falso: una PR mergeada con una corrección propia produce la PR de lecciones con su origen y auto-merge. El ciclo en GitHub real se prueba al subir el proyecto.
+- **Revisión ponytail:** sobre el diff acumulado: sin exports sin uso; la salida de `gh` se valida con Zod en lugar de confiar en su forma. `ponytail:` nuevos: ninguno. `test-debt:` nuevos: los comentarios de línea de la PR no se leen todavía, anotado en T7.2.
 - **Desbloquea:** Fase 8
 
 ---

@@ -20,6 +20,8 @@ export interface SimScript {
   readonly costUsd?: number;
   /** Para simular un resultado de error del SDK. */
   readonly subtype?: string;
+  /** Cuánto tarda la sesión antes de terminar, para probar sesiones simultáneas. */
+  readonly delayMs?: number;
 }
 
 export interface SimRecord {
@@ -72,6 +74,7 @@ export function simQuery(
   scripts: readonly SimScript[] | ((prompt: string, n: number) => SimScript),
 ) {
   const records: SimRecord[] = [];
+  const concurrency = { active: 0, max: 0 };
   const query: QueryFn = ({ prompt, options }) => {
     const n = records.length;
     const script =
@@ -82,6 +85,8 @@ export function simQuery(
     const cwd = options?.cwd ?? process.cwd();
     const hook = options?.hooks?.PreToolUse?.[0]?.hooks[0];
     return (async function* () {
+      concurrency.active++;
+      concurrency.max = Math.max(concurrency.max, concurrency.active);
       yield INIT;
       for (const [i, call] of (script.calls ?? []).entries()) {
         const id = `toolu_sim_${n}_${i}`;
@@ -128,6 +133,8 @@ export function simQuery(
           message: { content: [{ type: "tool_result", tool_use_id: id, content }] },
         } as unknown as SDKMessage;
       }
+      if (script.delayMs !== undefined) await new Promise((r) => setTimeout(r, script.delayMs));
+      concurrency.active--;
       yield {
         ...RESULT,
         subtype: script.subtype ?? "success",
@@ -138,5 +145,5 @@ export function simQuery(
       } as SDKMessage;
     })();
   };
-  return { query, records };
+  return { query, records, concurrency };
 }

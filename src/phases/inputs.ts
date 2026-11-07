@@ -11,6 +11,7 @@ export function runFeature(run: RunPaths): Feature {
 }
 
 export const featureWorktree = (run: RunPaths) => join(run.worktrees, "feature");
+export const unitWorktree = (run: RunPaths, unit: string) => join(run.worktrees, unit);
 export const graftIndex = (run: RunPaths) => join(run.dir, "graft");
 
 /** La rama de la feature: `feat/<clave>-<título en minúsculas, sin tildes>`. */

@@ -45,6 +45,15 @@ export function headSha(worktree: string, env?: NodeJS.ProcessEnv): Promise<stri
   return git(worktree, ["rev-parse", "HEAD"], env);
 }
 
+export async function removeWorktree(
+  repo: string,
+  path: string,
+  env?: NodeJS.ProcessEnv,
+): Promise<void> {
+  await git(repo, ["worktree", "remove", "--force", path], env).catch(() => undefined);
+  await git(repo, ["worktree", "prune"], env);
+}
+
 export async function resetHard(
   worktree: string,
   sha: string,

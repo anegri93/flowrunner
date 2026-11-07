@@ -434,9 +434,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - Una sub-task que choca al integrarse se rehace una vez y después integra.
   - Una sub-task que viola el doble control no se commitea y reintenta con el motivo.
   - Un fallo de una sub-task no corta la otra que está en curso.
-- **Canario:** a comprobar: integrar sin cherry-pick, por merge, rompe la aserción de un commit por sub-task.
-- **Criterio de aprobación:** el historial de la rama de la feature queda lineal: tests del plan y un commit por sub-task.
-- **Revisión ponytail:** pendiente.
+- **Canario:** integrar con `git merge --no-ff` en lugar de cherry-pick puso en rojo `dos sub-tasks independientes corren a la vez y dejan un commit cada una`, por el historial con merges; saltear el doble control puso en rojo `una sub-task que viola el doble control no se commitea`. Restaurados; 5 de 5 verdes.
+- **Criterio de aprobación:** el historial de la rama de la feature queda lineal: los tests del plan y un commit por sub-task con su trailer `Flowrunner-Subtask`. Dos sub-tasks independientes corrieron a la vez, con dos sesiones simultáneas medidas en el SDK simulado; un conflicto de integración se rehizo sobre la punta nueva con el conflicto en el prompt; una sub-task fallida no cortó la otra.
+- **Revisión ponytail:** a mano; 1 atajo deliberado marcado con `ponytail:`: los worktrees de sub-tasks fallidas quedan para mirarlos y `abort` los borra. Las integraciones se serializan con una cadena de promesas, sin dependencia de mutex.
 - **Desbloquea:** T5.3
 
 ### T5.3 · Reanudar a mitad de implementar

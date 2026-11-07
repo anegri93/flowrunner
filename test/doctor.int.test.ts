@@ -37,6 +37,21 @@ describe("doctor", () => {
     expect(result.stdout).toMatch(/✗ token de Claude en el Keychain: corré `claude setup-token`/);
   });
 
+  // Si regresiona, doctor le exige un token a quien eligió su login, o da por buena una sesión cerrada.
+  test("con auth: login, el chequeo es la sesión de Claude Code y no el token", () => {
+    const e = {
+      ...homeWith("github_user: yo\nauth: login\nprojects: []\n"),
+      FLOWRUNNER_LAUNCH_AGENTS: tempDir("launch-agents-"),
+    };
+    expect(runCli(["launchd", "install"], e).status).toBe(0);
+    const ok = runCli(["doctor", "--json"], e);
+    expect(checks(ok.stdout).filter((c) => !c.ok)).toEqual([]);
+    expect(checks(ok.stdout).map((c) => c.nombre)).toContain("sesión de Claude Code");
+    const out = runCli(["doctor"], { ...e, FAKE_CLAUDE_LOGGED_OUT: "1" });
+    expect(out.status).toBe(1);
+    expect(out.stdout).toMatch(/✗ sesión de Claude Code: abrí `claude` y corré `\/login`/);
+  });
+
   test("con todo presente y el job instalado: sale 0", () => {
     const e = env({ FAKE_KEYCHAIN_TOKEN: "t" });
     expect(runCli(["launchd", "install"], e).status).toBe(0);

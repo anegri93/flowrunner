@@ -57,6 +57,8 @@ const projectName = z
 export const globalConfigSchema = z
   .strictObject({
     github_user: z.string().min(1),
+    /** `token`: el de `claude setup-token` en el Keychain. `login`: la sesión de Claude Code. */
+    auth: z.enum(["token", "login"]).default("token"),
     tick_minutes: z.int().min(1).max(1440).default(10),
     projects: z.array(z.strictObject({ name: projectName, path: z.string().min(1) })).default([]),
   })

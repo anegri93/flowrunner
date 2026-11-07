@@ -1,0 +1,12 @@
+#!/bin/sh
+# CLI de Claude falso: `claude auth status` responde con sesión, o sin ella si FAKE_CLAUDE_LOGGED_OUT.
+if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+  if [ -n "$FAKE_CLAUDE_LOGGED_OUT" ]; then
+    echo '{"loggedIn": false}'
+    exit 1
+  fi
+  echo '{"loggedIn": true, "authMethod": "claude.ai"}'
+  exit 0
+fi
+echo "claude falso: comando no soportado: $*" >&2
+exit 2

@@ -41,7 +41,8 @@ Después, abrí una sesión de Claude Code y pedile que escriba y lance una feat
 
 ## Uso personal
 
-flowrunner se autentica con la suscripción de Claude mediante `claude setup-token`. La
+flowrunner se autentica con la suscripción de Claude mediante `claude setup-token`, o con la
+sesión de Claude Code que ya tenés si ponés `auth: login` en `~/.flowrunner/config.yaml`. La
 documentación del Agent SDK no permite ofrecer el login de claude.ai en productos de terceros:
 antes de compartir flowrunner con otras personas hay que pasar a API key o confirmarlo con
 Anthropic.

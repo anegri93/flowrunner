@@ -8,6 +8,7 @@ import { processIo, reportError, UserError, type Io } from "./output.ts";
 import { addProject, initRepoBrain } from "./project.ts";
 import { approveRun, describePlan, requestChanges, showPlan } from "./approval.ts";
 import { showReport, showSession } from "./report.ts";
+import { learnOne, tick } from "./tick.ts";
 import {
   abortRun,
   rerunRun,
@@ -30,6 +31,8 @@ const USAGE = `uso: flowrunner <comando> [--json]
   approve <run>                  aprueba el plan y sigue a implementar
   changes <run> "<motivo>"       vuelve a planificar con tu instrucción
   report <run> [--sesion s]      el informe del run, o el transcript de una sesión
+  tick                           lo que corre launchd: retoma pausados y aprende de PRs mergeadas
+  learn <run>                    revisa la PR de un run y aprende en el momento
   project add <ruta>             registra un repo [--nombre n] [--github-user u]
   brain init <ruta>              escribe las plantillas de .flowrunner/ sin pisar nada`;
 
@@ -147,6 +150,16 @@ export async function main(
             `${report.informe}\nSesiones: ${report.sesiones.join(", ") || "(ninguna)"}`,
           );
         }
+        return 0;
+      }
+      case "tick": {
+        const done = await tick(home, env, new Date());
+        print(done, done.acciones.join("\n") || "nada que hacer");
+        return 0;
+      }
+      case "learn": {
+        const learned = await learnOne(home, need(first, "el id del run"), env);
+        print(learned, `${learned.id}: ${learned.resultado}`);
         return 0;
       }
       case "project": {

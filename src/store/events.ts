@@ -108,6 +108,14 @@ export const eventSchema = z.discriminatedUnion("tipo", [
   z.strictObject({ tipo: z.literal("abortado"), at }),
   z.strictObject({ tipo: z.literal("pr"), at, url: z.string(), numero: z.int() }),
   z.strictObject({ tipo: z.literal("pr_cerrada"), at, mergeada: z.boolean() }),
+  z.strictObject({
+    tipo: z.literal("lecciones"),
+    at,
+    url: z.string(),
+    numero: z.int(),
+    cantidad: z.int().nonnegative(),
+    auto_merge: z.boolean(),
+  }),
 ]);
 export type RunEvent = z.infer<typeof eventSchema>;
 /** Un evento sin `at`: lo completa el store al escribirlo. */

@@ -560,9 +560,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - Dos ticks simultáneos → el segundo sale sin hacer nada.
   - `learn` sobre un run cuya PR sigue abierta → sale 0 diciendo que no hay merge todavía.
   - `learn` mientras un tick procesa ese run → no escribe la lección dos veces.
-- **Canario:** a comprobar: tratar "cerrada" como "mergeada" pone en rojo el segundo caso.
-- **Criterio de aprobación:** `flowrunner tick` sin nada pendiente termina en menos de un segundo sin llamar al modelo.
-- **Revisión ponytail:** pendiente.
+- **Canario:** tratar una PR cerrada como mergeada puso en rojo `PR cerrada sin merge: cerrado sin ninguna sesión`, que ahora también exige `pr_cerrada` con `mergeada: false`; quitar el límite de una pasada por tick puso en rojo `en un tick, aprender corre una sola vez aunque la PR siga abierta`. Restaurados; 5 de 5 verdes en `test/tick.int.test.ts` y 7 de 7 en el runner.
+- **Criterio de aprobación:** `flowrunner tick` sin nada pendiente termina sin llamar al modelo; con la PR abierta deja el run entregado y vuelve a probar en el próximo tick. Los locks de archivo, `tick.lock` y `aprender.lock` por run, evitan que dos procesos aprendan del mismo run. En el camino aparecieron dos cosas: el runner en modo tick giraba sin fin con la PR abierta, y la salida de `gh pr view` no se validaba; ahora pasa por un schema de Zod.
+- **Revisión ponytail:** a mano; sin hallazgos.
 - **Desbloquea:** T7.2
 
 ### T7.2 · Correcciones de la persona

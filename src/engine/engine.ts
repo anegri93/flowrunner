@@ -246,6 +246,7 @@ export function reduce(state: RunState, event: RunEvent): RunState {
     case "aviso":
     case "unidad":
     case "preparado":
+    case "lecciones":
     case "pr":
       return state;
   }

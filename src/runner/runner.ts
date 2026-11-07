@@ -49,6 +49,8 @@ export async function runUntilStop(
       : [...events, emit({ tipo: "accion_iniciada", fase: action.fase })];
     const outcome = await runPhase(registry, { run, state, action, events: current, emit, deps });
     emit({ tipo: "accion_terminada", fase: action.fase, resultado: outcome });
+    // En un tick, aprender corre una sola vez: con la PR abierta vuelve a probar en el próximo tick.
+    if (opts.tick === true && action.fase === "aprender") return stateOf(readLog(run.dir).events);
     if (outcome.tipo === "falla" && outcome.clase === "infra") {
       await deps.sleep(infraBackoffMs(state.infra + 1));
     }

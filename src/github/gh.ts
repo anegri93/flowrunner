@@ -1,4 +1,5 @@
 // GitHub, siempre desde código y por `gh`. Ningún agente tiene acceso a esto.
+import { z } from "zod";
 import { runProc, tail } from "../proc/proc.ts";
 
 export class GhError extends Error {
@@ -58,4 +59,63 @@ export async function createPr(
   if (created === undefined)
     throw new GhError(["pr", "create"], "la PR no aparece después de crearla");
   return created;
+}
+
+const login = z.object({ login: z.string() });
+/** La salida de `gh pr view`, validada: es un borde del sistema. */
+export const prDetailSchema = z.object({
+  number: z.int(),
+  url: z.string(),
+  state: z.enum(["OPEN", "MERGED", "CLOSED"]),
+  commits: z
+    .array(
+      z.object({
+        oid: z.string(),
+        messageHeadline: z.string().default(""),
+        messageBody: z.string().default(""),
+        authors: z.array(login).default([]),
+      }),
+    )
+    .default([]),
+  comments: z
+    .array(z.object({ author: login, body: z.string(), url: z.string().default("") }))
+    .default([]),
+  reviews: z.array(z.object({ author: login, body: z.string().default("") })).default([]),
+});
+export type PrDetail = z.infer<typeof prDetailSchema>;
+
+export async function prDetail(
+  cwd: string,
+  number: number,
+  env: NodeJS.ProcessEnv,
+): Promise<PrDetail> {
+  const out = await gh(
+    cwd,
+    ["pr", "view", String(number), "--json", "number,url,state,commits,comments,reviews"],
+    env,
+  );
+  const parsed = prDetailSchema.safeParse(JSON.parse(out));
+  if (!parsed.success)
+    throw new GhError(
+      ["pr", "view", String(number)],
+      `respuesta inesperada: ${parsed.error.message}`,
+    );
+  return parsed.data;
+}
+
+export async function enableAutoMerge(
+  cwd: string,
+  number: number,
+  env: NodeJS.ProcessEnv,
+): Promise<void> {
+  await gh(cwd, ["pr", "merge", String(number), "--auto", "--merge"], env);
+}
+
+export async function ghAuthOk(env: NodeJS.ProcessEnv): Promise<boolean> {
+  const result = await runProc("gh", ["auth", "status"], {
+    cwd: process.cwd(),
+    env,
+    timeoutMs: 30_000,
+  });
+  return result.code === 0;
 }

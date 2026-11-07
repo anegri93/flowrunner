@@ -110,6 +110,16 @@ describe("runUntilStop", () => {
     expect(lastSeen).toMatchObject({ tipo: "accion_iniciada", fase: "preparar" });
   });
 
+  // Si regresiona, un tick con la PR todavía abierta queda girando para siempre.
+  test("en un tick, aprender corre una sola vez aunque la PR siga abierta", async () => {
+    const run = newRun();
+    const phases = recordingPhases(run, { aprender: [{ tipo: "espera" }, { tipo: "espera" }] });
+    await runUntilStop(run, phases, deps);
+    const state = await runUntilStop(run, phases, deps, { tick: true });
+    expect(state.status).toBe("entregado");
+    expect(executions(run).filter((f) => f === "aprender")).toEqual(["aprender"]);
+  });
+
   test("aprobar que espera termina el loop sin proceso esperando", async () => {
     const run = newRun();
     const state = await runUntilStop(

@@ -536,10 +536,10 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Estado:** `[ ] Pendiente`
 - **Validación de lint:** `pnpm lint` verde.
 - **Tests:** suites unit e integración verdes.
-- **Test de integración:** un run completo por CLI, desde la feature hasta la PR, con todas las fases reales salvo el modelo: `query` falsa y `gh` falso. Pasa por una aprobación, una vuelta de verificar y una de revisar, y termina `entregado` con la PR y un informe que lista esas vueltas.
-- **Canario:** re-canario sobre 2-3 tests de la fase al azar.
-- **Criterio de aprobación:** smoke real de punta a punta sobre el repo de juguete, con la PR registrada por el `gh` falso contra un remote bare local. La PR real en GitHub se prueba al subir el proyecto.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff acumulado + `/ponytail-debt` + listado de `test-debt:`.
+- **Test de integración:** `test/fase6.int.test.ts`: un run completo por CLI, con todas las fases reales salvo el modelo, que es el SDK simulado, y `gh`, que es el falso. Pasa por la aprobación, una vuelta de verificar porque AC-1 sigue rojo y una de revisar por un bloqueante; termina `entregado` con la rama en el remote, un único `pr create`, ningún `merge`, el informe con las dos vueltas, el lock suelto y el aviso "PR abierta, 2 vueltas".
+- **Canario:** re-canario sobre tres piezas, todas en el test de integración: ignorar los bloqueantes de revisar, no escribir el informe al terminar el proceso y omitir las vueltas del informe pusieron el test en rojo. Restaurados.
+- **Criterio de aprobación:** `smoke/e2e.smoke.ts` verde con el SDK real en todas las fases sobre el repo de juguete: plan, aprobación por CLI, implementar, verificar, revisar y entregar, con la PR registrada por el `gh` falso contra un remote bare local. En el camino apareció que los falsos escribían en el HOME real durante los smoke; ahora usan `FAKE_LOG_DIR`, y los archivos que habían quedado se borraron.
+- **Revisión ponytail:** sobre el diff acumulado: sin exports sin uso. `ponytail:` nuevos: ninguno. `test-debt:` nuevos: ninguno.
 - **Desbloquea:** Fase 7
 
 ---

@@ -39,6 +39,8 @@ test("un plan real del repo de juguete pasa el gate y deja el run esperando apro
     PATH: `${onlyNotices}:${process.env.PATH ?? ""}`,
     FLOWRUNNER_HOME: join(fakeHome.HOME ?? "", ".flowrunner"),
     FLOWRUNNER_AUTH: "login",
+    // Los falsos escriben acá y no en el HOME real de la persona.
+    FAKE_LOG_DIR: tempDir("smoke-logs-"),
   };
   const feature = join(tempDir(), "TOY-1.md");
   writeFileSync(feature, FEATURE);

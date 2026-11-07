@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// gh falso para los tests: guarda las PRs en $HOME/gh-state.json y cada llamada en $HOME/gh.log.
+// gh falso para los tests: guarda las PRs en gh-state.json y cada llamada en gh.log, en
+// $FAKE_LOG_DIR si está definido o en $HOME. Los smoke lo definen: ahí HOME es el de la persona.
 import fs from "node:fs";
 import path from "node:path";
-const home = process.env.HOME || "/tmp";
+const home = process.env.FAKE_LOG_DIR || process.env.HOME || "/tmp";
 const stateFile = path.join(home, "gh-state.json");
 const args = process.argv.slice(2);
 fs.appendFileSync(path.join(home, "gh.log"), `${JSON.stringify(args)}\n`);

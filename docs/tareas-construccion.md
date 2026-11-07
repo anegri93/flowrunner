@@ -150,9 +150,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - `changes` no incrementa los intentos de planificar.
   - El uso acumulado que pasa `run_usd` detiene con el motivo.
   - **Propiedad:** para cada prefijo de los logs de runs completos de fixture, retomar desde el prefijo y seguir con las mismas respuestas produce el mismo estado final que sin cortes.
-- **Canario:** a comprobar: un off-by-one en el tope de vueltas pone en rojo su test; contar los intentos en `changes` pone en rojo el suyo.
-- **Criterio de aprobación:** la tabla de transiciones del engine coincide con la sección 3 de la spec, revisada fila por fila.
-- **Revisión ponytail:** pendiente.
+- **Canario:** `>=` en lugar de `>` en el tope de vueltas puso en rojo `la tercera vuelta de revisar detiene`; sumar intentos en `cambios_pedidos` puso en rojo su test. La propiedad de reanudación primero no detectó un defecto real, que la acción de un run interrumpido fuera preparar, porque solo comparaba el estado final; se endureció para comparar el log completo y ahí se puso roja en los dos guiones. Restaurados; 14 de 14 verdes.
+- **Criterio de aprobación:** la tabla de transiciones de `src/engine/engine.ts` sigue la sección 3 de la spec: entorno e invariante detienen, gate reintenta hasta `MAX_ATTEMPTS` y el mismo motivo dos veces detiene, infra reintenta dos veces, verificar y revisar devuelven a implementar hasta 2 vueltas, aprobar espera sin proceso y `cambios_pedidos` no gasta intentos. Un run detenido por presupuesto a mitad de una fase no revive cuando la fase termina.
+- **Revisión ponytail:** a mano; sin hallazgos. Sin tabla de transiciones genérica: un `switch` sobre el resultado se lee de una vez.
 - **Desbloquea:** T1.3
 
 ### T1.3 · El loop del run: acciones idempotentes

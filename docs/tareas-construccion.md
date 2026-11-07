@@ -78,13 +78,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T0.4
 
 ### T0.4 · Punto abierto 4: graft por worktree
-- **Estado:** `[ ] Pendiente`
-- **Descripción:** medir `graft build` sobre un repo del tamaño de flowindex y comprobar si el directorio `graft/` construido en el worktree de la feature sirve copiado al worktree de una sub-task. Decidir entre construir por worktree o una vez por run y copiar. Resultado en el ADR 0015.
+- **Estado:** `[x] Hecho`
+- **Descripción:** medir `graft build` sobre un repo del tamaño de flowindex y comprobar si el directorio `graft/` construido en el worktree de la feature sirve copiado al worktree de una sub-task. Decidir entre construir por worktree o una vez por run y copiar. Resultado en el ADR 0015: 3,6 s sobre flowindex; el índice va fuera del repo con `--dir` y `DO_NOT_TRACK=1`, porque `graft build` crea `.gitignore`, `.ignore` y una caché de telemetría dentro del repo; uno por run, reconstruido antes de revisar.
 - **Lint:** `pnpm lint`.
 - **Test:** integración `graft.int.test.ts`: construye el índice de un repo de fixture, levanta `graft mcp` por stdio y llama `graft_repo_map`; afirma que la respuesta nombra un archivo real del fixture. Si la decisión es copiar, un segundo caso afirma que el índice copiado responde igual en el otro worktree. Comentario: si regresiona, planificar y revisar trabajan sin el grafo sin enterarse.
-- **Canario:** a comprobar: apuntar `graft mcp` a un directorio sin índice pone el test en rojo.
-- **Criterio de aprobación:** ADR 0015 mergeado con los tiempos medidos; test verde en `pnpm verify`.
-- **Revisión ponytail:** pendiente.
+- **Canario:** quitar `--dir` de `buildIndex` puso en rojo `construir el índice no deja ningún archivo en el worktree`; quitar `DO_NOT_TRACK` también. Restaurado; 3 de 3 verdes.
+- **Criterio de aprobación:** ADR 0015 con los tiempos medidos y el efecto lateral descubierto; test verde en `pnpm verify`.
+- **Revisión ponytail:** a mano; sin hallazgos. El cliente MCP del test es un helper de prueba de 40 líneas sobre stdio; en producción el MCP lo maneja el SDK, así que no se sumó una dependencia.
 - **Desbloquea:** T0.5
 
 ### T0.5 · Config global, config del repo y formato de feature

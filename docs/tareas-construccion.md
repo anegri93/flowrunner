@@ -474,6 +474,17 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano; 1 atajo deliberado: no se intenta atribuir un verify rojo a una sub-task.
 - **Desbloquea:** Gate F5
 
+### T5.4b · Verificar reinstala si la feature cambió dependencias
+- **Estado:** `[x] Hecho`
+- **Regresión de:** T5.4
+- **Descripción:** en PIZ-2, ST-1 sumó `qrcode` y `jsqr` y su test pasó en su worktree, pero verificar corrió en la integración con los `node_modules` que preparar instaló desde la base. El criterio falló con «Cannot find package 'jsqr'», verificar le devolvió el trabajo a ST-1, que no tenía nada que cambiar, y el run se detuvo tras tres intentos y USD 1.50. Ahora verificar corre el setup si la feature cambió algún lockfile o manifiesto respecto de la base; si reinstalar falla, se detiene como entorno con el motivo, sin vueltas.
+- **Lint:** `pnpm lint`.
+- **Test:** `test/dependencias.int.test.ts`: una sub-task que suma una dependencia y edita el manifiesto llega a entregado sin vueltas; si reinstalar falla, el run se detiene con «la feature cambió deps.txt y el setup … salió 1 al reinstalar» y sin vueltas.
+- **Canario:** el primer test reprodujo la falla de PIZ-2 antes del arreglo, con el mismo motivo; sin reinstalar, los dos tests se ponen rojos.
+- **Criterio de aprobación:** retomado desde verificar con este arreglo, PIZ-2 reinstala, pasa los criterios y sigue a revisar.
+- **Revisión ponytail:** a mano. Un `git diff --name-only` contra la base y el mismo setup de preparar.
+- **Desbloquea:** Gate final
+
 ### Gate Fase 5
 - **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.

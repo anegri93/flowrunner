@@ -18,7 +18,8 @@ pnpm install
 pnpm lint              # eslint, prettier y tsc
 pnpm test              # unitarios, sin red ni suscripción
 pnpm test:integration  # git real, CLI como proceso hijo, query y gh falsos
-pnpm smoke             # SDK real con la suscripción; nunca en CI
+pnpm smoke             # SDK real con la suscripción; aparte de verify
+pnpm verify            # lint, test e integración: la verificación local completa
 ```
 
 ## Uso personal

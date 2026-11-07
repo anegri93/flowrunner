@@ -7,7 +7,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 
 - Cada tarea tiene: **Título**, **Descripción**, **Estado**, **Lint**, **Test**, **Canario**, **Criterio de aprobación** y **Revisión ponytail**.
 - Una tarea pasa a `Hecho` solo cuando su lint, su test con el **canario** comprobado, su criterio y su revisión ponytail están verdes.
-- **Test** = automatizado, corre en CI. **Criterio de aprobación** = condición observable, puede ser manual. Si ambos dicen lo mismo, uno es humo.
+- **Test** = automatizado, corre en `pnpm verify`. **Criterio de aprobación** = condición observable, puede ser manual. Si ambos dicen lo mismo, uno es humo.
 - Los tests van sobre **salidas observables**: valor devuelto, estado persistido, efecto real; no sobre "se llamó al mock". Se mockea solo el límite de confianza; nunca la unidad bajo prueba ni la lógica propia.
 - **Canario** = se rompió el código a propósito y se confirmó que el test se pone **rojo**. En las tareas pendientes el campo dice la mutación prevista; al cerrar la tarea se reemplaza por lo que pasó.
 - Si el borde es conocido antes de escribir el código, **el test va primero**.
@@ -17,11 +17,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - No se arranca una tarea hasta que su predecesora, la que la **desbloquea**, está en `Hecho`.
 - El **gate de fase** aporta lo que ninguna tarea puede: un **test de integración** del ensamblado, un **re-canario** sobre 2-3 tests de la fase al azar y la revisión ponytail acumulada.
 - Bug de una fase anterior descubierto después → tarea insertada `TX.Yb` con **Regresión de:**.
-- Cada tarea se hace en su rama `<tipo>/<slug>` y se integra con merge commit vía PR. El `.md` se actualiza en la misma PR de la tarea.
+- Cada tarea es un commit local en `main`: sin push, sin PRs y sin CI en GitHub hasta el cierre del proyecto, cuando se sube todo de una vez. El `.md` se actualiza en el mismo commit de la tarea. Desde 2026-11-07, a pedido de la persona.
 
 **Estados:** `[ ] Pendiente` · `[~] En progreso` · `[x] Hecho` · `[!] Bloqueado`
 
 **Decisiones de partida:** las 12 decisiones de la spec. Se registran como ADR en `docs/adr/` en T0.1, y cada spike de la Fase 0 agrega o completa el ADR de su punto abierto.
+
+**Verificación (global):** `pnpm verify` = `pnpm lint && pnpm test && pnpm test:integration`, en local. Es lo que antes era la CI; la CI en GitHub se arma al cerrar el proyecto.
 
 **Convención de lint (global):** `pnpm lint` = `eslint .` con `typescript-eslint` en modo `strict-type-checked`, más `prettier --check .`, más `tsc --noEmit` con `strict`, `noUncheckedIndexedAccess` y `exactOptionalPropertyTypes`. Sin `any` salvo justificación escrita en el código. Sin warnings nuevos en archivos tocados.
 
@@ -33,7 +35,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 
 **Se usa lo real:** git, con repos creados en un tmpdir y un remote bare local; el filesystem; `events.jsonl`; la máquina de estados; los parsers, gates y tripwires.
 
-**Convención de integración (global):** `pnpm test:integration` = `vitest run --project integration`. Por test levanta: repos git reales en tmpdir con remote bare, un `.flowrunner/` de fixture, `test/bin/` antepuesto en el `PATH`, el `query` falso inyectado, y el CLI real corriendo como proceso hijo con `HOME` apuntando a un tmpdir. Corre en CI. **Aparte**, `pnpm smoke` = `vitest run --project smoke`: usa el SDK real con el token de la suscripción, Haiku 5.5 con effort low, sobre el repo de juguete `test/toy-repo`. No corre en CI, gasta suscripción y solo aparece en las tareas y gates que lo piden.
+**Convención de integración (global):** `pnpm test:integration` = `vitest run --project integration`. Por test levanta: repos git reales en tmpdir con remote bare, un `.flowrunner/` de fixture, `test/bin/` antepuesto en el `PATH`, el `query` falso inyectado, y el CLI real corriendo como proceso hijo con `HOME` apuntando a un tmpdir. Corre en `pnpm verify`. **Aparte**, `pnpm smoke` = `vitest run --project smoke`: usa el SDK real con el token de la suscripción, Haiku 5.5 con effort low, sobre el repo de juguete `test/toy-repo`. No corre en `pnpm verify`, gasta suscripción y solo aparece en las tareas y gates que lo piden.
 
 ---
 
@@ -42,7 +44,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 > Objetivo: repo con toolchain, CI y decisiones escritas; los cinco puntos abiertos de la spec resueltos con evidencia; streams reales grabados como fixtures; config y feature validadas.
 
 ### T0.1 · Esqueleto del repo, CI y ADRs
-- **Estado:** `[x] Hecho` — PR #1
+- **Estado:** `[x] Hecho` — PR #1, la única PR: desde T0.2 todo es commit local
 - **Descripción:** crear el repo privado `anegri93/flowrunner` en GitHub, configurado solo con merge commit y borrado de rama al mergear. `package.json` con pnpm 10, Node 24, ESM; `tsconfig.json` estricto; eslint, prettier y vitest con los proyectos `unit`, `integration` y `smoke`. Layout `src/<módulo>/` según la sección 1 de la spec; cada módulo nace con la primera tarea que lo usa. CI en GitHub Actions: lint, typecheck, test e integración en cada PR, en macOS y Linux, con `graft` instalado. ADRs 0001-0012 con las decisiones de la spec. README corto.
 - **Lint:** `pnpm lint` verde sobre el esqueleto; `actionlint` sobre el workflow.
 - **Test:** N/A — no hay comportamiento propio todavía; verificación: un test deliberadamente roto en la primera PR pone la CI en rojo en las dos plataformas y se quita antes del merge.
@@ -81,7 +83,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Lint:** `pnpm lint`.
 - **Test:** integración `graft.int.test.ts`: construye el índice de un repo de fixture, levanta `graft mcp` por stdio y llama `graft_repo_map`; afirma que la respuesta nombra un archivo real del fixture. Si la decisión es copiar, un segundo caso afirma que el índice copiado responde igual en el otro worktree. Comentario: si regresiona, planificar y revisar trabajan sin el grafo sin enterarse.
 - **Canario:** a comprobar: apuntar `graft mcp` a un directorio sin índice pone el test en rojo.
-- **Criterio de aprobación:** ADR 0015 mergeado con los tiempos medidos; test verde en CI.
+- **Criterio de aprobación:** ADR 0015 mergeado con los tiempos medidos; test verde en `pnpm verify`.
 - **Revisión ponytail:** pendiente.
 - **Desbloquea:** T0.5
 
@@ -105,7 +107,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 ### Gate Fase 0
 - **Estado:** `[ ] Pendiente`
 - **Validación de lint:** `pnpm lint` verde en todo el repo.
-- **Tests:** `pnpm test` y `pnpm test:integration` verdes en CI; `pnpm smoke` verde en local.
+- **Tests:** `pnpm test` y `pnpm test:integration` verdes con `pnpm verify`; `pnpm smoke` verde en local.
 - **Test de integración:** el CLI real, como proceso hijo, valida una feature de fixture contra la config de un repo de fixture: verde con datos válidos y salida 1 con el motivo cuando el repo no tiene `.flowrunner/config.yaml`.
 - **Canario:** re-canario sobre 2-3 tests de la fase al azar.
 - **Criterio de aprobación:** los ADR 0013-0015 responden los puntos abiertos 1-4 con evidencia, y ninguno contradice la spec sin una tarea que la ajuste.
@@ -514,7 +516,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Tests:** suites unit e integración verdes.
 - **Test de integración:** un run completo por CLI, desde la feature hasta la PR, con todas las fases reales salvo el modelo: `query` falsa y `gh` falso. Pasa por una aprobación, una vuelta de verificar y una de revisar, y termina `entregado` con la PR y un informe que lista esas vueltas.
 - **Canario:** re-canario sobre 2-3 tests de la fase al azar.
-- **Criterio de aprobación:** smoke real de punta a punta sobre el repo de juguete, con una PR abierta en un repo de prueba de GitHub.
+- **Criterio de aprobación:** smoke real de punta a punta sobre el repo de juguete, con la PR registrada por el `gh` falso contra un remote bare local. La PR real en GitHub se prueba al subir el proyecto.
 - **Revisión ponytail:** `/ponytail-review` sobre el diff acumulado + `/ponytail-debt` + listado de `test-debt:`.
 - **Desbloquea:** Fase 7
 
@@ -566,7 +568,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - Un archivo que pasa el tope → consolidación y PR sin auto-merge.
   - Una lección sin origen → falla de gate.
 - **Canario:** a comprobar: saltear el chequeo del diff pone en rojo el segundo caso.
-- **Criterio de aprobación:** en un repo de prueba de GitHub, la PR de lecciones se mergea sola cuando pasan sus checks.
+- **Criterio de aprobación:** el `gh` falso registra el `pr create` y el `pr merge --auto --merge` de la PR de lecciones con los argumentos esperados. El auto-merge real en GitHub se prueba al subir el proyecto.
 - **Revisión ponytail:** pendiente.
 - **Desbloquea:** T7.4
 
@@ -586,7 +588,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Tests:** suites unit e integración verdes.
 - **Test de integración:** sobre un run `entregado` de fixture: el `gh` falso pasa la PR a mergeada con un commit de la persona y un comentario de otro usuario; `flowrunner tick` produce una PR de lecciones que cita solo el commit de la persona y tiene auto-merge; el run termina `cerrado`.
 - **Canario:** re-canario sobre 2-3 tests de la fase al azar.
-- **Criterio de aprobación:** el ciclo completo en un repo de prueba de GitHub: mergear a mano la PR de una feature con una corrección propia y ver llegar la lección a la base.
+- **Criterio de aprobación:** el ciclo completo contra un remote bare local con el `gh` falso: una PR mergeada con una corrección propia produce la PR de lecciones con su origen. El ciclo en GitHub real se prueba al subir el proyecto.
 - **Revisión ponytail:** `/ponytail-review` sobre el diff acumulado + `/ponytail-debt` + listado de `test-debt:`.
 - **Desbloquea:** Fase 8
 
@@ -638,7 +640,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 ### Gate final
 - **Estado:** `[ ] Pendiente`
 - **Validación de lint:** todo el repo verde.
-- **Tests:** suite completa verde en CI; `pnpm smoke` verde en local.
+- **Tests:** suite completa verde en `pnpm verify`; `pnpm smoke` verde en local.
 - **Test de integración:** el recorrido completo por CLI: feature, preparar, planificar, aprobar, implementar en paralelo, verificar, revisar, entregar y aprender, con cortes y reanudaciones en el medio, sobre repos reales en tmpdir con `query` y `gh` falsos.
 - **Canario:** se rompe el invariante central, que el modelo no pueda escribir fuera del alcance de su sub-task, desactivando el hook y el doble control: la suite se pone roja.
 - **Criterio de aprobación:** una feature real en un repo real de la persona, operada entera desde una sesión de Claude Code, llega a una PR mergeable sin intervención entre la aprobación del plan y el informe, y `flowrunner stats` muestra menos tiempo de espera que los runs de flowindex.

@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
-    "smoke": "vitest run --project smoke"
+    "smoke": "vitest run --project smoke",
+    "verify": "pnpm lint && pnpm test && pnpm test:integration"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",

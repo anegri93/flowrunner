@@ -13,3 +13,4 @@ por `/REPO` y el home por `/HOME`.
 | `schema-agotado.jsonl` | **Sintético:** `salida-estructurada.jsonl` con el `result` cambiado a `error_max_structured_output_retries`, forma tomada de los tipos del SDK. No se logró provocar el agotamiento real con un schema razonable. |
 
 Todos traen al menos un `rate_limit_event` real con `rateLimitType: "five_hour"`.
+| `sin-sesion.jsonl` | Real: la sesión arrancó sin credencial válida; el CLI responde `authentication_failed` y "Not logged in". Grabado por el smoke de la Fase 4. |

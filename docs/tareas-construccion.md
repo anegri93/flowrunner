@@ -322,6 +322,17 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano; sin hallazgos. El doble control reusa las reglas del hook; no tiene reglas propias.
 - **Desbloquea:** Gate F3
 
+### T3.1b · Regresión: una credencial rechazada se reintentaba como infraestructura
+- **Estado:** `[x] Hecho`
+- **Regresión de:** T3.1 — el smoke real de la Fase 4 mostró que una sesión sin credencial válida termina con `authentication_failed` y "Not logged in", y `runSession` la clasificaba como infraestructura: tres reintentos inútiles.
+- **Descripción:** `runSession` detecta `authentication_failed` y devuelve falla de entorno con el motivo. Se suma `FLOWRUNNER_HOME` para que un run use un home de flowrunner propio sin perder el HOME real, donde vive la sesión de Claude Code.
+- **Lint:** `pnpm lint`.
+- **Test:** `una sesión sin credencial válida es falla de entorno, no de infraestructura`, sobre `test/fixtures/streams/sin-sesion.jsonl`, el stream real del fallo.
+- **Canario:** el test se escribió después del arreglo; anular la detección de `authentication_failed` lo puso en rojo. Restaurado.
+- **Criterio de aprobación:** el mismo smoke ahora se detiene en el primer intento con un motivo de entorno, y con la credencial correcta pasa.
+- **Revisión ponytail:** a mano; sin hallazgos.
+- **Desbloquea:** Gate F3
+
 ### Gate Fase 3
 - **Estado:** `[ ] Pendiente`
 - **Validación de lint:** `pnpm lint` verde.
@@ -388,10 +399,10 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Estado:** `[ ] Pendiente`
 - **Validación de lint:** `pnpm lint` verde.
 - **Tests:** suites unit e integración verdes.
-- **Test de integración:** un run por CLI con preparar y planificar reales, la `query` falsa y el resto falso: llega a la espera sin proceso vivo, `changes` lo devuelve a planificar, el segundo plan pasa, `approve` lo lleva a `entregado`.
-- **Canario:** re-canario sobre 2-3 tests de la fase al azar.
-- **Criterio de aprobación:** smoke real de punta a punta hasta la espera sobre el repo de juguete.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff acumulado + `/ponytail-debt` + listado de `test-debt:`.
+- **Test de integración:** `test/fase4.int.test.ts`: con el CLI real, preparar, planificar y aprobar reales y el SDK simulado, el run llega a la espera sin proceso vivo, `changes` lo devuelve a planificar con el motivo en el prompt, el segundo plan pasa, `flowrunner plan` muestra el plan corregido y `approve` lo lleva a `entregado` con las fases siguientes.
+- **Canario:** re-canario sobre tres piezas, todas en el test de integración: que `cambios_pedidos` vaya a implementar, que planificar no reescriba los artefactos de un segundo plan y que aprobar no espere pusieron el test en rojo. Restaurados.
+- **Criterio de aprobación:** `smoke/plan.smoke.ts` verde con el SDK real sobre el repo de juguete: Haiku escribió el test de AC-1, el plan pasó el gate, quedaron seis decisiones en el log y el run espera la aprobación; costo USD 0,006. En el camino apareció la regresión T3.1b.
+- **Revisión ponytail:** sobre el diff acumulado: sin exports sin uso; las constantes del plan de los tests se movieron a `test/helpers/plan-fixtures.ts` para no importar de un archivo de test. `ponytail:` nuevos: ninguno. `test-debt:` nuevos: ninguno.
 - **Desbloquea:** Fase 5
 
 ---

@@ -147,6 +147,14 @@ describe("runSession", () => {
     expect(denied?.behavior).toBe("deny");
   });
 
+  // Si regresiona, flowrunner reintenta tres veces con una credencial que Claude ya rechazó.
+  test("una sesión sin credencial válida es falla de entorno, no de infraestructura", async () => {
+    const { rt } = runtime(fakeQuery(stream("sin-sesion")).query);
+    const result = await runSession(spec(), rt);
+    expect(result).toMatchObject({ tipo: "falla", clase: "entorno" });
+    expect(result.tipo === "falla" && result.motivo).toMatch(/rechazó la credencial/);
+  });
+
   test("sin token en el Keychain es una falla de entorno que explica cómo generarlo", async () => {
     const fake = fakeQuery(stream("salida-estructurada"));
     const { rt } = runtime(fake.query, { PATH: `${TEST_BIN}:${process.env.PATH ?? ""}` });

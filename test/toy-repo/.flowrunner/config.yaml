@@ -1,0 +1,13 @@
+base_branch: main
+setup: "true"
+verify: .flowrunner/verify.sh
+tests_globs: ["test/**"]
+max_parallel: 2
+budget:
+  run_usd: 5
+models:
+  planificar: { model: claude-haiku-5-5, effort: low }
+  explorar: { model: claude-haiku-5-5, effort: low }
+  implementar: { model: claude-haiku-5-5, effort: low }
+  revisar: { model: claude-haiku-5-5, effort: low }
+  aprender: { model: claude-haiku-5-5, effort: low }

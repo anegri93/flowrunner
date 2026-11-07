@@ -134,6 +134,9 @@ En la máquina:
     <sub-task>/                    un worktree por sub-task
 ```
 
+`FLOWRUNNER_HOME` reemplaza `~/.flowrunner` cuando está definido; los tests lo usan para tener un home
+propio sin perder el HOME real, donde vive la sesión de Claude Code.
+
 La feature vive fuera del repo para no ensuciar su historial. El run guarda su propia copia en
 `runs/<id>/feature.md`: editar el original no cambia un run en curso.
 

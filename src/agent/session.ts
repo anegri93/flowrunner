@@ -91,6 +91,9 @@ export function buildOptions<T>(
   };
 }
 
+const AUTH_FAILED =
+  "Claude rechazó la credencial de la sesión: revisá el token del Keychain con `flowrunner doctor`";
+
 export async function runSession<T>(
   spec: SessionSpec<T>,
   rt: SessionRuntime,
@@ -112,6 +115,7 @@ export async function runSession<T>(
   }, spec.timeoutMs);
   let result: Extract<SDKMessage, { type: "result" }> | undefined;
   let limitUntil: number | undefined;
+  let authFailed = false;
   const started = Date.now();
   try {
     for await (const message of rt.deps.query({ prompt: spec.prompt, options })) {
@@ -120,9 +124,11 @@ export async function runSession<T>(
         limitUntil = (message.rate_limit_info.resetsAt ?? Date.now() / 1000 + 3600) * 1000;
       }
       if (message.type === "result") result = message;
+      if ((message as { error?: unknown }).error === "authentication_failed") authFailed = true;
     }
   } catch (error) {
     if (limitUntil !== undefined) return { tipo: "limite", hasta: limitUntil };
+    if (authFailed) return { tipo: "falla", clase: "entorno", motivo: AUTH_FAILED };
     const motivo = abort.signal.aborted
       ? `la sesión ${spec.nombre} pasó su timeout de ${Math.round(spec.timeoutMs / 60_000)} min`
       : `la sesión ${spec.nombre} falló: ${error instanceof Error ? error.message : String(error)}`;
@@ -131,6 +137,7 @@ export async function runSession<T>(
     clearTimeout(timer);
   }
   if (limitUntil !== undefined) return { tipo: "limite", hasta: limitUntil };
+  if (authFailed) return { tipo: "falla", clase: "entorno", motivo: AUTH_FAILED };
   if (result === undefined) {
     return {
       tipo: "falla",

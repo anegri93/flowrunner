@@ -12,9 +12,13 @@ import {
   type RepoConfig,
 } from "./schemas.ts";
 
-/** `~/.flowrunner`, respetando el HOME del entorno para que los tests usen uno propio. */
+/** `~/.flowrunner`, o `FLOWRUNNER_HOME` si está definido: así un test usa un home propio sin perder
+ * la sesión de Claude Code de la persona, que vive en su HOME real. */
 export function flowrunnerHome(env: NodeJS.ProcessEnv = process.env): string {
-  return join(env.HOME ?? homedir(), ".flowrunner");
+  const override = env.FLOWRUNNER_HOME;
+  return override !== undefined && override !== ""
+    ? override
+    : join(env.HOME ?? homedir(), ".flowrunner");
 }
 
 function readYaml(file: string): unknown {

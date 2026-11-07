@@ -53,7 +53,7 @@ export function launch(w: World): string {
   return (JSON.parse(result.stdout) as { id: string }).id;
 }
 
-export function runDir(w: World, id: string): string {
+export function runDir(w: Pick<World, "home">, id: string): string {
   return join(w.home, "runs", id);
 }
 
@@ -61,7 +61,7 @@ export function stateNow(w: World, id: string): RunState {
   return stateOf(readLog(runDir(w, id)).events);
 }
 
-export function executions(w: World, id: string): string[] {
+export function executions(w: Pick<World, "home">, id: string): string[] {
   try {
     return readFileSync(join(runDir(w, id), "ejecuciones.txt"), "utf8")
       .trim()

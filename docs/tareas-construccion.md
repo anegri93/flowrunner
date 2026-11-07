@@ -661,10 +661,12 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 # Cierre del proyecto
 
 ### Gate final
-- **Estado:** `[ ] Pendiente`
-- **Validación de lint:** todo el repo verde.
-- **Tests:** suite completa verde en `pnpm verify`; `pnpm smoke` verde en local.
-- **Test de integración:** el recorrido completo por CLI: feature, preparar, planificar, aprobar, implementar en paralelo, verificar, revisar, entregar y aprender, con cortes y reanudaciones en el medio, sobre repos reales en tmpdir con `query` y `gh` falsos.
-- **Canario:** se rompe el invariante central, que el modelo no pueda escribir fuera del alcance de su sub-task, desactivando el hook y el doble control: la suite se pone roja.
-- **Criterio de aprobación:** una feature real en un repo real de la persona, operada entera desde una sesión de Claude Code, llega a una PR mergeable sin intervención entre la aprobación del plan y el informe, y `flowrunner stats` muestra menos tiempo de espera que los runs de flowindex.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff completo del proyecto + `/ponytail-debt` con el ledger final de atajos deliberados + el ledger de `test-debt:` sin resolver.
+- **Estado:** `[!] Bloqueado` — todo lo automatizable está verde; falta la aceptación de la persona
+- **Motivo del bloqueo:** el criterio de aprobación pide una feature real en un repo real de la persona, operada desde su sesión de Claude Code, y comparar el tiempo de espera con flowindex. Eso necesita tres cosas que no se hacen sin ella: el token de `claude setup-token` en su Keychain, las reglas *ask* en su `~/.claude/settings.json` real y un repo suyo con `.flowrunner/`.
+- **Acción:** la persona, en este orden: `flowrunner doctor`; `claude setup-token` y guardarlo con `security add-generic-password -s flowrunner -a claude-oauth-token -w`; `flowrunner skill install --confirmar`; `flowrunner project add <repo> --github-user anegri93` y `flowrunner brain init <repo>`; completar el cerebro y commitearlo; `flowrunner launchd install`; y desde una sesión de Claude Code, escribir y lanzar una feature real.
+- **Validación de lint:** `pnpm lint` verde en todo el repo: eslint `strict-type-checked`, prettier y `tsc` estricto.
+- **Tests:** `pnpm verify` verde: 158 unitarios en 25 archivos y 46 de integración en 18. `pnpm smoke` verde con el SDK real: 8 en 6 archivos, incluidos el plan real, implementar en paralelo real y el recorrido de punta a punta real sobre el repo de juguete.
+- **Test de integración:** `test/final.int.test.ts`: el recorrido entero por CLI sobre repos reales en tmpdir, con el SDK simulado y el `gh` falso: feature check, preparar, planificar con un `kill -9` y su `resume`, aprobar, implementar dos sub-tasks en paralelo con otro `kill -9` y su `resume`, verificar, revisar y entregar; después la persona corrige y mergea la PR, y `tick` escribe la lección, abre su PR con auto-merge y cierra el run. `report` y `stats` lo reflejan.
+- **Canario:** se rompió el invariante central apagando a la vez el hook y el doble control, para que el modelo pudiera escribir fuera del alcance: la suite se puso roja, con 11 tests unitarios y 1 de integración que lo detectan. Restaurado.
+- **Criterio de aprobación:** pendiente de la persona, según el motivo del bloqueo. Lo más cercano ya verificado: `smoke/e2e.smoke.ts` lleva una feature real del repo de juguete de punta a punta con el SDK real, con la aprobación por CLI en el medio.
+- **Revisión ponytail:** sobre el diff completo, revisado fase por fase en cada gate. Ledger de `ponytail:`: 2 atajos deliberados, `src/phases/implementar.ts`, donde los worktrees de sub-tasks fallidas quedan para mirarlos y `abort` los borra, y `src/phases/verificar.ts`, donde un verify rojo con criterios verdes vuelve con todas las sub-tasks. Ledger de `test-debt:`: los comentarios de línea de una PR no se leen al aprender, anotado en T7.2. Regresiones encontradas en el camino: T1.3b y T3.1b.

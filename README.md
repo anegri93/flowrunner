@@ -22,6 +22,23 @@ pnpm smoke             # SDK real con la suscripción; aparte de verify
 pnpm verify            # lint, test e integración: la verificación local completa
 ```
 
+## Puesta en marcha
+
+```bash
+pnpm install
+ln -s "$PWD/bin/flowrunner.js" ~/.local/bin/flowrunner   # o cualquier carpeta de tu PATH
+flowrunner doctor
+claude setup-token
+security add-generic-password -s flowrunner -a claude-oauth-token -w   # pegá el token
+flowrunner skill install --confirmar
+flowrunner project add <ruta-del-repo> --github-user <tu-usuario>
+flowrunner brain init <ruta-del-repo>      # completá .flowrunner/ y commitealo
+flowrunner launchd install
+```
+
+Después, abrí una sesión de Claude Code y pedile que escriba y lance una feature: la skill
+`flowrunner` hace el resto con el CLI.
+
 ## Uso personal
 
 flowrunner se autentica con la suscripción de Claude mediante `claude setup-token`. La

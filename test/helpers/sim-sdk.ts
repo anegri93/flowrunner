@@ -22,6 +22,8 @@ export interface SimScript {
   readonly subtype?: string;
   /** Cuánto tarda la sesión antes de terminar, para probar sesiones simultáneas. */
   readonly delayMs?: number;
+  /** Si está, el guion solo sirve para un prompt que contiene este texto. */
+  readonly match?: string;
 }
 
 export interface SimRecord {

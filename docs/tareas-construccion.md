@@ -351,9 +351,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - Las mismas, con dependencia entre ellas → válidas.
   - Dos sub-tasks paralelas que declaran dependencias → rechazadas por el lockfile.
   - Un ciclo A→B→A → rechazado.
-- **Canario:** a comprobar: comparar rutas por igualdad y no por prefijo pone en rojo el caso de `src/a/b.ts`.
-- **Criterio de aprobación:** cada rechazo nombra la sub-task, el criterio o la ruta, en un texto que sirve como motivo de reintento.
-- **Revisión ponytail:** pendiente.
+- **Canario:** comparar rutas solo por igualdad, sin prefijo, puso en rojo `dos sub-tasks paralelas con src/a/ y src/a/b.ts`; no reconocer los comandos no ejecutables puso en rojo `un comando que sale 127`. Restaurados; 10 de 10 verdes.
+- **Criterio de aprobación:** cada rechazo nombra la sub-task, el criterio o la ruta en un texto que sirve como motivo de reintento, por ejemplo `ST-1 y ST-2 pueden correr a la vez y sus alcances se pisan (src/a y src/a/b.ts): hacé que una dependa de la otra o separá los archivos`. Las dependencias transitivas habilitan alcances superpuestos; un glob en el alcance se rechaza porque el alcance son rutas concretas.
+- **Revisión ponytail:** a mano; sin hallazgos. El gate está partido en la forma, que es pura, y los comandos, que corren procesos, para testear la primera sin disco.
 - **Desbloquea:** T4.2
 
 ### T4.2 · Fase planificar

@@ -150,6 +150,13 @@ export function writeReport(run: RunPaths, events: readonly RunEvent[]): string 
   return text;
 }
 
+/** Lo que el run propone sumar al cerebro, o por qué no propone nada. */
+function proposed(run: RunPaths): string[] {
+  const file = join(run.dir, "lecciones-propuestas.md");
+  if (!existsSync(file)) return [];
+  return ["", "## Lo que aprendió este run", "", plain(readFileSync(file, "utf8").trim())];
+}
+
 /** El cuerpo de la PR: el plan, los criterios y las decisiones, sin el detalle de costos. */
 export function prBody(events: readonly RunEvent[], run: RunPaths): string {
   const planFile = join(run.dir, "plan.md");
@@ -169,6 +176,7 @@ export function prBody(events: readonly RunEvent[], run: RunPaths): string {
     "",
     plain(plan),
     ...decisions(events),
+    ...proposed(run),
     "",
     "---",
     "Abierta por flowrunner. El informe completo del run está en `flowrunner report " +

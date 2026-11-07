@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { git, repoWith } from "../../test/helpers/git.ts";
@@ -91,6 +91,26 @@ describe("corrections", () => {
         { oid: h.person, body: "", login: "anegri93" },
         { oid: h.ours, body: "Flowrunner-Run: SHOP-214-x", login: "bot" },
         { oid: h.other, body: "", login: "colega" },
+      ]),
+      "anegri93",
+      h.repo,
+      process.env,
+    );
+    expect(found).toEqual([]);
+  });
+
+  // Si regresiona, borrar una lección propuesta en la PR se vuelve una lección sobre las lecciones.
+  test("un commit de la persona que solo toca .flowrunner/ no es una corrección del código", async () => {
+    const h = repoWithHistory();
+    mkdirSync(join(h.repo, ".flowrunner"), { recursive: true });
+    writeFileSync(join(h.repo, ".flowrunner/lecciones.md"), "# Lecciones\n");
+    git(h.repo, "add", "-A");
+    git(h.repo, "commit", "-qm", "docs: saco una lección propuesta");
+    const brainOnly = git(h.repo, "rev-parse", "HEAD");
+    const found = await corrections(
+      pr([
+        { oid: h.ours, body: "Flowrunner-Run: SHOP-214-x", login: "bot" },
+        { oid: brainOnly, body: "", login: "anegri93" },
       ]),
       "anegri93",
       h.repo,

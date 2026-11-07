@@ -26,6 +26,7 @@ interface FakePr {
   reviews: { author: { login: string }; body: string }[];
   autoMerge: boolean;
   title: string;
+  body: string;
   url: string;
 }
 

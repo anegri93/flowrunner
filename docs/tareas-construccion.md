@@ -615,6 +615,16 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** sin hallazgos; la regla quedó en una función de una línea.
 - **Desbloquea:** Gate final
 
+### T7.5 · Lecciones propuestas a partir de la fricción del run
+- **Estado:** `[x] Hecho`
+- **Descripción:** el cerebro solo aprendía de las correcciones de la persona después del merge, así que un run que se corrigió solo no dejaba nada: PIZ-1 tuvo una vuelta de revisar por la grilla de `.pedir` y el cerebro quedó igual. Ahora entregar junta la fricción del run, es decir las vueltas de verificar y revisar y los cambios pedidos al plan, y una sesión de solo lectura la convierte en hasta 3 lecciones generales, o ninguna. Van en un commit aparte de la PR de entrega, con una sección en su descripción que dice cómo rechazarlas. Un origen que no pasó en el run las descarta; si la sesión falla, la entrega sigue con un aviso. Aprender ya no toma como corrección un commit de la persona que solo toca `.flowrunner/`.
+- **Lint:** `pnpm lint`.
+- **Test:** `src/phases/proponer.test.ts`: la fricción en orden con su origen, sin fallas de gate; un run sin fricción; el formato y la numeración de las lecciones. `test/proponer.int.test.ts`: una vuelta de revisar deja su lección en un commit aparte con el trailer del run y la sección en la PR; un origen inventado no entra y la PR sale con un aviso; sin fricción no hay sesión ni commit y la PR lo dice. `src/phases/aprender.test.ts`: un commit que solo toca `.flowrunner/` no es corrección.
+- **Canario:** aceptar orígenes inventados puso en rojo su test; ignorar los cambios al plan puso en rojo el de fricción; el de `.flowrunner/` falló antes del arreglo.
+- **Criterio de aprobación:** con el modelo real y la fricción verdadera de PIZ-1, la sesión propone una lección sobre la grilla `auto minmax(0, 1fr) auto` de `.pedir` y cómo sumarle un hijo sin desarmarla, por USD 0.018.
+- **Revisión ponytail:** a mano. Reusa el esquema de lecciones, el hook de solo lectura y la numeración de aprender; un solo módulo nuevo.
+- **Desbloquea:** Gate final
+
 ### Gate Fase 7
 - **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.

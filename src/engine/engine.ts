@@ -252,6 +252,7 @@ export function reduce(state: RunState, event: RunEvent): RunState {
     case "unidad":
     case "preparado":
     case "lecciones":
+    case "lecciones_propuestas":
     case "pr":
       return state;
   }

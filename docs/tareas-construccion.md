@@ -133,9 +133,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - Un lock con un pid muerto y su run en curso → se toma.
   - Un lock con un pid muerto y su run en `esperando_aprobacion` → no se toma.
   Comentario: si regresiona, un segundo run sobre el mismo repo arranca mientras el primero espera tu aprobación.
-- **Canario:** a comprobar: tratar la corrupción del medio como la del final pone en rojo su test; decidir el lock solo por el pid pone en rojo el caso del run en espera.
-- **Criterio de aprobación:** un log escrito, cortado con `kill -9` a mitad de un append, se relee sin perder eventos completos.
-- **Revisión ponytail:** pendiente.
+- **Canario:** tratar toda línea corrupta como la última puso en rojo `una línea corrupta en el medio es un error que nombra la línea`; quitar la regla del run en espera puso en rojo `un lock con un pid muerto y su run esperando aprobación no se toma`. Restaurados; 28 de 28 verdes.
+- **Criterio de aprobación:** una última línea truncada se descarta y los eventos completos se conservan; el corte real con `kill -9` lo cubre el gate de la Fase 1. El lock se crea con `wx` para que dos runs simultáneos no lo tomen los dos.
+- **Revisión ponytail:** a mano; sin hallazgos. Sin `seq` en los eventos: el orden de las líneas ya es el orden, y dos escritores, el run y un `abort`, no pueden romperlo.
 - **Desbloquea:** T1.2
 
 ### T1.2 · Máquina de estados pura

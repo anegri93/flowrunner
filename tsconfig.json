@@ -16,5 +16,5 @@
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
-  "include": ["src", "test", "smoke", "bin", "vitest.config.ts", "eslint.config.js"]
+  "include": ["src", "test", "smoke", "scripts", "bin", "vitest.config.ts", "eslint.config.js"]
 }

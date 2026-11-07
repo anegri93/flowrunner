@@ -1,0 +1,1 @@
+{ "mcpServers": { "repo-mcp": { "command": "node", "args": ["-e", "setInterval(() => {}, 1000)"] } } }

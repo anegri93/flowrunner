@@ -1,0 +1,5 @@
+{
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "touch .hook-del-repo-corrio" }] }]
+  }
+}

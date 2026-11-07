@@ -64,7 +64,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T0.3
 
 ### T0.3 · Puntos abiertos 2 y 3: aislamiento, señal de límite y fixtures reales
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** con el SDK real sobre `test/toy-repo`, que trae un `.mcp.json`, un `.claude/settings.json` con un hook y un `CLAUDE.md` propios:
   - Comprobar que con `settingSources: []`, `strictMcpConfig: true` y graft como único MCP, el mensaje de inicio de la sesión no lista el MCP del repo, el hook no corre y el `CLAUDE.md` no aparece en el prompt.
   - Buscar en los tipos del SDK qué mensaje informa la ventana o el límite de la suscripción y documentarlo; si no hay señal previa, documentar la forma del error.
@@ -72,9 +72,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   Resultado en el ADR 0014.
 - **Lint:** `pnpm lint`.
 - **Test:** smoke `smoke/isolation.smoke.ts`: afirma sobre el mensaje de inicio grabado que los servidores MCP son exactamente `[graft]`, que el hook del repo no dejó su archivo marcador y que una pregunta sobre una frase que solo está en el `CLAUDE.md` del repo no se responde con esa frase. Comentario: si regresiona, una feature escrita por cualquiera corre con los hooks y conectores del repo o del usuario.
-- **Canario:** a comprobar: con `settingSources` por defecto, el smoke se pone rojo en las tres aserciones.
-- **Criterio de aprobación:** ADR 0014 mergeado; los fixtures grabados y nombrados por caso; el smoke verde.
-- **Revisión ponytail:** pendiente.
+- **Canario:** el smoke trae el caso con las fuentes por defecto: entran `repo-mcp`, el hook escribe su marcador y la respuesta trae `ARANDANO`. Las tres aserciones se ven rojas en ese caso; verde 2 de 2.
+- **Criterio de aprobación:** ADR 0014 con la evidencia, incluido que `settingSources: []` solo no alcanza; 5 fixtures en `test/fixtures/streams/`, uno sintético y declarado como tal en su README; smoke verde.
+- **Revisión ponytail:** a mano; sin hallazgos. `smoke/helpers.ts` se comparte entre los smoke y el grabador en lugar de duplicarse.
 - **Desbloquea:** T0.4
 
 ### T0.4 · Punto abierto 4: graft por worktree

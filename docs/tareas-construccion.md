@@ -629,10 +629,11 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - Correrlo dos veces → no duplica las reglas.
   - Sin confirmación → no toca `settings.json`.
   Comentario: si regresiona, Claude podría aprobar un plan sin preguntarte.
+  - El frontmatter de la skill valida contra el schema de skills: nombre `flowrunner` y descripción.
   El comportamiento conversacional de la skill no tiene test automático; se verifica en el criterio.
-- **Canario:** a comprobar: escribir las reglas sin leer las existentes pone en rojo el primer caso.
-- **Criterio de aprobación:** desde una sesión de Claude Code y sin abrir la terminal: escribir una feature, lanzarla, ver el estado, revisar el plan, aprobarlo con el permiso pedido por Claude Code, preguntar qué hace una sub-task y leer el informe. Tres features reales escritas así pasan `feature check` sin edición manual.
-- **Revisión ponytail:** pendiente.
+- **Canario:** reemplazar `settings.json` en lugar de mezclarlo puso en rojo `con permisos propios, --confirmar los conserva y agrega las dos reglas ask`. Restaurado; 4 de 4 verdes en `test/skill.int.test.ts`.
+- **Criterio de aprobación:** verificado lo automatizable: la skill instruye cada pedido con su comando `--json`, y cada uno de esos comandos tiene su test de integración con el CLI real. **Pendiente de la persona:** correr `flowrunner skill install --confirmar` en su máquina y operar una feature real desde una sesión de Claude Code, con el permiso pedido al aprobar. Requiere cambiar su `~/.claude/settings.json` real, que no se toca sin su decisión. Queda como parte del criterio del gate final.
+- **Revisión ponytail:** a mano; sin hallazgos. `skill install` copia una carpeta y mezcla un JSON, sin dependencias.
 - **Desbloquea:** T8.2
 
 ### T8.2 · `flowrunner stats`

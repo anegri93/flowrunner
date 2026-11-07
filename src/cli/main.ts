@@ -11,6 +11,7 @@ import { showReport, showSession } from "./report.ts";
 import { learnOne, tick } from "./tick.ts";
 import { describeDoctor, doctor } from "./doctor.ts";
 import { installLaunchd, uninstallLaunchd } from "./launchd.ts";
+import { installSkill } from "./skill.ts";
 import {
   abortRun,
   rerunRun,
@@ -37,6 +38,7 @@ const USAGE = `uso: flowrunner <comando> [--json]
   learn <run>                    revisa la PR de un run y aprende en el momento
   doctor                         qué le falta a esta máquina para correr runs
   launchd install|uninstall      instala o quita el job que corre tick
+  skill install [--confirmar]    instala la skill de Claude Code; con --confirmar, las reglas ask
   project add <ruta>             registra un repo [--nombre n] [--github-user u]
   brain init <ruta>              escribe las plantillas de .flowrunner/ sin pisar nada`;
 
@@ -79,6 +81,7 @@ export async function main(
       desde: { type: "string" },
       nombre: { type: "string" },
       sesion: { type: "string" },
+      confirmar: { type: "boolean", default: false },
       "github-user": { type: "string" },
     },
   });
@@ -183,6 +186,18 @@ export async function main(
           return 0;
         }
         break;
+      }
+      case "skill": {
+        if (first !== "install") break;
+        const done = installSkill(env, values.confirmar === true);
+        const rules =
+          done.pendientes.length > 0
+            ? `\nPara que Claude Code te pregunte antes de aprobar, corré de nuevo con --confirmar; agrega a ~/.claude/settings.json:\n  ${done.pendientes.join("\n  ")}`
+            : done.agregadas.length > 0
+              ? `\nReglas ask agregadas: ${done.agregadas.join(", ")}`
+              : "\nLas reglas ask ya estaban.";
+        print(done, `skill instalada en ${done.skill}${rules}`);
+        return 0;
       }
       case "project": {
         if (first !== "add") break;

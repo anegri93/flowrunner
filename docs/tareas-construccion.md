@@ -42,13 +42,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 > Objetivo: repo con toolchain, CI y decisiones escritas; los cinco puntos abiertos de la spec resueltos con evidencia; streams reales grabados como fixtures; config y feature validadas.
 
 ### T0.1 · Esqueleto del repo, CI y ADRs
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho` — PR #1
 - **Descripción:** crear el repo privado `anegri93/flowrunner` en GitHub, configurado solo con merge commit y borrado de rama al mergear. `package.json` con pnpm 10, Node 24, ESM; `tsconfig.json` estricto; eslint, prettier y vitest con los proyectos `unit`, `integration` y `smoke`. Layout `src/<módulo>/` según la sección 1 de la spec; cada módulo nace con la primera tarea que lo usa. CI en GitHub Actions: lint, typecheck, test e integración en cada PR, en macOS y Linux, con `graft` instalado. ADRs 0001-0012 con las decisiones de la spec. README corto.
 - **Lint:** `pnpm lint` verde sobre el esqueleto; `actionlint` sobre el workflow.
 - **Test:** N/A — no hay comportamiento propio todavía; verificación: un test deliberadamente roto en la primera PR pone la CI en rojo en las dos plataformas y se quita antes del merge.
-- **Canario:** N/A — sin test propio. A comprobar en local: un `expect(1).toBe(2)` hace que `pnpm test` salga distinto de 0, y un archivo mal formateado hace que `pnpm lint` falle.
-- **Criterio de aprobación:** `pnpm lint test test:integration` verde en local y en CI; los 12 ADR mergeados; el repo rechaza squash y rebase-merge.
-- **Revisión ponytail:** pendiente.
+- **Canario:** N/A — sin test propio. En local: un `expect(1).toBe(2)` hizo que `pnpm test` saliera 1 y un archivo mal formateado hizo que `pnpm lint` saliera 1; ambos restaurados. En CI, PR #1: el commit con `src/ci/canary.test.ts` puso en rojo `check (ubuntu-latest)` y `check (macos-latest)` en el paso `pnpm test`; se quitó de la rama antes del merge.
+- **Criterio de aprobación:** `pnpm lint test test:integration` verde en local y en CI; los 12 ADR mergeados; el repo rechaza squash y rebase-merge. `actionlint` sin hallazgos.
+- **Revisión ponytail:** revisión a mano contra la escalera de ponytail sobre el diff; 2 cortes aplicados: se quitaron `bin` y `dependencies` vacías de `package.json`, que no tenían uso todavía. Sin hallazgos abiertos.
 - **Desbloquea:** T0.2
 
 ### T0.2 · Punto abierto 1: el token en los subprocesos de Bash

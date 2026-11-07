@@ -9,6 +9,7 @@ import { aprobar } from "../phases/aprobar.ts";
 import { implementar } from "../phases/implementar.ts";
 import { planificar } from "../phases/planificar.ts";
 import { preparar } from "../phases/preparar.ts";
+import { revisar } from "../phases/revisar.ts";
 import { verificar } from "../phases/verificar.ts";
 import { PHASES, type Phase } from "../store/events.ts";
 import type { Deps, PhaseFn, PhaseRegistry, QueryFn } from "./types.ts";
@@ -32,7 +33,7 @@ const notImplemented =
 
 /** Las fases reales; cada una se suma acá cuando existe. */
 export function realPhases(): Partial<PhaseRegistry> {
-  return { preparar, planificar, aprobar, implementar, verificar };
+  return { preparar, planificar, aprobar, implementar, verificar, revisar };
 }
 
 export async function productionRuntime(

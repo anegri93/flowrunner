@@ -499,9 +499,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - Solo avisos → avanza y los avisos quedan en eventos.
   - Un hallazgo que nombra una sub-task inexistente → falla de gate y reintento.
   - Tercera vuelta → detiene.
-- **Canario:** a comprobar: tratar los avisos como bloqueantes pone en rojo el segundo caso.
-- **Criterio de aprobación:** el prompt de revisar recibe la salida de `graft blast` del diff real.
-- **Revisión ponytail:** pendiente.
+- **Canario:** tratar los avisos como bloqueantes puso en rojo `solo avisos: avanza`; no pasarle el radio de graft al prompt puso en rojo `el prompt recibe el radio de impacto de graft sobre el diff real`. Restaurados; 4 de 4 verdes. La tercera vuelta la corta el engine, probado en T1.2.
+- **Criterio de aprobación:** el prompt de revisar recibe el diff real contra la base y la salida de `graft blast --base <sha>` sobre el índice reconstruido; la sesión corre con Read, Grep, Glob y graft, sin escritura ni comandos.
+- **Revisión ponytail:** a mano; sin hallazgos. `graft blast` que falla no frena revisar: es contexto, no un gate, y el prompt lo dice.
 - **Desbloquea:** T6.2
 
 ### T6.2 · Fase entregar

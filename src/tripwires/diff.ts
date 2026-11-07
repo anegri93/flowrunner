@@ -21,7 +21,3 @@ export function checkChanges(scope: Scope, changes: readonly FileChange[]): Viol
   }
   return violations;
 }
-
-export function describeViolations(violations: readonly Violation[]): string {
-  return `el diff rompe las reglas:\n${violations.map((v) => `- ${v.motivo}`).join("\n")}`;
-}

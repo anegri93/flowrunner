@@ -326,10 +326,10 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Estado:** `[ ] Pendiente`
 - **Validación de lint:** `pnpm lint` verde.
 - **Tests:** suites unit e integración verdes; `pnpm smoke` verde en local.
-- **Test de integración:** una sesión falsa que reproduce un stream grabado con un Edit fuera del alcance, sobre un worktree real: el hook la rechaza, el doble control no encuentra cambios y el run registra el `rechazo` y el uso.
-- **Canario:** re-canario sobre 2-3 tests de la fase al azar.
-- **Criterio de aprobación:** el smoke del tripwire verde con el SDK real.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff acumulado + `/ponytail-debt` + listado de `test-debt:`.
+- **Test de integración:** `test/fase3.int.test.ts`: `runSession` con un SDK simulado que pasa cada herramienta por el hook real, como el SDK, sobre un worktree real. El Edit a `src/billing/tarifas.ts` fuera del alcance de ST-2 se rechaza, el diff del worktree queda vacío, el doble control no encuentra nada y el log del run registra el `rechazo` y el `uso` con su costo. `test/helpers/sim-sdk.ts` queda para los tests de las fases de agente.
+- **Canario:** re-canario sobre tres piezas del ensamblado, todas en el test de integración: un hook que permite todo, sacar la regla de alcance y no emitir el evento de uso pusieron el test en rojo. Restaurados.
+- **Criterio de aprobación:** `pnpm smoke` verde con el SDK real, incluido `smoke/tripwire.smoke.ts`.
+- **Revisión ponytail:** sobre el diff acumulado: 1 corte, `describeViolations` sin uso. `ponytail:` nuevos: ninguno. `test-debt:` nuevos: ninguno.
 - **Desbloquea:** Fase 4
 
 ---

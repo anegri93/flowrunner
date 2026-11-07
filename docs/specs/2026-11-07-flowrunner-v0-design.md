@@ -240,7 +240,9 @@ aprobación. Pedile a Claude que te lo muestre."*
 - Toma el lock del repo. Hace fetch y crea el worktree de la feature desde `origin/<base>` en
   `feat/<clave>-<slug>`.
 - Corre `setup` y después `verify` sobre la base sin cambios.
-- Construye el índice de graft del worktree con `graft build <worktree>`, sin modelo.
+- Construye el índice de graft en `runs/<id>/graft/` con `graft --dir <índice> build <worktree>` y
+  `DO_NOT_TRACK=1`, sin modelo y sin dejar archivos en el worktree, según el ADR 0015. Revisar lo
+  reconstruye antes de empezar.
 - **Gate:** la base tiene que estar en verde. Roja, el run se detiene sin gastar tokens y el informe
   muestra la salida de `verify`.
 
@@ -378,7 +380,7 @@ sub-task con el motivo.
 ### Aislamiento de cada sesión
 
 - `settingSources: []`: no se cargan los settings, hooks, `CLAUDE.md` ni skills del usuario o del repo.
-- `strictMcpConfig: true` con graft como único servidor MCP: `graft mcp <worktree>`.
+- `strictMcpConfig: true` con graft como único servidor MCP: `graft --dir <índice> mcp <worktree>`.
 - `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` y `ENABLE_CLAUDEAI_MCP_SERVERS=false`.
 - `CLAUDE_CONFIG_DIR=~/.flowrunner/claude`: no se lee `~/.claude.json`.
 - El entorno se construye a mano: el SDK de TypeScript reemplaza el entorno entero, así que se pasan

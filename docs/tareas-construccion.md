@@ -88,7 +88,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T0.5
 
 ### T0.5 · Config global, config del repo y formato de feature
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** schemas Zod de `~/.flowrunner/config.yaml`, de `.flowrunner/config.yaml` y del frontmatter y las secciones de la feature, según las secciones 1 y 7 de la spec. Defaults aplicados en un solo lugar. `flowrunner feature check <archivo>` imprime la feature resuelta o los errores. El punto abierto 5, la política de la suscripción, se cierra como nota en el README: uso personal, API key antes de compartir.
 - **Lint:** `pnpm lint`.
 - **Test:** bordes:
@@ -99,9 +99,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - Config válida → objeto con los defaults aplicados.
   - Varios problemas a la vez → todos en el mismo error.
   Cada test comenta qué se rompe en producción.
-- **Canario:** a comprobar: quitar `.strict()` del schema del repo pone en rojo el test del campo desconocido; quitar el chequeo de criterios pone en rojo el de la feature sin criterios.
+- **Canario:** cambiar `strictObject` por `object` en el schema del repo puso en rojo `un campo desconocido es un error que lo nombra`; anular el chequeo de criterios puso en rojo `sin criterios es un error`. Restaurados; 18 de 18 verdes.
 - **Criterio de aprobación:** `flowrunner feature check` sale 0 con una feature válida y 1 con el motivo cuando no lo es.
-- **Revisión ponytail:** pendiente.
+- **Revisión ponytail:** a mano; 1 corte: el parser de la feature usa `yaml` y regex propias en lugar de sumar una librería de Markdown, porque el formato es fijo y chico. El CLI corre TypeScript con Node 24 sin paso de build. Sin hallazgos abiertos.
 - **Desbloquea:** Gate F0
 
 ### Gate Fase 0

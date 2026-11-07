@@ -6,6 +6,7 @@ export default defineConfig(
   { ignores: ["node_modules/**", "docs/**", "test/fixtures/**", "test/toy-repo/**"] },
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
+  { files: ["bin/*.js"], languageOptions: { globals: { process: "readonly" } } },
   {
     languageOptions: {
       parserOptions: {

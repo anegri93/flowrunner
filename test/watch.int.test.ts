@@ -13,14 +13,16 @@ describe("watch --once", () => {
     const out = runCli(["watch", "SHOP-214", "--once"], w.env);
     expect(out.status).toBe(0);
     const lines = out.stdout.split("\n");
-    expect(lines[0]).toMatch(/^SHOP-214 · Exportar pedidos a CSV · acme-api {3}PR abierta · USD/);
-    expect(lines).toContainEqual(expect.stringMatching(/├─ ✓ revisar/));
+    expect(lines[0]).toBe("✓ 1 PR abierta");
+    expect(lines).toContain("acme-api");
     expect(lines).toContainEqual(
-      expect.stringMatching(/└─ ⏸ aprender {5}esperando el merge de la PR/),
+      expect.stringMatching(/^ ✓ SHOP-214 {2}Exportar pedidos a CSV .* PR abierta$/),
     );
-    expect(runCli(["watch", "--once"], w.env).stdout).toContain(
-      "SHOP-214 · Exportar pedidos a CSV",
+    expect(lines).toContainEqual(expect.stringMatching(/├─ ✓ revisar .* listo$/));
+    expect(lines).toContainEqual(
+      expect.stringMatching(/└─ ⏸ aprender .* esperando el merge de la PR$/),
     );
+    expect(runCli(["watch", "--once"], w.env).stdout).toContain("SHOP-214  Exportar pedidos a CSV");
   }, 120_000);
 
   test("un run que no existe sale 1 y dice cómo verlos", () => {

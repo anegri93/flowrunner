@@ -41,7 +41,8 @@ export const repoConfigSchema = z
     lockfiles: z.array(relativePath).default([]),
     manifests: z.array(relativePath).default([]),
     max_parallel: z.int().min(1).max(16).default(3),
-    budget: z.strictObject({ run_usd: z.number().positive().default(25) }).default({ run_usd: 25 }),
+    /** Tope opcional en USD por run. Sin él, el run no se corta por gasto. */
+    budget: z.strictObject({ run_usd: z.number().positive() }).optional(),
     models: z.partialRecord(z.enum(AGENT_PHASES), modelChoice).default({}),
   })
   .transform((config) => ({ ...config, models: { ...DEFAULT_MODELS, ...config.models } }));

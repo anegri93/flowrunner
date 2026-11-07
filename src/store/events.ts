@@ -47,7 +47,7 @@ export const eventSchema = z.discriminatedUnion("tipo", [
     clave: z.string(),
     proyecto: z.string(),
     repo: z.string(),
-    budget_usd: z.number().positive(),
+    budget_usd: z.number().positive().optional(),
   }),
   z.strictObject({ tipo: z.literal("accion_iniciada"), at, fase: phaseSchema }),
   z.strictObject({

@@ -67,7 +67,7 @@ describe("config del repo", () => {
     expect(config.base_branch).toBe("main");
     expect(config.verify).toBe(".flowrunner/verify.sh");
     expect(config.max_parallel).toBe(3);
-    expect(config.budget.run_usd).toBe(25);
+    expect(config.budget).toBeUndefined();
     expect(config.models.revisar).toEqual({ model: "claude-sonnet-5-5", effort: "medium" });
     expect(config.models.planificar).toEqual(DEFAULT_MODELS.planificar);
   });

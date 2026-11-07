@@ -243,4 +243,55 @@ describe("runTree", () => {
       tidyStep({ tipo: "resultado", texto: `File created at: ${wt}/feature/src/a.ts` }, wt).texto,
     ).toBe("File created at: src/a.ts");
   });
+
+  // Si regresiona, watch no dice cuántos tokens lleva una sesión hasta que termina, o los cuenta doble.
+  test("tokens: en vivo suma cada mensaje una vez, y al terminar usa el total del resultado", () => {
+    const usage = { input_tokens: 10, cache_read_input_tokens: 1000, output_tokens: 90 };
+    const msg = (id: string) =>
+      line({ type: "assistant", message: { id, model: "claude-sonnet-5-5", content: [], usage } });
+    const live = runTree({
+      events: base,
+      tasks,
+      titulo: "x",
+      sessions: new Map([["planificar-1", session([msg("a"), msg("a"), msg("b")], 40, 60)]]),
+      now: T0 + 100_000,
+    });
+    expect(live.fases[1]?.sesiones[0]?.tokens).toBe(2200);
+    const done = runTree({
+      events: base,
+      tasks,
+      titulo: "x",
+      sessions: new Map([
+        [
+          "planificar-1",
+          session(
+            [
+              msg("a"),
+              line({
+                type: "result",
+                total_cost_usd: 0.5,
+                usage: { ...usage, cache_creation_input_tokens: 500 },
+              }),
+            ],
+            40,
+            60,
+          ),
+        ],
+      ]),
+      now: T0 + 100_000,
+    });
+    expect(done.fases[1]?.sesiones[0]?.tokens).toBe(1600);
+  });
+
+  // Si regresiona, un run cerrado hace horas sigue sumando minutos en watch.
+  test("un run cerrado cuenta su tiempo hasta el último evento", () => {
+    const tree = runTree({
+      events: [...base, { tipo: "abortado", at: at(600) }],
+      tasks,
+      titulo: "x",
+      sessions: new Map(),
+      now: T0 + 9_000_000,
+    });
+    expect(tree).toMatchObject({ status: "abortado", segundos: 600 });
+  });
 });

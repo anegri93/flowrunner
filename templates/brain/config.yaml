@@ -11,5 +11,6 @@ harness_files: ["vitest.config.ts"]
 lockfiles: ["pnpm-lock.yaml"]
 manifests: ["package.json"]
 max_parallel: 3
-budget:
-  run_usd: 25
+# Tope opcional en USD por run; sin él, el run no se corta por gasto.
+# budget:
+#   run_usd: 25

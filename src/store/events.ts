@@ -94,6 +94,13 @@ export const eventSchema = z.discriminatedUnion("tipo", [
     sha: z.string().optional(),
     motivo: z.string().optional(),
   }),
+  z.strictObject({
+    tipo: z.literal("preparado"),
+    at,
+    rama: z.string(),
+    worktree: z.string(),
+    base_sha: z.string(),
+  }),
   z.strictObject({ tipo: z.literal("aprobado"), at }),
   z.strictObject({ tipo: z.literal("cambios_pedidos"), at, motivo: z.string().min(1) }),
   z.strictObject({ tipo: z.literal("reanudado"), at }),

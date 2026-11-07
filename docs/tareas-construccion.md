@@ -240,9 +240,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - Base roja → falla de entorno con la salida de `verify`, sin reintento.
   - Un `setup` que no existe → falla de entorno con exit 127, no de gate.
   - Un segundo `flowrunner run` sobre el mismo repo mientras el primero tiene el lock → se niega y nombra el run que lo tiene.
-- **Canario:** a comprobar: clasificar el 127 como falla de gate pone en rojo su test.
-- **Criterio de aprobación:** sobre el repo de juguete con un test roto en la base, el run se detiene en preparar con costo cero.
-- **Revisión ponytail:** pendiente.
+- **Canario:** clasificar el setup que falla como gate puso en rojo `un setup que no existe es una falla de entorno con exit 127`; dejar pasar un verify rojo puso en rojo `base roja: falla de entorno`. Restaurados; 5 de 5 verdes.
+- **Criterio de aprobación:** preparar deja el worktree en `feat/SHOP-214-exportar-pedidos-a-csv`, en el sha de `origin/main` y limpio aun después de construir graft; una base roja, un setup inexistente o un verify no ejecutable detienen como falla de entorno. El caso del run completo con costo cero lo prueba el gate de la Fase 2.
+- **Revisión ponytail:** a mano; sin hallazgos. `runVerify` vive aparte porque lo comparten preparar y verificar.
 - **Desbloquea:** Gate F2
 
 ### Gate Fase 2

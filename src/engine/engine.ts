@@ -245,6 +245,7 @@ export function reduce(state: RunState, event: RunEvent): RunState {
     case "decision":
     case "aviso":
     case "unidad":
+    case "preparado":
     case "pr":
       return state;
   }

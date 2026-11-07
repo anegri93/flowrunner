@@ -650,10 +650,10 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Estado:** `[ ] Pendiente`
 - **Validación de lint:** `pnpm lint` verde.
 - **Tests:** suites unit e integración verdes.
-- **Test de integración:** una feature escrita por fixture pasa `feature check`, corre de punta a punta con `query` y `gh` falsos, y `flowrunner stats` refleja ese run con sus vueltas y su costo.
-- **Canario:** re-canario sobre 2-3 tests de la fase al azar.
-- **Criterio de aprobación:** demo desde Claude Code: escribir una feature con la skill, lanzarla, aprobarla y pedirle a Claude que explique `stats` al final.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff acumulado + `/ponytail-debt` + listado de `test-debt:`.
+- **Test de integración:** `test/fase8.int.test.ts`: una feature pasa `feature check --json`, corre de punta a punta por CLI con el SDK simulado y el `gh` falso, con una vuelta de verificar, y `flowrunner stats acme-api --json` pone a verificar primera con su vuelta, el costo de cada fase y el motivo agrupado.
+- **Canario:** re-canario sobre tres piezas, todas en el test de integración: no contar las vueltas en stats, no registrar el costo de las sesiones y una feature resuelta con otra clave pusieron el test en rojo. Restaurados.
+- **Criterio de aprobación:** lo automatizable está verde: los comandos que usa la skill, cada uno con su test. **Pendiente de la persona:** la demo desde su sesión de Claude Code, escribir la feature con la skill, lanzarla, aprobarla y pedir que explique `stats`. Queda consolidada en el criterio del gate final.
+- **Revisión ponytail:** sobre el diff acumulado: sin exports sin uso. `ponytail:` nuevos: ninguno. `test-debt:` nuevos: ninguno.
 - **Desbloquea:** Cierre
 
 ---

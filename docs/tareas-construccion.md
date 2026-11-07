@@ -365,9 +365,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - Plan rechazado → reintento cuyo prompt contiene el motivo del gate.
   - Con una instrucción de `changes` → el prompt la contiene.
   - Un test escrito fuera de `tests_globs` → rechazado por el tripwire.
-- **Canario:** a comprobar: commitear antes de pasar el gate pone en rojo el test del plan rechazado.
-- **Criterio de aprobación:** smoke manual sobre el repo de juguete: el plan real pasa el gate o se rechaza con un motivo comprensible.
-- **Revisión ponytail:** pendiente.
+- **Canario:** commitear antes de pasar el gate puso en rojo `un plan cuyo criterio ya pasa se rechaza … y no commitea nada`; no volver el worktree a la base puso en rojo `un reintento arranca de la base`. Restaurados; 5 de 5 verdes.
+- **Criterio de aprobación:** con un SDK simulado que escribe por el hook real, un plan válido deja el commit de tests, `plan.md`, `tasks.json`, `ac-map.json` y `locked.json`; uno rechazado vuelve con el motivo del gate y sin commit. El plan real con el SDK lo prueba el smoke del gate de la Fase 4.
+- **Revisión ponytail:** a mano; sin hallazgos. Las plantillas de prompt viven en `prompts/` con un render de marcas `{{x}}` que falla si falta una variable.
 - **Desbloquea:** T4.3
 
 ### T4.3 · Aprobar: espera sin proceso, approve, changes

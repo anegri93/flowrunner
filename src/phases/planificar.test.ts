@@ -1,0 +1,136 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, test } from "vitest";
+import { git } from "../../test/helpers/git.ts";
+import { contextFor, makeProject, newRun, testDeps } from "../../test/helpers/project.ts";
+import { simQuery, type SimScript } from "../../test/helpers/sim-sdk.ts";
+import type { Plan } from "../gates/plan.ts";
+import { readLog } from "../store/run-log.ts";
+import { prepared } from "./inputs.ts";
+import { planificar, readPlan } from "./planificar.ts";
+import { preparar } from "./preparar.ts";
+
+const FEATURE = `---
+clave: SHOP-214
+proyecto: acme-api
+titulo: Exportar pedidos a CSV
+---
+## Descripción
+Exportar pedidos.
+
+## Criterios
+- AC-1: existe src/export/csv.js.
+`;
+
+const goodPlan: Plan = {
+  plan: "# Plan\nUn serializador.",
+  subtareas: [
+    {
+      id: "ST-1",
+      titulo: "Serializador",
+      descripcion: "csv",
+      alcance: ["src/export/"],
+      dependencias: [],
+      depende_de: [],
+    },
+  ],
+  criterios: [{ id: "AC-1", comando: "node tests/ac1.mjs", subtarea: "ST-1" }],
+  tests: ["tests/ac1.mjs"],
+  decisiones: [{ que: "usar node:test", por_que: "el repo no tiene framework" }],
+};
+
+const writeTest = {
+  tool: "Write",
+  input: {
+    file_path: "tests/ac1.mjs",
+    content:
+      'import { existsSync } from "node:fs";\nprocess.exit(existsSync("src/export/csv.js") ? 0 : 1);\n',
+  },
+};
+
+async function prepared_(scripts: SimScript[]) {
+  const { work } = makeProject({ config: { setup: "true", tests_globs: ["tests/**"] } });
+  const run = newRun(work, FEATURE);
+  const sim = simQuery(scripts);
+  const deps = testDeps({ query: sim.query });
+  expect(await preparar(contextFor(run, "preparar", deps))).toEqual({ tipo: "ok" });
+  const worktree = prepared(readLog(run.dir).events).worktree;
+  return { run, deps, sim, worktree };
+}
+
+describe("planificar", () => {
+  // Si regresiona, implementar arranca sin tests bloqueados contra los que verificar.
+  test("un plan válido commitea los tests y deja locked.json con un hash por archivo", async () => {
+    const { run, deps, worktree } = await prepared_([{ calls: [writeTest], output: goodPlan }]);
+    expect(await planificar(contextFor(run, "planificar", deps))).toEqual({ tipo: "ok" });
+    expect(git(worktree, "log", "-1", "--format=%s")).toBe(
+      "test: los criterios de SHOP-214, en rojo",
+    );
+    expect(git(worktree, "status", "--porcelain")).toBe("");
+    const saved = readPlan(run);
+    expect(Object.keys(saved.locked)).toEqual(["tests/ac1.mjs"]);
+    expect(saved.locked["tests/ac1.mjs"]).toMatch(/^[0-9a-f]{64}$/);
+    expect(saved.subtareas[0]?.alcance).toEqual(["src/export/"]);
+    const decisions = readLog(run.dir).events.filter((e) => e.tipo === "decision");
+    expect(decisions).toHaveLength(1);
+  });
+
+  // Si regresiona, un plan rechazado deja tests a medias commiteados en la rama de la feature.
+  test("un plan cuyo criterio ya pasa se rechaza con el motivo y no commitea nada", async () => {
+    const passing = { ...writeTest, input: { ...writeTest.input, content: "process.exit(0);\n" } };
+    const { run, deps, worktree } = await prepared_([{ calls: [passing], output: goodPlan }]);
+    const outcome = await planificar(contextFor(run, "planificar", deps));
+    expect(outcome).toMatchObject({ tipo: "falla", clase: "gate" });
+    expect(outcome.tipo === "falla" && outcome.motivo).toMatch(/AC-1 ya pasa antes de implementar/);
+    expect(git(worktree, "rev-list", "--count", "HEAD")).toBe(
+      git(worktree, "rev-list", "--count", prepared(readLog(run.dir).events).base_sha),
+    );
+    expect(existsSync(join(run.dir, "plan.md"))).toBe(false);
+  });
+
+  test("el motivo del intento anterior y una instrucción de changes llegan al prompt", async () => {
+    const { run, deps, sim } = await prepared_([{ calls: [writeTest], output: goodPlan }]);
+    await planificar(
+      contextFor(run, "planificar", deps, {
+        intento: 2,
+        instruccion: "separá la validación en ST-2",
+      }),
+    );
+    expect(sim.records[0]?.prompt).toContain("separá la validación en ST-2");
+    expect(sim.records[0]?.prompt).toContain("Exportar pedidos a CSV");
+    expect(sim.records[0]?.options?.agents?.explorador?.tools).toEqual(["Read", "Grep", "Glob"]);
+    expect(Object.keys(sim.records[0]?.options?.mcpServers ?? {})).toEqual(["graft"]);
+  });
+
+  // Si regresiona, planificar escribe código de producción además de los tests.
+  test("un archivo fuera de los globs de tests lo rechaza el hook y el plan no pasa", async () => {
+    const outside = {
+      tool: "Write",
+      input: { file_path: "src/export/csv.js", content: "export {};\n" },
+    };
+    const { run, deps, sim, worktree } = await prepared_([
+      { calls: [outside], output: { ...goodPlan, tests: ["src/export/csv.js"] } },
+    ]);
+    const outcome = await planificar(contextFor(run, "planificar", deps));
+    expect(sim.records[0]?.decisions[0]).toMatchObject({ decision: "deny" });
+    expect(existsSync(join(worktree, "src/export/csv.js"))).toBe(false);
+    expect(outcome.tipo === "falla" && outcome.motivo).toMatch(/no escribió ningún test/);
+  });
+
+  test("un reintento arranca de la base: los tests del intento anterior no quedan", async () => {
+    const stray = {
+      tool: "Write",
+      input: { file_path: "tests/viejo.mjs", content: "process.exit(1);\n" },
+    };
+    const { run, deps, worktree } = await prepared_([
+      { calls: [stray], output: { ...goodPlan, tests: ["tests/otro.mjs"] } },
+      { calls: [writeTest], output: goodPlan },
+    ]);
+    expect((await planificar(contextFor(run, "planificar", deps))).tipo).toBe("falla");
+    expect(await planificar(contextFor(run, "planificar", deps, { intento: 2 }))).toEqual({
+      tipo: "ok",
+    });
+    expect(existsSync(join(worktree, "tests/viejo.mjs"))).toBe(false);
+    expect(readFileSync(join(run.dir, "plan.md"), "utf8")).toContain("Un serializador.");
+  });
+});

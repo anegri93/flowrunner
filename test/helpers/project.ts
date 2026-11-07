@@ -55,6 +55,7 @@ export const testDeps = (overrides: Partial<Deps> = {}): Deps => ({
     GIT_AUTHOR_EMAIL: "test@example.com",
     GIT_COMMITTER_NAME: "test",
     GIT_COMMITTER_EMAIL: "test@example.com",
+    FLOWRUNNER_AUTH: "login",
   },
   ...overrides,
 });

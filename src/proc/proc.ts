@@ -19,7 +19,7 @@ export function cleanEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 export function runProc(
   command: string,
   args: readonly string[],
-  opts: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs?: number; input?: string },
+  opts: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs?: number },
 ): Promise<ProcResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd: opts.cwd, env: cleanEnv(opts.env) });
@@ -45,8 +45,7 @@ export function runProc(
       if (timer !== undefined) clearTimeout(timer);
       resolve({ code: code ?? 137, stdout, stderr, timedOut });
     });
-    if (opts.input !== undefined) child.stdin.end(opts.input);
-    else child.stdin.end();
+    child.stdin.end();
   });
 }
 

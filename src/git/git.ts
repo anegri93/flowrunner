@@ -45,15 +45,6 @@ export function headSha(worktree: string, env?: NodeJS.ProcessEnv): Promise<stri
   return git(worktree, ["rev-parse", "HEAD"], env);
 }
 
-export async function resetHard(
-  worktree: string,
-  sha: string,
-  env?: NodeJS.ProcessEnv,
-): Promise<void> {
-  await git(worktree, ["reset", "--quiet", "--hard", sha], env);
-  await git(worktree, ["clean", "-fdq"], env);
-}
-
 /** Commitea todo lo que cambió, con los trailers dados. Devuelve el sha, o undefined si no había nada. */
 export async function commitAll(
   worktree: string,

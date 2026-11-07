@@ -1,5 +1,6 @@
 // Fases falsas para los tests de integración, cargadas por FLOWRUNNER_TEST_HOOKS.
 // FAKE_DELAY_MS: cuánto tarda cada fase. Cada ejecución deja su nombre en ejecuciones.txt del run.
+// FAKE_KEEP_REAL: fases separadas por comas que corren de verdad, como "preparar".
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PhaseFn, PhaseRegistry } from "../../src/runner/types.ts";
@@ -13,5 +14,9 @@ const fake: PhaseFn = async (ctx) => {
   return { tipo: "ok" };
 };
 
-export const phases: Partial<PhaseRegistry> = Object.fromEntries(PHASES.map((f) => [f, fake]));
+const keepReal = new Set((process.env.FAKE_KEEP_REAL ?? "").split(",").filter((f) => f !== ""));
+
+export const phases: Partial<PhaseRegistry> = Object.fromEntries(
+  PHASES.filter((f) => !keepReal.has(f)).map((f) => [f, fake]),
+);
 export const notify = (): void => undefined;

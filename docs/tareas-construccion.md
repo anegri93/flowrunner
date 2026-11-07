@@ -249,10 +249,10 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Estado:** `[ ] Pendiente`
 - **Validación de lint:** `pnpm lint` verde.
 - **Tests:** suites unit e integración verdes.
-- **Test de integración:** un run por CLI con preparar real y el resto de las fases falsas: con base verde llega a `entregado` y deja el worktree con el índice de graft; con base roja termina `detenido` en preparar, sin eventos de uso.
-- **Canario:** re-canario sobre 2-3 tests de la fase al azar.
-- **Criterio de aprobación:** demo con el repo de juguete en los dos casos.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff acumulado + `/ponytail-debt` + listado de `test-debt:`.
+- **Test de integración:** `test/fase2.int.test.ts`: un run por CLI con preparar real y el resto falso. Con la base verde llega a `entregado`, deja el índice de graft en el run y el worktree limpio; con la base roja termina `detenido` en preparar con la salida de verify, sin ningún evento de uso, y `status` dice cómo seguir.
+- **Canario:** re-canario sobre tres tests: anular las ramas empujables puso en rojo el push a main; dejar pasar links en el cerebro puso en rojo su test; chequear lectura en lugar de ejecución en verify puso en rojo `un verify que no es ejecutable`. Restaurados.
+- **Criterio de aprobación:** demo hecha por el test de integración con el CLI real en los dos casos, base verde y base roja.
+- **Revisión ponytail:** sobre el diff acumulado: 4 cortes aplicados, `artifact`, `unitWorktree` y `resetHard` sin uso todavía, que vuelven con la Fase 5, y la opción `input` de `runProc`. `ponytail:` nuevos: ninguno. `test-debt:` nuevos: ninguno.
 - **Desbloquea:** Fase 3
 
 ---

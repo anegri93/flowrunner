@@ -11,15 +11,13 @@ export function runFeature(run: RunPaths): Feature {
 }
 
 export const featureWorktree = (run: RunPaths) => join(run.worktrees, "feature");
-export const unitWorktree = (run: RunPaths, unit: string) => join(run.worktrees, unit);
 export const graftIndex = (run: RunPaths) => join(run.dir, "graft");
-export const artifact = (run: RunPaths, name: string) => join(run.dir, name);
 
 /** La rama de la feature: `feat/<clave>-<título en minúsculas, sin tildes>`. */
 export function featureBranch(feature: Feature): string {
   const slug = feature.titulo
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")

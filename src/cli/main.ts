@@ -6,6 +6,7 @@ import type { statusListSchema, statusRunSchema } from "./contracts.ts";
 import { checkFeature, describeCheckedFeature } from "./feature-check.ts";
 import { processIo, reportError, UserError, type Io } from "./output.ts";
 import { addProject, initRepoBrain } from "./project.ts";
+import { approveRun, describePlan, requestChanges, showPlan } from "./approval.ts";
 import {
   abortRun,
   rerunRun,
@@ -24,6 +25,9 @@ const USAGE = `uso: flowrunner <comando> [--json]
   resume <run>                   retoma un run detenido o interrumpido
   rerun <run> --desde <fase>     rehace un run desde una fase
   abort <run>                    cancela un run y borra sus worktrees; las ramas quedan
+  plan <run>                     muestra el plan que espera aprobación
+  approve <run>                  aprueba el plan y sigue a implementar
+  changes <run> "<motivo>"       vuelve a planificar con tu instrucción
   project add <ruta>             registra un repo [--nombre n] [--github-user u]
   brain init <ruta>              escribe las plantillas de .flowrunner/ sin pisar nada`;
 
@@ -111,6 +115,21 @@ export async function main(
       case "abort": {
         const aborted = abortRun(home, need(first, "el id del run"));
         print(aborted, `run ${aborted.id} ${aborted.accion}`);
+        return 0;
+      }
+      case "plan": {
+        const view = await showPlan(home, need(first, "el id del run"), env);
+        print(view, describePlan(view));
+        return 0;
+      }
+      case "approve": {
+        const approved = approveRun(home, need(first, "el id del run"), env);
+        print(approved, `run ${approved.id} ${approved.accion}`);
+        return 0;
+      }
+      case "changes": {
+        const changed = requestChanges(home, need(first, "el id del run"), rest.join(" "), env);
+        print(changed, `run ${changed.id} ${changed.accion}`);
         return 0;
       }
       case "project": {

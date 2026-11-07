@@ -19,4 +19,3 @@ const keepReal = new Set((process.env.FAKE_KEEP_REAL ?? "").split(",").filter((f
 export const phases: Partial<PhaseRegistry> = Object.fromEntries(
   PHASES.filter((f) => !keepReal.has(f)).map((f) => [f, fake]),
 );
-export const notify = (): void => undefined;

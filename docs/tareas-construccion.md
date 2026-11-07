@@ -379,9 +379,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - `approve` sobre un run que no espera → sale 1 con el estado actual.
   - `changes` sin motivo → sale 1.
   - `changes` con motivo → planificar corre otra vez con el motivo y los intentos no suben.
-- **Canario:** a comprobar: dejar el proceso vivo esperando pone en rojo el primer test.
-- **Criterio de aprobación:** demo: el aviso de macOS llega, `flowrunner plan` se lee bien en la terminal y `approve` sigue.
-- **Revisión ponytail:** pendiente.
+- **Canario:** que aprobar devuelva `ok` en lugar de `espera` puso en rojo `al llegar a la espera el proceso termina`; dejar aprobar un run que no espera puso en rojo `approve sobre un run que no espera sale 1`. Restaurados; 4 de 4 verdes en `test/approval.int.test.ts`.
+- **Criterio de aprobación:** con el CLI real y el SDK simulado, el run llega a la espera, su proceso termina, el lock queda con el run y el `osascript` falso registra el aviso con lo que hay que pedirle a Claude. `flowrunner plan` muestra sub-tasks, criterios y el diff de los tests; `changes` vuelve a planificar con el motivo en el prompt y los intentos en cero.
+- **Revisión ponytail:** a mano; sin hallazgos. Los guiones del SDK simulado se reparten entre procesos con un contador en archivo, solo en los tests.
 - **Desbloquea:** Gate F4
 
 ### Gate Fase 4

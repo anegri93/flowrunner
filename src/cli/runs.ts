@@ -36,7 +36,12 @@ function spawnRunProcess(run: RunPaths, env: NodeJS.ProcessEnv): number {
 }
 
 /** Lanza el proceso del run y le pasa el lock, que este comando tomó con su propio pid. */
-function handOver(home: string, project: string, run: RunPaths, env: NodeJS.ProcessEnv): void {
+export function handOver(
+  home: string,
+  project: string,
+  run: RunPaths,
+  env: NodeJS.ProcessEnv,
+): void {
   const pid = spawnRunProcess(run, env);
   acquireLock(home, project, run.id, pid, (id) => holderStatus(home, id));
 }

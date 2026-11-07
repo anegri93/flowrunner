@@ -5,6 +5,7 @@
 // producción la variable no existe.
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import { pathToFileURL } from "node:url";
+import { aprobar } from "../phases/aprobar.ts";
 import { planificar } from "../phases/planificar.ts";
 import { preparar } from "../phases/preparar.ts";
 import { PHASES, type Phase } from "../store/events.ts";
@@ -29,7 +30,7 @@ const notImplemented =
 
 /** Las fases reales; cada una se suma acá cuando existe. */
 export function realPhases(): Partial<PhaseRegistry> {
-  return { preparar, planificar };
+  return { preparar, planificar, aprobar };
 }
 
 export async function productionRuntime(

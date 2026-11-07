@@ -41,6 +41,16 @@ archivos del repo, y comprueba que la base esté en verde antes de abrir la PR. 
 Después, abrí una sesión de Claude Code y pedile que escriba y lance una feature: la skill
 `flowrunner` hace el resto con el CLI.
 
+## Ver un run en vivo
+
+```bash
+flowrunner watch PIZ-1        # un run por su clave o su id; sin nada, todos los activos
+```
+
+Muestra el árbol del run: cada fase, cada sub-task y cada sesión con su modelo, costo, tiempo y la
+herramienta que está usando, refrescado cada 2 segundos. Con las flechas elegís una sesión y con Enter
+ves sus pasos; `q` sale. Con `--once`, o fuera de una terminal, lo dibuja una vez.
+
 ## Uso personal
 
 flowrunner se autentica con la suscripción de Claude mediante `claude setup-token`, o con la

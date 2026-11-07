@@ -164,9 +164,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - Un corte entre `accion_iniciada` y `accion_terminada` rehace esa acción y solo esa.
   - Un corte después de `accion_terminada` no la repite.
   - Una fase que lanza una excepción no tipada queda como falla de infraestructura, no como gate.
-- **Canario:** a comprobar: rehacer también las acciones terminadas pone en rojo el test del corte después de terminar.
-- **Criterio de aprobación:** el log de un run falso muestra cada acción con su par de eventos.
-- **Revisión ponytail:** pendiente.
+- **Canario:** volver a emitir `accion_iniciada` para una acción interrumpida puso en rojo `un corte entre iniciada y terminada rehace esa acción y solo esa`; clasificar la excepción como gate puso en rojo `una excepción de la fase queda como falla de infraestructura`. Restaurados; 5 de 5 verdes.
+- **Criterio de aprobación:** el log de un run falso muestra cada acción con su par de eventos: 7 iniciadas y 7 terminadas en un run completo hasta `entregado`. Las fases reciben el log completo, así implementar puede ver qué sub-tasks ya integró.
+- **Revisión ponytail:** a mano; sin hallazgos. El backoff de infraestructura es una función de una línea, no una política configurable.
 - **Desbloquea:** T1.4
 
 ### T1.4 · CLI: run, status, resume, rerun, abort

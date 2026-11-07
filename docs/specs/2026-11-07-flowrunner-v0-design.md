@@ -390,7 +390,10 @@ Aviso de macOS, `informe.md` parcial y el comando exacto para seguir, por ejempl
   terminada se rehace después de volver su worktree al sha registrado al iniciarla.
 - Las sub-tasks ya integradas no se tocan.
 - La PR se crea solo si no existe. El push usa `--force-with-lease` y solo sobre ramas de flowrunner.
-- El lock del repo guarda el pid del proceso. Si ese proceso ya no existe, el lock se toma.
+- El lock del repo guarda el id del run y el pid de su proceso. Un run en `esperando_aprobacion` o
+  `pausado_por_limite` conserva el lock aunque no tenga proceso vivo. El lock se toma solo si su run
+  está en un estado terminal, o si no está esperando y su proceso ya no existe.
+- `flowrunner run` sobre un repo con el lock tomado se niega y nombra el run que lo tiene.
 - Una línea corrupta al final de `events.jsonl`, por un corte durante la escritura, se descarta y queda
   registrada. Una línea corrupta en el medio detiene el run: no se adivina el estado.
 

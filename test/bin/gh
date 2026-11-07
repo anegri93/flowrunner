@@ -24,6 +24,10 @@ const pick = (pr, fields) =>
 const [a, b, c] = args;
 const s = load();
 if (a === "auth" && b === "status") process.exit(process.env.FAKE_GH_NOAUTH ? 1 : 0);
+if (a === "api" && b === "user") {
+  console.log(process.env.FAKE_GH_USER || "anegri93");
+  process.exit(0);
+}
 if (a === "pr" && b === "list") {
   const head = flag("--head");
   console.log(

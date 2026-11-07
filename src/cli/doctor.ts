@@ -21,7 +21,7 @@ async function runs(command: string, args: string[], env: NodeJS.ProcessEnv): Pr
 const claudeStatus = z.object({ loggedIn: z.boolean() });
 
 /** `claude auth status` sale 0 y dice `loggedIn: true` solo con una sesión abierta. */
-async function claudeLoggedIn(env: NodeJS.ProcessEnv): Promise<boolean> {
+export async function claudeLoggedIn(env: NodeJS.ProcessEnv): Promise<boolean> {
   const result = await runProc("claude", ["auth", "status"], {
     cwd: process.cwd(),
     env,

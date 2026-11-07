@@ -27,14 +27,13 @@ pnpm verify            # lint, test e integración: la verificación local compl
 ```bash
 pnpm install
 ln -s "$PWD/bin/flowrunner.js" ~/.local/bin/flowrunner   # o cualquier carpeta de tu PATH
-flowrunner doctor
-claude setup-token
-security add-generic-password -s flowrunner -a claude-oauth-token -w   # pegá el token
-flowrunner skill install --confirmar
-flowrunner project add <ruta-del-repo> --github-user <tu-usuario>
-flowrunner brain init <ruta-del-repo>      # completá .flowrunner/ y commitealo
-flowrunner launchd install
+flowrunner init <ruta-del-repo>             # revisa, infiere y dice qué falta; no toca nada
+flowrunner init <ruta-del-repo> --aplicar   # config, skill, launchd y la PR con el cerebro
 ```
+
+`init` infiere el setup, el `verify.sh` y dónde van los tests a partir del `package.json` y de los
+archivos del repo, y comprueba que la base esté en verde antes de abrir la PR. Completá
+`contexto.md`, `convenciones.md` y `que-es-bien.md` en esa PR antes de mergearla.
 
 Después, abrí una sesión de Claude Code y pedile que escriba y lance una feature: la skill
 `flowrunner` hace el resto con el CLI.

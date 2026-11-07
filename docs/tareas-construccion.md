@@ -658,12 +658,55 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 
 ---
 
+# Fase 9 — Setup automático
+> Objetivo: que un repo quede listo para flowrunner con un comando, infiriendo lo que se puede y diciendo lo que falta.
+
+### T9.1 · Login de Claude Code como opción
+- **Estado:** `[x] Hecho`
+- **Descripción:** `auth: login` en la config global usa la sesión de Claude Code de la persona en lugar del token de `claude setup-token`. `doctor` revisa la credencial elegida: `claude auth status` para el login, el Keychain para el token.
+- **Lint:** `pnpm lint`.
+- **Test:** `src/agent/auth.test.ts`: con `auth: login` y sin token devuelve el login; por defecto sin token falla con `AuthError`. `test/doctor.int.test.ts`: con `auth: login` el chequeo es la sesión, y con la sesión cerrada sale 1 con su arreglo.
+- **Canario:** los dos tests nuevos estaban rojos antes del cambio: `AuthError` sin token y config global rechazada por la clave `auth`.
+- **Criterio de aprobación:** con `auth: login`, un run arranca sin token en el Keychain y `doctor` sale 0 con la sesión abierta.
+- **Revisión ponytail:** a mano; sin hallazgos. El modo se lee de la config del home del run, sin una variable nueva.
+- **Desbloquea:** T9.2
+
+### T9.2 · Inferir la config de un repo
+- **Estado:** `[x] Hecho`
+- **Descripción:** `src/setup/infer.ts`: a partir de `git ls-files` y el `package.json` deduce el setup por el lockfile, el `verify.sh` por los scripts, `tests_globs` por los tests que existen y `harness_files` por las configs de vitest, jest o playwright. Sin `package.json` no inventa nada.
+- **Lint:** `pnpm lint`.
+- **Test:** `src/setup/infer.test.ts`: repo npm con `check` da `npm ci` y `npm run check`; repo pnpm sin `check` encadena los scripts en orden; sin script de test, verify falta; sin `package.json`, no hay config.
+- **Canario:** fijar el setup en pnpm puso en rojo el caso npm; quitar la regla del script de test puso en rojo `sin script de test: falta`. Restaurado; 4 de 4 verdes.
+- **Criterio de aprobación:** sobre pizarra-en-vivo infiere `npm ci`, `npm run check`, los tests de `compartido/` y `servidor/` y `vitest.config.ts`.
+- **Revisión ponytail:** a mano; sin hallazgos. Función pura sobre los archivos, sin leer el disco.
+- **Desbloquea:** T9.3
+
+### T9.3 · `flowrunner init <repo> [--aplicar]`
+- **Estado:** `[x] Hecho`
+- **Descripción:** `src/setup/init.ts`: sin flags revisa la máquina, infiere usuario de GitHub y auth, infiere el cerebro sobre un worktree limpio de `origin/<base>` y comprueba que la base esté en verde, sin escribir nada. Con `--aplicar` escribe la config global, registra el proyecto, instala la skill, el job de launchd y el comando en `~/.local/bin`, y abre la PR `chore/flowrunner-init` con el cerebro. Idempotente.
+- **Lint:** `pnpm lint`.
+- **Test:** `test/init.int.test.ts`: sin `--aplicar` no toca HOME, LaunchAgents ni el remote; con `--aplicar` deja todo y una segunda corrida no abre otra PR ni duplica el proyecto; con la base en rojo sale 1 sin empujar; con el cerebro ya en la base no lo infiere de nuevo.
+- **Canario:** forzar `aplicar` en la vista previa puso en rojo `sin --aplicar ... no escribe nada`; saltear la comprobación de la base puso en rojo `con la base en rojo`. Restaurado; 4 de 4 verdes.
+- **Criterio de aprobación:** sobre un repo real de la persona, `init` muestra qué está, qué infirió y qué falta, y `init --aplicar` deja la PR del cerebro abierta y `doctor` en verde.
+- **Revisión ponytail:** a mano. Reusa `doctor`, `installSkill`, `installLaunchd`, `initBrain`, `runVerify`, `pushBranch` y `createPr`; la escritura de la config global se extrajo de `project add` a `updateGlobalConfig` en lugar de duplicarla. El borrador del cerebro con un agente queda fuera hasta que la persona lo pida.
+- **Desbloquea:** Gate F9
+
+### Gate Fase 9
+- **Estado:** `[~] En progreso` — falta correrlo sobre un repo real
+- **Validación de lint:** `pnpm lint` verde.
+- **Tests:** `pnpm verify` verde: 164 unitarios en 27 archivos y 51 de integración en 19.
+- **Test de integración:** `test/init.int.test.ts`, el comando entero por CLI sobre repos reales en tmpdir con remote bare, `gh` y `claude` falsos.
+- **Canario:** los de T9.2 y T9.3.
+- **Criterio de aprobación:** `flowrunner init ~/Documents/PersonalProjects/clonifyCloned/pizarra-en-vivo --aplicar` deja la PR del cerebro abierta y `flowrunner doctor` en verde.
+- **Revisión ponytail:** sobre el diff de la fase: sin capas nuevas, cada paso de `init` llama a la función que ya existía.
+- **Desbloquea:** Gate final
+
 # Cierre del proyecto
 
 ### Gate final
 - **Estado:** `[!] Bloqueado` — todo lo automatizable está verde; falta la aceptación de la persona
 - **Motivo del bloqueo:** el criterio de aprobación pide una feature real en un repo real de la persona, operada desde su sesión de Claude Code, y comparar el tiempo de espera con flowindex. Eso necesita tres cosas que no se hacen sin ella: el token de `claude setup-token` en su Keychain, las reglas *ask* en su `~/.claude/settings.json` real y un repo suyo con `.flowrunner/`.
-- **Acción:** la persona, en este orden: `flowrunner doctor`; `claude setup-token` y guardarlo con `security add-generic-password -s flowrunner -a claude-oauth-token -w`; `flowrunner skill install --confirmar`; `flowrunner project add <repo> --github-user anegri93` y `flowrunner brain init <repo>`; completar el cerebro y commitearlo; `flowrunner launchd install`; y desde una sesión de Claude Code, escribir y lanzar una feature real.
+- **Acción:** la persona: `flowrunner init <repo> --aplicar`, completar y mergear la PR del cerebro, y desde una sesión de Claude Code escribir y lanzar una feature real hasta mergear su PR.
 - **Validación de lint:** `pnpm lint` verde en todo el repo: eslint `strict-type-checked`, prettier y `tsc` estricto.
 - **Tests:** `pnpm verify` verde: 158 unitarios en 25 archivos y 46 de integración en 18. `pnpm smoke` verde con el SDK real: 8 en 6 archivos, incluidos el plan real, implementar en paralelo real y el recorrido de punta a punta real sobre el repo de juguete.
 - **Test de integración:** `test/final.int.test.ts`: el recorrido entero por CLI sobre repos reales en tmpdir, con el SDK simulado y el `gh` falso: feature check, preparar, planificar con un `kill -9` y su `resume`, aprobar, implementar dos sub-tasks en paralelo con otro `kill -9` y su `resume`, verificar, revisar y entregar; después la persona corrige y mergea la PR, y `tick` escribe la lección, abre su PR con auto-merge y cierra el run. `report` y `stats` lo reflejan.

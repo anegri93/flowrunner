@@ -17,7 +17,7 @@ Usá siempre el CLI con `--json` y leé esa salida; no adivines el estado por ot
 
 ## Escribir una feature
 
-1. Preguntá el proyecto; `flowrunner status --json` y la config global dicen cuáles hay. Si falta, `flowrunner project add <ruta> --github-user <usuario> --json` y `flowrunner brain init <ruta> --json`.
+1. Preguntá el proyecto; `flowrunner status --json` y la config global dicen cuáles hay. Si falta, corré `flowrunner init <ruta> --json`, mostrale a la persona qué está, qué se infirió y qué falta, y solo con su sí corré `flowrunner init <ruta> --aplicar --json`. Eso abre la PR del cerebro: el proyecto queda listo cuando la persona la mergea.
 2. Leé el código del repo y su `.flowrunner/` con herramientas de lectura.
 3. Entrevistá **una pregunta por vez**, solo sobre decisiones que son de la persona: qué datos se pierden, quién puede hacer qué, formatos, límites, qué pasa con lo existente. Proponé la respuesta cuando puedas. Las dudas de cómo construirlo no se preguntan: quedan para el planificador.
 4. Escribí `~/.flowrunner/features/<proyecto>/<clave>.md` con este formato exacto:

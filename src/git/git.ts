@@ -11,7 +11,8 @@ export class GitError extends Error {
 }
 
 /** Ramas que flowrunner puede empujar. Cualquier otra, `main` incluida, se rechaza. */
-const PUSHABLE = /^(feat\/[A-Za-z0-9._/-]+|chore\/lecciones-[A-Za-z0-9._-]+)$/;
+const PUSHABLE =
+  /^(feat\/[A-Za-z0-9._/-]+|chore\/lecciones-[A-Za-z0-9._-]+|chore\/flowrunner-init)$/;
 
 export async function git(
   cwd: string,
@@ -112,7 +113,10 @@ export async function pushBranch(
   env?: NodeJS.ProcessEnv,
 ): Promise<void> {
   if (!PUSHABLE.test(branch))
-    throw new GitError(["push", branch], "flowrunner solo empuja ramas feat/ y chore/lecciones-");
+    throw new GitError(
+      ["push", branch],
+      "flowrunner solo empuja ramas feat/, chore/lecciones- y chore/flowrunner-init",
+    );
   await git(
     worktree,
     ["push", "--quiet", "--force-with-lease", "origin", `HEAD:refs/heads/${branch}`],

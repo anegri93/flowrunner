@@ -12,6 +12,7 @@ import { learnOne, tick } from "./tick.ts";
 import { describeDoctor, doctor } from "./doctor.ts";
 import { installLaunchd, uninstallLaunchd } from "./launchd.ts";
 import { installSkill } from "./skill.ts";
+import { describeInit, init } from "../setup/init.ts";
 import { describeStats, stats } from "../report/stats.ts";
 import {
   abortRun,
@@ -25,6 +26,7 @@ import {
 
 const USAGE = `uso: flowrunner <comando> [--json]
 
+  init <ruta> [--aplicar]        revisa e infiere el setup de un repo; con --aplicar lo deja listo
   feature check <archivo>        valida una feature, su proyecto y la config del repo
   run <archivo>                  lanza un run en segundo plano y devuelve su id
   status [run]                   lista los runs, o un run fase por fase
@@ -84,6 +86,7 @@ export async function main(
       nombre: { type: "string" },
       sesion: { type: "string" },
       confirmar: { type: "boolean", default: false },
+      aplicar: { type: "boolean", default: false },
       "github-user": { type: "string" },
     },
   });
@@ -95,6 +98,12 @@ export async function main(
   try {
     const [command, first, ...rest] = positionals;
     switch (command) {
+      case "init": {
+        const aplicar = values.aplicar === true;
+        const result = await init(need(first, "la ruta del repo"), env, aplicar);
+        print(result, describeInit(result, aplicar));
+        return result.ok ? 0 : 1;
+      }
       case "feature": {
         if (first !== "check") break;
         const checked = checkFeature(need(rest[0], "el archivo de la feature"), env);

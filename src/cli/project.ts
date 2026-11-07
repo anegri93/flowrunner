@@ -28,39 +28,54 @@ export function missingForRuns(repo: string): string[] {
   return missing;
 }
 
-export async function addProject(
-  path: string,
-  opts: { name?: string | undefined; githubUser?: string | undefined },
-  env: NodeJS.ProcessEnv,
-) {
+export async function gitRootOf(path: string, env: NodeJS.ProcessEnv): Promise<string> {
   if (!existsSync(path)) throw new UserError(`no existe ${path}`);
-  const repo = await gitRoot(resolve(path), env);
-  const name =
-    opts.name ??
-    basename(repo)
-      .toLowerCase()
-      .replace(/[^a-z0-9-]+/g, "-");
+  return gitRoot(resolve(path), env);
+}
+
+export const projectNameFor = (repo: string) =>
+  basename(repo)
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-");
+
+/** Lee la config global cruda, la cambia y la escribe solo si sigue siendo válida. */
+export function updateGlobalConfig(
+  env: NodeJS.ProcessEnv,
+  change: (raw: Record<string, unknown>) => void,
+): void {
   const home = flowrunnerHome(env);
   const file = join(home, "config.yaml");
   const raw: Record<string, unknown> = existsSync(file)
     ? ((parse(readFileSync(file, "utf8")) as Record<string, unknown> | null) ?? {})
     : {};
-  if (opts.githubUser !== undefined) raw.github_user = opts.githubUser;
+  change(raw);
   if (raw.github_user === undefined) {
     throw new UserError(
       "falta tu usuario de GitHub: flowrunner lo usa para aprender solo de tus correcciones",
-      `flowrunner project add ${path} --github-user <tu usuario>`,
+      "flowrunner project add <ruta> --github-user <tu usuario>",
     );
   }
-  const projects = Array.isArray(raw.projects)
-    ? (raw.projects as { name: string; path: string }[])
-    : [];
-  raw.projects = [...projects.filter((p) => p.name !== name), { name, path: repo }];
   const checked = globalConfigSchema.safeParse(raw);
   if (!checked.success)
     throw new UserError(`la config global quedaría inválida: ${checked.error.message}`);
   mkdirSync(home, { recursive: true });
   writeFileSync(file, stringify(raw));
+}
+
+export async function addProject(
+  path: string,
+  opts: { name?: string | undefined; githubUser?: string | undefined },
+  env: NodeJS.ProcessEnv,
+) {
+  const repo = await gitRootOf(path, env);
+  const name = opts.name ?? projectNameFor(repo);
+  updateGlobalConfig(env, (raw) => {
+    if (opts.githubUser !== undefined) raw.github_user = opts.githubUser;
+    const projects = Array.isArray(raw.projects)
+      ? (raw.projects as { name: string; path: string }[])
+      : [];
+    raw.projects = [...projects.filter((p) => p.name !== name), { name, path: repo }];
+  });
   return { ok: true as const, proyecto: name, repo, faltan: missingForRuns(repo) };
 }
 

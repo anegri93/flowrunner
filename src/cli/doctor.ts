@@ -61,13 +61,17 @@ async function credentialCheck(env: NodeJS.ProcessEnv): Promise<Check> {
   };
 }
 
+/** flowrunner corre el TypeScript directo, lo que pide Node 24 o más nuevo. */
+export function nodeSupported(version: string): boolean {
+  return Number(version.split(".")[0]) >= 24;
+}
+
 export async function doctor(env: NodeJS.ProcessEnv) {
-  const major = Number(process.versions.node.split(".")[0]);
   const checks: Check[] = [
     {
-      nombre: `Node 24 (tenés ${process.versions.node})`,
-      ok: major === 24,
-      arreglo: "instalá Node 24, por ejemplo con `nvm install 24`",
+      nombre: `Node 24 o más nuevo (tenés ${process.versions.node})`,
+      ok: nodeSupported(process.versions.node),
+      arreglo: "instalá Node 24 o más nuevo, por ejemplo con `nvm install 24`",
     },
     { nombre: "git", ok: await runs("git", ["--version"], env), arreglo: "instalá git" },
     { nombre: "gh con sesión", ok: await ghAuthOk(env), arreglo: "corré `gh auth login`" },

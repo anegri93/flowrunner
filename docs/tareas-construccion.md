@@ -604,6 +604,17 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano; sin hallazgos. El plist se escribe como texto con escape XML, sin librería.
 - **Desbloquea:** Gate F7
 
+### T7.4b · Node 24 o más nuevo
+- **Estado:** `[x] Hecho`
+- **Regresión de:** T7.4
+- **Descripción:** `doctor` exigía exactamente Node 24 y `engines` lo fijaba a `>=24 <25`, así que un Node 26 que corre flowrunner sin problemas aparecía como falla en `doctor` e `init`. Ahora alcanza con Node 24 o más nuevo.
+- **Lint:** `pnpm lint`.
+- **Test:** `src/cli/doctor.test.ts`: `nodeSupported` acepta 24.0.0 y 26.6.0 y rechaza 22.11.0.
+- **Canario:** el test se escribió primero y falló contra la regla anterior, `=== 24`. Con el arreglo, verde.
+- **Criterio de aprobación:** con Node 26, `flowrunner doctor` marca el chequeo de Node en verde y `pnpm verify` pasa entero: 165 unitarios y 51 de integración.
+- **Revisión ponytail:** sin hallazgos; la regla quedó en una función de una línea.
+- **Desbloquea:** Gate final
+
 ### Gate Fase 7
 - **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.

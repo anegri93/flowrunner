@@ -11,7 +11,7 @@ correcciones de la persona.
 
 ## Desarrollo
 
-Requiere Node 24, pnpm 10, git, `gh` y `graft`.
+Requiere Node 24 o más nuevo, pnpm 10, git, `gh` y `graft`.
 
 ```bash
 pnpm install

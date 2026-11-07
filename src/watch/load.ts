@@ -3,6 +3,9 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { stateOf, TERMINAL } from "../engine/engine.ts";
 import { transcriptSteps, type Step } from "../report/transcript.ts";
+import { loadRepoConfig } from "../config/load.ts";
+import { DEFAULT_MODELS } from "../config/schemas.ts";
+import type { Phase } from "../store/events.ts";
 import { readLog } from "../store/run-log.ts";
 import { listRunIds, runPaths } from "../store/runs.ts";
 import { runTree, tidyStep, type RunTree, type SessionFile } from "./tree.ts";
@@ -48,10 +51,24 @@ function readSessions(dir: string): Map<string, SessionFile> {
   return out;
 }
 
+/** El esfuerzo de cada fase con agente: el de la config del repo, o el de flowrunner si no se lee. */
+function readEfforts(repo: string | undefined): Partial<Record<Phase, string>> {
+  let models: Record<string, { effort: string }> = DEFAULT_MODELS;
+  try {
+    if (repo !== undefined) models = loadRepoConfig(repo).models;
+  } catch {
+    // la config todavía no está en el checkout de la persona: quedan los defaults
+  }
+  return Object.fromEntries(Object.entries(models).map(([fase, m]) => [fase, m.effort]));
+}
+
 export function loadTree(home: string, id: string, now: number): RunTree {
   const { dir } = runPaths(home, id);
+  const events = readLog(dir).events;
+  const created = events.find((e) => e.tipo === "run_creado");
   return runTree({
-    events: readLog(dir).events,
+    events,
+    esfuerzos: readEfforts(created?.tipo === "run_creado" ? created.repo : undefined),
     tasks: readTasks(dir),
     titulo: readTitle(dir),
     sessions: readSessions(dir),

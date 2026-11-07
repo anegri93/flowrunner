@@ -292,6 +292,20 @@ describe("runTree", () => {
       sessions: new Map(),
       now: T0 + 9_000_000,
     });
-    expect(tree).toMatchObject({ status: "abortado", segundos: 600 });
+    expect(tree).toMatchObject({ status: "abortado", segundos: 600, haceSegundos: 8_400 });
+  });
+
+  // Si regresiona, watch muestra el modelo sin el esfuerzo con que corrió cada fase.
+  test("cada sesión lleva el esfuerzo configurado para su fase", () => {
+    const tree = runTree({
+      events: base,
+      tasks,
+      titulo: "x",
+      sessions: new Map([["planificar-1", planSession]]),
+      esfuerzos: { planificar: "high", implementar: "medium" },
+      now: T0 + 300_000,
+    });
+    expect(tree.fases[1]?.sesiones[0]?.esfuerzo).toBe("high");
+    expect(tree.haceSegundos).toBeUndefined();
   });
 });

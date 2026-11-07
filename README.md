@@ -47,11 +47,12 @@ Después, abrí una sesión de Claude Code y pedile que escriba y lance una feat
 flowrunner watch PIZ-1        # un run por su clave o su id; sin nada, todos los activos
 ```
 
-Una tabla por proyecto: cada run con sus fases y sub-tasks, y para cada una el modelo, los tokens
-procesados con la caché incluida, los USD aproximados, el tiempo y el estado: quién trabaja y con qué
-herramienta, qué te espera y por qué volvió algo. Se refresca cada 2 segundos. Con las flechas elegís
-una fase o una sub-task y con Enter ves los pasos de sus sesiones; `q` sale. Con `--once`, o fuera de
-una terminal, la dibuja una vez.
+Una vista al estilo de [agents-tree](https://github.com/anegri93/agents-tree): arriba, cuántos runs te
+esperan, trabajan o terminaron; abajo, por proyecto y con lo urgente primero, cada run con sus fases y
+sub-tasks como árbol. Cada fila muestra el modelo con su esfuerzo, los tokens con una barra de qué parte
+del run se llevó, los USD aproximados, el tiempo y el estado; debajo, en gris, la herramienta que está
+usando o por qué volvió algo. Se refresca cada 2 segundos. Con las flechas elegís una fila y con Enter
+ves los pasos de sus sesiones; `q` sale. Con `--once`, o fuera de una terminal, la dibuja una vez.
 
 Los USD son el equivalente de API. Con la suscripción no se cobran: lo que limita es su cupo. Un run no
 tiene tope de gasto salvo que el repo lo pida con `budget.run_usd` en `.flowrunner/config.yaml`.

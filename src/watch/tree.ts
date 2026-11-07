@@ -14,6 +14,8 @@ export interface SessionFile {
 export interface SessionNode {
   readonly nombre: string;
   readonly modelo: string | undefined;
+  /** El esfuerzo configurado para la fase de la sesión, si se conoce. */
+  readonly esfuerzo?: string | undefined;
   readonly corriendo: boolean;
   readonly costoUsd: number | undefined;
   /** Tokens procesados: entrada, caché y salida. Crece mientras la sesión corre. */
@@ -55,6 +57,8 @@ export interface RunTree {
   readonly status: RunStatus;
   readonly costoUsd: number;
   readonly segundos: number;
+  /** Hace cuánto terminó, si ya terminó. */
+  readonly haceSegundos: number | undefined;
   readonly motivo: string | undefined;
   /** El comando que la persona corre para seguir, si el run la espera. */
   readonly siguiente: string | undefined;
@@ -66,6 +70,8 @@ export interface TreeInput {
   readonly tasks: readonly { id: string; titulo: string; depende_de: readonly string[] }[];
   readonly titulo: string;
   readonly sessions: ReadonlyMap<string, SessionFile>;
+  /** El esfuerzo de cada fase según la config del repo. */
+  readonly esfuerzos?: Partial<Record<Phase, string>>;
   readonly now: number;
 }
 
@@ -194,10 +200,11 @@ export function runTree(input: TreeInput): RunTree {
 
   const sessions = [...input.sessions.entries()]
     .sort(([, a], [, b]) => a.birthMs - b.birthMs)
-    .map(([nombre, file]) => ({
-      owner: sessionOwner(nombre),
-      node: sessionNode(nombre, file, now),
-    }));
+    .map(([nombre, file]) => {
+      const owner = sessionOwner(nombre);
+      const esfuerzo = owner === undefined ? undefined : input.esfuerzos?.[owner.fase];
+      return { owner, node: { ...sessionNode(nombre, file, now), esfuerzo } };
+    });
 
   const unitStates = new Map<string, UnitState>();
   for (const e of events) if (e.tipo === "unidad") unitStates.set(e.unidad, UNIT_STATE[e.estado]);
@@ -291,6 +298,7 @@ export function runTree(input: TreeInput): RunTree {
     status: state.status,
     costoUsd: state.costoUsd,
     segundos: created === undefined ? 0 : Math.round((end - Date.parse(created.at)) / 1000),
+    haceSegundos: end === now ? undefined : Math.round((now - end) / 1000),
     motivo: state.halt?.motivo,
     siguiente,
     fases,

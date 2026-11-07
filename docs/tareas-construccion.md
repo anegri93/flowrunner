@@ -105,13 +105,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** Gate F0
 
 ### Gate Fase 0
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde en todo el repo.
 - **Tests:** `pnpm test` y `pnpm test:integration` verdes con `pnpm verify`; `pnpm smoke` verde en local.
-- **Test de integración:** el CLI real, como proceso hijo, valida una feature de fixture contra la config de un repo de fixture: verde con datos válidos y salida 1 con el motivo cuando el repo no tiene `.flowrunner/config.yaml`.
-- **Canario:** re-canario sobre 2-3 tests de la fase al azar.
-- **Criterio de aprobación:** los ADR 0013-0015 responden los puntos abiertos 1-4 con evidencia, y ninguno contradice la spec sin una tarea que la ajuste.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff acumulado de la fase + `/ponytail-debt` + listado de `test-debt:` nuevos.
+- **Test de integración:** `test/fase0.int.test.ts`: el CLI real, como proceso hijo con un HOME propio, resuelve una feature válida a su proyecto y a la config del repo con defaults; sale 1 con el motivo si el repo no tiene `.flowrunner/config.yaml` y si el proyecto no está registrado.
+- **Canario:** re-canario sobre tres tests al azar: `max_parallel: z.int().min(0)` puso en rojo `max_parallel menor que 1 es un error`; anular el chequeo de claves repetidas puso en rojo `un criterio sin AC-n o una clave repetida`; saltear el proyecto no registrado puso en rojo el caso de integración `un proyecto que no está registrado sale 1`. Una primera mutación de este último era débil, seguía verde, y se reemplazó. Restaurados.
+- **Criterio de aprobación:** los ADR 0013-0015 responden los puntos abiertos 1-4 con evidencia real; el 5 queda como nota en el README. La spec se ajustó al ADR 0015 en preparar y en el aislamiento.
+- **Revisión ponytail:** `/ponytail-review` sobre el diff acumulado: 4 cortes aplicados, `GRAFT_TELEMETRY` sin efecto, alias de modelos sin uso, alias de sección sin tilde y `repoWithRemote` sin uso. `ponytail:` nuevos: ninguno. `test-debt:` nuevos: ninguno.
 - **Desbloquea:** Fase 1
 
 ---

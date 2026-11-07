@@ -31,7 +31,6 @@ export interface Feature {
 
 const SECTIONS = {
   descripción: "descripcion",
-  descripcion: "descripcion",
   criterios: "criterios",
   aclaraciones: "aclaraciones",
   "fuera de alcance": "fuera",

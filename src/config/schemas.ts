@@ -2,14 +2,7 @@
 // (.flowrunner/config.yaml). Los defaults viven acá y en ningún otro lado.
 import { z } from "zod";
 
-export const MODEL_IDS = [
-  "claude-opus-5-5",
-  "claude-sonnet-5-5",
-  "claude-haiku-5-5",
-  "opus",
-  "sonnet",
-  "haiku",
-] as const;
+export const MODEL_IDS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"] as const;
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 export const AGENT_PHASES = [
   "planificar",

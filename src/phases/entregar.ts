@@ -8,13 +8,28 @@ import { prBody } from "../report/report.ts";
 import { readLog } from "../store/run-log.ts";
 import type { PhaseFn } from "../runner/types.ts";
 import { featureWorktree, prepared, runFeature } from "./inputs.ts";
+import { proposeLessons } from "./proponer.ts";
 
 export const entregar: PhaseFn = async (ctx) => {
   const { run, deps, emit, state } = ctx;
   const prep = prepared(ctx.events);
   const worktree = featureWorktree(run);
   const feature = runFeature(run);
-  const base = loadRepoConfig(worktree).base_branch;
+  const config = loadRepoConfig(worktree);
+  const base = config.base_branch;
+  // Una sola vez por run: si entregar se reintenta, las lecciones ya están en la rama.
+  if (!ctx.events.some((e) => e.tipo === "lecciones_propuestas")) {
+    try {
+      await proposeLessons(ctx, worktree, config);
+    } catch (error) {
+      if (!(error instanceof GitError)) throw error;
+      emit({
+        tipo: "aviso",
+        fase: "entregar",
+        texto: `no se pudieron proponer lecciones: ${error.message}`,
+      });
+    }
+  }
   try {
     await pushBranch(worktree, prep.rama, deps.env);
     let pr = await findPr(worktree, prep.rama, deps.env);

@@ -24,6 +24,7 @@ import {
 } from "../github/gh.ts";
 import { render } from "../prompts/render.ts";
 import type { PhaseContext, PhaseFn } from "../runner/types.ts";
+import type { Phase } from "../store/events.ts";
 import { acquireLock, LockHeldError, releaseLock } from "../store/lock.ts";
 import { holderStatus } from "../store/runs.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
@@ -51,6 +52,12 @@ export async function corrections(
   const out: Correction[] = [];
   for (const commit of pr.commits.slice(lastOurs + 1)) {
     if (!commit.authors.some((a) => isPerson(a.login))) continue;
+    // Tocar solo el cerebro, por ejemplo borrar una lección propuesta, no corrige el código.
+    const files = await git(repo, ["show", "--name-only", "--format=", commit.oid], env).catch(
+      () => "",
+    );
+    const touched = files.split("\n").filter((f) => f !== "");
+    if (touched.length > 0 && touched.every((f) => f.startsWith(".flowrunner/"))) continue;
     const patch = await git(repo, ["show", "--format=%s%n%n%b", commit.oid], env).catch(
       () => commit.messageHeadline,
     );
@@ -93,15 +100,16 @@ export function autoMergeAllowed(touched: readonly string[], consolidated: boole
 export const APRENDER_BUDGET_USD = 2;
 export const APRENDER_TIMEOUT_MS = 15 * 60_000;
 
-const nextLessonNumber = (text: string) =>
+export const nextLessonNumber = (text: string) =>
   1 + Math.max(0, ...[...text.matchAll(/^### L-(\d+)/gm)].map((m) => Number(m[1])));
 
-function readOnlyHook(ctx: PhaseContext, root: string) {
+/** Una sesión que solo lee el prompt: sin herramientas de escritura, Bash, agentes ni graft. */
+export function readOnlyHook(ctx: PhaseContext, root: string, fase: Phase = "aprender") {
   return tripwireHook(
     {
       scope: {
         root,
-        owner: "aprender",
+        owner: fase,
         writable: [],
         writeGlobs: [],
         locked: [],
@@ -112,7 +120,7 @@ function readOnlyHook(ctx: PhaseContext, root: string) {
         testGlobs: [],
         bash: [],
       },
-      fase: "aprender",
+      fase,
       write: false,
       bash: false,
       agents: false,

@@ -108,6 +108,12 @@ export const eventSchema = z.discriminatedUnion("tipo", [
   z.strictObject({ tipo: z.literal("abortado"), at }),
   z.strictObject({ tipo: z.literal("pr"), at, url: z.string(), numero: z.int() }),
   z.strictObject({ tipo: z.literal("pr_cerrada"), at, mergeada: z.boolean() }),
+  /** Lo que propuso entregar a partir de la fricción del run: `cantidad` lecciones en la PR. */
+  z.strictObject({
+    tipo: z.literal("lecciones_propuestas"),
+    at,
+    cantidad: z.int().nonnegative(),
+  }),
   z.strictObject({
     tipo: z.literal("lecciones"),
     at,

@@ -41,6 +41,18 @@ archivos del repo, y comprueba que la base esté en verde antes de abrir la PR. 
 Después, abrí una sesión de Claude Code y pedile que escriba y lance una feature: la skill
 `flowrunner` hace el resto con el CLI.
 
+## Cómo aprende el cerebro
+
+El cerebro aprende de dos fuentes, y en las dos decide la persona:
+
+- **Lo que le costó al run corregirse solo.** Las vueltas de verificar y revisar y los cambios que
+  pediste al plan se vuelven lecciones propuestas, en un commit aparte de la misma PR de entrega,
+  explicadas en su descripción. Si una no te convence, la borrás de `.flowrunner/lecciones.md` antes
+  de mergear; si mergeás, quedan. Un run sin vueltas no gasta en esto y la PR lo dice.
+- **Tus correcciones a la PR.** Después del merge, tus commits y comentarios se vuelven lecciones que
+  llegan por una PR chica con auto-merge. Un commit tuyo que solo toca `.flowrunner/`, como borrar una
+  lección propuesta, no cuenta como corrección del código.
+
 ## Ver un run en vivo
 
 ```bash

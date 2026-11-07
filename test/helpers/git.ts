@@ -28,3 +28,14 @@ export function repoWith(files: Record<string, string>): string {
   git(dir, "commit", "-q", "-m", "inicial");
   return dir;
 }
+
+/** Un remote bare y un clon de trabajo con `files`, con `origin` apuntando al bare. */
+export function repoWithRemote(files: Record<string, string>): { work: string; remote: string } {
+  const work = repoWith(files);
+  const remote = tempDir("flowrunner-remote-");
+  git(remote, "init", "-q", "--bare", "-b", "main");
+  git(work, "remote", "add", "origin", remote);
+  git(work, "push", "-q", "origin", "main");
+  git(work, "fetch", "-q", "origin");
+  return { work, remote };
+}

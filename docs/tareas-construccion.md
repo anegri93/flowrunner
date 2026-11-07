@@ -211,9 +211,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - Un cherry-pick con conflicto devuelve el conflicto y deja el worktree sin cambios.
   - Push a `main` o a una rama ajena → error sin tocar el remote.
   - Push con el remote movido por otro → error de lease.
-- **Canario:** a comprobar: sacar la restricción de ramas pone en rojo el test del push a `main`.
-- **Criterio de aprobación:** las operaciones corren sobre el repo de juguete sin tocar su checkout principal.
-- **Revisión ponytail:** pendiente.
+- **Canario:** anular la lista de ramas empujables puso en rojo `push a main o a una rama ajena falla`; `--force` en lugar de `--force-with-lease` puso en rojo `push con el remote movido por otro falla por lease`; no abortar el cherry-pick puso en rojo `un cherry-pick con conflicto … deja el worktree sin cambios`. Restaurados; 6 de 6 verdes.
+- **Criterio de aprobación:** las operaciones corren sobre repos reales con remote bare sin tocar el checkout principal: el worktree vive en su propia carpeta. `changesSince` incluye archivos sin seguimiento, que el doble control necesita.
+- **Revisión ponytail:** a mano; sin hallazgos. `runProc` es el único lanzador de procesos y siempre limpia los secretos del entorno.
 - **Desbloquea:** T2.2
 
 ### T2.2 · Cerebro: carga, topes y plantillas

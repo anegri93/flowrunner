@@ -73,7 +73,7 @@ export function startRun(home: string, file: string, env: NodeJS.ProcessEnv, now
       clave: checked.feature.clave,
       proyecto: checked.project.name,
       repo: checked.project.path,
-      budgetUsd: checked.repoConfig.budget.run_usd,
+      budgetUsd: checked.repoConfig.budget?.run_usd,
       featureText,
     },
     now,

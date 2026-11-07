@@ -1,7 +1,7 @@
 // El árbol de un run para `flowrunner watch`: fases, sub-tasks y sesiones, armado del log de eventos,
 // del plan y de los transcripts que cada sesión escribe mientras corre. Función pura: el disco lo lee
 // `load.ts`.
-import { stateOf, type RunStatus } from "../engine/engine.ts";
+import { stateOf, TERMINAL, type RunStatus } from "../engine/engine.ts";
 import type { Step } from "../report/transcript.ts";
 import { PHASES, type Phase, type RunEvent } from "../store/events.ts";
 
@@ -16,6 +16,8 @@ export interface SessionNode {
   readonly modelo: string | undefined;
   readonly corriendo: boolean;
   readonly costoUsd: number | undefined;
+  /** Tokens procesados: entrada, caché y salida. Crece mientras la sesión corre. */
+  readonly tokens: number;
   readonly segundos: number;
   /** Herramientas que usó. */
   readonly pasos: number;
@@ -52,7 +54,6 @@ export interface RunTree {
   readonly proyecto: string;
   readonly status: RunStatus;
   readonly costoUsd: number;
-  readonly budgetUsd: number;
   readonly segundos: number;
   readonly motivo: string | undefined;
   /** El comando que la persona corre para seguir, si el run la espera. */
@@ -104,18 +105,36 @@ export function tidyStep(step: Step, worktrees: string): Step {
   }
 }
 
+interface Usage {
+  input_tokens?: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+  output_tokens?: number;
+}
+
+const usageTotal = (u: Usage) =>
+  (u.input_tokens ?? 0) +
+  (u.cache_creation_input_tokens ?? 0) +
+  (u.cache_read_input_tokens ?? 0) +
+  (u.output_tokens ?? 0);
+
 export function sessionNode(nombre: string, file: SessionFile, now: number): SessionNode {
   let modelo: string | undefined;
   let costoUsd: number | undefined;
   let pasos = 0;
   let ultimo: string | undefined;
+  // Mientras corre, la suma por mensaje; el SDK repite el mismo mensaje por cada bloque, así que va
+  // por id. Al terminar, el total del resultado.
+  const perMessage = new Map<string, number>();
+  let final: number | undefined;
   for (const raw of file.jsonl.split("\n")) {
     if (raw.trim() === "") continue;
     let m: {
       type?: string;
       model?: string;
       total_cost_usd?: number;
-      message?: { model?: string; content?: unknown };
+      usage?: Usage;
+      message?: { id?: string; model?: string; content?: unknown; usage?: Usage };
     };
     try {
       m = JSON.parse(raw) as typeof m;
@@ -123,7 +142,13 @@ export function sessionNode(nombre: string, file: SessionFile, now: number): Ses
       continue; // la última línea puede estar a medio escribir
     }
     modelo = m.model ?? m.message?.model ?? modelo;
-    if (m.type === "result") costoUsd = m.total_cost_usd ?? 0;
+    if (m.type === "result") {
+      costoUsd = m.total_cost_usd ?? 0;
+      if (m.usage !== undefined) final = usageTotal(m.usage);
+    }
+    if (m.type === "assistant" && m.message?.usage !== undefined) {
+      perMessage.set(m.message.id ?? String(perMessage.size), usageTotal(m.message.usage));
+    }
     if (m.type !== "assistant" || !Array.isArray(m.message?.content)) continue;
     for (const b of m.message.content as Record<string, unknown>[]) {
       if (b.type !== "tool_use") continue;
@@ -140,6 +165,7 @@ export function sessionNode(nombre: string, file: SessionFile, now: number): Ses
     modelo,
     corriendo,
     costoUsd,
+    tokens: final ?? [...perMessage.values()].reduce((a, b) => a + b, 0),
     segundos: Math.max(0, Math.round((end - file.birthMs) / 1000)),
     pasos,
     ultimo,
@@ -245,6 +271,9 @@ export function runTree(input: TreeInput): RunTree {
   });
 
   const id = state.runId;
+  // Un run terminado no sigue sumando tiempo: cuenta hasta su último evento.
+  const lastAt = events.at(-1)?.at;
+  const end = TERMINAL.has(state.status) && lastAt !== undefined ? Date.parse(lastAt) : now;
   const pr = events.findLast((e) => e.tipo === "pr");
   const siguiente =
     state.status === "esperando_aprobacion"
@@ -261,8 +290,7 @@ export function runTree(input: TreeInput): RunTree {
     proyecto: state.proyecto,
     status: state.status,
     costoUsd: state.costoUsd,
-    budgetUsd: state.budgetUsd,
-    segundos: created === undefined ? 0 : Math.round((now - Date.parse(created.at)) / 1000),
+    segundos: created === undefined ? 0 : Math.round((end - Date.parse(created.at)) / 1000),
     motivo: state.halt?.motivo,
     siguiente,
     fases,

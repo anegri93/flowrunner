@@ -22,7 +22,7 @@ export interface NewRun {
   readonly clave: string;
   readonly proyecto: string;
   readonly repo: string;
-  readonly budgetUsd: number;
+  readonly budgetUsd?: number | undefined;
   readonly featureText: string;
 }
 
@@ -40,7 +40,7 @@ export function createRun(home: string, run: NewRun, now: Date): RunPaths {
       clave: run.clave,
       proyecto: run.proyecto,
       repo: run.repo,
-      budget_usd: run.budgetUsd,
+      ...(run.budgetUsd === undefined ? {} : { budget_usd: run.budgetUsd }),
     },
     () => now,
   );

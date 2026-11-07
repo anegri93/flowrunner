@@ -667,6 +667,16 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. El estado del run sale de `stateOf`; los pasos, de `transcriptSteps`. Sin dependencias nuevas: ANSI a mano.
 - **Desbloquea:** Gate final
 
+### T8.4 · `watch` como tabla, con tokens y USD por etapa, y sin tope de gasto por defecto
+- **Estado:** `[x] Hecho`
+- **Descripción:** la persona pidió sacar el tope de USD 25 por run y ver cuántos tokens y USD costó cada etapa, en una vista más fácil de leer. `budget.run_usd` pasa a ser opcional y sin valor por defecto. `watch` es ahora una tabla por proyecto: un resumen de runs por estado y, por run, cada fase y sub-task con modelo, tokens, ≈ USD, tiempo y estado. Los tokens salen del transcript de cada sesión, caché incluida, porque los del evento `uso` la dejan afuera. Un run terminado deja de sumar tiempo.
+- **Lint:** `pnpm lint`.
+- **Test:** `src/engine/engine.test.ts`: sin tope configurado, ningún gasto detiene. `src/config/config.test.ts`: una config mínima no trae tope. `src/watch/tree.test.ts`: tokens en vivo sumando cada mensaje una vez y el total del resultado al terminar; un run cerrado cuenta hasta su último evento. `src/watch/render.test.ts`: resumen, columnas y filas con sus números; ancho y columnas que se pierden; texto de modelo sin control; selección sin correr el árbol; detalle con varias sesiones. `test/watch.int.test.ts`: la tabla por CLI.
+- **Canario:** contar cada bloque como mensaje puso en rojo el test de tokens; mostrar siempre el modelo puso en rojo el de columnas; el test de config falló antes del cambio; el de la fila elegida falló con el marcador que corría el árbol.
+- **Criterio de aprobación:** sobre PIZ-1, la tabla muestra planificar con 738k tokens y USD 0.93, revisar ×2 con 695k y USD 0.98, y el run con 1.9M y USD 2.36, sin tope. En una pseudo-terminal, la fila de ST-2 abre el detalle de sus dos sesiones.
+- **Revisión ponytail:** a mano. Las filas salen del mismo árbol; las columnas, de una función de layout de seis líneas.
+- **Desbloquea:** Gate final
+
 ### Gate Fase 8
 - **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.

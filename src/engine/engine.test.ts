@@ -131,6 +131,28 @@ describe("transiciones", () => {
     expect(s.halt?.motivo).toMatch(/USD 11.00.*USD 10.00/);
   });
 
+  // Si regresiona, un run sin tope configurado se corta por un límite que nadie pidió.
+  test("sin tope configurado, ningún gasto detiene el run", () => {
+    const { budget_usd: _sinTope, ...sinTope } = created;
+    const s = stateOf([
+      sinTope,
+      ...ok("preparar"),
+      ev({ tipo: "accion_iniciada", fase: "planificar" }),
+      ev({
+        tipo: "uso",
+        fase: "planificar",
+        sesion: "s1",
+        modelo: "claude-opus-5-5",
+        costo_usd: 500,
+        tokens_entrada: 1,
+        tokens_salida: 1,
+        duracion_ms: 1,
+      }),
+      ev({ tipo: "accion_terminada", fase: "planificar", resultado: { tipo: "ok" } }),
+    ]);
+    expect(s).toMatchObject({ status: "en_curso", fase: "aprobar", costoUsd: 500 });
+  });
+
   test("infraestructura reintenta dos veces y a la tercera detiene", () => {
     const infra = done("entregar", { tipo: "falla", clase: "infra", motivo: "gh 502" });
     const base = [upTo("preparar", "planificar", "aprobar", "implementar", "verificar", "revisar")];

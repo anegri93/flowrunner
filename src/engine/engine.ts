@@ -49,7 +49,8 @@ export interface RunState {
   readonly clave: string;
   readonly proyecto: string;
   readonly repo: string;
-  readonly budgetUsd: number;
+  /** Undefined si el repo no configuró un tope. */
+  readonly budgetUsd: number | undefined;
   readonly status: RunStatus;
   readonly fase: Phase;
   readonly intentos: number;
@@ -171,7 +172,7 @@ export function initialState(): RunState {
     clave: "",
     proyecto: "",
     repo: "",
-    budgetUsd: 0,
+    budgetUsd: undefined,
     status: "en_curso",
     fase: "preparar",
     intentos: 0,
@@ -212,7 +213,11 @@ export function reduce(state: RunState, event: RunEvent): RunState {
     case "uso": {
       const costoUsd = state.costoUsd + event.costo_usd;
       const next = { ...state, costoUsd };
-      if (costoUsd > state.budgetUsd && state.status === "en_curso") {
+      if (
+        state.budgetUsd !== undefined &&
+        costoUsd > state.budgetUsd &&
+        state.status === "en_curso"
+      ) {
         return halt(
           next,
           `el run gastó USD ${costoUsd.toFixed(2)} y su tope es USD ${state.budgetUsd.toFixed(2)}`,

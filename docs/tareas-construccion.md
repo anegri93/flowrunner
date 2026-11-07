@@ -589,9 +589,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - Un diff que además toca otro archivo → PR sin auto-merge y aviso.
   - Un archivo que pasa el tope → consolidación y PR sin auto-merge.
   - Una lección sin origen → falla de gate.
-- **Canario:** a comprobar: saltear el chequeo del diff pone en rojo el segundo caso.
-- **Criterio de aprobación:** el `gh` falso registra el `pr create` y el `pr merge --auto --merge` de la PR de lecciones con los argumentos esperados. El auto-merge real en GitHub se prueba al subir el proyecto.
-- **Revisión ponytail:** pendiente.
+- **Canario:** reducir la regla del auto-merge a "sin consolidación", salteando el chequeo del diff, puso en rojo `autoMergeAllowed: solo con lecciones.md y sin consolidación`; aceptar orígenes inventados puso en rojo `una lección sin un origen de la persona es falla de gate`. Restaurados; 3 de 3 de integración y 5 de 5 unitarios verdes.
+- **Criterio de aprobación:** el `gh` falso registra el `pr create` de `chore/lecciones-SHOP-214` y un único `pr merge 413 --auto --merge`; `lecciones.md` en esa rama del remote tiene `L-1` y `L-2` con su origen; el evento `lecciones` dice `auto_merge: true` y el run queda cerrado. Con el archivo sobre su tope, se consolida, no hay auto-merge y llega el aviso. El auto-merge real en GitHub se prueba al subir el proyecto.
+- **Revisión ponytail:** a mano; 1 corte: la regla del auto-merge quedó como una función pura de una línea en lugar de estar enterrada en la fase.
 - **Desbloquea:** T7.4
 
 ### T7.4 · launchd y doctor

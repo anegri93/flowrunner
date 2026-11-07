@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { git, repoWith } from "../../test/helpers/git.ts";
 import type { PrDetail } from "../github/gh.ts";
-import { corrections } from "./aprender.ts";
+import { autoMergeAllowed, corrections } from "./aprender.ts";
 
 const URL = "https://github.com/acme/acme-api/pull/412";
 
@@ -108,5 +108,15 @@ describe("corrections", () => {
       process.env,
     );
     expect(found).toHaveLength(1);
+  });
+});
+
+describe("autoMergeAllowed", () => {
+  // Si regresiona, una PR de lecciones que toca código entra a la base sin que nadie la revise.
+  test("solo con lecciones.md y sin consolidación", () => {
+    expect(autoMergeAllowed([".flowrunner/lecciones.md"], false)).toBe(true);
+    expect(autoMergeAllowed([".flowrunner/lecciones.md", "src/a.js"], false)).toBe(false);
+    expect(autoMergeAllowed([".flowrunner/convenciones.md"], false)).toBe(false);
+    expect(autoMergeAllowed([".flowrunner/lecciones.md"], true)).toBe(false);
   });
 });

@@ -81,6 +81,15 @@ export const lessonsSchema = z.object({
 });
 export const consolidationSchema = z.object({ lecciones_md: z.string().min(1) });
 
+/** El auto-merge solo entra si el diff toca únicamente lecciones.md y no hubo consolidación (spec, sección 4). */
+export function autoMergeAllowed(touched: readonly string[], consolidated: boolean): boolean {
+  return (
+    !consolidated &&
+    touched.length === 1 &&
+    touched[0] === `.flowrunner/${BRAIN_FILES.lecciones.file}`
+  );
+}
+
 export const APRENDER_BUDGET_USD = 2;
 export const APRENDER_TIMEOUT_MS = 15 * 60_000;
 
@@ -243,15 +252,12 @@ export const aprender: PhaseFn = async (ctx) => {
         { branch, base: config.base_branch, title: `lecciones: ${feature.clave}`, bodyFile },
         deps.env,
       ));
-    // El auto-merge solo entra si el diff toca únicamente lecciones.md (spec, sección 4).
     const touched = (
       await git(wt, ["diff", "--name-only", `origin/${config.base_branch}..HEAD`], deps.env)
     )
       .split("\n")
       .filter((f) => f !== "");
-    const onlyLessons =
-      touched.length === 1 && touched[0] === `.flowrunner/${BRAIN_FILES.lecciones.file}`;
-    const auto = onlyLessons && !consolidated;
+    const auto = autoMergeAllowed(touched, consolidated);
     if (auto) await enableAutoMerge(wt, lessonsPr.number, deps.env);
     else {
       deps.notify(

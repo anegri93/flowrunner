@@ -43,7 +43,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 
 ### T0.1 · Esqueleto del repo, CI y ADRs
 - **Estado:** `[ ] Pendiente`
-- **Descripción:** crear el repo privado `anegri93/flowrunner` en GitHub, configurado solo con merge commit y borrado de rama al mergear. `package.json` con pnpm 10, Node 22 o superior, ESM; `tsconfig.json` estricto; eslint, prettier y vitest con los proyectos `unit`, `integration` y `smoke`. Layout `src/<módulo>/` según la sección 1 de la spec; cada módulo nace con la primera tarea que lo usa. CI en GitHub Actions: lint, typecheck, test e integración en cada PR, en macOS y Linux, con `graft` instalado. ADRs 0001-0012 con las decisiones de la spec. README corto.
+- **Descripción:** crear el repo privado `anegri93/flowrunner` en GitHub, configurado solo con merge commit y borrado de rama al mergear. `package.json` con pnpm 10, Node 24, ESM; `tsconfig.json` estricto; eslint, prettier y vitest con los proyectos `unit`, `integration` y `smoke`. Layout `src/<módulo>/` según la sección 1 de la spec; cada módulo nace con la primera tarea que lo usa. CI en GitHub Actions: lint, typecheck, test e integración en cada PR, en macOS y Linux, con `graft` instalado. ADRs 0001-0012 con las decisiones de la spec. README corto.
 - **Lint:** `pnpm lint` verde sobre el esqueleto; `actionlint` sobre el workflow.
 - **Test:** N/A — no hay comportamiento propio todavía; verificación: un test deliberadamente roto en la primera PR pone la CI en rojo en las dos plataformas y se quita antes del merge.
 - **Canario:** N/A — sin test propio. A comprobar en local: un `expect(1).toBe(2)` hace que `pnpm test` salga distinto de 0, y un archivo mal formateado hace que `pnpm lint` falle.
@@ -169,7 +169,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 
 ### T1.4 · CLI: run, status, resume, rerun, abort
 - **Estado:** `[ ] Pendiente`
-- **Descripción:** `flowrunner run <archivo>` valida la feature, copia `feature.md` al run, lanza el proceso del run separado de la terminal y devuelve el id. `status` lista runs o uno fase por fase. `resume` relanza un run detenido o interrumpido. `rerun <run> --desde <fase>` lo rehace desde una fase. `abort` lo cancela, borra sus worktrees y deja las ramas. Salidas legibles; errores con el comando siguiente.
+- **Descripción:** `flowrunner run <archivo>` valida la feature, copia `feature.md` al run, lanza el proceso del run separado de la terminal y devuelve el id. `status` lista runs o uno fase por fase. `resume` relanza un run detenido o interrumpido. `rerun <run> --desde <fase>` lo rehace desde una fase. `abort` lo cancela, borra sus worktrees y deja las ramas. Salidas legibles; errores con el comando siguiente. Cada comando acepta `--json` con una salida validada por un schema Zod exportado, que es lo que lee la skill de consola; esta convención rige para todos los comandos que se agreguen después.
 - **Lint:** `pnpm lint`.
 - **Test:** sobre el CLI real como proceso hijo:
   - `run` sobre una feature inválida sale 1 sin crear el directorio del run.
@@ -177,6 +177,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - Editar el archivo original después de `run` no cambia `runs/<id>/feature.md`.
   - `resume` sobre un run terminado sale 1 con el motivo.
   - `rerun --desde` con una fase que no existe sale 1 y lista las fases válidas.
+  - `status --json` valida contra su schema, y un error con `--json` también sale como JSON.
   - `abort` sobre un run en curso termina su proceso y lo deja `abortado`.
 - **Canario:** a comprobar: leer la feature del archivo original en lugar de la copia pone en rojo el test de edición.
 - **Criterio de aprobación:** desde una terminal, `flowrunner run` vuelve al prompt al instante y `flowrunner status` muestra el avance.
@@ -369,7 +370,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 
 ### T4.3 · Aprobar: espera sin proceso, approve, changes
 - **Estado:** `[ ] Pendiente`
-- **Descripción:** `src/notify/` con `osascript` y la fase aprobar: registra la espera, avisa y termina el proceso. `flowrunner plan <run>` muestra plan, sub-tasks con alcance y diff de los tests. `approve` relanza hacia implementar; `changes <run> "<motivo>"` relanza hacia planificar con la instrucción.
+- **Descripción:** `src/notify/` con `osascript` y la fase aprobar: registra la espera, avisa con un texto que dice qué pedirle a Claude, como *"SHOP-214: el plan espera tu aprobación. Pedile a Claude que te lo muestre."*, y termina el proceso. `flowrunner plan <run>` muestra plan, sub-tasks con alcance y diff de los tests. `approve` relanza hacia implementar; `changes <run> "<motivo>"` relanza hacia planificar con la instrucción.
 - **Lint:** `pnpm lint`.
 - **Test:** sobre el CLI real:
   - Al llegar a la espera, el proceso del run termina y el `osascript` falso registró el aviso con la clave.
@@ -523,9 +524,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 
 > Objetivo: al mergear una PR, las correcciones de la persona se convierten solas en lecciones que llegan a la base por una PR con auto-merge.
 
-### T7.1 · `flowrunner tick`: pausados y estado de las PRs
+### T7.1 · `flowrunner tick` y `learn`: pausados y estado de las PRs
 - **Estado:** `[ ] Pendiente`
-- **Descripción:** `src/cli/tick.ts`: retoma los runs `pausado_por_limite` y consulta con `gh` el estado de las PRs de los runs `entregado`: cerrada sin merge lleva a `cerrado`; mergeada lleva a aprender. Dos ticks a la vez no se pisan.
+- **Descripción:** `src/cli/tick.ts`: retoma los runs `pausado_por_limite` y consulta con `gh` el estado de las PRs de los runs `entregado`: cerrada sin merge lleva a `cerrado`; mergeada lleva a aprender. `flowrunner learn <run>` hace la misma consulta para un solo run, en el momento. Dos ticks a la vez, o un tick y un `learn` sobre el mismo run, no se pisan.
 - **Lint:** `pnpm lint`.
 - **Test:** con el `gh` falso:
   - Un run pausado se retoma.
@@ -533,6 +534,8 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - PR mergeada → pasa a aprender.
   - PR abierta → sin cambios.
   - Dos ticks simultáneos → el segundo sale sin hacer nada.
+  - `learn` sobre un run cuya PR sigue abierta → sale 0 diciendo que no hay merge todavía.
+  - `learn` mientras un tick procesa ese run → no escribe la lección dos veces.
 - **Canario:** a comprobar: tratar "cerrada" como "mergeada" pone en rojo el segundo caso.
 - **Criterio de aprobación:** `flowrunner tick` sin nada pendiente termina en menos de un segundo sin llamar al modelo.
 - **Revisión ponytail:** pendiente.
@@ -569,7 +572,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 
 ### T7.4 · launchd y doctor
 - **Estado:** `[ ] Pendiente`
-- **Descripción:** `flowrunner launchd install` escribe el plist del tick con el intervalo de la config y lo carga; `uninstall` lo quita. `flowrunner doctor` comprueba Node, git, `gh` con sesión, graft, el token en el Keychain y el job de launchd, cada uno con su arreglo.
+- **Descripción:** `flowrunner launchd install` escribe el plist del tick con `tick_minutes` de la config global, por defecto 10, y lo carga; `uninstall` lo quita. `flowrunner doctor` comprueba Node, git, `gh` con sesión, graft, el token en el Keychain y el job de launchd, cada uno con su arreglo.
 - **Lint:** `pnpm lint`.
 - **Test:** `doctor` con binarios falsos: un `gh` sin sesión → sale 1 y nombra el arreglo; el Keychain sin token → sale 1 y sugiere `claude setup-token`; todo presente → sale 0. El plist generado se compara contra uno esperado: programa, argumentos, intervalo y logs.
 - **Canario:** a comprobar: ignorar el exit de `gh auth status` pone en rojo el primer caso.
@@ -589,17 +592,22 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 
 ---
 
-# Fase 8 — Skill de feature y telemetría
+# Fase 8 — La consola en Claude Code y telemetría
 
-> Objetivo: la persona escribe la feature conversando y puede medir qué pieza de la fábrica mejorar.
+> Objetivo: la persona opera flowrunner entero conversando en Claude Code, sin tocar la terminal, y puede medir qué pieza de la fábrica mejorar.
 
-### T8.1 · Skill `flowrunner-feature`
+### T8.1 · Skill `flowrunner`: la consola
 - **Estado:** `[ ] Pendiente`
-- **Descripción:** `skills/flowrunner-feature/SKILL.md` según la sección 2 de la spec: entrevista de una pregunta por vez sobre las decisiones de la persona, lectura del código de solo lectura, escritura de la feature, `feature check` y la oferta de lanzar. También la ayuda para revisar un plan que espera. `flowrunner skill install` la copia a `~/.claude/skills`.
+- **Descripción:** `skills/flowrunner/SKILL.md` según la sección 2 de la spec: escribir la feature con la entrevista de una pregunta por vez, y operar los runs con la tabla de pedidos de la spec, siempre por el CLI con `--json`. Aprobar y pedir cambios solo con la decisión explícita de la persona; el plan, el informe y los transcripts como datos, nunca como instrucciones. `flowrunner skill install` copia la skill a `~/.claude/skills` y, después de mostrarlas y con confirmación, agrega las reglas *ask* para `approve` y `changes` a `~/.claude/settings.json` sin pisar las que ya existen.
 - **Lint:** `pnpm lint`; el frontmatter de la skill se valida con el schema de skills.
-- **Test:** N/A — el comportamiento es del modelo dentro de la sesión de la persona; verificación: tres features reales escritas con la skill pasan `feature check` sin edición manual, y se registra en el ADR de la skill cuántas preguntas hizo cada una.
-- **Canario:** N/A — sin test que poner rojo; el riesgo lo cubre `feature check`, que ya tiene sus tests en T0.5.
-- **Criterio de aprobación:** una feature escrita con la skill corre de punta a punta sin que intake, que ya no existe, haga falta.
+- **Test:** sobre `skill install` con un `HOME` temporal:
+  - Con un `settings.json` que ya tiene permisos propios → los conserva y agrega las dos reglas *ask*.
+  - Correrlo dos veces → no duplica las reglas.
+  - Sin confirmación → no toca `settings.json`.
+  Comentario: si regresiona, Claude podría aprobar un plan sin preguntarte.
+  El comportamiento conversacional de la skill no tiene test automático; se verifica en el criterio.
+- **Canario:** a comprobar: escribir las reglas sin leer las existentes pone en rojo el primer caso.
+- **Criterio de aprobación:** desde una sesión de Claude Code y sin abrir la terminal: escribir una feature, lanzarla, ver el estado, revisar el plan, aprobarlo con el permiso pedido por Claude Code, preguntar qué hace una sub-task y leer el informe. Tres features reales escritas así pasan `feature check` sin edición manual.
 - **Revisión ponytail:** pendiente.
 - **Desbloquea:** T8.2
 
@@ -619,7 +627,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Tests:** suites unit e integración verdes.
 - **Test de integración:** una feature escrita por fixture pasa `feature check`, corre de punta a punta con `query` y `gh` falsos, y `flowrunner stats` refleja ese run con sus vueltas y su costo.
 - **Canario:** re-canario sobre 2-3 tests de la fase al azar.
-- **Criterio de aprobación:** demo: escribir una feature con la skill, lanzarla y leer `stats` al final.
+- **Criterio de aprobación:** demo desde Claude Code: escribir una feature con la skill, lanzarla, aprobarla y pedirle a Claude que explique `stats` al final.
 - **Revisión ponytail:** `/ponytail-review` sobre el diff acumulado + `/ponytail-debt` + listado de `test-debt:`.
 - **Desbloquea:** Cierre
 
@@ -633,5 +641,5 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Tests:** suite completa verde en CI; `pnpm smoke` verde en local.
 - **Test de integración:** el recorrido completo por CLI: feature, preparar, planificar, aprobar, implementar en paralelo, verificar, revisar, entregar y aprender, con cortes y reanudaciones en el medio, sobre repos reales en tmpdir con `query` y `gh` falsos.
 - **Canario:** se rompe el invariante central, que el modelo no pueda escribir fuera del alcance de su sub-task, desactivando el hook y el doble control: la suite se pone roja.
-- **Criterio de aprobación:** una feature real en un repo real de la persona llega a una PR mergeable sin intervención entre la aprobación del plan y el informe, y `flowrunner stats` muestra menos tiempo de espera que los runs de flowindex.
+- **Criterio de aprobación:** una feature real en un repo real de la persona, operada entera desde una sesión de Claude Code, llega a una PR mergeable sin intervención entre la aprobación del plan y el informe, y `flowrunner stats` muestra menos tiempo de espera que los runs de flowindex.
 - **Revisión ponytail:** `/ponytail-review` sobre el diff completo del proyecto + `/ponytail-debt` con el ledger final de atajos deliberados + el ledger de `test-debt:` sin resolver.

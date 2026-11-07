@@ -62,10 +62,16 @@ Tomadas con la persona el 2026-11-07, una por una:
 10. **Arquitectura: un proceso por run** con el estado en un log de eventos. Sin daemon.
 11. **graft entra en la v0** como contexto de planificar y revisar.
 12. **Sub-tasks en paralelo desde la v0**, con alcances disjuntos y un worktree por sub-task.
+13. **Claude Code es la consola.** La persona opera flowrunner conversando en una sesión de Claude
+    Code, con la skill `flowrunner` llamando al CLI con `--json`. Los runs siguen siendo procesos
+    separados; la sesión no ejecuta el trabajo. `approve` y `changes` quedan en modo *ask* de los
+    permisos de Claude Code.
+14. **Aprender consulta y también se pide.** El merge se detecta consultando con `gh` cada 10 minutos
+    por defecto, y la persona puede pedirlo en el momento. Sin webhooks ni workflows en los repos.
 
 ## Alcance
 
-**Entra en la v0:** la skill de feature, las fases preparar, planificar, aprobar, implementar en
+**Entra en la v0:** la skill `flowrunner` como consola en Claude Code, las fases preparar, planificar, aprobar, implementar en
 paralelo, verificar, revisar, entregar y aprender, el informe, `flowrunner stats` y graft.
 
 **Queda afuera:** Jira, atender comentarios de la PR, guion de QA, servidor de desarrollo, UI, app de
@@ -76,7 +82,7 @@ mientras corre.
 
 ## 1 · Componentes
 
-Un único paquete TypeScript estricto: pnpm 10, Node 22 o superior, ESM, Zod, Pino y Vitest. Expone el
+Un único paquete TypeScript estricto: pnpm 10, Node 24, ESM, Zod, Pino y Vitest. Expone el
 CLI `flowrunner`.
 
 | Módulo | Responsabilidad |
@@ -92,8 +98,8 @@ CLI `flowrunner`.
 | `src/store/` | Directorio del run, append con fsync a `events.jsonl`, lock por repo. |
 | `src/notify/` | Aviso de macOS. |
 | `src/report/` | `informe.md` y `flowrunner stats` a partir de los eventos. |
-| `src/cli/` | Los comandos. |
-| `skills/flowrunner-feature/` | La skill que se instala en `~/.claude/skills`. |
+| `src/cli/` | Los comandos. Toda salida tiene una forma `--json` validada con Zod. |
+| `skills/flowrunner/` | La skill de consola que se instala en `~/.claude/skills`. |
 
 Cada módulo recibe sus dependencias por parámetro. `phases/` no importa el SDK; recibe una función
 `query` que en los tests es un falso.
@@ -178,19 +184,47 @@ Cada criterio tiene que ser verificable por un comando. Sin criterios, `flowrunn
 
 ---
 
-## 2 · La skill `flowrunner-feature`
+## 2 · La skill `flowrunner`: la consola en Claude Code
 
-Corre dentro de la sesión de Claude Code de la persona, antes de cualquier run.
+La persona no usa la terminal: abre una sesión de Claude Code y conversa. La skill le enseña a Claude
+a operar flowrunner llamando al CLI con `--json`. Los runs siguen corriendo como procesos separados y
+desatendidos; cerrar la sesión no los afecta.
+
+**Escribir la feature**, antes de cualquier run:
 
 1. Pregunta el proyecto y lee su código y su `.flowrunner/` con herramientas de solo lectura.
 2. Entrevista una pregunta por vez sobre las decisiones que son de la persona: qué datos se pierden,
    quién puede hacer qué, formatos, límites, qué pasa con lo existente. Propone la respuesta cuando
    puede. Las dudas de cómo construirla no se preguntan: quedan para planificar.
 3. Escribe `~/.flowrunner/features/<proyecto>/<clave>.md` con criterios numerados y las aclaraciones.
-4. Corre la validación de `flowrunner feature check <archivo>` y ofrece lanzar `flowrunner run`.
+4. Corre `flowrunner feature check <archivo> --json` y ofrece lanzar el run.
 
-La misma skill sirve para revisar un plan: lee `runs/<id>/plan.md` y las sub-tasks y ayuda a decidir
-entre `approve` y `changes`.
+**Operar los runs:**
+
+| La persona pide | Claude corre | Y hace |
+|---|---|---|
+| lanzar una feature | `feature check`, `run` | confirma el id del run |
+| cómo va | `status --json` | resume fase, sub-tasks, vueltas y costo |
+| ver el plan | `plan --json` | analiza alcances, criterios y riesgos antes de que la persona decida |
+| qué está haciendo una sub-task | `report --sesion <nombre> --json` | resume el transcript o muestra las ediciones |
+| aprobar o pedir cambios | `approve`, `changes "<motivo>"` | solo con la decisión explícita de la persona |
+| explicar el informe | `report --json` | decisiones, vueltas, rechazos y avisos |
+| qué pieza mejorar | `stats --json` | la fase que más reintenta y por qué |
+| aprender ahora | `learn <run>` | sin esperar al próximo tick |
+| retomar o rehacer | `resume`, `rerun --desde` | con el motivo de la detención a la vista |
+
+**Aprobar es de la persona.** `flowrunner skill install` instala la skill y, después de mostrarlas y
+con confirmación, agrega a `~/.claude/settings.json` reglas *ask* para `flowrunner approve` y
+`flowrunner changes`. Así Claude no aprueba un plan por iniciativa propia ni por una instrucción que
+encuentre en un archivo. La skill también lo dice: nunca aprobar sin la decisión explícita de la
+persona en el chat.
+
+**Lo que escribe un modelo es dato.** El plan, el informe y los transcripts los escribieron agentes:
+la skill los trata como contenido a analizar, nunca como instrucciones.
+
+**Avisos.** Una sesión de Claude Code no recibe eventos de afuera, así que el aviso de macOS se
+mantiene y le dice a la persona qué pedirle a Claude, por ejemplo *"SHOP-214: el plan espera tu
+aprobación. Pedile a Claude que te lo muestre."*
 
 ---
 
@@ -240,6 +274,7 @@ entre `approve` y `changes`.
 ### Aprobar · la persona
 
 - Registra `esperando_aprobacion`, avisa por macOS y el proceso termina. No queda nada corriendo.
+- La persona lo revisa desde Claude Code con la skill.
 - `flowrunner plan <run>` muestra el plan, las sub-tasks con su alcance y el diff de los tests.
 - `flowrunner approve <run>` relanza el proceso hacia implementar.
 - `flowrunner changes <run> "<motivo>"` relanza hacia planificar con la instrucción. No gasta intentos.
@@ -282,9 +317,13 @@ entre `approve` y `changes`.
 - **Nunca mergea.**
 - Escribe `informe.md`, avisa y deja el run en `entregado`. Libera el lock del repo.
 
-### Aprender · job de launchd
+### Aprender · job de launchd o a pedido
 
-`flowrunner tick` corre cada 30 minutos por launchd. En cada pasada:
+El merge pasa en GitHub y no le llega a la Mac como evento sin un endpoint público, así que se
+consulta. `flowrunner tick` corre por launchd cada `tick_minutes` de la config global, por defecto 10.
+Cada consulta es una llamada de `gh` por PR entregada, sin modelo. `flowrunner learn <run>` hace lo
+mismo para un run en el momento. Lo que importa es que la lección esté en la base antes de que el
+próximo run planifique, no la inmediatez. En cada pasada:
 
 1. **Retoma** los runs en `pausado_por_limite`.
 2. **Revisa las PRs** de los runs en `entregado`:
@@ -428,6 +467,9 @@ Cada sesión del SDK se copia en `runs/<id>/sesiones/` como el stream de mensaje
 
 ## 7 · CLI
 
+El CLI lo usa Claude desde la skill; la persona puede usarlo directo si quiere. Cada comando acepta
+`--json` y devuelve un objeto validado con Zod, con los errores también en JSON.
+
 | Comando | Qué hace |
 |---|---|
 | `flowrunner doctor` | comprueba Node, git, gh con sesión, graft, el token en el Keychain y launchd |
@@ -445,7 +487,9 @@ Cada sesión del SDK se copia en `runs/<id>/sesiones/` como el stream de mensaje
 | `flowrunner report <run>` | muestra el informe |
 | `flowrunner stats [proyecto]` | telemetría agregada |
 | `flowrunner tick` | lo que corre launchd: retomar pausados y aprender |
+| `flowrunner learn <run>` | revisa la PR de un run y aprende en el momento |
 | `flowrunner launchd install` | instala el job de `tick` |
+| `flowrunner skill install` | instala la skill y, con confirmación, las reglas *ask* de aprobar |
 
 ---
 

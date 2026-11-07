@@ -303,9 +303,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
   - WebFetch en implementar → deny.
   - Read dentro del worktree → allow.
   Smoke `smoke/tripwire.smoke.ts`: una sesión real a la que se le pide escribir fuera del alcance termina sin el archivo y con el motivo en el stream.
-- **Canario:** a comprobar: que el `canUseTool` devuelva allow pone en rojo el test de la herramienta no mencionada.
-- **Criterio de aprobación:** el smoke verde y el motivo visible en el transcript.
-- **Revisión ponytail:** pendiente.
+- **Canario:** permitir por defecto las herramientas desconocidas puso en rojo `una herramienta que ninguna regla menciona: deny`; dejar de reescribir Bash puso en rojo `Bash permitido se reescribe para correr sin los secretos`. Restaurados; 6 de 6 verdes.
+- **Criterio de aprobación:** `smoke/tripwire.smoke.ts` verde con el SDK real: una sesión de Haiku a la que se le pide escribir `src/billing/tarifas.js` fuera de su alcance termina sin el archivo, con el evento `rechazo` y el motivo visible en su transcript.
+- **Revisión ponytail:** a mano; sin hallazgos. `decide` separa la decisión del efecto para testearla sin el SDK.
 - **Desbloquea:** T3.4
 
 ### T3.4 · Doble control sobre el diff

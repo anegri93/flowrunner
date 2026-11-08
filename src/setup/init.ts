@@ -130,6 +130,11 @@ async function brainSteps(
         estado: "falta",
         detalle: `origin/${base} no está en verde: ${verify.detail}`,
       });
+      pasos.push({
+        que: "PR del cerebro",
+        estado: "pendiente",
+        detalle: `no se abre hasta que origin/${base} esté en verde`,
+      });
       return pasos;
     }
     pasos.push({
@@ -310,7 +315,11 @@ export function describeInit(result: Awaited<ReturnType<typeof init>>, aplicar: 
     (p) => `${MARK[p.estado]} ${p.que}${p.detalle === "" ? "" : `: ${p.detalle}`}`,
   );
   const pending = result.pasos.some((p) => p.estado === "pendiente");
-  if (!aplicar && result.ok && pending)
-    lines.push("", "Para aplicarlo: flowrunner init <repo> --aplicar");
+  if (!result.ok)
+    lines.push(
+      "",
+      `Arreglá lo marcado con ✗ y volvé a correr: flowrunner init <repo>${aplicar ? " --aplicar" : ""}`,
+    );
+  else if (!aplicar && pending) lines.push("", "Para aplicarlo: flowrunner init <repo> --aplicar");
   return lines.join("\n");
 }

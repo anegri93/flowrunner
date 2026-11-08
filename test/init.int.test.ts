@@ -142,6 +142,11 @@ describe("init", () => {
     const out = runCli(["init", w.work, "--aplicar", "--json"], w.env);
     expect(out.status).toBe(1);
     expect(paso(out.stdout, "base en verde")).toMatchObject({ estado: "falta" });
+    // Si regresiona, la línea de la PR desaparece y nada dice que no se abrió.
+    expect(paso(out.stdout, "PR del cerebro")).toMatchObject({
+      estado: "pendiente",
+      detalle: "no se abre hasta que origin/main esté en verde",
+    });
     expect(remoteBranches(w.remote)).toBe("main");
   }, 120_000);
 

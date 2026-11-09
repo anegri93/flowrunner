@@ -58,6 +58,13 @@ Una vez por repo. El repo tiene que estar en GitHub y su rama base en verde.
    escribí tus reglas arriba de esa sección. Después mergeala: los runs leen el cerebro desde la rama
    base.
 
+   Si el repo ya tenía su cerebro de antes, init no lo toca. Para sumarle el borrador leído del código,
+   en su propia PR y debajo de lo que ya escribiste:
+
+   ```bash
+   flowrunner brain draft ~/ruta/al/repo
+   ```
+
 4. Confirmá que quedó listo. Todo tiene que salir con ✓:
 
    ```bash
@@ -149,6 +156,7 @@ equivalente de API: con la suscripción no se cobran, y lo que limita es su cupo
 | Comando                                 | Para qué                                      |
 | --------------------------------------- | --------------------------------------------- |
 | `flowrunner init <ruta> [--aplicar]`    | revisar y dejar listo un repo                 |
+| `flowrunner brain draft <ruta>`         | proponer un borrador del cerebro en una PR    |
 | `flowrunner watch [run] [--json]`       | ver un run, o todos los activos, en vivo      |
 | `flowrunner status [run]`               | el estado de los runs, o de uno fase por fase |
 | `flowrunner plan <run>`                 | el plan que espera aprobación                 |

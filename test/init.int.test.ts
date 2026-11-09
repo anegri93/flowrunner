@@ -238,6 +238,94 @@ describe("init", () => {
     git(w.work, "push", "-q", "origin", "main");
     const out = runCli(["init", w.work, "--json"], w.env);
     expect(paso(out.stdout, "cerebro del repo")).toMatchObject({ estado: "ya estaba" });
+    // Si regresiona, nada le dice a la persona cómo pedir el borrador para un cerebro existente.
+    expect(paso(out.stdout, "cerebro del repo")?.detalle).toContain("flowrunner brain draft");
     expect(paso(out.stdout, "setup")).toBeUndefined();
+  }, 120_000);
+});
+
+const PERSONA = "- Regla de la persona: los handlers no tocan la base directo.";
+
+/** Un repo que ya usa flowrunner: el cerebro de las plantillas en main, con `convenciones` propio. */
+function withBrain(w: ReturnType<typeof world>, convenciones: string) {
+  // Ya pasó por init, así que la config global dice cómo autenticar; acá alcanza con la costura de test.
+  w.env.FLOWRUNNER_AUTH = "login";
+  runCli(["brain", "init", w.work], w.env);
+  writeFileSync(join(w.work, ".flowrunner", "convenciones.md"), convenciones);
+  git(w.work, "add", "-A");
+  git(w.work, "commit", "-qm", "cerebro");
+  git(w.work, "push", "-q", "origin", "main");
+}
+
+interface Drafted {
+  ok: boolean;
+  paso: Paso;
+}
+const drafted = (stdout: string) => JSON.parse(stdout) as Drafted;
+const DRAFT_REF = "chore/flowrunner-borrador:.flowrunner";
+
+describe("brain draft", () => {
+  // Si regresiona, un repo que ya usaba flowrunner se queda sin borrador, o lo pierde todo al pedirlo.
+  test("en un repo que ya usa flowrunner propone el borrador en su PR y conserva lo de la persona", () => {
+    const w = world();
+    const mine = `${template("convenciones.md")}\n${PERSONA}\n`;
+    withBrain(w, mine);
+    const out = runCli(["brain", "draft", w.work, "--json"], w.env);
+    expect(out.status, out.stdout + out.stderr).toBe(0);
+    expect(drafted(out.stdout).paso).toMatchObject({ estado: "hecho" });
+    expect(drafted(out.stdout).paso.detalle).toMatch(/pull\/412/);
+
+    const convenciones = git(w.remote, "show", `${DRAFT_REF}/convenciones.md`);
+    expect(convenciones.startsWith(mine.trimEnd())).toBe(true);
+    expect(convenciones).toContain("## Borrador de flowrunner init");
+    expect(convenciones).toContain("Los errores de la API salen como `ErrorDeApi`");
+    expect(git(w.remote, "show", `${DRAFT_REF}/contexto.md`)).toContain("Qué reusar");
+    expect(prBody(w.env)).toContain("`flowrunner brain draft` dedujo del código");
+    // La sesión vio lo que ya decía el cerebro, para no repetirlo.
+    expect(readFileSync(join(w.home, "prompts.log"), "utf8")).toContain(PERSONA);
+
+    // Con la PR abierta, pedirlo otra vez no abre otra ni gasta otra sesión.
+    const again = runCli(["brain", "draft", w.work, "--json"], w.env);
+    expect(again.status).toBe(0);
+    expect(drafted(again.stdout).paso).toMatchObject({ estado: "ya estaba" });
+    const state = JSON.parse(
+      readFileSync(join(w.env.FAKE_LOG_DIR ?? "", "gh-state.json"), "utf8"),
+    ) as { prs: unknown[] };
+    expect(state.prs).toHaveLength(1);
+    expect(readFileSync(join(w.home, "prompts.log"), "utf8").split("\n---\n")).toHaveLength(2);
+  }, 120_000);
+
+  // Si regresiona, cada pedido apila otro borrador sobre el que la persona ya revisó.
+  test("si la base ya tiene un borrador de init, no pide otro", () => {
+    const w = world();
+    withBrain(w, `${template("convenciones.md")}\n\n## Borrador de flowrunner init\n\n- algo\n`);
+    const out = runCli(["brain", "draft", w.work, "--json"], w.env);
+    expect(out.status).toBe(0);
+    expect(drafted(out.stdout).paso).toMatchObject({ estado: "ya estaba" });
+    expect(existsSync(join(w.home, "prompts.log"))).toBe(false);
+    expect(remoteBranches(w.remote)).toBe("main");
+  }, 120_000);
+
+  // Si regresiona, el borrador deja un archivo pasado de tope y el próximo run no carga el cerebro.
+  test("si con el borrador un archivo pasa su tope, no empuja nada", () => {
+    const w = world();
+    // A 100 caracteres del tope de 16.000: carga hoy, pero no le entra la sección del borrador.
+    const start = `${template("convenciones.md")}\n- `;
+    withBrain(w, `${start}${"r".repeat(15_900 - Array.from(start).length)}\n`);
+    const out = runCli(["brain", "draft", w.work, "--json"], w.env);
+    expect(out.status).toBe(1);
+    expect(drafted(out.stdout).paso).toMatchObject({ estado: "falta" });
+    expect(drafted(out.stdout).paso.detalle).toContain("convenciones.md pasaría su tope");
+    expect(remoteBranches(w.remote)).toBe("main");
+  }, 120_000);
+
+  // Si regresiona, el comando arma un cerebro a medias en un repo que nunca pasó por init.
+  test("sin cerebro en la base, pide correr init", () => {
+    const w = world();
+    const out = runCli(["brain", "draft", w.work, "--json"], w.env);
+    expect(out.status).toBe(1);
+    expect(drafted(out.stdout).paso).toMatchObject({ estado: "falta" });
+    expect(drafted(out.stdout).paso.detalle).toContain("--aplicar");
+    expect(existsSync(join(w.home, "prompts.log"))).toBe(false);
   }, 120_000);
 });

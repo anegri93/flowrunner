@@ -12,7 +12,7 @@ export class GitError extends Error {
 
 /** Ramas que flowrunner puede empujar. Cualquier otra, `main` incluida, se rechaza. */
 const PUSHABLE =
-  /^(feat\/[A-Za-z0-9._/-]+|chore\/lecciones-[A-Za-z0-9._-]+|chore\/flowrunner-init)$/;
+  /^(feat\/[A-Za-z0-9._/-]+|chore\/lecciones-[A-Za-z0-9._-]+|chore\/flowrunner-(init|borrador))$/;
 
 export async function git(
   cwd: string,
@@ -115,7 +115,7 @@ export async function pushBranch(
   if (!PUSHABLE.test(branch))
     throw new GitError(
       ["push", branch],
-      "flowrunner solo empuja ramas feat/, chore/lecciones- y chore/flowrunner-init",
+      "flowrunner solo empuja ramas feat/, chore/lecciones-, chore/flowrunner-init y chore/flowrunner-borrador",
     );
   await git(
     worktree,

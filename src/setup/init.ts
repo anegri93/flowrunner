@@ -14,7 +14,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
 import { readKeychainToken } from "../agent/auth.ts";
-import { initBrain } from "../brain/brain.ts";
+import { initBrain, loadBrain } from "../brain/brain.ts";
 import { claudeLoggedIn, doctor } from "../cli/doctor.ts";
 import { installLaunchd, plistPath } from "../cli/launchd.ts";
 import { gitRootOf, projectNameFor, updateGlobalConfig } from "../cli/project.ts";
@@ -23,7 +23,7 @@ import { installSkill, skillUpToDate } from "../cli/skill.ts";
 import { flowrunnerHome, loadRepoConfig } from "../config/load.ts";
 import { ConfigError } from "../config/schemas.ts";
 import { fetchOrigin, git, GitError, pushBranch, removeWorktree } from "../git/git.ts";
-import { createPr, findPr } from "../github/gh.ts";
+import { createPr, findPr, type PullRequest } from "../github/gh.ts";
 import { runVerify } from "../phases/verify.ts";
 import { runProc, runShell, tail } from "../proc/proc.ts";
 import type { Deps, RunPaths } from "../runner/types.ts";
@@ -31,6 +31,8 @@ import { draftBrain, DRAFT_HEADING } from "./draft.ts";
 import { inferRepo } from "./infer.ts";
 
 export const INIT_BRANCH = "chore/flowrunner-init";
+export const DRAFT_BRANCH = "chore/flowrunner-borrador";
+const BRAIN_DOCS = "`contexto.md`, `convenciones.md` y `que-es-bien.md`";
 const SETUP_TIMEOUT_MS = 20 * 60_000;
 
 export interface Paso {
@@ -87,6 +89,28 @@ function draftSession(env: NodeJS.ProcessEnv, name: string): RunPaths {
   return { id: `init-${name}`, home, dir, worktrees: join(home, "init") };
 }
 
+/** Commitea `.flowrunner/` del worktree en `branch`, la empuja y abre su PR contra la base. */
+async function openBrainPr(
+  worktree: string,
+  pr: { branch: string; base: string; title: string; body: readonly string[] },
+  env: NodeJS.ProcessEnv,
+): Promise<PullRequest> {
+  await git(worktree, ["switch", "--quiet", "-C", pr.branch], env);
+  await git(worktree, ["add", ".flowrunner"], env);
+  await git(worktree, ["commit", "--quiet", "--no-verify", "-m", pr.title], env);
+  await pushBranch(worktree, pr.branch, env);
+  const bodyFile = join(worktree, "..", `${pr.branch.replace("/", "-")}.md`);
+  writeFileSync(bodyFile, [...pr.body, ""].join("\n"));
+  return createPr(worktree, { branch: pr.branch, base: pr.base, title: pr.title, bodyFile }, env);
+}
+
+/** Si la base ya tiene el cerebro de flowrunner. */
+async function hasBrain(repo: string, base: string, env: NodeJS.ProcessEnv): Promise<boolean> {
+  return git(repo, ["cat-file", "-e", `origin/${base}:.flowrunner/config.yaml`], env)
+    .then(() => true)
+    .catch(() => false);
+}
+
 /** El cerebro del repo, inferido sobre un worktree limpio de la base, con la base comprobada. */
 async function brainSteps(
   repo: string,
@@ -96,11 +120,14 @@ async function brainSteps(
   deps: Deps,
 ): Promise<Paso[]> {
   const { env } = deps;
-  const exists = await git(repo, ["cat-file", "-e", `origin/${base}:.flowrunner/config.yaml`], env)
-    .then(() => true)
-    .catch(() => false);
-  if (exists) {
-    return [{ que: "cerebro del repo", estado: "ya estaba", detalle: `en origin/${base}` }];
+  if (await hasBrain(repo, base, env)) {
+    return [
+      {
+        que: "cerebro del repo",
+        estado: "ya estaba",
+        detalle: `en origin/${base}; para sumarle un borrador leído del código: flowrunner brain draft ${repo}`,
+      },
+    ];
   }
   const open = aplicar ? await findPr(repo, INIT_BRANCH, env) : undefined;
   if (open !== undefined) {
@@ -186,38 +213,29 @@ async function brainSteps(
             detalle: `no se redactó: ${draft.motivo}. Quedan las plantillas para completar a mano`,
           },
     );
-    await git(worktree, ["switch", "--quiet", "-C", INIT_BRANCH], env);
-    await git(worktree, ["add", ".flowrunner"], env);
-    await git(
+    const pr = await openBrainPr(
       worktree,
-      ["commit", "--quiet", "--no-verify", "-m", "chore: cerebro de flowrunner"],
-      env,
-    );
-    await pushBranch(worktree, INIT_BRANCH, env);
-    const body = join(worktree, "..", `${INIT_BRANCH.replace("/", "-")}.md`);
-    writeFileSync(
-      body,
-      [
-        "El cerebro de flowrunner para este repo, armado por `flowrunner init`.",
-        "",
-        ...inferred.hallazgos.map((h) => `- **${h.que}:** ${h.detalle}`),
-        "",
-        ...(draft.tipo === "ok"
-          ? [
-              "`contexto.md`, `convenciones.md` y `que-es-bien.md` traen un borrador que init dedujo",
-              `del código, en la sección «${DRAFT_HEADING.replace(/^## /, "")}». Revisalo antes de mergear:`,
-              "planificar, implementar y revisar lo leen en cada run.",
-            ]
-          : [
-              "Antes de mergear, completá `contexto.md`, `convenciones.md` y `que-es-bien.md`:",
-              "son plantillas y planificar, implementar y revisar los leen en cada run.",
-            ]),
-        "",
-      ].join("\n"),
-    );
-    const pr = await createPr(
-      worktree,
-      { branch: INIT_BRANCH, base, title: "chore: cerebro de flowrunner", bodyFile: body },
+      {
+        branch: INIT_BRANCH,
+        base,
+        title: "chore: cerebro de flowrunner",
+        body: [
+          "El cerebro de flowrunner para este repo, armado por `flowrunner init`.",
+          "",
+          ...inferred.hallazgos.map((h) => `- **${h.que}:** ${h.detalle}`),
+          "",
+          ...(draft.tipo === "ok"
+            ? [
+                `${BRAIN_DOCS} traen un borrador que init dedujo`,
+                `del código, en la sección «${DRAFT_HEADING.replace(/^## /, "")}». Revisalo antes de mergear:`,
+                "planificar, implementar y revisar lo leen en cada run.",
+              ]
+            : [
+                `Antes de mergear, completá ${BRAIN_DOCS}:`,
+                "son plantillas y planificar, implementar y revisar los leen en cada run.",
+              ]),
+        ],
+      },
       env,
     );
     pasos.push({
@@ -226,6 +244,85 @@ async function brainSteps(
       detalle: `${pr.url}: mergeala para usarlo`,
     });
     return pasos;
+  } finally {
+    await removeWorktree(repo, worktree, env);
+  }
+}
+
+export interface DraftOutcome {
+  readonly ok: boolean;
+  readonly repo: string;
+  readonly paso: Paso;
+}
+
+/**
+ * `flowrunner brain draft <repo>`: para un repo que ya tiene el cerebro en la base, redacta el
+ * borrador leyendo el código y lo propone en su propia PR. Lo que ya escribió la persona queda arriba.
+ */
+export async function draftExistingBrain(path: string, deps: Deps): Promise<DraftOutcome> {
+  const { env } = deps;
+  const repo = await gitRootOf(path, env);
+  const name = projectNameFor(repo);
+  const outcome = (estado: Paso["estado"], detalle: string): DraftOutcome => ({
+    ok: estado !== "falta",
+    repo,
+    paso: { que: "borrador del cerebro", estado, detalle },
+  });
+  await fetchOrigin(repo, env);
+  const base = await defaultBranch(repo, env);
+  if (!(await hasBrain(repo, base, env))) {
+    return outcome(
+      "falta",
+      `origin/${base} no tiene cerebro: corré flowrunner init ${repo} --aplicar`,
+    );
+  }
+  const open = await findPr(repo, DRAFT_BRANCH, env);
+  if (open?.state === "OPEN") return outcome("ya estaba", `${open.url}: revisala y mergeala`);
+
+  const worktree = join(flowrunnerHome(env), "init", `${name}-borrador`);
+  await removeWorktree(repo, worktree, env);
+  await git(repo, ["worktree", "add", "--quiet", "--detach", worktree, `origin/${base}`], env);
+  try {
+    const brain = loadBrain(worktree);
+    if (
+      [brain.convenciones, brain.contexto, brain.queEsBien].some((t) => t.includes(DRAFT_HEADING))
+    ) {
+      return outcome(
+        "ya estaba",
+        `el cerebro de origin/${base} ya tiene un borrador de init: borrá esa sección para pedir otro`,
+      );
+    }
+    const config = loadRepoConfig(worktree);
+    const draft = await draftBrain({
+      worktree,
+      files: (await git(worktree, ["ls-files"], env)).split("\n").filter(Boolean),
+      hallazgos: [
+        { que: "setup", detalle: config.setup },
+        { que: "tests_globs", detalle: config.tests_globs.join(", ") },
+        { que: "harness_files", detalle: config.harness_files.join(", ") || "(ninguno)" },
+      ],
+      config,
+      session: draftSession(env, name),
+      deps,
+    });
+    if (draft.tipo === "falla") return outcome("falta", `no se redactó: ${draft.motivo}`);
+    const pr = await openBrainPr(
+      worktree,
+      {
+        branch: DRAFT_BRANCH,
+        base,
+        title: "chore: borrador del cerebro de flowrunner",
+        body: [
+          `Un borrador de ${BRAIN_DOCS} que \`flowrunner brain draft\` dedujo del código.`,
+          "",
+          `Va en la sección «${DRAFT_HEADING.replace(/^## /, "")}» de cada archivo, debajo de lo que ya`,
+          "estaba. Corregí o borrá lo que no sea así antes de mergear: planificar, implementar y revisar",
+          "lo leen en cada run.",
+        ],
+      },
+      env,
+    );
+    return outcome("hecho", `${pr.url} (USD ${draft.costoUsd.toFixed(2)}): revisala y mergeala`);
   } finally {
     await removeWorktree(repo, worktree, env);
   }

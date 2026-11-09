@@ -11,7 +11,6 @@ import { git } from "../git/git.ts";
 import { render } from "../prompts/render.ts";
 import type { Deps, RunPaths } from "../runner/types.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
-import type { Finding } from "./infer.ts";
 
 export const DRAFT_HEADING = "## Borrador de flowrunner init";
 export const DRAFT_BUDGET_USD = 3;
@@ -28,10 +27,10 @@ const part = z.object({
 export const draftSchema = z.object({ convenciones: part, contexto: part, que_es_bien: part });
 export type Draft = z.infer<typeof draftSchema>;
 
-const TARGETS: Record<keyof Draft, string> = {
-  convenciones: BRAIN_FILES.convenciones.file,
-  contexto: BRAIN_FILES.contexto.file,
-  que_es_bien: BRAIN_FILES.queEsBien.file,
+const TARGETS: Record<keyof Draft, { readonly file: string; readonly max: number }> = {
+  convenciones: BRAIN_FILES.convenciones,
+  contexto: BRAIN_FILES.contexto,
+  que_es_bien: BRAIN_FILES.queEsBien,
 };
 
 /** Las fuentes que no son un archivo versionado ni una carpeta que tenga alguno. */
@@ -65,7 +64,8 @@ export interface DraftInput {
   readonly worktree: string;
   /** `git ls-files` de la base. */
   readonly files: readonly string[];
-  readonly hallazgos: readonly Finding[];
+  /** Lo que flowrunner ya sabe del repo: lo inferido por init o la config existente. */
+  readonly hallazgos: readonly { readonly que: string; readonly detalle: string }[];
   readonly config: RepoConfig;
   /** Dónde queda el stream de la sesión: init no tiene un run propio. */
   readonly session: RunPaths;
@@ -76,7 +76,11 @@ export type DraftResult =
   | { readonly tipo: "ok"; readonly costoUsd: number }
   | { readonly tipo: "falla"; readonly motivo: string };
 
-function promptVars(input: DraftInput, commits: string): Record<string, string> {
+function promptVars(
+  input: DraftInput,
+  commits: string,
+  current: Readonly<Record<keyof Draft, string>>,
+): Record<string, string> {
   const listed = input.files.slice(0, MAX_LISTED_FILES);
   const rest = input.files.length - listed.length;
   let packageJson: string;
@@ -87,6 +91,9 @@ function promptVars(input: DraftInput, commits: string): Record<string, string> 
   }
   return {
     hallazgos: input.hallazgos.map((h) => `- ${h.que}: ${h.detalle}`).join("\n"),
+    cerebro: (Object.keys(TARGETS) as (keyof Draft)[])
+      .map((key) => `## ${TARGETS[key].file}\n\n${current[key].trim()}`)
+      .join("\n\n"),
     stack:
       packageJson.length > MAX_PACKAGE_JSON
         ? `${packageJson.slice(0, MAX_PACKAGE_JSON)}\n… (cortado)`
@@ -100,11 +107,17 @@ function promptVars(input: DraftInput, commits: string): Record<string, string> 
 }
 
 /**
- * Una sesión de solo lectura sobre el worktree de init redacta el borrador y, si todas sus fuentes
- * existen, lo agrega a los tres archivos. Si falla, las plantillas quedan como estaban.
+ * Una sesión de solo lectura sobre un worktree con el cerebro redacta el borrador y, si todas sus
+ * fuentes existen y cada archivo sigue dentro de su tope, lo agrega a los tres. Si no, no escribe nada.
  */
 export async function draftBrain(input: DraftInput): Promise<DraftResult> {
   const { worktree, deps } = input;
+  const pathOf = (key: keyof Draft) => join(brainDir(worktree), TARGETS[key].file);
+  const current = {
+    convenciones: readFileSync(pathOf("convenciones"), "utf8"),
+    contexto: readFileSync(pathOf("contexto"), "utf8"),
+    que_es_bien: readFileSync(pathOf("que_es_bien"), "utf8"),
+  };
   const commits = await git(worktree, ["log", "-n", "20", "--no-merges", "--format=%s"], deps.env);
   const root = realpathSync(worktree);
   // Init no es una fase de un run: la sesión usa la etiqueta y el modelo de planificar, que es la
@@ -113,7 +126,7 @@ export async function draftBrain(input: DraftInput): Promise<DraftResult> {
     {
       fase: "planificar",
       nombre: "borrador-cerebro",
-      prompt: render("borrador-cerebro", promptVars(input, commits)),
+      prompt: render("borrador-cerebro", promptVars(input, commits, current)),
       cwd: root,
       model: input.config.models.planificar,
       tools: ["Read", "Grep", "Glob"],
@@ -161,9 +174,19 @@ export async function draftBrain(input: DraftInput): Promise<DraftResult> {
     };
   }
   const today = deps.now().toISOString().slice(0, 10);
-  for (const [key, file] of Object.entries(TARGETS) as [keyof Draft, string][]) {
-    const path = join(brainDir(worktree), file);
-    writeFileSync(path, withDraft(readFileSync(path, "utf8"), result.output[key], today));
+  const keys = Object.keys(TARGETS) as (keyof Draft)[];
+  const drafted = keys.map(
+    (key) => [key, withDraft(current[key], result.output[key], today)] as const,
+  );
+  // Un archivo que pasa su tope frena la carga del cerebro en el próximo run.
+  const over = drafted.find(([key, text]) => Array.from(text).length > TARGETS[key].max);
+  if (over !== undefined) {
+    const { file, max } = TARGETS[over[0]];
+    return {
+      tipo: "falla",
+      motivo: `con el borrador, ${file} pasaría su tope de ${String(max)} caracteres: acortalo y volvé a pedirlo`,
+    };
   }
+  for (const [key, text] of drafted) writeFileSync(pathOf(key), text);
   return { tipo: "ok", costoUsd: result.costoUsd };
 }

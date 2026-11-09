@@ -2,17 +2,20 @@
 // convenciones, el contexto con lo que conviene reusar y qué es una buena PR. Va en una sección
 // propia de cada archivo, marcada como inferida, para que la persona sepa qué revisar en la PR.
 import { readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { z } from "zod";
 import { runSession } from "../agent/session.ts";
 import { BRAIN_FILES, brainDir } from "../brain/brain.ts";
 import type { RepoConfig } from "../config/schemas.ts";
 import { git } from "../git/git.ts";
 import { render } from "../prompts/render.ts";
-import type { Deps, RunPaths } from "../runner/types.ts";
+import type { Deps, QueryFn, RunPaths } from "../runner/types.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
 
 export const DRAFT_HEADING = "## Borrador de flowrunner init";
+
+/** Una línea de avance para la persona que espera en la terminal. */
+export type Progress = (line: string) => void;
 export const DRAFT_BUDGET_USD = 3;
 export const DRAFT_TIMEOUT_MS = 15 * 60_000;
 /** Cada texto, bien por debajo del tope de 16.000 caracteres de su archivo. */
@@ -70,6 +73,51 @@ export interface DraftInput {
   /** Dónde queda el stream de la sesión: init no tiene un run propio. */
   readonly session: RunPaths;
   readonly deps: Deps;
+  readonly progress: Progress;
+}
+
+/** Qué está mirando la sesión, en palabras: `lee src/a.ts`. Undefined si no es una lectura. */
+export function describeToolUse(name: string, input: unknown, root: string): string | undefined {
+  const field = (key: string): string | undefined => {
+    const value = (input as Record<string, unknown> | null)?.[key];
+    return typeof value === "string" ? value : undefined;
+  };
+  const rel = (path: string) => {
+    if (!isAbsolute(path)) return path;
+    const inside = relative(root, path);
+    return inside === "" ? "." : inside.startsWith("..") ? path : inside;
+  };
+  const path = field("path");
+  const where = path === undefined ? "" : ` en ${rel(path)}`;
+  switch (name) {
+    case "Read": {
+      const file = field("file_path");
+      return file === undefined ? undefined : `lee ${rel(file)}`;
+    }
+    case "Grep":
+      return `busca «${field("pattern") ?? ""}»${where}`;
+    case "Glob":
+      return `lista ${field("pattern") ?? ""}${where}`;
+    default:
+      return undefined;
+  }
+}
+
+/** La misma `query`, avisando cada herramienta que la sesión usa. */
+function reporting(query: QueryFn, root: string, progress: Progress): QueryFn {
+  return (params) =>
+    (async function* () {
+      for await (const message of query(params)) {
+        if (message.type === "assistant") {
+          for (const block of message.message.content) {
+            if (block.type !== "tool_use") continue;
+            const line = describeToolUse(block.name, block.input, root);
+            if (line !== undefined) progress(`  ${line}`);
+          }
+        }
+        yield message;
+      }
+    })();
 }
 
 export type DraftResult =
@@ -120,6 +168,9 @@ export async function draftBrain(input: DraftInput): Promise<DraftResult> {
   };
   const commits = await git(worktree, ["log", "-n", "20", "--no-merges", "--format=%s"], deps.env);
   const root = realpathSync(worktree);
+  input.progress(
+    `Claude lee el código y redacta el borrador: puede tardar unos minutos, con un tope de USD ${String(DRAFT_BUDGET_USD)}`,
+  );
   // Init no es una fase de un run: la sesión usa la etiqueta y el modelo de planificar, que es la
   // otra que lee el repo para entenderlo antes de actuar.
   const result = await runSession(
@@ -157,7 +208,11 @@ export async function draftBrain(input: DraftInput): Promise<DraftResult> {
       maxBudgetUsd: DRAFT_BUDGET_USD,
       timeoutMs: DRAFT_TIMEOUT_MS,
     },
-    { run: input.session, deps, emit: () => undefined },
+    {
+      run: input.session,
+      deps: { ...deps, query: reporting(deps.query, root, input.progress) },
+      emit: () => undefined,
+    },
   );
   if (result.tipo === "limite") {
     return {

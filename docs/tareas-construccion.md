@@ -919,6 +919,16 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. Reusa `draftBrain`, `loadBrain`, `loadRepoConfig` y el worktree de init; la única rama nueva que puede empujar flowrunner es `chore/flowrunner-borrador`.
 - **Desbloquea:** Gate final
 
+### T9.7 · `brain draft` e `init` muestran su avance
+- **Estado:** `[x] Hecho`
+- **Descripción:** `flowrunner brain draft` pasaba minutos sin decir nada mientras Claude leía el repo, y no se sabía si se había colgado. Ahora `brain draft` e `init` escriben su avance en stderr con el tiempo transcurrido: las etapas, desde traer origin y comprobar la base hasta abrir la PR, y cada archivo que lee, cada búsqueda y cada listado de la sesión, con rutas del repo. El avance sale de envolver la `query` de la sesión del borrador, sin tocar `runSession`. Con `--json` no escribe nada, para no mezclarse con lo que lee la skill.
+- **Lint:** `pnpm lint`.
+- **Test:** `test/init.int.test.ts` › `brain draft` › «en la terminal muestra cada etapa y lo que Claude va leyendo»: sin `--json`, stderr trae, en orden y con `[m:ss]`, las etapas y `lee servidor/api.ts`; con `--json`, stderr queda vacío. `src/setup/draft.test.ts` › `describeToolUse`: rutas relativas al repo, las de afuera tal cual, y nada para lo que no es una lectura. `src/cli/output.test.ts` › `progressLog`: el reloj en minutos y segundos, y en silencio con `--json`.
+- **Canario:** con `init.ts`, `draft.ts`, `main.ts` y `output.ts` de la base, los 3 tests nuevos fallaron; el de stderr vacío con `--json` pasa en la base, porque es una guarda. Restaurado.
+- **Criterio de aprobación:** `flowrunner brain draft <repo>` muestra en la terminal qué está haciendo hasta que imprime la PR.
+- **Revisión ponytail:** a mano. Sin spinner ni dependencias: una línea por evento en stderr.
+- **Desbloquea:** Gate final
+
 ### Gate Fase 9
 - **Estado:** `[~] En progreso` — falta correrlo sobre un repo real
 - **Validación de lint:** `pnpm lint` verde.

@@ -11,6 +11,19 @@ export const processIo: Io = {
   err: (text) => process.stderr.write(`${text}\n`),
 };
 
+/**
+ * El avance de un comando largo, en stderr y con el tiempo transcurrido. Con `--json` no dice nada:
+ * stdout queda para la skill y stderr no la ensucia.
+ */
+export function progressLog(io: Io, json: boolean, start = Date.now()): (line: string) => void {
+  if (json) return () => undefined;
+  return (line) => {
+    const seconds = Math.floor((Date.now() - start) / 1000);
+    const clock = `${String(Math.floor(seconds / 60))}:${String(seconds % 60).padStart(2, "0")}`;
+    io.err(`[${clock}] ${line}`);
+  };
+}
+
 /** Un error que la persona puede arreglar: sale 1 con el motivo y, si hay, el comando para seguir. */
 export class UserError extends Error {
   readonly next: string | undefined;

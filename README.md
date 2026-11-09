@@ -19,20 +19,20 @@ sesión abierta.
    gh auth login
    ```
 
-2. Cloná flowrunner e instalá sus dependencias:
+2. Cloná flowrunner en la carpeta que quieras e instalá sus dependencias:
 
    ```bash
-   git clone https://github.com/anegri93/flowrunner.git ~/Documents/PersonalProjects/flowrunner
+   git clone https://github.com/anegri93/flowrunner.git
    ```
 
    ```bash
-   cd ~/Documents/PersonalProjects/flowrunner && pnpm install
+   cd flowrunner && pnpm install
    ```
 
-3. Dejá el comando `flowrunner` en tu PATH:
+3. Desde esa misma carpeta, dejá el comando `flowrunner` en tu PATH:
 
    ```bash
-   ln -s ~/Documents/PersonalProjects/flowrunner/bin/flowrunner.js ~/.local/bin/flowrunner
+   ln -s "$PWD/bin/flowrunner.js" ~/.local/bin/flowrunner
    ```
 
 ## Sumar un repo

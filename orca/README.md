@@ -1,14 +1,25 @@
 # flowrunner en Orca
 
-Una pestaña en la barra derecha de [Orca](https://www.onorca.dev) con el progreso de los runs
-activos, como `flowrunner watch`: cada fase con sus sub-tasks y sesiones, el modelo, los tokens
-nuevos, el costo, el tiempo y lo que está haciendo la sesión que corre. Tocar una sesión muestra
-sus pasos. Se refresca cada 3 segundos mientras la pestaña se ve.
+Una pestaña en la barra derecha de [Orca](https://www.onorca.dev) con el progreso de los runs,
+como `flowrunner watch`, pensada para el ancho angosto de la barra:
 
-- `src/worker.ts` corre `flowrunner watch --json` y `flowrunner report <run> --sesion <s> --json`
-  en un shell de login, para tener tu PATH.
+- Los runs más recientes arriba. Cada uno se contrae o se expande tocándolo; los terminados, con la
+  PR abierta, arrancan contraídos.
+- Las fases listas en una línea que se expande, la etapa actual destacada con sus sub-tasks y
+  sesiones, y en otra línea las que faltan.
+- El botón de cada sesión muestra sus pasos.
+- Las decisiones que el run espera: ver el plan, aprobarlo o pedir cambios; reanudar un run
+  detenido o rehacerlo desde la fase que sugiere el motivo. Aprobar, reanudar y rehacer piden
+  confirmación.
+
+Se refresca cada 3 segundos mientras la pestaña se ve.
+
+- `src/worker.ts` corre el CLI de flowrunner en un shell de login, para tener tu PATH: `watch`,
+  `report --sesion`, `plan`, y cada decisión como un comando fijo (`approve`, `changes`, `resume`,
+  `rerun --desde`). Valida el id del run, la fase y el motivo antes de llegar al shell.
 - `src/panel.tsx` dibuja la pestaña con los componentes de Orca 1.4.246.
-- `src/runs.ts` arma las filas a partir del JSON, sin depender de Orca.
+- `src/runs.ts` ordena los runs, agrupa las fases y decide qué decisiones ofrecer, sin depender de
+  Orca.
 
 ## Instalar
 

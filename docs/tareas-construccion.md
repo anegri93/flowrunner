@@ -781,6 +781,16 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. El worker no guarda estado y el panel refresca solo mientras se ve. Sin tipos de Orca para `tsc`: la 1.4.246 no los trae, y los tests corren el código como Orca lo carga.
 - **Desbloquea:** Gate Fase 8
 
+### T8.7b · El panel de Orca compacto, con decisiones
+- **Estado:** `[x] Hecho`
+- **Descripción:** con el panel en uso, la persona pidió algo más compacto y ordenado en el ancho angosto de la barra, con los runs más recientes arriba, los terminados contraídos, la etapa actual destacada y la posibilidad de decidir desde ahí. Ahora cada run se contrae o se expande tocándolo, y los que tienen la PR abierta arrancan contraídos. Las fases listas van en una línea expandible, la etapa actual con su estado en un `Badge` y sus sub-tasks y sesiones, y lo que falta en otra línea. Las decisiones que el run espera, ver el plan, aprobar, pedir cambios, reanudar y rehacer desde la fase sugerida, las traduce el worker a comandos fijos de flowrunner y valida el id, la fase y el motivo. Aprobar, reanudar y rehacer piden confirmación.
+- **Lint:** `pnpm lint` y `orca plugin validate`.
+- **Test:** `pnpm orca:test`, 13 tests. `src/runs.test.ts`: el orden, los terminados, los tres grupos de fases, el encabezado con la etapa, las decisiones por estado y una fase de rerun inválida. `src/worker.test.ts`: cada decisión corre su comando con el motivo literal, incluso con comillas y `$(…)`, y lo que contesta flowrunner; un id, una fase o un motivo inválidos no llegan al shell. `src/panel.test.tsx`: el orden y contraer o expandir, la etapa actual y las listas, los pasos, aprobar con confirmación y pedir cambios con el motivo escrito.
+- **Canario:** el orden ascendente, los terminados abiertos, aprobar sin confirmar, el id sin validar, las listas siempre expandidas y las listas tratadas como actuales pusieron en rojo sus tests.
+- **Criterio de aprobación:** `orca plugin shot` a 280 px muestra VF-3 trabajando arriba y VF-2, con la PR abierta, contraído abajo.
+- **Revisión ponytail:** a mano. Sin `Tree` ni `Collapsible`, que piden Orca 1.4.247: el contraer es un atom por run.
+- **Desbloquea:** Gate Fase 8
+
 ### Gate Fase 8
 - **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.

@@ -44,7 +44,6 @@ export const diagnosisSchema = z.object({
 });
 export type Diagnosis = z.infer<typeof diagnosisSchema>;
 
-export const DIAGNOSTICAR_BUDGET_USD = 3;
 export const DIAGNOSTICAR_TIMEOUT_MS = 15 * 60_000;
 
 export interface Failing {
@@ -134,7 +133,6 @@ export async function diagnose(
         emit,
       ),
       schema: diagnosisSchema,
-      maxBudgetUsd: DIAGNOSTICAR_BUDGET_USD,
       timeoutMs: DIAGNOSTICAR_TIMEOUT_MS,
     },
     { run, deps, emit },

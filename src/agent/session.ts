@@ -31,7 +31,8 @@ export interface SessionSpec<T> {
   readonly schema?: z.ZodType<T>;
   readonly mcpServers?: Record<string, McpServerConfig>;
   readonly agents?: Record<string, AgentDefinition>;
-  readonly maxBudgetUsd: number;
+  /** Sin él, la sesión no se corta por gasto: solo el timeout la acota. */
+  readonly maxBudgetUsd?: number;
   readonly timeoutMs: number;
   readonly maxTurns?: number;
 }
@@ -74,7 +75,7 @@ export function buildOptions<T>(
     tools: [...spec.tools],
     hooks: { PreToolUse: [{ hooks: [spec.hook] }] },
     canUseTool: DENY_REST,
-    maxBudgetUsd: spec.maxBudgetUsd,
+    ...(spec.maxBudgetUsd === undefined ? {} : { maxBudgetUsd: spec.maxBudgetUsd }),
     ...(spec.maxTurns === undefined ? {} : { maxTurns: spec.maxTurns }),
     ...(spec.agents === undefined ? {} : { agents: spec.agents }),
     ...(spec.systemPrompt === undefined ? {} : { systemPrompt: spec.systemPrompt }),
@@ -206,7 +207,7 @@ export async function runSession<T>(
       return {
         tipo: "falla",
         clase: "gate",
-        motivo: `${spec.fase} pasó su presupuesto de USD ${spec.maxBudgetUsd}`,
+        motivo: `${spec.fase} pasó su presupuesto de USD ${String(spec.maxBudgetUsd)}`,
       };
     default:
       return {

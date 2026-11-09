@@ -13,12 +13,7 @@ import { git } from "../git/git.ts";
 import { featureText, render } from "../prompts/render.ts";
 import type { PhaseContext } from "../runner/types.ts";
 import type { RunEvent } from "../store/events.ts";
-import {
-  APRENDER_BUDGET_USD,
-  APRENDER_TIMEOUT_MS,
-  nextLessonNumber,
-  readOnlyHook,
-} from "./aprender.ts";
+import { APRENDER_TIMEOUT_MS, nextLessonNumber, readOnlyHook } from "./aprender.ts";
 import { runFeature } from "./inputs.ts";
 import { sessionName } from "./planificar.ts";
 
@@ -109,7 +104,6 @@ export async function proposeLessons(
       tools: [],
       hook: readOnlyHook(ctx, worktree, "entregar"),
       schema: proposalSchema,
-      maxBudgetUsd: APRENDER_BUDGET_USD,
       timeoutMs: APRENDER_TIMEOUT_MS,
     },
     { run, deps, emit },

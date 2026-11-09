@@ -130,6 +130,15 @@ describe("runSession", () => {
     expect(await runSession(spec(), rt)).toEqual({ tipo: "limite", hasta: 1_794_042_000_000 });
   });
 
+  // Si regresiona, el borrador del cerebro vuelve a cortarse por un gasto que nadie pidió limitar.
+  test("sin presupuesto en el spec, las opciones no llevan tope de gasto", async () => {
+    const fake = fakeQuery(stream("salida-estructurada"));
+    const { rt } = runtime(fake.query);
+    const { maxBudgetUsd: _sinTope, ...sinTope } = spec();
+    await runSession(sinTope, rt);
+    expect(Object.keys(fake.calls[0]?.options ?? {})).not.toContain("maxBudgetUsd");
+  });
+
   // Si regresiona, una sesión de flowrunner carga los hooks, MCP o conectores del repo o del usuario.
   test("las opciones llevan settingSources vacío, solo los MCP declarados, deny por defecto y sin persistir", async () => {
     const fake = fakeQuery(stream("salida-estructurada"));

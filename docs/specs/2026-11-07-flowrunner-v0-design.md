@@ -419,7 +419,7 @@ Cada falla queda como evento con su tipo, y el informe las separa.
 
 ### Presupuesto
 
-- Cada sesión lleva `maxBudgetUsd` según su fase, y el run tiene el tope `budget.run_usd`.
+- Las sesiones no llevan tope de gasto propio: el único es `budget.run_usd`, opcional, por run.
 - Pasado el tope del run, se detiene con el informe parcial.
 - Con la suscripción, `total_cost_usd` es una estimación del SDK; sirve para comparar fases y runs.
 - Cada sesión tiene timeout por fase, aplicado con `abortController`.

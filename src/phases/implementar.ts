@@ -87,6 +87,16 @@ export function installCommands(config: RepoConfig, task: Subtask, exact: boolea
   ];
 }
 
+/** `./.flowrunner/verify.sh`, `.flowrunner/verify.sh` o `bash .flowrunner/verify.sh`: el verify del repo. */
+export function isVerifyCommand(config: RepoConfig, comando: string): boolean {
+  const bare = (p: string) =>
+    p
+      .trim()
+      .replace(/^(?:ba)?sh\s+/, "")
+      .replace(/^\.\//, "");
+  return bare(comando) === bare(config.verify);
+}
+
 export function unitCommands(
   config: RepoConfig,
   task: Subtask,
@@ -95,10 +105,11 @@ export function unitCommands(
 ): string[] {
   // Sin el verify del repo: corre en verificar, sobre la rama con todas las sub-tasks integradas. En el
   // worktree de una, antes de que las demás se integren, daba rojos que no eran suyos y costaba minutos.
+  // Tampoco entra como comando de un criterio de «verify en verde»: ese criterio lo corre verificar.
   const lint =
     config.lint_fix === undefined ? [] : [`${config.lint_fix} ${task.alcance.join(" ")}`];
   return [
-    ...new Set([...acCommands, ...lint]),
+    ...new Set([...acCommands.filter((c) => !isVerifyCommand(config, c)), ...lint]),
     "git status",
     "git diff",
     "git log --oneline -10",
@@ -217,7 +228,13 @@ export const implementar: PhaseFn = async (ctx) => {
             criterios:
               acs.length === 0
                 ? "(ninguno directo)"
-                : acs.map((c) => `${c.id}: \`${c.comando}\``).join(", "),
+                : acs
+                    .map((c) =>
+                      isVerifyCommand(config, c.comando)
+                        ? `${c.id}: lo corre verificar sobre la rama integrada, no lo corras vos`
+                        : `${c.id}: \`${c.comando}\``,
+                    )
+                    .join(", "),
             dependencias: dependencyText(task),
             bloqueados: locked.join(", "),
             comandos: bash.map((c) => `\`${c}\``).join(", "),

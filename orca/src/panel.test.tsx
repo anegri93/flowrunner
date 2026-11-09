@@ -99,6 +99,31 @@ test("tocar Aprobar abre el plan, también el de un run que ya lo aprobó", asyn
   );
 });
 
+// Si regresiona, el detalle de una etapa no se puede abrir desde el panel, o se ofrece en una que
+// todavía no arrancó.
+test("tocar una etapa que arrancó abre su detalle; una pendiente no es un link", async () => {
+  const opened: unknown[] = [];
+  await withPanel(
+    withRuns({
+      "flowrunner.abrir": (input: unknown) => {
+        opened.push(input);
+        return { ok: true, mensaje: "abierto" };
+      },
+    }),
+    async (view) => {
+      const vf2 = "VF-2-20261109-001527";
+      const running = runs.find((r) => r.id === vf2);
+      const started = running?.fases.map((p) => p.fase) ?? [];
+      assert.ok(started.includes("implementar"));
+      await view.press({ type: "Link", text: "Implementar" });
+      assert.deepEqual(opened, [{ run: vf2, que: { tipo: "etapa", fase: "implementar" } }]);
+      // Ningún run en vista llegó a verificar: la etapa es texto, no un link.
+      assert.equal(view.findAll({ type: "Link", text: "Verificar" }).length, 0);
+      assert.ok(view.find({ text: "Verificar" }));
+    },
+  );
+});
+
 // Si regresiona, un archivo que no se pudo abrir falla en silencio.
 test("si no se puede abrir, lo dice en el run", async () => {
   await withPanel(

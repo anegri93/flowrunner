@@ -8,6 +8,7 @@ import { processIo, progressLog, reportError, UserError, type Io } from "./outpu
 import { addProject, initRepoBrain } from "./project.ts";
 import { approveRun, describePlan, requestChanges, showPlan } from "./approval.ts";
 import { showReport, showSession, showUnit } from "./report.ts";
+import { showPhase } from "./etapa.ts";
 import { learnOne, tick } from "./tick.ts";
 import { describeDoctor, doctor } from "./doctor.ts";
 import { installLaunchd, uninstallLaunchd } from "./launchd.ts";
@@ -45,6 +46,7 @@ const USAGE = `uso: flowrunner <comando> [--json]
   changes <run> "<motivo>"       vuelve a planificar con tu instrucción
   report <run> [--sesion s]      el informe del run, o el transcript de una sesión
   report <run> --unidad ST-n     una sub-task: qué tenía que hacer, qué dice que hizo y su diff
+  report <run> --fase <fase>     una etapa: intentos, lo propio de la etapa, decisiones y sesiones
   tick                           lo que corre launchd: retoma pausados y aprende de PRs mergeadas
   learn <run>                    revisa la PR de un run y aprende en el momento
   doctor                         qué le falta a esta máquina para correr runs
@@ -106,6 +108,7 @@ export async function main(
       nombre: { type: "string" },
       sesion: { type: "string" },
       unidad: { type: "string" },
+      fase: { type: "string" },
       confirmar: { type: "boolean", default: false },
       aplicar: { type: "boolean", default: false },
       reemplazar: { type: "boolean", default: false },
@@ -223,6 +226,9 @@ export async function main(
         if (typeof values.sesion === "string") {
           const session = showSession(home, id, values.sesion);
           print(session, session.texto);
+        } else if (typeof values.fase === "string") {
+          const phase = showPhase(home, id, values.fase);
+          print(phase, phase.texto);
         } else if (typeof values.unidad === "string") {
           const unit = await showUnit(home, id, values.unidad, env);
           print(unit, unit.texto);

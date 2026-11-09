@@ -9,6 +9,7 @@ case "$1" in
   watch) cat "${FAKE_WATCH:-$dir/watch.json}" ;;
   report)
     if [ "$3" = "--sesion" ]; then printf '{"ok":true,"sesion":"%s","texto":"Edit src/precio.ts\\nlisto"}\n' "$4"
+    elif [ "$3" = "--fase" ]; then printf '{"ok":true,"fase":"%s","texto":"# %s\\n\\nok\\n"}\n' "$4" "$4"
     elif [ "$3" = "--unidad" ]; then printf '{"ok":true,"unidad":"%s","texto":"# %s\\n\\n```diff\\n+precio\\n```\\n"}\n' "$4" "$4"
     else printf '{"ok":true,"informe":"# %s\\n\\n- **Estado:** cerrado"}\n' "$2"; fi ;;
   status) printf '{"ok":true,"run":{"id":"%s","clave":"%s","repo":"%s"}}\n' "$2" "${2%-*-*}" "${FAKE_REPO:-/r}" ;;

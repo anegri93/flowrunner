@@ -130,6 +130,27 @@ test("abrir una sub-task pide su informe a flowrunner y lo abre como pestaña en
   }
 });
 
+// Si regresiona, tocar una etapa en el panel no abre su detalle.
+test("abrir una etapa pide su detalle a flowrunner y lo abre como pestaña en el proyecto del run", async () => {
+  const { worker, calls, repo } = await fakeWorker();
+  try {
+    const id = "VF-2-20261109-001527";
+    assert.deepEqual(
+      await worker.request("flowrunner.abrir", {
+        run: id,
+        que: { tipo: "etapa", fase: "verificar" },
+      }),
+      { ok: true, mensaje: "abierto" },
+    );
+    const file = join(repo, ".git", "flowrunner", id, "etapa-verificar.md");
+    assert.equal(readFileSync(file, "utf8"), "# verificar\n\nok\n");
+    assert.ok(calls().includes(`report ${id} --fase verificar --json`));
+    assert.ok(calls().includes(`orca file open ${file} --worktree path:${repo} --focus`));
+  } finally {
+    await worker.deactivate();
+  }
+});
+
 // Si regresiona, aprobar o pedir cambios desde el panel no llega a flowrunner, o llega distinto.
 test("cada decisión corre su comando fijo, con el motivo tal cual, y devuelve lo que dijo flowrunner", async () => {
   const { worker, calls } = await fakeWorker();
@@ -170,7 +191,7 @@ test("cada decisión corre su comando fijo, con el motivo tal cual, y devuelve l
 });
 
 // Si regresiona, lo que llega del panel puede terminar como otro comando en el shell o en otra ruta.
-test("rechaza un id, una fase, un motivo, una sesión o una sub-task inválidos sin llamar a flowrunner", async () => {
+test("rechaza un id, una fase, un motivo, una sesión, una sub-task o una etapa inválidos sin llamar a flowrunner", async () => {
   const { worker, calls } = await fakeWorker();
   try {
     const bad = [
@@ -199,6 +220,12 @@ test("rechaza un id, una fase, un motivo, una sesión o una sub-task inválidos 
     });
     assert.equal(unit.ok, false);
     assert.match(unit.mensaje, /sub-task inválida/);
+    const stage = await worker.request("flowrunner.abrir", {
+      run: "VF-2-20261109-001527",
+      que: { tipo: "etapa", fase: "todo; rm -rf ~" },
+    });
+    assert.equal(stage.ok, false);
+    assert.match(stage.mensaje, /etapa inválida/);
     assert.deepEqual(calls(), []);
   } finally {
     await worker.deactivate();

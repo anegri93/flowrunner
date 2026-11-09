@@ -397,13 +397,11 @@ export type Decision =
   | { readonly accion: "aprender" }
   | { readonly accion: "abortar" };
 
-/** Las decisiones que tiene sentido ofrecer según el estado del run. Abortar, en todo run vivo. */
-export function decisionsFor(run: Run): Decision["accion"][] {
-  if (run.status === "cerrado" || run.status === "abortado") return [];
-  return [...byStatus(run), "abortar"];
-}
+/** Un run vivo se puede abortar, en cualquier etapa: todos menos los cerrados y los abortados. */
+export const canAbort = (run: Run) => run.status !== "cerrado" && run.status !== "abortado";
 
-function byStatus(run: Run): Decision["accion"][] {
+/** Las decisiones de la etapa actual que tiene sentido ofrecer según el estado del run. */
+export function decisionsFor(run: Run): Decision["accion"][] {
   switch (run.status) {
     case "esperando_aprobacion":
       return ["aprobar", "cambios"];

@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import { assert, test } from "orca/testing";
 import {
+  canAbort,
   decisionsFor,
   duration,
   headlineOf,
@@ -132,26 +133,32 @@ test("un run entregado con la PR mergeada no dice que espera tu merge", () => {
   assert.equal(headlineOf(merged).texto, "Aprender — aprende al próximo chequeo");
 });
 
-// Si regresiona, el panel ofrece aprobar un run que no espera, no ofrece rehacer uno detenido, o
-// no deja abortar un run que sigue vivo.
-test("las decisiones dependen del estado del run, y abortar está en todo run vivo", () => {
-  assert.deepEqual(decisionsFor(byKey("PIZ-3")), ["aprobar", "cambios", "abortar"]);
-  assert.deepEqual(decisionsFor(byKey("VF-2")), ["abortar"]);
+// Si regresiona, el panel ofrece aprobar un run que no espera, o no ofrece rehacer uno detenido.
+test("las decisiones dependen del estado del run", () => {
+  assert.deepEqual(decisionsFor(byKey("PIZ-3")), ["aprobar", "cambios"]);
+  assert.deepEqual(decisionsFor(byKey("VF-2")), []);
   // Con la PR abierta o recién mergeada, aprender ya, sin esperar el chequeo de cada 10 minutos.
-  assert.deepEqual(decisionsFor(byKey("VF-1")), ["aprender", "abortar"]);
-  assert.deepEqual(decisionsFor({ ...byKey("VF-2"), status: "cerrado" }), []);
-  assert.deepEqual(decisionsFor({ ...byKey("VF-2"), status: "abortado" }), []);
+  assert.deepEqual(decisionsFor(byKey("VF-1")), ["aprender"]);
   const stopped: Run = {
     ...byKey("VF-2"),
     status: "detenido",
     siguiente: "flowrunner rerun VF-2-20261109-001527 --desde verificar",
   };
-  assert.deepEqual(decisionsFor(stopped), ["reanudar", "rehacer", "abortar"]);
+  assert.deepEqual(decisionsFor(stopped), ["reanudar", "rehacer"]);
   assert.equal(rerunPhase(stopped), "verificar");
   assert.equal(
     rerunPhase({ ...stopped, siguiente: "flowrunner rerun X --desde `rm -rf`" }),
     undefined,
   );
+});
+
+// Si regresiona, un run vivo no se puede abortar desde el panel, o se ofrece abortar uno terminado.
+test("se puede abortar todo run vivo, en cualquier estado, y ninguno cerrado o abortado", () => {
+  for (const r of runs) assert.equal(canAbort(r), true, r.clave);
+  for (const status of ["detenido", "pausado_por_limite", "entregado"] as const)
+    assert.equal(canAbort({ ...byKey("VF-2"), status }), true, status);
+  for (const status of ["cerrado", "abortado"] as const)
+    assert.equal(canAbort({ ...byKey("VF-2"), status }), false, status);
 });
 
 // Si regresiona, la pestaña del plan no trae lo que hace falta para decidir: las sub-tasks con su

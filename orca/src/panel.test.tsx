@@ -136,7 +136,7 @@ test("aprobar pide confirmación; Cambios manda el motivo escrito", async () => 
 });
 
 // Si regresiona, un run vivo no se puede abortar desde el panel, o se aborta sin confirmar.
-test("cada run vivo tiene Abortar, que pide confirmación antes de mandarlo", async () => {
+test("cada run vivo tiene «Abortar el run» al pie, que pide confirmación antes de mandarlo", async () => {
   const sent: { run: string; decision: Decision }[] = [];
   await withPanel(
     withRuns({
@@ -146,15 +146,19 @@ test("cada run vivo tiene Abortar, que pide confirmación antes de mandarlo", as
       },
     }),
     async (view) => {
-      const buttons = view.findAll({ role: "button", text: "Abortar" });
+      const buttons = view.findAll({ role: "button", text: "Abortar el run" });
       assert.equal(buttons.length, runs.length);
+      // Al pie de la tarjeta, después de las etapas, no entre ellas.
+      const drawn = JSON.stringify(view.tree());
+      assert.ok(drawn.lastIndexOf("Abortar el run") > drawn.lastIndexOf("Aprender"));
       const first = buttons[0];
       if (first === undefined) throw new Error("sin botón Abortar");
       await view.press(first);
       assert.deepEqual(sent, []);
-      const question = view.find({ text: /^¿Abortar [A-Z]+-\d+\?/ })?.text ?? "";
-      const clave = /¿Abortar ([A-Z]+-\d+)\?/.exec(question)?.[1];
-      await view.press({ text: "Sí, abortar" });
+      const question = view.find({ text: /^¿Abortar el run [A-Z]+-\d+\?$/ })?.text ?? "";
+      const clave = /¿Abortar el run ([A-Z]+-\d+)\?/.exec(question)?.[1];
+      assert.ok(view.find({ text: /borra sus worktrees\. La rama y la PR quedan\./ }));
+      await view.press({ text: "Sí, abortar el run" });
       assert.deepEqual(sent, [
         { run: runs.find((r) => r.clave === clave)?.id, decision: { accion: "abortar" } },
       ]);

@@ -2,6 +2,7 @@
 // flowrunner hace un commit por sub-task y lo integra por cherry-pick sobre la rama de la feature.
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
+import { shellQuote } from "../agent/env.ts";
 import { runSession } from "../agent/session.ts";
 import { loadBrain } from "../brain/brain.ts";
 import { loadRepoConfig } from "../config/load.ts";
@@ -106,8 +107,11 @@ export function unitCommands(
   // Sin el verify del repo: corre en verificar, sobre la rama con todas las sub-tasks integradas. En el
   // worktree de una, antes de que las demás se integren, daba rojos que no eran suyos y costaba minutos.
   // Tampoco entra como comando de un criterio de «verify en verde»: ese criterio lo corre verificar.
+  // Rutas citadas: `[id]` y `(grupo)` de Next son patrón y sintaxis para el shell.
   const lint =
-    config.lint_fix === undefined ? [] : [`${config.lint_fix} ${task.alcance.join(" ")}`];
+    config.lint_fix === undefined
+      ? []
+      : [`${config.lint_fix} ${task.alcance.map(shellQuote).join(" ")}`];
   return [
     ...new Set([...acCommands.filter((c) => !isVerifyCommand(config, c)), ...lint]),
     "git status",

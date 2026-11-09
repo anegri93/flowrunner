@@ -111,9 +111,25 @@ describe("forma del plan", () => {
   });
 
   test("un glob en el alcance: rechazado", () => {
-    expect(shape(plan([task("ST-1", ["src/**/*.ts"]), task("ST-2", ["src/b.ts"])]))[0]).toMatch(
-      /es un glob/,
-    );
+    for (const glob of ["src/**/*.ts", "src/a?.ts", "src/{a,b}.ts"]) {
+      expect(shape(plan([task("ST-1", [glob]), task("ST-2", ["src/b.ts"])]))[0]).toMatch(
+        /es un glob/,
+      );
+    }
+  });
+
+  // Regresión: en COMPARTIR-1 (rskate, Next.js) el gate rechazó `src/app/o/[publicId]/page.tsx`
+  // como glob. Los corchetes son carpetas reales de rutas dinámicas en Next y SvelteKit, y el
+  // planificador tuvo que rehacer el plan entero con un alcance más ancho.
+  test("una ruta dinámica con corchetes es una ruta concreta", () => {
+    expect(
+      shape(
+        plan([
+          task("ST-1", ["src/app/o/[publicId]/page.tsx", "src/app/(comprador)/page.tsx"]),
+          task("ST-2", ["src/app/docs/[...slug]/page.tsx", "src/app/[[...todo]]/page.tsx"]),
+        ]),
+      ),
+    ).toEqual([]);
   });
 
   // Si regresiona, dos sub-tasks en paralelo editan el mismo archivo y chocan al integrarse.

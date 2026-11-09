@@ -1,5 +1,7 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { git } from "../../test/helpers/git.ts";
 import { plannedRun } from "../../test/helpers/planned.ts";
@@ -79,11 +81,33 @@ describe("instalar dependencias", () => {
     const own = st("ST-2", ["src/seeds/a.ts", "src/seeds/b.ts"]);
     expect(unitCommands(repo, own, ["npx jest seeds"], false)).toEqual([
       "npx jest seeds",
-      "npx eslint --fix src/seeds/a.ts src/seeds/b.ts",
+      "npx eslint --fix 'src/seeds/a.ts' 'src/seeds/b.ts'",
       "git status",
       "git diff",
       "git log --oneline -10",
     ]);
+  });
+
+  // Regresión: con el alcance de una ruta de Next sin comillas, el lint de la sub-task se rompía en el
+  // shell: `[publicId]` es un patrón (zsh corta con «no matches found») y `(comprador)` es sintaxis.
+  test("el lint de la sub-task llega al archivo aunque la ruta tenga corchetes o paréntesis", () => {
+    const dir = mkdtempSync(join(tmpdir(), "fr-lint-"));
+    const files = ["src/app/o/[publicId]/page.tsx", "src/app/(comprador)/page.tsx"];
+    for (const f of files) {
+      mkdirSync(join(dir, dirname(f)), { recursive: true });
+      writeFileSync(join(dir, f), "x\n");
+    }
+    const repo = repoConfigSchema.parse({
+      setup: "true",
+      tests_globs: ["tests/**"],
+      lint_fix: "ls",
+    });
+    const lint = unitCommands(repo, st("ST-1", files), [], false).find((c) => c.startsWith("ls "));
+    expect(lint).toBeDefined();
+    for (const shell of ["sh", "zsh"]) {
+      const listed = execFileSync(shell, ["-c", lint ?? ""], { cwd: dir, encoding: "utf8" });
+      expect(listed.trim().split("\n").sort()).toEqual([...files].sort());
+    }
   });
 
   // Regresión: en CUENTAS-1 (segundo run), AC-9 era «verify en verde» con `./.flowrunner/verify.sh`

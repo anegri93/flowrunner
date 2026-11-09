@@ -158,7 +158,9 @@ export function checkPlanShape(
   const scope = { root: realpathSync(root) } as Scope;
   for (const task of plan.subtareas) {
     for (const path of task.alcance) {
-      if (/[*?[\]{}]/.test(path))
+      // Los corchetes no cuentan: en Next y SvelteKit son carpetas de rutas dinámicas
+      // (`[id]`, `[...slug]`), y nada usa el alcance como glob (los tripwires lo comparan literal).
+      if (/[*?{}]/.test(path))
         problems.push(`${task.id}: "${path}" es un glob; el alcance son rutas concretas`);
       else if (insideRoot(scope, path) === undefined)
         problems.push(`${task.id}: "${path}" queda fuera del repo`);

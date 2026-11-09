@@ -1,7 +1,8 @@
-// La pestaña de los runs en la barra derecha de Orca. Cada run es una tarjeta: la etapa en que
-// está con su estado, una barra de avance y las ocho etapas del flujo, como en el diagrama, y abajo
-// el detalle y las decisiones que espera. Los más recientes arriba; los terminados muestran solo el
-// resumen hasta que se abren. El refresco no borra nada: si una lectura falla, queda la anterior.
+// La pestaña de los runs en la barra derecha de Orca, al estilo de flowindex. Cada run es una
+// tarjeta: su estado, el título, el tiempo, y las ocho etapas del flujo en una lista con sus
+// intentos y su tiempo. La etapa que trabaja gira, y debajo dice qué está haciendo, con las
+// decisiones que espera. Los más recientes arriba; los terminados muestran solo la etapa actual
+// hasta que se abren. El refresco no borra nada: si una lectura falla, queda la anterior.
 // Sin paso de build: Orca quita los tipos y compila el JSX al cargarlo.
 import {
   atom,
@@ -13,9 +14,9 @@ import {
   IconButton,
   Link,
   plugin,
-  Progress,
   read,
   Row,
+  Separator,
   set,
   Spinner,
   Stack,
@@ -26,16 +27,16 @@ import {
 import { Decisions } from "./decisiones";
 import type { Snapshot, Steps } from "./protocol";
 import {
-  headlineOf,
+  clock,
   isFinished,
   needsYou,
   nowOf,
-  phaseLabel,
-  progressOf,
+  RUN_CHIP,
   sortRuns,
-  stationsOf,
+  stageRows,
   tail,
   type Run,
+  type StageRow,
 } from "./runs";
 
 const REFRESH_MS = 3_000;
@@ -102,31 +103,16 @@ export function setup(ctx: PanelContext): void {
 
 const isOpen = (run: Run) => read(toggled)[run.id] ?? (needsYou(run) || !isFinished(run));
 
-/** Las ocho etapas del flujo, con su nombre y su estado, en filas que se acomodan al ancho. */
-function Stations({ run }: { run: Run }) {
-  return (
-    <Row gap="xs" wrap>
-      {stationsOf(run).map((station) => {
-        const label = phaseLabel(station.fase, station.estado);
-        return (
-          <Badge key={station.fase} tone={label.tone}>
-            {`${label.mark} ${station.nombre}`}
-          </Badge>
-        );
-      })}
-    </Row>
-  );
-}
-
-function Detail({ run }: { run: Run }) {
+/** Lo que pasa en la etapa actual: su estado, las sub-tasks, qué hace la sesión y las decisiones. */
+function Current({ run, row }: { run: Run; row: StageRow }) {
   const now = nowOf(run);
   const shownSteps = read(steps);
   const said = read(notice);
   return (
-    <Stack gap="sm">
+    <Stack gap="xs">
       {run.motivo === undefined ? null : (
-        <Text size="sm" tone="danger">
-          {tail(run.motivo, 1_500)}
+        <Text size="xs" tone="danger">
+          {tail(run.motivo, 600)}
         </Text>
       )}
       {now.detalle === undefined || run.motivo !== undefined ? null : (
@@ -134,41 +120,29 @@ function Detail({ run }: { run: Run }) {
           {now.detalle.length > 280 ? `${now.detalle.slice(0, 280)}…` : now.detalle}
         </Text>
       )}
-      <Decisions run={run} after={refresh} onPlan={() => void openPlan(run.id)} />
-      {said?.run === run.id ? (
-        <Text size="sm" tone="danger">
-          {said.texto}
+      {now.tareas.map((t) => (
+        <Text key={t.key} size="xs" tone={t.tone} muted={t.tone === "neutral"} truncate>
+          {`${t.mark} ${t.texto}`}
         </Text>
-      ) : null}
-      {now.tareas.length === 0 ? null : (
-        <Stack gap="none">
-          {now.tareas.map((t) => (
-            <Text key={t.key} size="sm" tone={t.tone} muted={t.tone === "neutral"} truncate>
-              {`${t.mark} ${t.texto}`}
-            </Text>
-          ))}
-        </Stack>
-      )}
+      ))}
       {now.actividad.map((a) => (
-        <Stack key={a.sesion} gap="none">
-          <Row justify="between" align="center">
-            <Text size="xs" muted truncate>
-              {a.texto}
-            </Text>
-            <IconButton
-              icon="file-text"
-              label={`Pasos de ${a.sesion}`}
-              variant="ghost"
-              size="sm"
-              onPress={() => showSteps(run.id, a.sesion)}
-            />
-          </Row>
-          {a.ahora === undefined ? null : (
-            <Text size="xs" tone="accent" truncate>
-              {a.ahora}
-            </Text>
-          )}
-        </Stack>
+        <Row key={a.sesion} justify="between" align="center">
+          <Text
+            size="xs"
+            tone={a.ahora === undefined ? "neutral" : "accent"}
+            muted={a.ahora === undefined}
+            truncate
+          >
+            {a.ahora ?? a.texto}
+          </Text>
+          <IconButton
+            icon="file-text"
+            label={`Pasos de ${a.sesion}`}
+            variant="ghost"
+            size="sm"
+            onPress={() => showSteps(run.id, a.sesion)}
+          />
+        </Row>
       ))}
       {shownSteps?.run === run.id ? (
         <Stack gap="xs">
@@ -180,55 +154,97 @@ function Detail({ run }: { run: Run }) {
           </Row>
         </Stack>
       ) : null}
-      {now.porPaso.length === 0 ? null : (
-        <Stack gap="none">
-          {now.porPaso.map((p) => (
-            <Row key={p.label} justify="between">
-              <Text size="xs" muted>
-                {p.label}
-              </Text>
-              <Text size="xs" muted>
-                {p.meta}
-              </Text>
-            </Row>
-          ))}
-        </Stack>
-      )}
-      <Row justify="between">
-        {run.siguiente?.startsWith("https://") === true ? (
-          <Link href={run.siguiente}>Abrir la PR</Link>
-        ) : (
-          <Text size="xs"> </Text>
-        )}
-        <Text size="xs" weight="semibold">
-          {now.meta}
+      {row.fase === "aprobar" ||
+      run.status === "detenido" ||
+      run.status === "pausado_por_limite" ? (
+        <Decisions run={run} after={refresh} onPlan={() => void openPlan(run.id)} />
+      ) : null}
+      {said?.run === run.id ? (
+        <Text size="xs" tone="danger">
+          {said.texto}
+        </Text>
+      ) : null}
+    </Stack>
+  );
+}
+
+/** Una etapa: su estado, su nombre, sus intentos y su tiempo. La que trabaja gira. */
+function Stage({ run, row }: { run: Run; row: StageRow }) {
+  const pending = row.estado === "pendiente";
+  return (
+    <Stack gap="xs">
+      <Row justify="between" align="center">
+        <Row gap="sm" align="center">
+          {row.estado === "corriendo" ? (
+            <Spinner label={`${row.nombre}: trabajando`} labelHidden />
+          ) : (
+            <Text tone={row.tone} muted={pending}>
+              {row.mark}
+            </Text>
+          )}
+          <Text weight={row.actual ? "semibold" : "regular"} muted={pending}>
+            {row.nombre}
+          </Text>
+          {row.actual ? (
+            <Text size="xs" tone={row.tone}>
+              {row.texto}
+            </Text>
+          ) : null}
+        </Row>
+        <Text size="xs" muted>
+          {row.meta}
         </Text>
       </Row>
+      {row.actual ? <Current run={run} row={row} /> : null}
     </Stack>
   );
 }
 
 function RunCard({ run }: { run: Run }) {
   const open = isOpen(run);
-  const headline = headlineOf(run);
+  const chip = RUN_CHIP[run.status];
+  const rows = stageRows(run);
+  const shown = open ? rows : rows.filter((r) => r.actual);
+  const footer = nowOf(run).meta;
   return (
-    <Card title={`${run.clave} · ${run.titulo}`}>
+    <Card>
       <Stack gap="sm">
         <Row justify="between" align="center">
-          <Text weight="semibold" tone={headline.tone}>
-            {`${headline.emoji} ${headline.texto}`}
-          </Text>
+          <Badge tone={chip.tone}>{chip.texto}</Badge>
           <IconButton
             icon={open ? "collapse" : "expand"}
-            label={open ? `Ocultar el detalle de ${run.clave}` : `Ver el detalle de ${run.clave}`}
+            label={open ? `Ocultar las etapas de ${run.clave}` : `Ver las etapas de ${run.clave}`}
             variant="ghost"
             size="sm"
             onPress={() => update(toggled, (m) => ({ ...m, [run.id]: !open }))}
           />
         </Row>
-        <Progress label={`Avance de ${run.clave}`} labelHidden value={progressOf(run)} />
-        <Stations run={run} />
-        {open ? <Detail run={run} /> : null}
+        <Stack gap="none">
+          <Text weight="semibold">{run.titulo}</Text>
+          <Text size="xs" muted>
+            {`${run.clave} · ${run.id}`}
+          </Text>
+        </Stack>
+        <Stack gap="none">
+          <Text size="xs" muted>
+            TIEMPO
+          </Text>
+          <Text weight="semibold">{clock(run.segundos) ?? "–"}</Text>
+        </Stack>
+        <Separator />
+        {shown.map((row) => (
+          <Stage key={row.fase} run={run} row={row} />
+        ))}
+        <Row justify="between">
+          {run.siguiente?.startsWith("https://") === true ? (
+            <Link href={run.siguiente}>Abrir la PR</Link>
+          ) : (
+            <Text size="xs"> </Text>
+          )}
+          <Text size="xs" muted>
+            {footer}
+          </Text>
+        </Row>
       </Stack>
     </Card>
   );

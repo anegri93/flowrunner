@@ -813,6 +813,16 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. El estado sale de las fases de flowrunner; el panel no agrega ninguno.
 - **Desbloquea:** Gate Fase 8
 
+### T8.7e · La tarjeta del run al estilo de flowindex
+- **Estado:** `[x] Hecho`
+- **Descripción:** al usarlo, a la persona le faltaba ver que el run estaba en progreso y qué hacía. El tiempo le servía y el costo no tanto, y prefería la lista de etapas de flowindex. Ahora cada tarjeta muestra el estado del run como etiqueta, por ejemplo «EN CURSO» o «TE ESPERA», con el título, la clave, el id y el tiempo como reloj. Debajo van las ocho etapas en lista, cada una con su marca, su nombre, los intentos si hubo más de uno y su tiempo. La etapa que trabaja muestra un spinner, y debajo de la actual se ve lo que está haciendo: el motivo si falló, las sub-tasks con su estado, la herramienta de la sesión que corre y las decisiones. El costo queda chico al pie. Un run terminado muestra solo su etapa actual hasta que se abre.
+- **Lint:** `pnpm lint` y `orca plugin validate`.
+- **Test:** `pnpm orca:test`, 21 tests. `runs.test.ts` › «cada etapa como fila»: estado, intentos, tiempo como reloj y cuál es la actual. `panel.test.tsx` › «cada run: su estado, el título, el tiempo y las ocho etapas en lista; la que trabaja gira», y un run terminado con solo su etapa actual hasta que se abre.
+- **Canario:** la etapa que trabaja sin spinner y las filas sin los intentos pusieron en rojo sus tests.
+- **Criterio de aprobación:** `orca plugin shot` a 300 px muestra VF-3 y VF-2 con su etiqueta, el tiempo y la lista de etapas, y Aprender en «espera merge» con las sub-tasks debajo.
+- **Revisión ponytail:** a mano. Se sacaron la barra de avance y el tiempo por etapa aparte: la lista los reemplaza.
+- **Desbloquea:** Gate Fase 8
+
 ### Gate Fase 8
 - **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.

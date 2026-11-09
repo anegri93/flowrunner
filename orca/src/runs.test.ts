@@ -9,8 +9,9 @@ import {
   nowOf,
   parseWatch,
   planView,
-  progressOf,
   rerunPhase,
+  stageRows,
+  clock,
   sortRuns,
   stationsOf,
   tokenCount,
@@ -54,8 +55,6 @@ test("las ocho etapas del flujo, con su nombre y el estado de su fase en flowrun
     "Implementar:corriendo",
     "Verificar:pendiente",
   ]);
-  assert.equal(progressOf(byKey("PIZ-3")), 25);
-  assert.equal(progressOf(byKey("VF-1")), 88);
 });
 
 // Si regresiona, la frase no dice en qué etapa está ni con las palabras de `flowrunner watch`.
@@ -82,8 +81,8 @@ test("la frase nombra la etapa actual y su estado, como el diagrama y watch", ()
   assert.equal(nowOf(stopped).detalle, "ST-2 falló");
 });
 
-// Si regresiona, el detalle no muestra las sub-tasks, ni el tiempo y el costo de cada etapa.
-test("el detalle: las sub-tasks con su estado, la sesión que corre y cada etapa con su tiempo", () => {
+// Si regresiona, el detalle no muestra las sub-tasks ni qué hace la sesión que corre.
+test("el detalle: las sub-tasks con su estado y la sesión que corre primero", () => {
   const now = nowOf(byKey("VF-2"));
   assert.deepEqual(
     now.tareas.map((t) => `${t.mark} ${t.texto}`),
@@ -94,12 +93,31 @@ test("el detalle: las sub-tasks con su estado, la sesión que corre y cada etapa
     texto: "implementar-ST-2-1 · sonnet-5-5 · 40k · ≥ $0.25",
     ahora: "▸ Edit src/precio.ts · ctx 52k",
   });
-  assert.deepEqual(now.porPaso, [
-    { label: "Preparar", meta: "16s" },
-    { label: "Planificar", meta: "6m12s · $1.70" },
-    { label: "Implementar", meta: "3m20s · ≥ $1.25" },
-  ]);
-  assert.equal(now.meta, "≥ $2.95 · 20m00s");
+  assert.equal(now.meta, "≥ $2.95");
+});
+
+// Si regresiona, la lista de etapas pierde el tiempo o los intentos, o no marca cuál es la actual.
+test("cada etapa como fila: su estado, sus intentos si hubo más de uno, su tiempo, y cuál es la actual", () => {
+  const withRetries: Run = {
+    ...byKey("VF-2"),
+    fases: byKey("VF-2").fases.map((p) =>
+      p.fase === "planificar"
+        ? { ...p, sesiones: [...p.sesiones, ...p.sesiones, ...p.sesiones, ...p.sesiones] }
+        : p,
+    ),
+  };
+  const rows = stageRows(withRetries);
+  assert.deepEqual(
+    rows.slice(0, 5).map((r) => [r.nombre, r.mark, r.texto, r.meta, r.actual]),
+    [
+      ["Preparar", "✓", "listo", "0:16", false],
+      ["Planificar", "✓", "listo", "4 intentos · 6:12", false],
+      ["Aprobar", "○", "pendiente", "", false],
+      ["Implementar", "●", "trabajando", "3:20", true],
+      ["Verificar", "○", "pendiente", "", false],
+    ],
+  );
+  assert.equal(clock(3_725), "1:02:05");
 });
 
 // Si regresiona, el panel ofrece aprobar un run que no espera, o no ofrece rehacer uno detenido.

@@ -105,6 +105,26 @@ export function tokenCount(n: number): string {
   return n >= 1_000 ? `${String(Math.round(n / 1_000))}k` : String(n);
 }
 
+/** El tiempo como un reloj: `0:12`, `13:01`, `1:02:05`. */
+export function clock(seconds: number | undefined): string | undefined {
+  if (seconds === undefined) return undefined;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = String(seconds % 60).padStart(2, "0");
+  return h > 0 ? `${String(h)}:${String(m).padStart(2, "0")}:${s}` : `${String(m)}:${s}`;
+}
+
+/** El estado del run en una etiqueta, con las palabras de `flowrunner watch`. */
+export const RUN_CHIP: Record<RunStatus, { texto: string; tone: Tone }> = {
+  en_curso: { texto: "EN CURSO", tone: "accent" },
+  esperando_aprobacion: { texto: "TE ESPERA", tone: "warning" },
+  detenido: { texto: "DETENIDO", tone: "danger" },
+  pausado_por_limite: { texto: "EN PAUSA", tone: "warning" },
+  entregado: { texto: "PR ABIERTA", tone: "success" },
+  cerrado: { texto: "CERRADO", tone: "neutral" },
+  abortado: { texto: "ABORTADO", tone: "neutral" },
+};
+
 const join = (parts: readonly (string | undefined)[]) =>
   parts.filter((p): p is string => p !== undefined && p !== "").join(" · ");
 
@@ -178,10 +198,42 @@ export function stationsOf(run: Run): Station[] {
   }));
 }
 
-/** Cuánto avanzó, de 0 a 100: las etapas listas sobre ocho. */
-export function progressOf(run: Run): number {
-  const done = stationsOf(run).filter((s) => s.estado === "ok").length;
-  return Math.round((done / STATIONS.length) * 100);
+export interface StageRow {
+  readonly fase: string;
+  readonly nombre: string;
+  /** El estado de la fase en flowrunner. */
+  readonly estado: string;
+  readonly mark: string;
+  readonly tone: Tone;
+  /** El estado en palabras de `flowrunner watch`: trabajando, te espera, falló. */
+  readonly texto: string;
+  /** Los intentos, si hubo más de uno, y el tiempo: `4 intentos · 13:01`. */
+  readonly meta: string;
+  /** La etapa en la que está el run: la que trabaja, espera, falló o volvió. */
+  readonly actual: boolean;
+}
+
+/** Las ocho etapas como filas de una lista, con su tiempo y sus intentos. */
+export function stageRows(run: Run): StageRow[] {
+  return stationsOf(run).map((station) => {
+    const p = run.fases.find((x) => x.fase === station.fase);
+    const label = phaseLabel(station.fase, station.estado);
+    const tries =
+      p !== undefined && p.sesiones.length > 1
+        ? `${String(p.sesiones.length)} intentos`
+        : undefined;
+    const time = p?.segundos !== undefined && p.segundos > 0 ? clock(p.segundos) : undefined;
+    return {
+      fase: station.fase,
+      nombre: station.nombre,
+      estado: station.estado,
+      mark: label.mark,
+      tone: label.tone,
+      texto: label.texto,
+      meta: join([tries, time]),
+      actual: !["ok", "pendiente"].includes(station.estado),
+    };
+  });
 }
 
 const capitalize = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
@@ -236,12 +288,6 @@ export interface TaskLine {
   readonly texto: string;
 }
 
-export interface StepStat {
-  readonly label: string;
-  /** Tiempo y costo del paso: `6m12s · $1.70`. */
-  readonly meta: string;
-}
-
 export interface Activity {
   readonly sesion: string;
   /** El modelo, los tokens y el costo de la sesión que corre. */
@@ -255,10 +301,8 @@ export interface Now {
   readonly tareas: TaskLine[];
   /** Las sesiones del paso actual: la que corre primero. */
   readonly actividad: Activity[];
-  /** El costo total y el tiempo del run. */
+  /** El costo total del run: chico, al pie. */
   readonly meta: string;
-  /** El tiempo y el costo de cada paso que ya corrió. */
-  readonly porPaso: StepStat[];
   /** Lo que dijo la última fase que falló o volvió, si hay. */
   readonly detalle?: string;
 }
@@ -292,24 +336,11 @@ function activity(s: Session): Activity {
   };
 }
 
-/** El tiempo y el costo de cada etapa que ya corrió. */
-function stepStats(run: Run): StepStat[] {
-  return stationsOf(run).flatMap((station) => {
-    const p = run.fases.find((x) => x.fase === station.fase);
-    if (p === undefined) return [];
-    const meta = join([
-      p.segundos !== undefined && p.segundos > 0 ? duration(p.segundos) : undefined,
-      cost(sessionsOf(p), p.costoUsd),
-    ]);
-    return meta === "" ? [] : [{ label: station.nombre, meta }];
-  });
-}
-
 /** El detalle del paso en que está el run. */
 export function nowOf(run: Run): Now {
   const phase = activePhase(run);
   const all = run.fases.flatMap(sessionsOf);
-  const meta = join([cost(all, run.costoUsd), duration(run.segundos)]);
+  const meta = cost(all, run.costoUsd) ?? "";
   // Las sub-tasks son lo que más dice de un run: las del paso actual, o las de implementar.
   const withUnits =
     phase !== undefined && phase.unidades.length > 0
@@ -337,7 +368,6 @@ export function nowOf(run: Run): Now {
     tareas,
     actividad,
     meta,
-    porPaso: stepStats(run),
     ...(detalle === undefined ? {} : { detalle }),
   };
 }

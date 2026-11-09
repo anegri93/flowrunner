@@ -26,30 +26,30 @@ async function withPanel(host: ReturnType<typeof mockHost>, body: (view: View) =
 const withRuns = (extra: Record<string, (input: never) => unknown> = {}) =>
   mockHost({ requests: { "flowrunner.runs": () => ({ runs, at: 0 }), ...extra } });
 
-// Si regresiona, el panel deja de leerse de un vistazo, o muestra etapas que no son las del flujo.
-test("cada run: la etapa actual con su estado, el avance y las ocho etapas por nombre", async () => {
+// Si regresiona, el panel deja de leerse de un vistazo: el estado, el tiempo y las etapas en lista.
+test("cada run: su estado, el título, el tiempo y las ocho etapas en lista; la que trabaja gira", async () => {
   await withPanel(withRuns(), async (view) => {
     assert.deepEqual(
-      view.findAll({ type: "Card" }).map((c) => c.label),
-      ["PIZ-3 · Modo oscuro", "VF-2 · Precios en la base", "VF-1 · Registro de costos"],
+      view.findAll({ type: "Badge" }).map((b) => b.text),
+      ["TE ESPERA", "EN CURSO", "PR ABIERTA"],
     );
-    assert.ok(view.find({ text: "🟡 Aprobar — te espera" }));
-    assert.ok(view.find({ text: "🔵 Implementar — trabajando · 1 de 2 integradas" }));
-    assert.ok(view.find({ text: "🟡 Aprender — espera merge" }));
-    assert.equal(view.findAll({ text: "● Aprobar" }).length, 1);
-    assert.equal(view.findAll({ text: "✓ Preparar" }).length, 3);
-    assert.equal(view.findAll({ type: "Progress" }).length, 3);
+    assert.ok(view.find({ text: "Modo oscuro" }));
+    assert.ok(view.find({ text: "PIZ-3 · PIZ-3-20261109-010000" }));
+    assert.ok(view.find({ text: "20:00" }));
+    assert.ok(view.find({ text: "Verificar" }));
+    assert.ok(view.find({ label: "Implementar: trabajando" }));
+    assert.ok(view.find({ text: "te espera" }));
   });
 });
 
-// Si regresiona, un run terminado vuelve a ocupar el panel con todo su detalle.
-test("el detalle de un run terminado se abre a pedido, con el tiempo de cada etapa", async () => {
+// Si regresiona, un run terminado vuelve a ocupar el panel con todas sus etapas.
+test("un run terminado muestra solo su etapa actual hasta que se abre", async () => {
   await withPanel(withRuns(), async (view) => {
-    assert.equal(view.find({ text: "Abrir la PR" }), null);
-    await view.press({ label: "Ver el detalle de VF-1" });
+    assert.ok(view.find({ text: "espera merge" }));
+    const before = view.findAll({ text: "Preparar" }).length;
+    await view.press({ label: "Ver las etapas de VF-1" });
+    assert.equal(view.findAll({ text: "Preparar" }).length, before + 1);
     assert.ok(view.find({ text: "Abrir la PR" }));
-    await view.press({ label: "Ocultar el detalle de VF-2" });
-    assert.equal(view.find({ text: "● ST-2 Comando /precio · trabajando" }), null);
   });
 });
 
@@ -88,13 +88,13 @@ test("Plan abre su pestaña; aprobar pide confirmación; Cambios manda el motivo
       },
     }),
     async (view) => {
-      await view.press({ text: "Plan" });
+      await view.press({ role: "button", text: "Plan" });
       assert.deepEqual(opened, [PIZ3]);
-      await view.press({ text: "Aprobar" });
+      await view.press({ role: "button", text: "Aprobar" });
       assert.deepEqual(sent, []);
       await view.press({ text: "Sí, confirmar" });
       assert.deepEqual(sent, [{ run: PIZ3, decision: { accion: "aprobar" } }]);
-      await view.press({ text: "Cambios" });
+      await view.press({ role: "button", text: "Cambios" });
       await view.type({ label: "Qué cambiar del plan" }, "separá la validación", { submit: true });
       assert.deepEqual(sent[1], {
         run: PIZ3,
@@ -115,11 +115,11 @@ test("si una lectura falla, los runs que se veían quedan, con el error arriba",
       },
     }),
     async (view) => {
-      assert.ok(view.find({ text: "🟡 Aprobar — te espera" }));
+      assert.ok(view.find({ text: "Modo oscuro" }));
       fail = true;
       await panel.refresh();
       await view.settled();
-      assert.ok(view.find({ text: "🟡 Aprobar — te espera" }));
+      assert.ok(view.find({ text: "Modo oscuro" }));
       assert.ok(view.find({ text: /No se pudo leer flowrunner: timeout/ }));
     },
   );

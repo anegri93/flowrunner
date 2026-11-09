@@ -84,8 +84,12 @@ del run se llevó, los USD aproximados, el tiempo y el estado; debajo, en gris, 
 usando o por qué volvió algo. Se refresca cada 2 segundos. Con las flechas elegís una fila y con Enter
 ves los pasos de sus sesiones; `q` sale. Con `--once`, o fuera de una terminal, la dibuja una vez.
 
-Los USD son el equivalente de API. Con la suscripción no se cobran: lo que limita es su cupo. Un run no
-tiene tope de gasto salvo que el repo lo pida con `budget.run_usd` en `.flowrunner/config.yaml`.
+Los tokens son los **nuevos**: lo que cada fase leyó o escribió por primera vez, sin las relecturas
+de caché, que se cobran a una fracción. Lo que corre muestra su costo estimado en vivo, con los precios
+de cada modelo, y en gris cuánto contexto arrastra en cada vuelta; al terminar, el estimado se
+reemplaza por el costo real. Los USD son el equivalente de API: con la suscripción no se cobran, y lo
+que limita es su cupo. Un run no tiene tope de gasto salvo que el repo lo pida con `budget.run_usd` en
+`.flowrunner/config.yaml`.
 
 ## Uso personal
 

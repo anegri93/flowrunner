@@ -3,6 +3,7 @@
 // `load.ts`.
 import { stateOf, TERMINAL, type RunStatus } from "../engine/engine.ts";
 import type { Step } from "../report/transcript.ts";
+import { contextWindow, estimateCost, promptTokens, type Usage } from "./pricing.ts";
 import { PHASES, type Phase, type RunEvent } from "../store/events.ts";
 
 export interface SessionFile {
@@ -18,8 +19,13 @@ export interface SessionNode {
   readonly esfuerzo?: string | undefined;
   readonly corriendo: boolean;
   readonly costoUsd: number | undefined;
-  /** Tokens procesados: entrada, caché y salida. Crece mientras la sesión corre. */
+  /** Tokens nuevos: lo que leyó o escribió por primera vez, sin las relecturas de caché. */
   readonly tokens: number;
+  /** El tamaño de su contexto en el último pedido: cuánto arrastra en cada vuelta. */
+  readonly contexto: number;
+  readonly ventana: number | undefined;
+  /** El costo estimado con los precios de cada modelo, mientras no llega el real. */
+  readonly costoEstimado: number | undefined;
   readonly segundos: number;
   /** Herramientas que usó. */
   readonly pasos: number;
@@ -114,18 +120,9 @@ export function tidyStep(step: Step, worktrees: string): Step {
   }
 }
 
-interface Usage {
-  input_tokens?: number;
-  cache_creation_input_tokens?: number;
-  cache_read_input_tokens?: number;
-  output_tokens?: number;
-}
-
-const usageTotal = (u: Usage) =>
-  (u.input_tokens ?? 0) +
-  (u.cache_creation_input_tokens ?? 0) +
-  (u.cache_read_input_tokens ?? 0) +
-  (u.output_tokens ?? 0);
+/** Lo nuevo de un pedido: entrada sin caché, escrituras de caché y salida. */
+const fresh = (u: Usage) =>
+  (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.output_tokens ?? 0);
 
 export function sessionNode(nombre: string, file: SessionFile, now: number): SessionNode {
   let modelo: string | undefined;
@@ -133,8 +130,9 @@ export function sessionNode(nombre: string, file: SessionFile, now: number): Ses
   let pasos = 0;
   let ultimo: string | undefined;
   // Mientras corre, la suma por mensaje; el SDK repite el mismo mensaje por cada bloque, así que va
-  // por id. Al terminar, el total del resultado.
-  const perMessage = new Map<string, number>();
+  // por id. Al terminar, el total del resultado. Los subagentes cuentan con su propio modelo.
+  const perMessage = new Map<string, { model: string; usage: Usage }>();
+  let last: Usage | undefined;
   let final: number | undefined;
   for (const raw of file.jsonl.split("\n")) {
     if (raw.trim() === "") continue;
@@ -143,6 +141,7 @@ export function sessionNode(nombre: string, file: SessionFile, now: number): Ses
       model?: string;
       total_cost_usd?: number;
       usage?: Usage;
+      parent_tool_use_id?: string | null;
       message?: { id?: string; model?: string; content?: unknown; usage?: Usage };
     };
     try {
@@ -150,13 +149,18 @@ export function sessionNode(nombre: string, file: SessionFile, now: number): Ses
     } catch {
       continue; // la última línea puede estar a medio escribir
     }
-    modelo = m.model ?? m.message?.model ?? modelo;
+    // El modelo de la sesión es el del arranque, no el del último mensaje, que puede ser de un subagente.
+    if (m.type === "system" && m.model !== undefined) modelo = m.model;
+    modelo ??= m.message?.model;
     if (m.type === "result") {
       costoUsd = m.total_cost_usd ?? 0;
-      if (m.usage !== undefined) final = usageTotal(m.usage);
+      if (m.usage !== undefined) final = fresh(m.usage);
     }
     if (m.type === "assistant" && m.message?.usage !== undefined) {
-      perMessage.set(m.message.id ?? String(perMessage.size), usageTotal(m.message.usage));
+      const model = m.message.model ?? modelo ?? "";
+      perMessage.set(m.message.id ?? String(perMessage.size), { model, usage: m.message.usage });
+      // El contexto es el de la sesión principal, no el de sus subagentes.
+      if (m.parent_tool_use_id == null) last = m.message.usage;
     }
     if (m.type !== "assistant" || !Array.isArray(m.message?.content)) continue;
     for (const b of m.message.content as Record<string, unknown>[]) {
@@ -169,12 +173,19 @@ export function sessionNode(nombre: string, file: SessionFile, now: number): Ses
   }
   const corriendo = costoUsd === undefined;
   const end = corriendo ? now : file.mtimeMs;
+  const messages = [...perMessage.values()];
+  const costs = messages.map((x) => estimateCost(x.model, x.usage));
   return {
     nombre,
     modelo,
     corriendo,
     costoUsd,
-    tokens: final ?? [...perMessage.values()].reduce((a, b) => a + b, 0),
+    tokens: final ?? messages.reduce((a, x) => a + fresh(x.usage), 0),
+    contexto: last === undefined ? 0 : promptTokens(last),
+    ventana: modelo === undefined ? undefined : contextWindow(modelo),
+    costoEstimado: costs.some((c) => c === undefined)
+      ? undefined
+      : costs.reduce<number>((a, c) => a + (c ?? 0), 0),
     segundos: Math.max(0, Math.round((end - file.birthMs) / 1000)),
     pasos,
     ultimo,

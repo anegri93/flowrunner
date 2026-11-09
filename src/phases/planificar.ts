@@ -8,7 +8,7 @@ import { loadRepoConfig } from "../config/load.ts";
 import type { RepoConfig } from "../config/schemas.ts";
 import { checkCommandsFail, checkPlanShape, planSchema, type Plan } from "../gates/plan.ts";
 import { changesSince, commitAll, resetHard } from "../git/git.ts";
-import { graftMcpServer } from "../graft/graft.ts";
+import { GRAFT_TOOLS, graftMcpServer } from "../graft/graft.ts";
 import { featureText, render } from "../prompts/render.ts";
 import type { PhaseFn, RunPaths } from "../runner/types.ts";
 import { runSession } from "../agent/session.ts";
@@ -119,10 +119,11 @@ export const planificar: PhaseFn = async (ctx) => {
       mcpServers: { graft: graftMcpServer(worktree, graftIndex(run), deps.env) },
       agents: {
         explorador: {
-          description: "Lee el código del repo y resume lo que encuentra. Solo lee.",
+          description:
+            "Recorre el código del repo y devuelve un resumen con rutas y líneas. Usalo para preguntas que tocan muchos archivos. Solo lee.",
           prompt:
-            "Explorá el repo para responder lo que te piden. No escribas archivos. Respondé con rutas y líneas.",
-          tools: ["Read", "Grep", "Glob"],
+            "Explorá el repo para responder lo que te piden. Ubicá primero con graft (graft_find_code, graft_trace_calls, graft_find_all) y leé con Read solo los rangos de líneas que hagan falta. No escribas archivos. Respondé con un resumen corto: rutas, líneas y lo que hace cada lugar, sin pegar código largo.",
+          tools: ["Read", "Grep", "Glob", ...GRAFT_TOOLS],
           model: config.models.explorar.model,
         },
       },

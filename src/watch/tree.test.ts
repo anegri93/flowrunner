@@ -245,7 +245,7 @@ describe("runTree", () => {
   });
 
   // Si regresiona, watch no dice cuántos tokens lleva una sesión hasta que termina, o los cuenta doble.
-  test("tokens: en vivo suma cada mensaje una vez, y al terminar usa el total del resultado", () => {
+  test("tokens nuevos: en vivo suma cada mensaje una vez sin las relecturas de caché, y al terminar usa el resultado", () => {
     const usage = { input_tokens: 10, cache_read_input_tokens: 1000, output_tokens: 90 };
     const msg = (id: string) =>
       line({ type: "assistant", message: { id, model: "claude-sonnet-5-5", content: [], usage } });
@@ -256,7 +256,14 @@ describe("runTree", () => {
       sessions: new Map([["planificar-1", session([msg("a"), msg("a"), msg("b")], 40, 60)]]),
       now: T0 + 100_000,
     });
-    expect(live.fases[1]?.sesiones[0]?.tokens).toBe(2200);
+    // 2 mensajes distintos de 10 de entrada y 90 de salida; los 1000 leídos de caché no son nuevos.
+    expect(live.fases[1]?.sesiones[0]).toMatchObject({
+      tokens: 200,
+      contexto: 1010,
+      ventana: 1_000_000,
+    });
+    // Sonnet 5.5: 10 × $2 + 1000 × $0.10 + 90 × $10 por millón, dos veces.
+    expect(live.fases[1]?.sesiones[0]?.costoEstimado).toBeCloseTo(0.00204, 6);
     const done = runTree({
       events: base,
       tasks,
@@ -280,7 +287,7 @@ describe("runTree", () => {
       ]),
       now: T0 + 100_000,
     });
-    expect(done.fases[1]?.sesiones[0]?.tokens).toBe(1600);
+    expect(done.fases[1]?.sesiones[0]?.tokens).toBe(600);
   });
 
   // Si regresiona, un run cerrado hace horas sigue sumando minutos en watch.
@@ -353,5 +360,48 @@ describe("runTree", () => {
       nota: "falló en una corrida anterior; el run siguió desde verificar",
     });
     expect(impl?.unidades[0]?.estado).toBe("integrada");
+  });
+
+  // Si regresiona, la fila del planificador dice Haiku cuando lanza un explorador, o mide su contexto.
+  test("el modelo es el del arranque y el contexto el de la sesión principal, aunque corra un subagente", () => {
+    const main = line({
+      type: "assistant",
+      message: {
+        id: "m",
+        model: "claude-opus-5-5",
+        content: [],
+        usage: { cache_read_input_tokens: 170_000 },
+      },
+    });
+    const sub = line({
+      type: "assistant",
+      parent_tool_use_id: "t1",
+      message: {
+        id: "s",
+        model: "claude-haiku-5-5",
+        content: [],
+        usage: { cache_read_input_tokens: 9_000 },
+      },
+    });
+    const tree = runTree({
+      events: base,
+      tasks,
+      titulo: "x",
+      sessions: new Map([
+        [
+          "planificar-1",
+          session(
+            [line({ type: "system", subtype: "init", model: "claude-opus-5-5" }), main, sub],
+            40,
+            60,
+          ),
+        ],
+      ]),
+      now: T0 + 100_000,
+    });
+    expect(tree.fases[1]?.sesiones[0]).toMatchObject({
+      modelo: "claude-opus-5-5",
+      contexto: 170_000,
+    });
   });
 });

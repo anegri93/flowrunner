@@ -9,6 +9,9 @@ const session = (nombre: string, extra: Partial<SessionNode> = {}): SessionNode 
   corriendo: false,
   costoUsd: 0.15,
   tokens: 100_000,
+  contexto: 0,
+  ventana: undefined,
+  costoEstimado: undefined,
   segundos: 40,
   pasos: 8,
   ultimo: undefined,
@@ -216,6 +219,42 @@ describe("renderBoard", () => {
     expect(marked.map(strip).map((l) => l.trimEnd())).toEqual([rowOf(plain, "ST-1")]);
   });
 
+  // Si regresiona, la fase más cara se ve sin costo hasta que termina, como planificar en VF-1.
+  test("lo que corre suma su costo estimado y dice cuánto contexto arrastra", () => {
+    const planning: RunTree = {
+      ...tree,
+      costoUsd: 0,
+      fases: [
+        phase("planificar", {
+          estado: "corriendo",
+          segundos: 394,
+          sesiones: [
+            session("planificar-1", {
+              modelo: "claude-opus-5-5",
+              corriendo: true,
+              costoUsd: undefined,
+              costoEstimado: 4.4,
+              tokens: 435_000,
+              contexto: 174_000,
+              ventana: 1_000_000,
+              ultimo: "Grep videoUrl",
+            }),
+          ],
+        }),
+      ],
+    };
+    const { lines } = renderBoard([planning], { width: 160, color: false });
+    expect(cols(rowOf(lines, "Cambios de un toque")).slice(-4)).toEqual([
+      "435k",
+      "4.40",
+      "9m00s",
+      "en curso",
+    ]);
+    const row = rowOf(lines, "planificar");
+    expect(cols(row).slice(-4)).toEqual(["435k", "4.40", "6m34s", "trabajando"]);
+    expect(lines[lines.indexOf(row) + 1]?.trim()).toBe("▸ Grep videoUrl · contexto 174k de 1M");
+  });
+
   test("sin runs lo dice", () => {
     expect(renderBoard([], { width: 80, color: false }).lines).toEqual(["no hay runs activos"]);
   });
@@ -244,7 +283,7 @@ describe("renderDetail", () => {
       "  ▸ Read paso-3",
       "  ▸ Read paso-4",
       "  ▸ Read paso-5",
-      "implementar-ST-2-2 · sonnet-5-5 (high) · 2k tokens · ≈ USD – · 40s",
+      "implementar-ST-2-2 · sonnet-5-5 (high) · 2k tokens nuevos · contexto – · ≈ USD – · 40s",
       "  ▸ Read paso-0",
     ]);
   });

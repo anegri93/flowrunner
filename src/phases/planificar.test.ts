@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
@@ -90,6 +90,38 @@ describe("planificar", () => {
     expect(saved.subtareas[0]?.alcance).toEqual(["src/export/"]);
     const decisions = readLog(run.dir).events.filter((e) => e.tipo === "decision");
     expect(decisions).toHaveLength(1);
+  });
+
+  // Regresión: en CUENTAS-1, otra herramienta reescribió `.claude/helpers/*` en el worktree mientras
+  // planificaba. `add -A` lo commiteó como «tests en rojo», lo bloqueó por hash y llegó a la PR.
+  test("lo que cambió fuera de los tests y no escribió el planificador se descarta, con un aviso", async () => {
+    const { work } = makeProject({
+      files: { ".claude/helpers/hook.cjs": "original\n" },
+      config: { setup: "true", tests_globs: ["tests/**"] },
+    });
+    const run = newRun(work, FEATURE);
+    const sim = simQuery([{ calls: [writeTest], output: goodPlan }]);
+    let worktree = "";
+    const query: typeof sim.query = (args) => {
+      writeFileSync(join(worktree, ".claude/helpers/hook.cjs"), "reescrito por otro\n");
+      writeFileSync(join(worktree, ".claude/nuevo.json"), "{}\n");
+      return sim.query(args);
+    };
+    const deps = testDeps({ query });
+    expect(await preparar(contextFor(run, "preparar", deps))).toEqual({ tipo: "ok" });
+    worktree = prepared(readLog(run.dir).events).worktree;
+
+    expect(await planificar(contextFor(run, "planificar", deps))).toEqual({ tipo: "ok" });
+    expect(git(worktree, "show", "--name-only", "--format=", "HEAD").split("\n")).toEqual([
+      "tests/ac1.mjs",
+    ]);
+    expect(git(worktree, "status", "--porcelain")).toBe("");
+    expect(readFileSync(join(worktree, ".claude/helpers/hook.cjs"), "utf8")).toBe("original\n");
+    expect(Object.keys(readPlan(run).locked)).toEqual(["tests/ac1.mjs"]);
+    const avisos = readLog(run.dir).events.filter((e) => e.tipo === "aviso");
+    expect(avisos.map((e) => e.texto)).toEqual([
+      expect.stringContaining(".claude/helpers/hook.cjs, .claude/nuevo.json"),
+    ]);
   });
 
   // Si regresiona, el planificador y su explorador leen archivos enteros en vez de ubicar con graft,

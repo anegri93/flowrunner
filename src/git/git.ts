@@ -1,5 +1,5 @@
 // Las operaciones de git de flowrunner. Ningún agente llama a git hacia afuera: solo este módulo.
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { runProc } from "../proc/proc.ts";
 
@@ -77,6 +77,19 @@ export async function commitAll(
   const trailerArgs = Object.entries(trailers).flatMap(([k, v]) => ["--trailer", `${k}: ${v}`]);
   await git(worktree, ["commit", "--quiet", "--no-verify", "-m", message, ...trailerArgs], env);
   return headSha(worktree, env);
+}
+
+/** Deja `changes` como estaban en `base`: los archivos nuevos se borran y el resto se restaura. */
+export async function discardChanges(
+  worktree: string,
+  base: string,
+  changes: readonly FileChange[],
+  env?: NodeJS.ProcessEnv,
+): Promise<void> {
+  for (const c of changes.filter((c) => c.status === "agregado"))
+    rmSync(join(worktree, c.path), { force: true });
+  const restore = changes.filter((c) => c.status !== "agregado").map((c) => c.path);
+  if (restore.length > 0) await git(worktree, ["checkout", base, "--", ...restore], env);
 }
 
 export type CherryPick =

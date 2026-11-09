@@ -52,11 +52,13 @@ Una vez por repo. El repo tiene que estar en GitHub y su rama base en verde.
    flowrunner init ~/ruta/al/repo --aplicar
    ```
 
-3. En esa PR, revisá la config que infirió y el borrador de `contexto.md`, `convenciones.md` y
+3. En esa PR, revisá la config que infirió, con el setup, los tests, el lint y el formateador, y el borrador de `contexto.md`, `convenciones.md` y
    `que-es-bien.md`: init lo redacta leyendo el código del repo y lo deja en una sección
    «Borrador de flowrunner init», con los archivos de los que salió. Corregí lo que no sea así y
    escribí tus reglas arriba de esa sección. Después mergeala: los runs leen el cerebro desde la rama
    base.
+
+   El borrador vive en la rama base de GitHub: si en tu carpeta no lo ves, hacé `git pull`.
 
    Si el repo ya tenía su cerebro de antes, init no lo toca. Para sumarle el borrador leído del código,
    en su propia PR y debajo de lo que ya escribiste:
@@ -75,17 +77,18 @@ Una vez por repo. El repo tiene que estar en GitHub y su rama base en verde.
 
 1. Abrí Claude Code en el repo y pedile la feature, como se la pedirías a una persona.
 2. La skill te hace preguntas de a una, escribe la feature y la lanza. Desde ahí el run corre solo.
-3. Para ver cómo va, abrí una pestaña de terminal:
+3. Para ver cómo va, usá la pestaña de flowrunner en Orca o, en una terminal:
 
    ```bash
    flowrunner watch PIZ-1
    ```
 
-4. Cuando el plan está listo te llega un aviso de macOS. Pedile a Claude que te lo muestre y decidí:
-   aprobarlo o pedir cambios.
+4. Cuando el plan está listo, la etapa Aprobar dice «te espera». Tocá «Plan» para leerlo y después
+   «Aprobar» o «Cambios» en la tarjeta del run. También podés pedirle a Claude que te lo muestre y
+   decidir ahí.
 5. flowrunner implementa, verifica, revisa y abre la PR.
-6. Revisá la PR, corregí lo que haga falta y mergeala. En el próximo chequeo, flowrunner aprende de tus
-   correcciones.
+6. Revisá la PR, corregí lo que haga falta y mergeala. En el próximo chequeo, que corre cada 10 minutos,
+   flowrunner aprende de tus correcciones y cierra el run.
 
 ## Cómo funciona
 
@@ -109,6 +112,10 @@ naranjas, vos.
 Las líneas punteadas del diagrama son el trabajo que vuelve atrás: un criterio en rojo o un bloqueante de
 la revisión vuelven a implementar, y tus cambios al plan vuelven a planificar. Las lecciones llegan al
 cerebro del repo, y el próximo run las lee.
+
+Los tests de aceptación quedan bloqueados: ninguna sub-task los puede tocar. Por eso, antes de
+bloquearlos, flowrunner les pasa el lint del repo en modo arreglar y el formateador. Un error que el
+lint no arregla solo rechaza el plan, y el planificador lo corrige antes de que lo veas.
 
 Mientras trabajan, los agentes no pueden salirse de lo suyo: cada sub-task solo escribe dentro de su
 alcance, y flowrunner lo controla en cada herramienta y otra vez sobre el diff.
@@ -145,7 +152,22 @@ que corre muestra en gris la herramienta que está usando y cuánto contexto arr
 segundos; con las flechas elegís una fila, con Enter ves sus pasos y con `q` salís. Con `--once` la
 dibuja una vez.
 
-Si usás [Orca](https://www.onorca.dev), el plugin de [`orca/`](orca/README.md) muestra lo mismo en una pestaña de la barra derecha.
+### En Orca
+
+Si usás [Orca](https://www.onorca.dev), el plugin de [`orca/`](orca/README.md) suma una pestaña en la
+barra derecha, con el ícono del cohete. Cada run es una tarjeta con su estado, su tiempo y las ocho
+etapas del flujo, cada una con su tiempo. La que trabaja gira, y debajo dice qué está haciendo. Desde
+ahí decidís lo que el run espera: aprobar o pedir cambios al plan, reanudar o rehacer un run detenido.
+El botón de pasos de una sesión y «Plan» abren el archivo como pestaña de Orca.
+
+Para instalarlo, con Orca abierto:
+
+```bash
+/Applications/Orca.app/Contents/Resources/bin/orca plugin dev load ~/Documents/PersonalProjects/flowrunner/orca
+```
+
+Orca pide aprobarlo porque corre comandos en tu máquina: repetí el comando con el `--approve` que
+imprime.
 
 Los tokens nuevos son lo que cada fase leyó o escribió por primera vez, sin las relecturas de caché. El
 costo de lo que corre es un mínimo, `≥ 2.97`, porque la salida se conoce al terminar. Los USD son el

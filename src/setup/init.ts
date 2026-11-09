@@ -25,6 +25,7 @@ import { ConfigError } from "../config/schemas.ts";
 import { fetchOrigin, git, GitError, pushBranch, removeWorktree } from "../git/git.ts";
 import { createPr, findPr, type PullRequest } from "../github/gh.ts";
 import { runVerify } from "../phases/verify.ts";
+import { repoNode } from "../proc/node.ts";
 import { runProc, runShell, tail } from "../proc/proc.ts";
 import type { Deps, RunPaths } from "../runner/types.ts";
 import { draftBrain, DRAFT_HEADING, type Progress, withoutDraft } from "./draft.ts";
@@ -209,10 +210,15 @@ async function brainSteps(
     }
 
     progress(`comprobando que origin/${base} esté en verde: setup y verify`);
-    const setup = await runShell(config.setup, { cwd: worktree, env, timeoutMs: SETUP_TIMEOUT_MS });
+    const node = await repoNode(worktree, env);
+    const setup = await runShell(config.setup, {
+      cwd: worktree,
+      env: node.env,
+      timeoutMs: SETUP_TIMEOUT_MS,
+    });
     const verify =
       setup.code === 0
-        ? await runVerify(worktree, config, env)
+        ? await runVerify(worktree, config, node.env)
         : { ok: false as const, detail: `el setup salió ${String(setup.code)}:\n${tail(setup)}` };
     if (!verify.ok) {
       pasos.push({

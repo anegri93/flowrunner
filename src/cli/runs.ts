@@ -10,6 +10,7 @@ import { runUntilStop } from "../runner/runner.ts";
 import type { RunPaths } from "../runner/types.ts";
 import { PHASES, type Phase } from "../store/events.ts";
 import { acquireLock, isAlive, LockHeldError, readLock, releaseLock } from "../store/lock.ts";
+import { repoNode } from "../proc/node.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
 import { createRun, holderStatus, listRunIds, loadState, runPaths } from "../store/runs.ts";
 import {
@@ -201,9 +202,14 @@ export function abortRun(home: string, id: string) {
 export async function runProcess(home: string, id: string, env: NodeJS.ProcessEnv) {
   const state = loadState(home, id);
   acquireLock(home, state.proyecto, id, process.pid, (other) => holderStatus(home, other));
-  const { deps, phases } = await productionRuntime(env, (title, body) => {
-    notifyMac(title, body, env);
-  });
+  // Setup, agentes y fixers corren con el Node del repo. Si no está instalado, verify se niega a
+  // correr y el run se detiene con el motivo.
+  const { deps, phases } = await productionRuntime(
+    (await repoNode(state.repo, env)).env,
+    (title, body) => {
+      notifyMac(title, body, env);
+    },
+  );
   const run = runPaths(home, id);
   const final = await runUntilStop(run, phases, deps);
   // El informe se escribe siempre al terminar el proceso: completo o parcial si se detuvo.

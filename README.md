@@ -37,7 +37,9 @@ sesión abierta.
 
 ## Sumar un repo
 
-Una vez por repo. El repo tiene que estar en GitHub y su rama base en verde.
+Una vez por repo. El repo tiene que estar en GitHub y su rama base en verde. Si fija Node en `.nvmrc` o
+`.node-version`, setup, agentes y verify corren con esa versión, instalada con nvm, fnm, volta o
+Homebrew; si no está instalada, verify no corre y el run se detiene diciendo cómo instalarla.
 
 1. Mirá qué hay y qué falta. No toca nada:
 

@@ -173,17 +173,24 @@ export const planificar: PhaseFn = async (ctx) => {
     .filter((c) => c.status !== "borrado")
     .map((c) => c.path);
   if (written.length === 0) problems.push("planificar no escribió ningún test");
-  // Los tests quedan bloqueados byte a byte y ninguna sub-task los puede tocar: se formatean acá,
-  // antes del gate y del hash, o un test mal formateado deja verify en rojo sin arreglo.
-  if (config.format !== undefined && written.length > 0) {
-    const formatted = await runShell(`${config.format} ${written.map(shellQuote).join(" ")}`, {
+  // Los tests quedan bloqueados byte a byte y ninguna sub-task los puede tocar: se les pasa el lint
+  // en modo arreglar y el formateador acá, antes del gate y del hash. Si no, un `let` que debía ser
+  // `const` o una línea larga dejan verify en rojo sin arreglo, como en VF-4 y VF-1. Lo que el lint no
+  // arregla solo rechaza el plan, y el planificador lo corrige en el próximo intento.
+  const fixers = [
+    { command: config.lint_fix, falla: "el lint dejó errores que no arregla solo" },
+    { command: config.format, falla: "el formateador falló" },
+  ];
+  for (const { command, falla } of fixers) {
+    if (command === undefined || written.length === 0) continue;
+    const fixed = await runShell(`${command} ${written.map(shellQuote).join(" ")}`, {
       cwd: worktree,
       env: deps.env,
       timeoutMs: FORMAT_TIMEOUT_MS,
     });
-    if (formatted.code !== 0) {
+    if (fixed.code !== 0) {
       problems.push(
-        `el formateador \`${config.format}\` salió ${String(formatted.code)} sobre los tests:\n${tail(formatted, 8)}`,
+        `${falla} en los tests: \`${command}\` salió ${String(fixed.code)}:\n${tail(fixed, 12)}`,
       );
     }
   }

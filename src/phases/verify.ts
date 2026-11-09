@@ -2,6 +2,7 @@
 import { constants, accessSync, existsSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 import type { RepoConfig } from "../config/schemas.ts";
+import { repoNode } from "../proc/node.ts";
 import { isUnrunnable, runProc, tail, type ProcResult } from "../proc/proc.ts";
 
 export type VerifyResult =
@@ -36,7 +37,14 @@ export async function runVerify(
   } catch {
     return { ok: false, unrunnable: true, detail: `${config.verify} no es ejecutable` };
   }
-  const result = await runProc(script, [], { cwd: worktree, env, timeoutMs: VERIFY_TIMEOUT_MS });
+  // Con otro Node que el del repo, un rojo puede no ser del código: mejor no correr.
+  const node = await repoNode(worktree, env);
+  if (node.tipo === "falta") return { ok: false, unrunnable: true, detail: node.motivo };
+  const result = await runProc(script, [], {
+    cwd: worktree,
+    env: node.env,
+    timeoutMs: VERIFY_TIMEOUT_MS,
+  });
   if (result.code === 0) return { ok: true };
   return {
     ok: false,

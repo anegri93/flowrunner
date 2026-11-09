@@ -36,7 +36,7 @@ describe("skill install", () => {
   });
 
   // Si regresiona, Claude podría aprobar un plan sin preguntarte, o pisar tus permisos.
-  test("con permisos propios, --confirmar los conserva y agrega las dos reglas ask", () => {
+  test("con permisos propios, --confirmar los conserva y agrega las reglas ask", () => {
     const env = home({
       model: "opus",
       permissions: { allow: ["Bash(ls:*)"], ask: ["Bash(rm:*)"] },
@@ -49,6 +49,7 @@ describe("skill install", () => {
       "Bash(rm:*)",
       "Bash(flowrunner approve:*)",
       "Bash(flowrunner changes:*)",
+      "Bash(flowrunner accept-untested:*)",
     ]);
     expect(existsSync(join(env.HOME ?? "", ".claude", "skills", "flowrunner", "SKILL.md"))).toBe(
       true,
@@ -62,6 +63,7 @@ describe("skill install", () => {
     expect(settingsOf(env).permissions.ask).toEqual([
       "Bash(flowrunner approve:*)",
       "Bash(flowrunner changes:*)",
+      "Bash(flowrunner accept-untested:*)",
     ]);
   });
 

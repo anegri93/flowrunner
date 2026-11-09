@@ -15,14 +15,15 @@ como `flowrunner watch`, pensada para el ancho angosto de la barra:
   aprobado, abren el archivo como pestaña de Orca, en el proyecto del run. El plugin lo escribe en `.git/flowrunner/<run>/` del repo, que git no versiona.
 - Las decisiones que el run espera, en una fila: aprobar o pedir cambios al plan, reanudar un run
   detenido o rehacerlo desde la fase que sugiere el motivo, y «Aprender ahora» en un run con la PR
-  abierta, para no esperar el chequeo de cada 10 minutos después de mergear. Aprobar, reanudar y rehacer piden
-  confirmación.
+  abierta, para no esperar el chequeo de cada 10 minutos después de mergear. Abortar está en todo run
+  vivo: corta lo que corre y borra sus worktrees, y la rama y la PR quedan. Aprobar, reanudar, rehacer y
+  abortar piden confirmación.
 
 Se refresca cada 3 segundos mientras la pestaña se ve.
 
 - `src/worker.ts` corre el CLI de flowrunner en un shell de login, para tener tu PATH: `watch`,
   `report --sesion`, `plan`, y cada decisión como un comando fijo (`approve`, `changes`, `resume`,
-  `rerun --desde`). Valida el id del run, la fase y el motivo antes de llegar al shell.
+  `rerun --desde`, `learn`, `abort`). Valida el id del run, la fase y el motivo antes de llegar al shell.
 - `src/panel.tsx` dibuja la pestaña con los componentes de Orca 1.4.246.
 - `src/runs.ts` ordena los runs, agrupa las fases y decide qué decisiones ofrecer, sin depender de
   Orca.

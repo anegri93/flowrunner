@@ -1,6 +1,6 @@
 // Las decisiones que espera un run, en una fila de botones: aprobar o pedir cambios al plan,
-// reanudar o rehacer un run detenido. Las usan la pestaña de los runs y la del plan. Aprobar,
-// reanudar y rehacer piden confirmación; pedir cambios, el motivo.
+// reanudar o rehacer un run detenido, y abortar cualquier run vivo. Aprobar, reanudar, rehacer y
+// abortar piden confirmación; pedir cambios, el motivo.
 import { atom, Button, Input, plugin, read, Row, set, Spinner, Stack, Text } from "orca";
 import { decisionsFor, rerunPhase, type Decision, type Run } from "./runs";
 
@@ -76,20 +76,27 @@ export function Decisions({
     );
   }
   if (mine !== undefined) {
+    const abort = mine.accion === "abortar";
     const question =
       mine.accion === "aprobar"
         ? "¿Aprobar el plan? Arranca implementar."
         : mine.accion === "reanudar"
           ? `¿Reanudar ${run.clave}?`
-          : `¿Rehacer ${run.clave} desde ${mine.accion === "rehacer" ? mine.desde : ""}?`;
+          : abort
+            ? `¿Abortar ${run.clave}? Corta lo que corre y borra sus worktrees; la rama y la PR quedan.`
+            : `¿Rehacer ${run.clave} desde ${mine.accion === "rehacer" ? mine.desde : ""}?`;
     return (
       <Stack gap="xs">
         <Text size="sm" weight="semibold">
           {question}
         </Text>
         <Row gap="xs">
-          <Button size="sm" tone="success" onPress={() => decide(run.id, mine, after)}>
-            Sí, confirmar
+          <Button
+            size="sm"
+            tone={abort ? "danger" : "success"}
+            onPress={() => decide(run.id, mine, after)}
+          >
+            {abort ? "Sí, abortar" : "Sí, confirmar"}
           </Button>
           <Button size="sm" variant="ghost" onPress={() => set(pending, null)}>
             Cancelar
@@ -146,6 +153,17 @@ export function Decisions({
             onPress={() => ask({ accion: "rehacer", desde })}
           >
             {`Rehacer desde ${desde}`}
+          </Button>
+        ) : null}
+        {offered.includes("abortar") ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            tone="danger"
+            icon="stop"
+            onPress={() => ask({ accion: "abortar" })}
+          >
+            Abortar
           </Button>
         ) : null}
       </Row>

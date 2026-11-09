@@ -394,10 +394,16 @@ export type Decision =
   | { readonly accion: "cambios"; readonly motivo: string }
   | { readonly accion: "reanudar" }
   | { readonly accion: "rehacer"; readonly desde: PhaseName }
-  | { readonly accion: "aprender" };
+  | { readonly accion: "aprender" }
+  | { readonly accion: "abortar" };
 
-/** Las decisiones que tiene sentido ofrecer según el estado del run. */
+/** Las decisiones que tiene sentido ofrecer según el estado del run. Abortar, en todo run vivo. */
 export function decisionsFor(run: Run): Decision["accion"][] {
+  if (run.status === "cerrado" || run.status === "abortado") return [];
+  return [...byStatus(run), "abortar"];
+}
+
+function byStatus(run: Run): Decision["accion"][] {
   switch (run.status) {
     case "esperando_aprobacion":
       return ["aprobar", "cambios"];

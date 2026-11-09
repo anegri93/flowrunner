@@ -135,6 +135,33 @@ test("aprobar pide confirmación; Cambios manda el motivo escrito", async () => 
   );
 });
 
+// Si regresiona, un run vivo no se puede abortar desde el panel, o se aborta sin confirmar.
+test("cada run vivo tiene Abortar, que pide confirmación antes de mandarlo", async () => {
+  const sent: { run: string; decision: Decision }[] = [];
+  await withPanel(
+    withRuns({
+      "flowrunner.decidir": (input: { run: string; decision: Decision }) => {
+        sent.push(input);
+        return { ok: true, mensaje: "abortado; las ramas quedan" };
+      },
+    }),
+    async (view) => {
+      const buttons = view.findAll({ role: "button", text: "Abortar" });
+      assert.equal(buttons.length, runs.length);
+      const first = buttons[0];
+      if (first === undefined) throw new Error("sin botón Abortar");
+      await view.press(first);
+      assert.deepEqual(sent, []);
+      const question = view.find({ text: /^¿Abortar [A-Z]+-\d+\?/ })?.text ?? "";
+      const clave = /¿Abortar ([A-Z]+-\d+)\?/.exec(question)?.[1];
+      await view.press({ text: "Sí, abortar" });
+      assert.deepEqual(sent, [
+        { run: runs.find((r) => r.clave === clave)?.id, decision: { accion: "abortar" } },
+      ]);
+    },
+  );
+});
+
 // Regresión: una lectura que fallaba dejaba el panel sin runs hasta la siguiente, y todo parpadeaba.
 test("si una lectura falla, los runs que se veían quedan, con el error arriba", async () => {
   let fail = false;

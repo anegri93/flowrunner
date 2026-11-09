@@ -132,18 +132,21 @@ test("un run entregado con la PR mergeada no dice que espera tu merge", () => {
   assert.equal(headlineOf(merged).texto, "Aprender — aprende al próximo chequeo");
 });
 
-// Si regresiona, el panel ofrece aprobar un run que no espera, o no ofrece rehacer uno detenido.
-test("las decisiones dependen del estado del run", () => {
-  assert.deepEqual(decisionsFor(byKey("PIZ-3")), ["aprobar", "cambios"]);
-  assert.deepEqual(decisionsFor(byKey("VF-2")), []);
+// Si regresiona, el panel ofrece aprobar un run que no espera, no ofrece rehacer uno detenido, o
+// no deja abortar un run que sigue vivo.
+test("las decisiones dependen del estado del run, y abortar está en todo run vivo", () => {
+  assert.deepEqual(decisionsFor(byKey("PIZ-3")), ["aprobar", "cambios", "abortar"]);
+  assert.deepEqual(decisionsFor(byKey("VF-2")), ["abortar"]);
   // Con la PR abierta o recién mergeada, aprender ya, sin esperar el chequeo de cada 10 minutos.
-  assert.deepEqual(decisionsFor(byKey("VF-1")), ["aprender"]);
+  assert.deepEqual(decisionsFor(byKey("VF-1")), ["aprender", "abortar"]);
+  assert.deepEqual(decisionsFor({ ...byKey("VF-2"), status: "cerrado" }), []);
+  assert.deepEqual(decisionsFor({ ...byKey("VF-2"), status: "abortado" }), []);
   const stopped: Run = {
     ...byKey("VF-2"),
     status: "detenido",
     siguiente: "flowrunner rerun VF-2-20261109-001527 --desde verificar",
   };
-  assert.deepEqual(decisionsFor(stopped), ["reanudar", "rehacer"]);
+  assert.deepEqual(decisionsFor(stopped), ["reanudar", "rehacer", "abortar"]);
   assert.equal(rerunPhase(stopped), "verificar");
   assert.equal(
     rerunPhase({ ...stopped, siguiente: "flowrunner rerun X --desde `rm -rf`" }),

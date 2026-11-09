@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { inferRepo } from "./infer.ts";
+import { ciStepsVerifyMisses, inferRepo, verifyScript } from "./infer.ts";
 
 const pkg = (scripts: Record<string, string>) => ({ name: "x", scripts });
 
@@ -97,5 +97,51 @@ describe("inferRepo", () => {
     expect(inferred.hallazgos).toEqual([
       expect.objectContaining({ que: "stack", estado: "falta" }),
     ]);
+  });
+});
+
+const CI = `
+name: ci
+on: [pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm test
+      - run: |
+          pnpm --filter @app/api test:e2e
+          pnpm audit --audit-level high --prod
+`;
+
+describe("ciStepsVerifyMisses", () => {
+  // Regresión: en mango-portal-colaborador verify.sh salió sin los e2e que corre el CI, y un run
+  // podía quedar en verde con los controles de autorización rotos sin que nada lo dijera.
+  test("nombra lo que el CI corre y verify no, sin contar la instalación", () => {
+    const verify = verifyScript("pnpm", ["test", "lint"]);
+    expect(ciStepsVerifyMisses([CI], verify, {}, "pnpm install --frozen-lockfile")).toEqual([
+      "pnpm --filter @app/api test:e2e",
+      "pnpm audit --audit-level high --prod",
+    ]);
+  });
+
+  // Si regresiona, un repo con un script `verify` que ya corre todo recibe un aviso falso por paso.
+  test("cuenta como cubierto lo que corre un script que verify llama", () => {
+    const verify = verifyScript("pnpm", ["verify"]);
+    const scripts = {
+      verify: "pnpm lint && pnpm test && pnpm --filter @app/api test:e2e",
+      lint: "eslint .",
+    };
+    expect(ciStepsVerifyMisses([CI], verify, scripts, "pnpm install --frozen-lockfile")).toEqual([
+      "pnpm audit --audit-level high --prod",
+    ]);
+  });
+
+  // Si regresiona, un workflow roto tira abajo init entero en vez de no avisar nada.
+  test("ignora un workflow que no es YAML válido", () => {
+    expect(ciStepsVerifyMisses(["jobs: [", CI], "pnpm lint\npnpm test", {}, "")).toHaveLength(2);
   });
 });

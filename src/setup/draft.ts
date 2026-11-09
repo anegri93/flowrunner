@@ -19,9 +19,26 @@ export type Progress = (line: string) => void;
 export const DRAFT_BUDGET_USD = 3;
 export const DRAFT_TIMEOUT_MS = 15 * 60_000;
 /** Cada texto, bien por debajo del tope de 16.000 caracteres de su archivo. */
-const MAX_TEXT = 4_000;
+const MAX_TEXT = 6_000;
 const MAX_LISTED_FILES = 400;
 const MAX_PACKAGE_JSON = 4_000;
+const MAX_DOCS = 60;
+
+/**
+ * Lo que el repo ya escribió para personas y agentes: instrucciones de agentes, reglas, docs, ADRs y
+ * el CI. El primer borrador las ignoraba: redescubría del código, con menos detalle, invariantes que
+ * ya estaban escritas con su porqué.
+ */
+const DOCS =
+  /(^|\/)(CLAUDE|AGENTS|CONTRIBUTING|ARCHITECTURE|README)\.md$|^\.claude\/rules\/|^\.cursor\/rules\/|^\.cursorrules$|^\.github\/copilot-instructions\.md$|^\.github\/workflows\/[^/]+\.ya?ml$|^docs?\/.+\.md$|^\.nvmrc$|^\.node-version$/;
+
+/** Los archivos de documentación del repo, los de la raíz primero; nunca el cerebro mismo. */
+export function docFiles(files: readonly string[]): string[] {
+  const depth = (f: string) => f.split("/").length;
+  return files
+    .filter((f) => DOCS.test(f) && !f.startsWith(".flowrunner/") && !f.includes("node_modules/"))
+    .sort((a, b) => depth(a) - depth(b) || a.localeCompare(b));
+}
 
 const part = z.object({
   texto: z.string().min(1).max(MAX_TEXT),
@@ -46,21 +63,34 @@ export function inventedSources(draft: Draft, files: readonly string[]): string[
   return [...new Set(sources)].filter((s) => !known(s));
 }
 
-/** Lo que escribe la persona queda arriba; el borrador, abajo, en una sección que dice de dónde salió. */
-export function withDraft(current: string, draft: Draft[keyof Draft], today: string): string {
+/**
+ * Lo que escribe la persona queda arriba; el borrador, abajo, en una sección que dice de qué commit
+ * salió. Las fuentes no se repiten al final: cada regla ya cita su archivo, y la lista entera se
+ * cargaba en cada prompt de cada run.
+ */
+export function withDraft(
+  current: string,
+  draft: Draft[keyof Draft],
+  today: string,
+  commit: string,
+): string {
   return [
     current.trimEnd(),
     "",
     DRAFT_HEADING,
     "",
-    `> Lo dedujo \`flowrunner init\` del código el ${today}, sin revisión humana. Corregí o borrá lo`,
-    "> que no sea así; lo que escribas vos va arriba de esta sección.",
+    `> Lo dedujo \`flowrunner init\` del repo en \`${commit}\` el ${today}, sin revisión humana.`,
+    "> Corregí o borrá lo que no sea así; lo que escribas vos va arriba de esta sección.",
     "",
     draft.texto.trim(),
     "",
-    `Fuentes: ${draft.fuentes.map((f) => `\`${f}\``).join(", ")}`,
-    "",
   ].join("\n");
+}
+
+/** El archivo sin la sección del borrador, que `withDraft` siempre deja al final. */
+export function withoutDraft(text: string): string {
+  const at = text.indexOf(DRAFT_HEADING);
+  return at === -1 ? text : `${text.slice(0, at).trimEnd()}\n`;
 }
 
 export interface DraftInput {
@@ -137,7 +167,17 @@ function promptVars(
   } catch {
     packageJson = "(no hay)";
   }
+  const docs = docFiles(input.files);
   return {
+    documentacion:
+      docs.length === 0
+        ? "(no hay)"
+        : [
+            ...docs.slice(0, MAX_DOCS),
+            ...(docs.length > MAX_DOCS
+              ? [`… y ${String(docs.length - MAX_DOCS)} más: usá Glob para verlos`]
+              : []),
+          ].join("\n"),
     hallazgos: input.hallazgos.map((h) => `- ${h.que}: ${h.detalle}`).join("\n"),
     cerebro: (Object.keys(TARGETS) as (keyof Draft)[])
       .map((key) => `## ${TARGETS[key].file}\n\n${current[key].trim()}`)
@@ -167,6 +207,7 @@ export async function draftBrain(input: DraftInput): Promise<DraftResult> {
     que_es_bien: readFileSync(pathOf("que_es_bien"), "utf8"),
   };
   const commits = await git(worktree, ["log", "-n", "20", "--no-merges", "--format=%s"], deps.env);
+  const commit = (await git(worktree, ["rev-parse", "--short", "HEAD"], deps.env)).trim();
   const root = realpathSync(worktree);
   input.progress(
     `Claude lee el código y redacta el borrador: puede tardar unos minutos, con un tope de USD ${String(DRAFT_BUDGET_USD)}`,
@@ -231,7 +272,7 @@ export async function draftBrain(input: DraftInput): Promise<DraftResult> {
   const today = deps.now().toISOString().slice(0, 10);
   const keys = Object.keys(TARGETS) as (keyof Draft)[];
   const drafted = keys.map(
-    (key) => [key, withDraft(current[key], result.output[key], today)] as const,
+    (key) => [key, withDraft(current[key], result.output[key], today, commit)] as const,
   );
   // Un archivo que pasa su tope frena la carga del cerebro en el próximo run.
   const over = drafted.find(([key, text]) => Array.from(text).length > TARGETS[key].max);

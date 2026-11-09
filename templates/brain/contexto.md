@@ -1,5 +1,4 @@
 # Contexto del repo
 
-Arquitectura, dónde vive cada cosa y cómo se testea. Lo leen planificar e implementar.
-
--
+El mapa: arquitectura, glosario del negocio, dónde vive cada cosa, cómo se corre y se testea, y qué
+reusar. Lo leen planificar e implementar.

@@ -52,7 +52,9 @@ const USAGE = `uso: flowrunner <comando> [--json]
   stats [proyecto]               qué fase reintenta más, motivos, costo y lecciones
   project add <ruta>             registra un repo [--nombre n] [--github-user u]
   brain init <ruta>              escribe las plantillas de .flowrunner/ sin pisar nada
-  brain draft <ruta>             propone en una PR un borrador del cerebro leído del código`;
+  brain draft <ruta> [--reemplazar]
+                                 propone en una PR un borrador del cerebro leído del repo;
+                                 con --reemplazar, cambia el borrador anterior por uno nuevo`;
 
 function describeList(list: z.infer<typeof statusListSchema>): string {
   if (list.runs.length === 0) return "no hay runs";
@@ -101,6 +103,7 @@ export async function main(
       sesion: { type: "string" },
       confirmar: { type: "boolean", default: false },
       aplicar: { type: "boolean", default: false },
+      reemplazar: { type: "boolean", default: false },
       once: { type: "boolean", default: false },
       "github-user": { type: "string" },
     },
@@ -290,6 +293,7 @@ export async function main(
             need(rest[0], "la ruta del repo"),
             deps,
             progressLog(io, json),
+            values.reemplazar === true,
           );
           print(drafted, `${drafted.paso.que}: ${drafted.paso.detalle}`);
           return drafted.ok ? 0 : 1;

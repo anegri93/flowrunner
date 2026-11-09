@@ -53,9 +53,12 @@ Una vez por repo. El repo tiene que estar en GitHub y su rama base en verde.
    ```
 
 3. En esa PR, revisá la config que infirió, con el setup, los tests, el lint y el formateador, y el borrador de `contexto.md`, `convenciones.md` y
-   `que-es-bien.md`: init lo redacta leyendo el código del repo y lo deja en una sección
-   «Borrador de flowrunner init», con los archivos de los que salió. Corregí lo que no sea así y
-   escribí tus reglas arriba de esa sección. Después mergeala: los runs leen el cerebro desde la rama
+   `que-es-bien.md`: init lo redacta leyendo primero lo que el repo ya documenta (`CLAUDE.md`,
+   `AGENTS.md`, reglas de agentes, `docs/`, el CI) y después el código, y lo deja en una sección
+   «Borrador de flowrunner init» con el commit del que salió. Cada regla cita su archivo y trae su
+   severidad: `[bloqueante]`, `[aviso]` o `[lo chequea …]`, que revisar respeta. Si el CI corre algo
+   que `verify.sh` no, la PR lo avisa. Corregí lo que no sea así y escribí tus reglas arriba de esa
+   sección. Después mergeala: los runs leen el cerebro desde la rama
    base.
 
    El borrador vive en la rama base de GitHub: si en tu carpeta no lo ves, hacé `git pull`.
@@ -66,6 +69,10 @@ Una vez por repo. El repo tiene que estar en GitHub y su rama base en verde.
    ```bash
    flowrunner brain draft ~/ruta/al/repo
    ```
+
+   Si la base ya tiene un borrador, por ejemplo uno de una versión anterior de init, `--reemplazar`
+   lo cambia por uno nuevo en su PR. Lo que está arriba de la sección queda; la sección entera se
+   reescribe.
 
 4. Confirmá que quedó listo. Todo tiene que salir con ✓:
 
@@ -183,6 +190,7 @@ equivalente de API: con la suscripción no se cobran, y lo que limita es su cupo
 | --------------------------------------- | --------------------------------------------- |
 | `flowrunner init <ruta> [--aplicar]`    | revisar y dejar listo un repo                 |
 | `flowrunner brain draft <ruta>`         | proponer un borrador del cerebro en una PR    |
+| `brain draft <ruta> --reemplazar`       | cambiar el borrador anterior por uno nuevo    |
 | `flowrunner watch [run] [--json]`       | ver un run, o todos los activos, en vivo      |
 | `flowrunner status [run]`               | el estado de los runs, o de uno fase por fase |
 | `flowrunner plan <run>`                 | el plan que espera aprobación                 |

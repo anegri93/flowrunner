@@ -1,5 +1,6 @@
 // Lo que `flowrunner init` deduce de un repo para su `.flowrunner/config.yaml` y su `verify.sh`, a
 // partir de los archivos versionados y el package.json. Solo reconoce repos JavaScript/TypeScript.
+import { parse } from "yaml";
 import { z } from "zod";
 
 export interface Finding {
@@ -104,6 +105,56 @@ function verifySteps(scripts: Record<string, string>): string[] | undefined {
   const own = ALL_IN_ONE.find((name) => name in scripts);
   if (own !== undefined) return [own];
   return "test" in scripts ? CHAIN.filter((name) => name in scripts) : undefined;
+}
+
+const RUNNER = /^(pnpm|npm|npx|yarn|bun|bunx)\s/;
+/** `npm run test` y `npm test` son lo mismo para esta comparación. */
+const sinRun = (text: string) => text.replace(/\b(pnpm|npm|yarn|bun) run /g, "$1 ");
+
+/**
+ * Los comandos del gestor de paquetes que corre el CI y verify no. Un run en verde que después sale
+ * rojo en CI es peor que no tener verify: el caso que lo motivó dejaba afuera los e2e, donde vivían los
+ * controles de autorización. Mira un nivel de scripts: si verify corre `pnpm verify` y ese script corre
+ * `pnpm lint`, el lint está cubierto. ponytail: compara texto, no entiende `--filter` ni `&&` del CI;
+ * es un aviso para que la persona decida, no una regla.
+ */
+export function ciStepsVerifyMisses(
+  workflows: readonly string[],
+  verify: string,
+  scripts: Readonly<Record<string, string>>,
+  setup: string,
+): string[] {
+  const covered = sinRun(
+    [
+      verify,
+      ...Object.entries(scripts)
+        .filter(([name]) =>
+          new RegExp(`\\s${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(verify),
+        )
+        .map(([, body]) => body),
+    ].join("\n"),
+  );
+  const missing = new Set<string>();
+  for (const text of workflows) {
+    let doc: unknown;
+    try {
+      doc = parse(text);
+    } catch {
+      continue;
+    }
+    const jobs = (doc as { jobs?: Record<string, { steps?: { run?: unknown }[] }> } | null)?.jobs;
+    for (const job of Object.values(jobs ?? {})) {
+      for (const step of job.steps ?? []) {
+        if (typeof step.run !== "string") continue;
+        for (const raw of step.run.split("\n")) {
+          const line = raw.trim();
+          if (!RUNNER.test(line) || line === setup || /\s(install|ci)\b/.test(line)) continue;
+          if (!covered.includes(sinRun(line))) missing.add(line);
+        }
+      }
+    }
+  }
+  return [...missing];
 }
 
 export function inferRepo(facts: RepoFacts): Inferred {

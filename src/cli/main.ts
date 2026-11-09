@@ -14,6 +14,7 @@ import { installLaunchd, uninstallLaunchd } from "./launchd.ts";
 import { installSkill } from "./skill.ts";
 import { hookOutput, sessionStartContext } from "./hook.ts";
 import { readFileSync } from "node:fs";
+import { loadTree } from "../watch/load.ts";
 import { renderRuns, watchLive, watchTargets } from "./watch.ts";
 import { describeInit, init } from "../setup/init.ts";
 import { productionRuntime } from "../runner/production.ts";
@@ -34,7 +35,7 @@ const USAGE = `uso: flowrunner <comando> [--json]
   feature check <archivo>        valida una feature, su proyecto y la config del repo
   run <archivo>                  lanza un run en segundo plano y devuelve su id
   status [run]                   lista los runs, o un run fase por fase
-  watch [run] [--once]           el árbol de un run, o de los activos, en vivo; run puede ser la clave
+  watch [run] [--once|--json]    el árbol de un run, o de los activos, en vivo; run puede ser la clave
   resume <run>                   retoma un run detenido o interrumpido
   rerun <run> --desde <fase>     rehace un run desde una fase
   abort <run>                    cancela un run y borra sus worktrees; las ramas quedan
@@ -107,6 +108,12 @@ export async function main(
     switch (command) {
       case "watch": {
         const targets = watchTargets(home, first);
+        if (json) {
+          // Lo que lee una vista de afuera, como el panel de Orca: el mismo árbol que dibuja watch.
+          const now = Date.now();
+          print({ ok: true, runs: targets().map((id) => loadTree(home, id, now)) }, "");
+          return 0;
+        }
         const tty = process.stdout.isTTY && process.stdin.isTTY;
         if (values.once === true || !tty) {
           const { lines } = renderRuns(home, targets(), {

@@ -3,7 +3,7 @@ import { defineConfig } from "eslint/config";
 import tseslint from "typescript-eslint";
 
 export default defineConfig(
-  { ignores: ["node_modules/**", "docs/**", "test/fixtures/**", "test/toy-repo/**"] },
+  { ignores: ["node_modules/**", "docs/**", "test/fixtures/**", "test/toy-repo/**", "orca/**"] },
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   { files: ["bin/*.js"], languageOptions: { globals: { process: "readonly" } } },

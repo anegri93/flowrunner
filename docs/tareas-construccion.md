@@ -771,6 +771,58 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. Precios en una tabla con su fuente y fecha; el cambio de prompt es texto.
 - **Desbloquea:** Gate final
 
+### T8.7 · El progreso en una pestaña de Orca
+- **Estado:** `[x] Hecho`
+- **Descripción:** la persona usa Orca y quiere ver el progreso en una pestaña de su barra derecha, no solo en una terminal. `flowrunner watch --json` devuelve el mismo árbol que dibuja `watch`, con la ruta del repo. `orca/` es un plugin de Orca: su worker corre `flowrunner watch --json` y `report --sesion` en un shell de login, y su panel muestra cada run con sus fases, sub-tasks y sesiones, el costo, el tiempo y lo que hace la sesión que corre. Tocar una sesión muestra sus pasos. Usa solo los componentes de Orca 1.4.246: `Tree` y la barra de estado piden 1.4.247 y 1.4.248.
+- **Lint:** `pnpm lint`, que deja afuera `orca/`; el plugin con `orca plugin validate`.
+- **Test:** `test/watch.int.test.ts` › «--json devuelve el árbol de los runs activos»: sin runs, vacío; con un run entregado, su clave, su repo y revisar en ok. `pnpm orca:test`: `src/runs.test.ts`, el orden de fases, sub-tasks y sesiones, y la sesión que corre con su herramienta, contexto y costo mínimo; `src/worker.test.ts`, con un flowrunner falso, los runs y los pasos, y un flowrunner que no existe devuelve el error; `src/panel.test.tsx`, el run, los pasos al tocar una sesión, el link a la PR de un run entregado, el estado vacío y el error.
+- **Canario:** sin el campo `repo`, el de integración; sin `onPress` en las sesiones, sin runs en el worker, sin las sesiones de las sub-tasks, sin el `≥` del costo en vivo, sin el texto del error y sin el link a la PR, sus tests del plugin. Un test del panel que fallaba antes de desmontarlo quedaba colgado por el refresco: ahora siempre desmonta.
+- **Criterio de aprobación:** con el plugin cargado en Orca, la pestaña muestra los runs activos y se refresca sola. `orca plugin check` lo dibujó con VF-2 y VF-3 reales.
+- **Revisión ponytail:** a mano. El worker no guarda estado y el panel refresca solo mientras se ve. Sin tipos de Orca para `tsc`: la 1.4.246 no los trae, y los tests corren el código como Orca lo carga.
+- **Desbloquea:** Gate Fase 8
+
+### T8.7b · El panel de Orca compacto, con decisiones
+- **Estado:** `[x] Hecho`
+- **Descripción:** con el panel en uso, la persona pidió algo más compacto y ordenado en el ancho angosto de la barra, con los runs más recientes arriba, los terminados contraídos, la etapa actual destacada y la posibilidad de decidir desde ahí. Ahora cada run se contrae o se expande tocándolo, y los que tienen la PR abierta arrancan contraídos. Las fases listas van en una línea expandible, la etapa actual con su estado en un `Badge` y sus sub-tasks y sesiones, y lo que falta en otra línea. Las decisiones que el run espera, ver el plan, aprobar, pedir cambios, reanudar y rehacer desde la fase sugerida, las traduce el worker a comandos fijos de flowrunner y valida el id, la fase y el motivo. Aprobar, reanudar y rehacer piden confirmación.
+- **Lint:** `pnpm lint` y `orca plugin validate`.
+- **Test:** `pnpm orca:test`, 13 tests. `src/runs.test.ts`: el orden, los terminados, los tres grupos de fases, el encabezado con la etapa, las decisiones por estado y una fase de rerun inválida. `src/worker.test.ts`: cada decisión corre su comando con el motivo literal, incluso con comillas y `$(…)`, y lo que contesta flowrunner; un id, una fase o un motivo inválidos no llegan al shell. `src/panel.test.tsx`: el orden y contraer o expandir, la etapa actual y las listas, los pasos, aprobar con confirmación y pedir cambios con el motivo escrito.
+- **Canario:** el orden ascendente, los terminados abiertos, aprobar sin confirmar, el id sin validar, las listas siempre expandidas y las listas tratadas como actuales pusieron en rojo sus tests.
+- **Criterio de aprobación:** `orca plugin shot` a 280 px muestra VF-3 trabajando arriba y VF-2, con la PR abierta, contraído abajo.
+- **Revisión ponytail:** a mano. Sin `Tree` ni `Collapsible`, que piden Orca 1.4.247: el contraer es un atom por run.
+- **Desbloquea:** Gate Fase 8
+
+### T8.7c · El panel de Orca como seguimiento de un pedido, y el plan que no se veía
+- **Estado:** `[x] Hecho`
+- **Regresión de:** T8.7b
+- **Descripción:** en VF-3, «Ver plan» y «Pedir cambios» no hacían nada. El plan pasaba los 16 KiB que Orca dibuja por texto. Orca rechazaba ese dibujo y todos los que seguían, así que el panel quedaba congelado. Ahora el worker lee `plan --json`, y el panel muestra las sub-tasks, los criterios, lo que cambió contra el plan anterior y el comienzo del plan, con todo texto por debajo del límite. La persona pidió además algo más visual, que se entienda de un vistazo. Cada run es una tarjeta con una frase de estado («🟡 El plan te espera», «🔵 Implementando · 1 de 2 sub-tasks»), una barra de avance y cinco pasos: Plan, Tu OK, Código, Control y PR. Cada paso marca si está listo, si es el actual, si te espera o si falló. El detalle muestra las sub-tasks como lista de tareas, lo que hace la sesión que corre y las decisiones.
+- **Lint:** `pnpm lint` y `orca plugin validate`.
+- **Test:** `pnpm orca:test`, 18 tests. Regresión: `panel.test.tsx` › «un plan largo se ve, y después se puede pedir cambios», que falló con el panel anterior; `runs.test.ts` › «el plan se recorta a lo que Orca dibuja». Además, los cinco pasos por estado, un run detenido en rojo, la frase de estado, el detalle de ahora y las tarjetas en el panel.
+- **Canario:** el plan sin recortar, el paso que te espera tratado como pendiente y el panel sin los cinco pasos pusieron en rojo sus tests.
+- **Criterio de aprobación:** `orca plugin shot` a 300 px muestra VF-3 con «El plan te espera», Tu OK marcado y los botones; VF-2 con «PR abierta: falta tu merge».
+- **Revisión ponytail:** a mano. Los cinco pasos agrupan las ocho fases como las ve la persona; no hay estado nuevo en flowrunner.
+- **Desbloquea:** Gate Fase 8
+
+### T8.7d · Las etapas del flujo, el plan en su pestaña y un refresco que no borra
+- **Estado:** `[x] Hecho`
+- **Regresión de:** T8.7c
+- **Descripción:** pedido de la persona al usarlo: las etapas tienen que ser las del flujo, con sus nombres y sus estados, sin pasos ni estados inventados. Los botones van en una fila horizontal. «Plan» abre una pestaña aparte. El refresco no tiene que borrar nada. Ahora las ocho etapas se ven por nombre, cada una como etiqueta del color de su estado, con los mismos textos que `flowrunner watch`. La frase dice la etapa actual, por ejemplo `Aprobar — te espera`. La pestaña «Plan de flowrunner» muestra el plan entero línea por línea, con las decisiones arriba. El worker la abre con `orca plugin open`, porque ningún método del host abre un panel. Una lectura que falla deja los runs que se veían con el error arriba. Una que no cambió nada no vuelve a dibujar, y nunca hay dos lecturas a la vez. Las decisiones viven en `src/decisiones.tsx`, que comparten las dos pestañas.
+- **Lint:** `pnpm lint` y `orca plugin validate`.
+- **Test:** `pnpm orca:test`, 20 tests. Regresión: `panel.test.tsx` › «si una lectura falla, los runs que se veían quedan». También: las etapas por nombre y estado, «Plan» abre su pestaña con el CLI de Orca, la pestaña del plan con el plan entero y las decisiones, y la frase de la etapa actual.
+- **Canario:** el refresco que reemplaza los runs por los de una lectura fallida, «Plan» sin abrir la pestaña y las etapas abreviadas pusieron en rojo sus tests.
+- **Criterio de aprobación:** `orca plugin shot` a 300 px muestra VF-3 con las ocho etapas por nombre y «Implementar — trabajando · 3 de 4 integradas»; la pestaña del plan, vacía mientras ningún plan espera.
+- **Revisión ponytail:** a mano. El estado sale de las fases de flowrunner; el panel no agrega ninguno.
+- **Desbloquea:** Gate Fase 8
+
+### T8.7e · La tarjeta del run al estilo de flowindex
+- **Estado:** `[x] Hecho`
+- **Descripción:** al usarlo, a la persona le faltaba ver que el run estaba en progreso y qué hacía. El tiempo le servía y el costo no tanto, y prefería la lista de etapas de flowindex. Ahora cada tarjeta muestra el estado del run como etiqueta, por ejemplo «EN CURSO» o «TE ESPERA», con el título, la clave, el id y el tiempo como reloj. Debajo van las ocho etapas en lista, cada una con su marca, su nombre, los intentos si hubo más de uno y su tiempo. La etapa que trabaja muestra un spinner, y debajo de la actual se ve lo que está haciendo: el motivo si falló, las sub-tasks con su estado, la herramienta de la sesión que corre y las decisiones. El costo queda chico al pie. Un run terminado muestra solo su etapa actual hasta que se abre.
+- **Lint:** `pnpm lint` y `orca plugin validate`.
+- **Test:** `pnpm orca:test`, 21 tests. `runs.test.ts` › «cada etapa como fila»: estado, intentos, tiempo como reloj y cuál es la actual. `panel.test.tsx` › «cada run: su estado, el título, el tiempo y las ocho etapas en lista; la que trabaja gira», y un run terminado con solo su etapa actual hasta que se abre.
+- **Canario:** la etapa que trabaja sin spinner y las filas sin los intentos pusieron en rojo sus tests.
+- **Criterio de aprobación:** `orca plugin shot` a 300 px muestra VF-3 y VF-2 con su etiqueta, el tiempo y la lista de etapas, y Aprender en «espera merge» con las sub-tasks debajo.
+- **Revisión ponytail:** a mano. Se sacaron la barra de avance y el tiempo por etapa aparte: la lista los reemplaza.
+- **Desbloquea:** Gate Fase 8
+
 ### Gate Fase 8
 - **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.

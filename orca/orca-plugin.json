@@ -1,0 +1,46 @@
+{
+  "manifestVersion": 2,
+  "id": "flowrunner",
+  "name": "flowrunner",
+  "version": "0.1.0",
+  "description": "El progreso de los runs de flowrunner en la barra derecha: fases, sub-tasks, sesiones, tokens, costo y tiempo, como flowrunner watch.",
+  "engines": {
+    "orca": ">=1.4.246"
+  },
+  "execution": "trusted-worker",
+  "pluginApi": 1,
+  "main": "src/worker.ts",
+  "contributes": {
+    "panels": [
+      {
+        "id": "flowrunner",
+        "title": "flowrunner",
+        "icon": "rocket",
+        "entry": "src/panel.tsx",
+        "ui": "components"
+      },
+      {
+        "id": "plan",
+        "title": "Plan de flowrunner",
+        "icon": "file-text",
+        "entry": "src/plan.tsx",
+        "ui": "components"
+      }
+    ],
+    "settings": [
+      {
+        "key": "comando",
+        "title": "Comando de flowrunner",
+        "description": "Cómo se llama a flowrunner. Corre en un shell de login, con tu PATH.",
+        "type": "string",
+        "default": "flowrunner",
+        "placeholder": "flowrunner"
+      }
+    ]
+  },
+  "capabilities": [
+    {
+      "kind": "settings:own"
+    }
+  ]
+}

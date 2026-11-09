@@ -45,10 +45,9 @@ const snapshot = atom<Snapshot | null>(null);
 /** Runs que la persona abrió o cerró a mano; el resto sigue el default. */
 const toggled = atom("abiertos", {} as Record<string, boolean>, { persist: "plugin" });
 const notice = atom<{ run: string; texto: string } | null>(null);
-/** La sección de los cerrados y sus tarjetas: colapsadas cada vez que se abre el panel. */
+/** La sección de los cerrados y sus filas desplegadas: colapsadas cada vez que se abre el panel. */
 const closedOpen = atom(false);
 const closedToggled = atom({} as Record<string, boolean>);
-type Toggles = typeof toggled;
 
 let reading = false;
 /**
@@ -114,8 +113,7 @@ export function setup(ctx: PanelContext): void {
   ctx.signal.addEventListener("abort", () => clearInterval(timer));
 }
 
-const isOpen = (run: Run, toggles: Toggles) =>
-  read(toggles)[run.id] ?? (needsYou(run) || !isFinished(run));
+const isOpen = (run: Run) => read(toggled)[run.id] ?? (needsYou(run) || !isFinished(run));
 
 /** Lo que pasa en la etapa actual: su estado, las sub-tasks, qué hace la sesión y las decisiones. */
 function Current({ run, row }: { run: Run; row: StageRow }) {
@@ -215,9 +213,9 @@ function Stage({ run, row }: { run: Run; row: StageRow }) {
   );
 }
 
-/** Un run; `toggles` guarda qué tarjetas abrió o cerró la persona. */
-function RunCard({ run, toggles = toggled }: { run: Run; toggles?: Toggles }) {
-  const open = isOpen(run, toggles);
+/** Un run, con sus etapas si la persona lo abrió; `whole`, siempre con todas y sin botón para cerrarlo. */
+function RunCard({ run, whole = false }: { run: Run; whole?: boolean }) {
+  const open = whole || isOpen(run);
   const chip = runChip(run);
   const rows = stageRows(run);
   const shown = open ? rows : rows.filter((r) => r.actual);
@@ -227,13 +225,15 @@ function RunCard({ run, toggles = toggled }: { run: Run; toggles?: Toggles }) {
       <Stack gap="sm">
         <Row justify="between" align="center">
           <Badge tone={chip.tone}>{chip.texto}</Badge>
-          <IconButton
-            icon={open ? "collapse" : "expand"}
-            label={open ? `Ocultar las etapas de ${run.clave}` : `Ver las etapas de ${run.clave}`}
-            variant="ghost"
-            size="sm"
-            onPress={() => update(toggles, (m) => ({ ...m, [run.id]: !open }))}
-          />
+          {whole ? null : (
+            <IconButton
+              icon={open ? "collapse" : "expand"}
+              label={open ? `Ocultar las etapas de ${run.clave}` : `Ver las etapas de ${run.clave}`}
+              variant="ghost"
+              size="sm"
+              onPress={() => update(toggled, (m) => ({ ...m, [run.id]: !open }))}
+            />
+          )}
         </Row>
         <Stack gap="none">
           <Text weight="semibold">{run.titulo}</Text>
@@ -268,6 +268,44 @@ function RunCard({ run, toggles = toggled }: { run: Run; toggles?: Toggles }) {
   );
 }
 
+/**
+ * Un run cerrado en una línea: cómo terminó, la clave y el título, que abre su informe, y el tiempo y
+ * el costo. La flecha despliega la tarjeta entera debajo.
+ */
+function ClosedRow({ run }: { run: Run }) {
+  const expanded = read(closedToggled)[run.id] === true;
+  const aborted = run.status === "abortado";
+  return (
+    <Stack gap="xs">
+      <Row justify="between" align="center" gap="sm">
+        <Row gap="sm" align="center">
+          <Text size="xs" tone={aborted ? "neutral" : "success"} muted={aborted}>
+            {aborted ? "⨯" : "✓"}
+          </Text>
+          <Text size="xs" truncate>
+            <Link onPress={() => open(run.id, { tipo: "informe" })}>
+              {`${run.clave} · ${run.titulo}`}
+            </Link>
+          </Text>
+        </Row>
+        <Row gap="xs" align="center">
+          <Text size="xs" muted>
+            {`${clock(run.segundos) ?? "–"} · $${run.costoUsd.toFixed(2)}`}
+          </Text>
+          <IconButton
+            icon={expanded ? "collapse" : "expand"}
+            label={expanded ? `Ocultar ${run.clave}` : `Ver ${run.clave} entero`}
+            variant="ghost"
+            size="sm"
+            onPress={() => update(closedToggled, (m) => ({ ...m, [run.id]: !expanded }))}
+          />
+        </Row>
+      </Row>
+      {expanded ? <RunCard run={run} whole /> : null}
+    </Stack>
+  );
+}
+
 /** Los últimos runs cerrados y abortados, debajo de los activos: colapsados hasta que se abren. */
 function Closed({ runs }: { runs: Run[] }) {
   if (runs.length === 0) return null;
@@ -287,7 +325,7 @@ function Closed({ runs }: { runs: Run[] }) {
           onPress={() => set(closedOpen, !open)}
         />
       </Row>
-      {open ? runs.map((run) => <RunCard key={run.id} run={run} toggles={closedToggled} />) : null}
+      {open ? runs.map((run) => <ClosedRow key={run.id} run={run} />) : null}
     </Stack>
   );
 }

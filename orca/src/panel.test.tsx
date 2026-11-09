@@ -321,24 +321,40 @@ test("al cambiar de proyecto, los runs del anterior se dejan de ver sin abrir su
   );
 });
 
-// Si regresiona, los runs cerrados desaparecen del panel, o lo llenan apenas se abre.
-test("los cerrados van aparte, colapsados: la sección y cada tarjeta se abren a mano", async () => {
+// Si regresiona, los runs cerrados desaparecen del panel, o lo llenan con tarjetas enteras.
+test("los cerrados van aparte, colapsados, una línea cada uno; el título abre el informe", async () => {
   const closed = {
     ...runs[2],
     id: "VF-0-20261101-000000",
     clave: "VF-0",
     status: "cerrado",
+    costoUsd: 7.2,
   } as Run;
+  const opened: unknown[] = [];
   await withPanel(
-    mockHost({ requests: { "flowrunner.runs": () => ({ runs: [], cerrados: [closed], at: 0 }) } }),
+    mockHost({
+      requests: {
+        "flowrunner.runs": () => ({ runs: [], cerrados: [closed], at: 0 }),
+        "flowrunner.abrir": (input: unknown) => {
+          opened.push(input);
+          return { ok: true, mensaje: "" };
+        },
+      },
+    }),
     async (view) => {
       assert.ok(view.find({ text: "CERRADOS · 1" }));
-      assert.equal(view.find({ text: "VF-0 · VF-0-20261101-000000" }), null);
+      assert.equal(view.find({ text: `VF-0 · ${closed.titulo}` }), null);
       await view.press({ label: "Ver los runs cerrados" });
-      assert.ok(view.find({ text: "VF-0 · VF-0-20261101-000000" }));
-      // La tarjeta arranca colapsada: solo su etapa actual.
-      assert.equal(view.findAll({ text: "Preparar" }).length, 0);
-      await view.press({ label: "Ver las etapas de VF-0" });
+      // Una línea: la marca, la clave y el título, el tiempo y el costo; sin la tarjeta.
+      assert.ok(view.find({ text: "✓" }));
+      assert.ok(view.find({ text: `VF-0 · ${closed.titulo}` }));
+      assert.ok(view.find({ text: /· \$7\.20$/ }));
+      assert.equal(view.findAll({ type: "Card" }).length, 0);
+      await view.press({ text: `VF-0 · ${closed.titulo}` });
+      assert.deepEqual(opened, [{ run: closed.id, que: { tipo: "informe" } }]);
+      // La flecha despliega la tarjeta con todas sus etapas, sin «Abortar el run».
+      await view.press({ label: "Ver VF-0 entero" });
+      assert.equal(view.findAll({ type: "Card" }).length, 1);
       assert.equal(view.findAll({ text: "Preparar" }).length, 1);
       assert.equal(view.find({ text: "Abortar el run" }), null);
     },

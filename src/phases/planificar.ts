@@ -17,12 +17,13 @@ import type { RepoConfig } from "../config/schemas.ts";
 import { testsInScope, testsTouched, undeclared } from "../gates/existente.ts";
 import { callersOutOfScope } from "../gates/llamadores.ts";
 import { checkCommandsFail, checkPlanShape, planSchema, type Plan } from "../gates/plan.ts";
-import { changesSince, commitAll, resetHard } from "../git/git.ts";
+import { changesSince, commitAll, discardChanges, resetHard } from "../git/git.ts";
 import { GRAFT_TOOLS, graftMcpServer } from "../graft/graft.ts";
 import { featureText, render } from "../prompts/render.ts";
 import type { PhaseFn, RunPaths } from "../runner/types.ts";
 import { runSession } from "../agent/session.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
+import { isTestFile } from "../tripwires/rules.ts";
 import { runFixers } from "./fixers.ts";
 import { graftIndex, prepared, runFeature } from "./inputs.ts";
 import { archivePlan, previousDir, replanOf, replanText } from "./plan-anterior.ts";
@@ -176,6 +177,20 @@ export const planificar: PhaseFn = async (ctx) => {
   }
   for (const d of plan.decisiones)
     emit({ tipo: "decision", fase: "planificar", que: d.que, por_que: d.por_que });
+  // El hook solo deja escribir tests, así que lo demás que cambió en el worktree lo escribió otro
+  // proceso. En CUENTAS-1 una herramienta reescribió `.claude/helpers/*` mientras se planificaba, y
+  // el commit de abajo (`add -A`) lo metió como test en rojo, bloqueado por hash, hasta la PR.
+  const foreign = (await changesSince(worktree, prep.base_sha, deps.env)).filter(
+    (c) => !isTestFile(config.tests_globs, c.path),
+  );
+  if (foreign.length > 0) {
+    await discardChanges(worktree, prep.base_sha, foreign, deps.env);
+    emit({
+      tipo: "aviso",
+      fase: "planificar",
+      texto: `se descartaron cambios que no escribió el planificador: ${foreign.map((c) => c.path).join(", ")}`,
+    });
+  }
 
   const problems = [
     ...checkPlanShape(plan, feature, worktree, config),

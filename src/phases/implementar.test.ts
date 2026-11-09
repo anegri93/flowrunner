@@ -68,6 +68,24 @@ describe("instalar dependencias", () => {
     );
   });
 
+  // Regresión: en CUENTAS-1, ST-2 corrió el verify completo del repo en su worktree, antes de que ST-3
+  // se integrara: rojo por un archivo que traía ST-3, y minutos de 914 tests e2e.
+  test("una sub-task corre sus criterios y el lint de su alcance, no el verify del repo", () => {
+    const repo = repoConfigSchema.parse({
+      setup: "true",
+      tests_globs: ["tests/**"],
+      lint_fix: "npx eslint --fix",
+    });
+    const own = st("ST-2", ["src/seeds/a.ts", "src/seeds/b.ts"]);
+    expect(unitCommands(repo, own, ["npx jest seeds"], false)).toEqual([
+      "npx jest seeds",
+      "npx eslint --fix src/seeds/a.ts src/seeds/b.ts",
+      "git status",
+      "git diff",
+      "git log --oneline -10",
+    ]);
+  });
+
   test("prefersExact: sí si todas las versiones del manifiesto son exactas, no si alguna es un rango", () => {
     expect(
       prefersExact('{"dependencies":{"a":"1.2.3"},"devDependencies":{"b":"4.0.0-rc.1"}}'),

@@ -99,6 +99,32 @@ describe("verificar", () => {
     });
   });
 
+  // Regresión: en COMPARTIR-1 (rskate) los cuatro criterios corrían la misma spec e2e entera: sin esto,
+  // verificar la corría cuatro veces.
+  test("un comando que comparten varios criterios corre una vez, y su rojo cuenta para cada uno", async () => {
+    const deps = testDeps();
+    const { run, featureWt } = await plannedRun(
+      {
+        ...plan,
+        criterios: [
+          { id: "AC-1", comando: "sh tests/las-dos.sh", subtarea: "ST-1" },
+          { id: "AC-2", comando: "sh tests/las-dos.sh", subtarea: "ST-2" },
+        ],
+        tests: ["tests/las-dos.sh"],
+      },
+      { "tests/las-dos.sh": "echo corrida >> corridas.log\nexit 1\n" },
+      deps,
+    );
+    writeFiles(featureWt, { "src/csv.js": "x", "src/permiso.js": "403" });
+    await commitAll(featureWt, "feat: implementado", {}, deps.env);
+    const outcome = await verificar(contextFor(run, "verificar", deps));
+    expect(outcome).toMatchObject({ tipo: "vuelve", unidades: ["ST-1", "ST-2"] });
+    const motivo = outcome.tipo === "vuelve" ? outcome.motivo : "";
+    expect(motivo).toContain("AC-1 sigue en rojo");
+    expect(motivo).toContain("AC-2 sigue en rojo");
+    expect(readFileSync(join(featureWt, "corridas.log"), "utf8")).toBe("corrida\n");
+  });
+
   // Si regresiona, verificar rehace todas las sub-tasks por un criterio que cubre una sola.
   test("AC-2 rojo: vuelve solo ST-2, con el comando y su salida en el motivo", async () => {
     const { run, deps } = await featureWith({ "src/csv.js": "x", "src/permiso.js": "200" });

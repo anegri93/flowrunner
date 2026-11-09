@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { repoWith } from "../../test/helpers/git.ts";
@@ -234,5 +234,35 @@ describe("los comandos de los criterios", () => {
     );
     expect(await checkCommandsFail(p, dir, process.env, (c) => c.startsWith("touch"))).toEqual([]);
     expect(existsSync(join(dir, "corrio.txt"))).toBe(false);
+  });
+
+  // Regresión: en COMPARTIR-1 (rskate) los cuatro criterios tenían el mismo `pnpm test:e2e` de una
+  // spec entera, y el gate la corrió cuatro veces: 6 minutos en vez de 1,5.
+  test("un comando que comparten varios criterios corre una vez, y cuenta para cada uno", async () => {
+    const dir = repoWith({ "a.txt": "x\n" });
+    const shared = "echo corrida >> corridas.log; exit 1";
+    const p = plan(
+      [task("ST-1", ["a"]), task("ST-2", ["b"])],
+      [
+        { id: "AC-1", comando: shared, subtarea: "ST-1" },
+        { id: "AC-2", comando: shared, subtarea: "ST-2" },
+      ],
+    );
+    expect(await checkCommandsFail(p, dir, process.env)).toEqual([]);
+    expect(readFileSync(join(dir, "corridas.log"), "utf8")).toBe("corrida\n");
+
+    const passing = "echo corrida >> pasa.log";
+    const q = plan(
+      [task("ST-1", ["a"]), task("ST-2", ["b"])],
+      [
+        { id: "AC-1", comando: passing, subtarea: "ST-1" },
+        { id: "AC-2", comando: passing, subtarea: "ST-2" },
+      ],
+    );
+    expect(await checkCommandsFail(q, dir, process.env)).toEqual([
+      `AC-1 ya pasa antes de implementar: \`${passing}\` tiene que fallar`,
+      `AC-2 ya pasa antes de implementar: \`${passing}\` tiene que fallar`,
+    ]);
+    expect(readFileSync(join(dir, "pasa.log"), "utf8")).toBe("corrida\n");
   });
 });

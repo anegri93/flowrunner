@@ -17,12 +17,12 @@ const step = (fase: Phase, resultado: Outcome, minutes = 1): RunEvent[] => [
   ev({ tipo: "accion_iniciada", fase }),
   ev({ tipo: "accion_terminada", fase, resultado }, minutes),
 ];
-const uso = (fase: Phase, costo: number): RunEvent =>
+const uso = (fase: Phase, costo: number, modelo = "m"): RunEvent =>
   ev({
     tipo: "uso",
     fase,
     sesion: `${fase}-1`,
-    modelo: "m",
+    modelo,
     costo_usd: costo,
     tokens_entrada: 100,
     tokens_salida: 50,
@@ -189,4 +189,39 @@ test("la PR arranca con lo que cambia de lo existente: lo aceptado al aprobar y 
 test("sin cambios a lo existente, la PR arranca por los criterios como siempre", () => {
   const body = prBody([], { id: "R", home: "/nada", dir: tempDir(), worktrees: "/nada" });
   expect(body.startsWith("## Criterios")).toBe(true);
+});
+
+// Si regresiona, el informe no dice qué modelo corrió cada fase y no se puede comparar costo con modelo.
+test("cada fase con sesiones nombra sus modelos; las que no tienen sesión no nombran ninguno", () => {
+  const report = buildReport(
+    [
+      created,
+      ...step("preparar", { tipo: "ok" }),
+      uso("implementar", 1, "claude-sonnet-5-5"),
+      uso("implementar", 1, "claude-opus-5-5"),
+      uso("implementar", 1, "claude-sonnet-5-5"),
+      ...step("implementar", { tipo: "ok" }),
+    ],
+    run,
+  );
+  expect(report).toContain("1 ejecución, modelos claude-sonnet-5-5, claude-opus-5-5\n");
+  expect(report).toMatch(/- \*\*preparar:\*\* [^\n]*1 ejecución\n/);
+});
+
+// Si regresiona, la persona recibe la PR sin saber cómo probar a mano lo que implementa.
+test("el informe y la PR traen el paso a paso de la revisión para probarlo", () => {
+  const dir = tempDir();
+  writeFileSync(
+    join(dir, "review.json"),
+    JSON.stringify({
+      hallazgos: [],
+      decisiones: [],
+      como_probar: ["Levantá la API con `pnpm dev`", "curl localhost:3000/a <b>"],
+    }),
+  );
+  const paths = { id: "R", home: "/nada", dir, worktrees: "/nada" };
+  const expected =
+    "## Cómo probarlo\n\n1. Levantá la API con `pnpm dev`\n2. curl localhost:3000/a &lt;b&gt;";
+  expect(buildReport([created], paths)).toContain(expected);
+  expect(prBody([], paths)).toContain(expected);
 });

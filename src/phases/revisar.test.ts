@@ -7,7 +7,8 @@ import { simQuery } from "../../test/helpers/sim-sdk.ts";
 import type { Plan } from "../gates/plan.ts";
 import { commitAll } from "../git/git.ts";
 import { readLog } from "../store/run-log.ts";
-import { revisar, type Review } from "./revisar.ts";
+import { z } from "zod";
+import { revisar, reviewSchema, type Review } from "./revisar.ts";
 
 const plan: Plan = {
   plan: "dos sub-tasks",
@@ -100,4 +101,9 @@ describe("revisar", () => {
     expect(blast).not.toMatch(/no pudo calcular/);
     expect(blast).toMatch(/x\.js|base/);
   });
+});
+
+// Si regresiona, el modelo puede omitir el paso a paso: el default solo existe para leer review.json viejos.
+test("el schema que recibe el revisor exige como_probar", () => {
+  expect(z.toJSONSchema(reviewSchema, { target: "draft-7" }).required).toContain("como_probar");
 });

@@ -20,8 +20,11 @@ export const outcomeSchema = z.discriminatedUnion("tipo", [
   z.strictObject({ tipo: z.literal("ok") }),
   z.strictObject({
     tipo: z.literal("falla"),
-    /** gate: reintenta con el motivo. infra: reintenta con espera. entorno e invariante: detienen. */
-    clase: z.enum(["gate", "infra", "entorno", "invariante"]),
+    /**
+     * gate: reintenta con el motivo. infra: reintenta con espera. entorno e invariante: detienen.
+     * sin_probar: probar dejó criterios sin probar; detiene hasta que la persona decide (ADR 0017).
+     */
+    clase: z.enum(["gate", "infra", "entorno", "invariante", "sin_probar"]),
     motivo: z.string().min(1),
   }),
   /** verificar, revisar o probar devuelven trabajo a implementar. */
@@ -111,6 +114,8 @@ export const eventSchema = z.discriminatedUnion("tipo", [
   }),
   z.strictObject({ tipo: z.literal("cambios_pedidos"), at, motivo: z.string().min(1) }),
   z.strictObject({ tipo: z.literal("reanudado"), at }),
+  /** La persona decidió entregar aunque probar dejó criterios sin probar, y dijo por qué. */
+  z.strictObject({ tipo: z.literal("sin_probar_aceptado"), at, motivo: z.string().min(1) }),
   z.strictObject({ tipo: z.literal("rehacer"), at, desde: phaseSchema }),
   z.strictObject({ tipo: z.literal("abortado"), at }),
   z.strictObject({ tipo: z.literal("pr"), at, url: z.string(), numero: z.int() }),

@@ -58,6 +58,38 @@ describe("CLI de runs", () => {
     expect(result.stderr).toMatch(/está entregado: no hay nada que retomar/);
   });
 
+  // Si regresiona, la PR se abre con criterios que nadie probó y nadie decidió dejar así (ADR 0017).
+  test("probar con criterios sin probar detiene; accept-untested con motivo sigue a entregar sin volver a probar", async () => {
+    const w = world({ FAKE_SIN_PROBAR: "1" });
+    const id = launch(w);
+    await waitFor("el run detenido", () => stateNow(w, id).status === "detenido");
+    expect(stateNow(w, id).fase).toBe("probar");
+    expect(stateNow(w, id).halt?.motivo).toContain(`flowrunner accept-untested ${id} "<por qué>"`);
+
+    const sinMotivo = runCli(["accept-untested", id], w.env);
+    expect(sinMotivo.status).toBe(1);
+    expect(sinMotivo.stderr).toMatch(/falta el motivo/);
+
+    const aceptado = runCli(
+      ["accept-untested", id, "el", "criterio", "es", "de", "backend"],
+      w.env,
+    );
+    expect(aceptado.status).toBe(0);
+    await waitFor("el run entregado", () => stateNow(w, id).status === "entregado");
+    expect(executions(w, id).filter((f) => f === "probar")).toHaveLength(1);
+    expect(executions(w, id)).toContain("entregar");
+    expect(readFileSync(join(runDir(w, id), "events.jsonl"), "utf8")).toContain(
+      '"tipo":"sin_probar_aceptado"',
+    );
+    expect(readFileSync(join(runDir(w, id), "events.jsonl"), "utf8")).toContain(
+      '"motivo":"el criterio es de backend"',
+    );
+
+    const otraVez = runCli(["accept-untested", id, "x"], w.env);
+    expect(otraVez.status).toBe(1);
+    expect(otraVez.stderr).toMatch(/no está detenido por criterios sin probar/);
+  });
+
   test("rerun --desde con una fase que no existe sale 1 y lista las fases", async () => {
     const w = world();
     const id = launch(w);

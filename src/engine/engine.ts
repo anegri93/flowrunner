@@ -75,6 +75,11 @@ export interface RunState {
   readonly pausaHasta: number | undefined;
   /** Hay una acción iniciada sin terminar: el proceso se cortó en el medio. */
   readonly interrumpida: boolean;
+  /**
+   * Detenido porque probar dejó criterios sin probar: la persona puede aceptarlo y seguir a
+   * entregar. Fuera de esa detención un `sin_probar_aceptado` no hace nada.
+   */
+  readonly sinProbar: boolean;
 }
 
 export type Action =
@@ -107,6 +112,7 @@ function enter(state: RunState, fase: Phase, extra: Partial<RunState> = {}): Run
     unidades: undefined,
     halt: undefined,
     pausaHasta: undefined,
+    sinProbar: false,
     ...extra,
   };
 }
@@ -145,6 +151,18 @@ function onOutcome(state: RunState, fase: Phase, outcome: Outcome): RunState {
       });
     }
     case "falla": {
+      // Reintentar no ayuda: lo que faltó para probar (una falla que simular, un dato) no lo arregla
+      // el modelo. Entregar con criterios que nadie probó lo decide la persona, no flowrunner.
+      if (outcome.clase === "sin_probar") {
+        return {
+          ...halt(
+            state,
+            `${fase}: ${outcome.motivo}\nArreglá lo que faltó y rehacé probar con el comando de abajo; para entregar igual, decilo con: flowrunner accept-untested ${state.runId} "<por qué>"`,
+            `flowrunner rerun ${state.runId} --desde ${fase}`,
+          ),
+          sinProbar: true,
+        };
+      }
       if (outcome.clase === "entorno" || outcome.clase === "invariante") {
         return halt(state, `${fase}: ${outcome.motivo}`);
       }
@@ -197,6 +215,7 @@ export function initialState(): RunState {
     halt: undefined,
     pausaHasta: undefined,
     interrumpida: false,
+    sinProbar: false,
   };
 }
 
@@ -252,6 +271,8 @@ export function reduce(state: RunState, event: RunEvent): RunState {
         };
       }
       return state;
+    case "sin_probar_aceptado":
+      return state.status === "detenido" && state.sinProbar ? enter(state, "entregar") : state;
     case "rehacer":
       return enter({ ...state, vueltas: NO_ROUNDS }, event.desde);
     case "abortado":

@@ -36,7 +36,11 @@ const prueba = (extra: Partial<Pruebas["pruebas"][number]>): Pruebas["pruebas"][
   ...extra,
 });
 
-async function testWith(output: Pruebas | undefined, withConfig = true) {
+async function testWith(
+  output: Pruebas | undefined,
+  withConfig = true,
+  probarExtra: Record<string, unknown> = {},
+) {
   const port = await freePort();
   const url = `http://127.0.0.1:${String(port)}`;
   const sim = simQuery([{ output }]);
@@ -53,6 +57,7 @@ async function testWith(output: Pruebas | undefined, withConfig = true) {
               sigue_corriendo: true,
               urls: { api: url },
               notas: "usuario demo",
+              ...probarExtra,
             },
           },
         }
@@ -86,7 +91,16 @@ describe("probar", () => {
     expect(record?.options?.tools).toEqual(["Read", "Grep", "Glob"]);
   });
 
-  test("todo en verde avanza; lo que no se pudo probar queda como aviso", async () => {
+  test("todo probado y en verde avanza", async () => {
+    const { outcome } = await testWith({
+      pruebas: [prueba({}), prueba({ criterio: "AC-2" })],
+      decisiones: [],
+    });
+    expect(outcome).toEqual({ tipo: "ok" });
+  });
+
+  // Si regresiona, la PR se abre con criterios que nadie probó: en KMS-1 fueron 9 de 10 (ADR 0017).
+  test("un criterio sin probar detiene el run con qué faltó, en vez de seguir a entregar", async () => {
     const { outcome, run } = await testWith({
       pruebas: [
         prueba({}),
@@ -94,7 +108,11 @@ describe("probar", () => {
       ],
       decisiones: [],
     });
-    expect(outcome).toEqual({ tipo: "ok" });
+    expect(outcome).toMatchObject({ tipo: "falla", clase: "sin_probar" });
+    const dir = lastTestDir(run) ?? "";
+    expect(outcome.tipo === "falla" && outcome.motivo).toBe(
+      `1 de 2 criterios quedaron sin probar:\n- AC-2 (crear una cuenta): no hay usuario admin\nLa evidencia de lo que sí se probó está en ${dir}`,
+    );
     expect(readLog(run.dir).events).toContainEqual(
       expect.objectContaining({
         tipo: "aviso",
@@ -103,12 +121,47 @@ describe("probar", () => {
     );
   });
 
+  // Primero se arregla el código: lo que no se pudo probar se mira cuando probar vuelva a correr.
+  test("con una falla y un criterio sin probar, gana la falla y vuelve a implementar", async () => {
+    const { outcome } = await testWith({
+      pruebas: [
+        prueba({ resultado: "falla", evidencia: "500", subtarea: "ST-1" }),
+        prueba({ criterio: "AC-2", resultado: "no_probado", evidencia: "falta un dato" }),
+      ],
+      decisiones: [],
+    });
+    expect(outcome).toMatchObject({ tipo: "vuelve", unidades: ["ST-1"] });
+  });
+
   test("una falla que nombra una sub-task que no existe es un gate", async () => {
     const { outcome } = await testWith({
       pruebas: [prueba({ resultado: "falla", subtarea: "ST-9" })],
       decisiones: [],
     });
     expect(outcome).toMatchObject({ tipo: "falla", clase: "gate" });
+  });
+
+  // Si regresiona, el agente no tiene cómo probar un criterio de error (KMS-1) o el video sale sin guion.
+  test("con fallas declaradas la sesión las recibe por nombre, y el navegador sale con ventana y guion", async () => {
+    const { sim, run } = await testWith({ pruebas: [prueba({})], decisiones: [] }, true, {
+      fallas: {
+        kms_colgado: { que: "KMS no contesta", simular: "true", restaurar: "true" },
+      },
+      navegador_visible: true,
+    });
+    const [record] = sim.records;
+    expect(Object.keys(record?.options?.mcpServers ?? {})).toEqual(["navegador", "http", "fallas"]);
+    expect(record?.prompt).toContain("- `kms_colgado`: KMS no contesta");
+    expect(record?.prompt).not.toContain("echo");
+    const dir = lastTestDir(run) ?? "";
+    const navegador = JSON.parse(readFileSync(join(dir, "navegador.json"), "utf8")) as {
+      browser: { launchOptions: { headless: boolean }; initScript: string[] };
+    };
+    expect(navegador.browser.launchOptions.headless).toBe(false);
+    expect(navegador.browser.initScript).toEqual([join(dir, "guion-del-video.js")]);
+    expect(readFileSync(join(dir, "guion-del-video.js"), "utf8")).toContain(
+      "window.flowrunner = {",
+    );
   });
 
   // Si regresiona, un repo sin entorno configurado queda trabado en probar.

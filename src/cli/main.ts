@@ -24,6 +24,7 @@ import { productionRuntime } from "../runner/production.ts";
 import { describeStats, stats } from "../report/stats.ts";
 import {
   abortRun,
+  acceptUntested,
   rerunRun,
   resumeRun,
   runProcess,
@@ -45,6 +46,9 @@ const USAGE = `uso: flowrunner <comando> [--json]
                                  --json --cerrados suma los últimos cerrados y abortados
   resume <run>                   retoma un run detenido o interrumpido
   rerun <run> --desde <fase>     rehace un run desde una fase
+  accept-untested <run> "<por qué>"
+                                 entrega aunque probar dejó criterios sin probar; el motivo
+                                 queda en el informe y en la PR
   abort <run>                    cancela un run y borra sus worktrees; las ramas quedan
   plan <run>                     muestra el plan que espera aprobación
   approve <run> [--acepto-cambios]
@@ -209,6 +213,11 @@ export async function main(
       case "resume": {
         const resumed = resumeRun(home, runArg(home, first), env);
         print(resumed, `run ${resumed.id} ${resumed.accion}`);
+        return 0;
+      }
+      case "accept-untested": {
+        const accepted = acceptUntested(home, runArg(home, first), rest.join(" "), env);
+        print(accepted, `run ${accepted.id} ${accepted.accion}`);
         return 0;
       }
       case "rerun": {

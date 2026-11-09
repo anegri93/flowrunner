@@ -98,6 +98,66 @@ describe("transiciones", () => {
     });
   });
 
+  describe("probar con criterios sin probar", () => {
+    const hasta = [
+      upTo("preparar", "planificar"),
+      ok("aprobar"),
+      upTo("implementar", "verificar", "revisar"),
+    ];
+    const sinProbar = done("probar", {
+      tipo: "falla",
+      clase: "sin_probar",
+      motivo: "AC-1 sin probar: no hay forma de simular KMS caído",
+    });
+
+    // Si regresiona, la PR se abre con criterios que nadie probó y nadie decidió dejar así (KMS-1).
+    test("detiene sin reintentar y ofrece rehacer probar", () => {
+      const s = state(...hasta, sinProbar);
+      expect(s.status).toBe("detenido");
+      expect(s.fase).toBe("probar");
+      expect(s.halt?.motivo).toContain("AC-1 sin probar");
+      expect(s.halt?.motivo).toContain('flowrunner accept-untested R1 "<por qué>"');
+      expect(s.halt?.siguiente).toBe("flowrunner rerun R1 --desde probar");
+      expect(nextAction(s).tipo).toBe("fin");
+    });
+
+    test("aceptarlo sigue a entregar sin volver a probar", () => {
+      const s = stateOf([
+        created,
+        ...hasta.flat(),
+        ...sinProbar,
+        ev({ tipo: "sin_probar_aceptado", motivo: "el criterio es de solo backend" }),
+      ]);
+      expect(s.status).toBe("en_curso");
+      expect(nextAction(s)).toMatchObject({ fase: "entregar", intento: 1 });
+    });
+
+    test("retomarlo vuelve a probar", () => {
+      const s = stateOf([created, ...hasta.flat(), ...sinProbar, ev({ tipo: "reanudado" })]);
+      expect(nextAction(s)).toMatchObject({ fase: "probar", intento: 1 });
+    });
+
+    // Si regresiona, un evento suelto saltea fases: entregar un run que se detuvo por otra cosa.
+    test("aceptar no hace nada si el run no está detenido por criterios sin probar", () => {
+      const porEntorno = stateOf([
+        created,
+        ...hasta.flat(),
+        ...done("probar", { tipo: "falla", clase: "entorno", motivo: "el puerto está ocupado" }),
+        ev({ tipo: "sin_probar_aceptado", motivo: "x" }),
+      ]);
+      expect(porEntorno.status).toBe("detenido");
+      expect(porEntorno.fase).toBe("probar");
+      const despuesDeRetomar = stateOf([
+        created,
+        ...hasta.flat(),
+        ...sinProbar,
+        ev({ tipo: "reanudado" }),
+        ev({ tipo: "sin_probar_aceptado", motivo: "x" }),
+      ]);
+      expect(nextAction(despuesDeRetomar)).toMatchObject({ fase: "probar" });
+    });
+  });
+
   test("aprobar espera sin proceso; aprobado sigue a implementar", () => {
     const waiting = state(upTo("preparar", "planificar"), done("aprobar", { tipo: "espera" }));
     expect(waiting.status).toBe("esperando_aprobacion");

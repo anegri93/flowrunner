@@ -13,6 +13,8 @@ const config = (port: number, extra: Partial<ProbarConfig> = {}): ProbarConfig =
   sigue_corriendo: true,
   notas: "",
   espera_segundos: 20,
+  fallas: {},
+  navegador_visible: false,
   ...extra,
 });
 

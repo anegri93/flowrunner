@@ -260,3 +260,33 @@ test("el informe trae las pruebas en el entorno con su evidencia; la PR, sin rut
   expect(body).toContain(results);
   expect(body).not.toContain("file://");
 });
+
+// Si regresiona, la PR no dice que se entregó con criterios sin probar ni por qué (ADR 0017).
+test("si la persona aceptó entregar sin probar, el informe y la PR lo dicen con su motivo", () => {
+  const dir = tempDir();
+  const tests = join(dir, "pruebas", "probar-1");
+  mkdirSync(tests, { recursive: true });
+  writeFileSync(
+    join(tests, "pruebas.json"),
+    JSON.stringify({
+      pruebas: [
+        {
+          criterio: "AC-2",
+          que: "el job nocturno",
+          pasos: [],
+          resultado: "no_probado",
+          evidencia: "no hay forma de dispararlo en el entorno",
+          subtarea: "",
+        },
+      ],
+      decisiones: [],
+    }),
+  );
+  const paths = { id: "R", home: "/nada", dir, worktrees: "/nada" };
+  const aceptado = ev({ tipo: "sin_probar_aceptado", motivo: "lo cubre el e2e del cron" });
+  const aviso =
+    "> ⚠️ Se entregó con criterios sin probar, por decisión de la persona: lo cubre el e2e del cron";
+  expect(buildReport([created, aceptado], paths)).toContain(aviso);
+  expect(prBody([created, aceptado], paths)).toContain(aviso);
+  expect(prBody([created], paths)).not.toContain("Se entregó con criterios sin probar");
+});

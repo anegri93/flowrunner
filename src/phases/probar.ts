@@ -1,6 +1,7 @@
 // Probar: con el entorno de desarrollo levantado desde la feature, una sesión usa lo implementado como
 // lo haría una persona, por la API y por el navegador, y deja la evidencia en el run: el log de cada
-// pedido y el video de cada navegación. Una falla devuelve su sub-task a implementar. Ver ADR 0016.
+// pedido y el video de cada navegación. Una falla devuelve su sub-task a implementar; un criterio sin
+// probar detiene el run hasta que la persona decide. Ver ADR 0016 y 0017.
 import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
@@ -10,6 +11,8 @@ import { decisionSchema } from "../gates/plan.ts";
 import { levantarEntorno } from "../probar/entorno.ts";
 import {
   BROWSER_TOOLS,
+  FALLA_TOOLS,
+  fallasServer,
   HTTP_TOOL,
   httpServer,
   startBrowser,
@@ -103,10 +106,19 @@ export const probar: PhaseFn = async (ctx) => {
   const origins = [...new Set(Object.values(urls).map((u) => new URL(u).origin))];
   const plan = readPlan(run);
   const ids = plan.subtareas.map((t) => t.id);
+  const declaradas = config.probar.fallas;
+  const hayFallas = Object.keys(declaradas).length > 0;
+  const fallas = fallasServer(declaradas, {
+    cwd: worktree,
+    env: deps.env,
+    log: join(dir, "fallas.md"),
+  });
   let browser: Navegador | undefined;
   try {
     try {
-      browser = await startBrowser(dir, origins, deps.env);
+      browser = await startBrowser(dir, origins, deps.env, {
+        visible: config.probar.navegador_visible,
+      });
     } catch (error) {
       return {
         tipo: "falla",
@@ -123,6 +135,11 @@ export const probar: PhaseFn = async (ctx) => {
             .map(([name, url]) => `- ${name}: ${url}`)
             .join("\n"),
           notas: config.probar.notas,
+          fallas: hayFallas
+            ? Object.entries(declaradas)
+                .map(([n, f]) => `- \`${n}\`: ${f.que}`)
+                .join("\n")
+            : "El repo no declaró fallas: un criterio que pide provocar una no se puede probar acá.",
           subtareas: ids.join(", "),
           instruccion:
             action.instruccion === undefined
@@ -156,7 +173,7 @@ export const probar: PhaseFn = async (ctx) => {
             bash: false,
             agents: false,
             graft: false,
-            mcp: [...BROWSER_TOOLS, HTTP_TOOL],
+            mcp: [...BROWSER_TOOLS, HTTP_TOOL, ...(hayFallas ? FALLA_TOOLS : [])],
           },
           emit,
         ),
@@ -164,6 +181,7 @@ export const probar: PhaseFn = async (ctx) => {
         mcpServers: {
           navegador: browser.config,
           http: httpServer(origins, join(dir, "http.md")),
+          ...(hayFallas ? { fallas: fallas.config } : {}),
         },
         timeoutMs: PROBAR_TIMEOUT_MS,
       },
@@ -188,14 +206,28 @@ export const probar: PhaseFn = async (ctx) => {
     writeFileSync(join(dir, "pruebas.json"), `${JSON.stringify(tests, null, 2)}\n`);
     for (const d of tests.decisiones)
       emit({ tipo: "decision", fase: "probar", que: d.que, por_que: d.por_que });
-    for (const p of tests.pruebas.filter((x) => x.resultado === "no_probado")) {
+    const etiqueta = (p: Pruebas["pruebas"][number]) =>
+      p.criterio === "" ? p.que : `${p.criterio} (${p.que})`;
+    const untested = tests.pruebas.filter((x) => x.resultado === "no_probado");
+    for (const p of untested) {
       emit({
         tipo: "aviso",
         fase: "probar",
-        texto: `no se pudo probar ${p.criterio === "" ? p.que : `${p.criterio} (${p.que})`}: ${p.evidencia}`,
+        texto: `no se pudo probar ${etiqueta(p)}: ${p.evidencia}`,
       });
     }
     const failed = tests.pruebas.filter((p) => p.resultado === "falla");
+    // Una falla del código va primero a implementar; lo que no se pudo probar se mira cuando probar
+    // vuelva a correr. Sin fallas, un criterio sin probar detiene: entregarlo así lo decide la persona.
+    if (failed.length === 0 && untested.length > 0) {
+      return {
+        tipo: "falla",
+        clase: "sin_probar",
+        motivo: `${String(untested.length)} de ${String(tests.pruebas.length)} criterios quedaron sin probar:\n${untested
+          .map((p) => `- ${etiqueta(p)}: ${p.evidencia}`)
+          .join("\n")}\nLa evidencia de lo que sí se probó está en ${dir}`,
+      };
+    }
     if (failed.length === 0) return { tipo: "ok" };
     return {
       tipo: "vuelve",
@@ -205,6 +237,10 @@ export const probar: PhaseFn = async (ctx) => {
         .join("\n")}\nLa evidencia, con el log de la API y el video, está en ${dir}`,
     };
   } finally {
+    // Antes de bajar el entorno: una falla puesta, como LocalStack pausado, no puede quedar viva.
+    for (const texto of await fallas.restaurarTodas()) {
+      emit({ tipo: "aviso", fase: "probar", texto: `una falla quedó puesta: ${texto}` });
+    }
     await browser?.stop();
     const alive = await up.entorno.bajar();
     if (alive.length > 0) {

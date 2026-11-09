@@ -110,6 +110,8 @@ export function decisionArgs(id: string, decision: Decision): string {
       return `rerun ${quote(id)} --desde ${decision.desde}`;
     case "aprender":
       return `learn ${quote(id)}`;
+    case "abortar":
+      return `abort ${quote(id)}`;
     default:
       throw new Error("decisión desconocida");
   }

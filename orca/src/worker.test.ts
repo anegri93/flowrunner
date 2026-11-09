@@ -179,11 +179,16 @@ test("cada decisión corre su comando fijo, con el motivo tal cual, y devuelve l
       decision: { accion: "aprender" },
     });
     assert.deepEqual(learned, { ok: true, mensaje: "la PR sigue abierta" });
+    assert.deepEqual(
+      await worker.request("flowrunner.decidir", { run: id, decision: { accion: "abortar" } }),
+      { ok: true, mensaje: "abortado; las ramas quedan" },
+    );
     assert.deepEqual(calls(), [
       `approve ${id} --json`,
       `changes ${id} ${motivo} --json`,
       `resume ${id} --json`,
       `learn ${id} --json`,
+      `abort ${id} --json`,
     ]);
   } finally {
     await worker.deactivate();

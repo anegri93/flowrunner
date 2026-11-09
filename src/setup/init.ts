@@ -27,8 +27,8 @@ import { createPr, findPr, type PullRequest } from "../github/gh.ts";
 import { runVerify } from "../phases/verify.ts";
 import { runProc, runShell, tail } from "../proc/proc.ts";
 import type { Deps, RunPaths } from "../runner/types.ts";
-import { draftBrain, DRAFT_HEADING, type Progress } from "./draft.ts";
-import { inferRepo } from "./infer.ts";
+import { draftBrain, DRAFT_HEADING, type Progress, withoutDraft } from "./draft.ts";
+import { ciStepsVerifyMisses, type Finding, inferRepo } from "./infer.ts";
 
 export const INIT_BRANCH = "chore/flowrunner-init";
 export const DRAFT_BRANCH = "chore/flowrunner-borrador";
@@ -104,6 +104,33 @@ async function openBrainPr(
   return createPr(worktree, { branch: pr.branch, base: pr.base, title: pr.title, bodyFile }, env);
 }
 
+/** Lo que el CI corre y `.flowrunner/verify.sh` no, como hallazgo; undefined si no falta nada. */
+function ciGap(worktree: string, files: readonly string[], setup: string): Finding | undefined {
+  const read = (file: string) => {
+    try {
+      return readFileSync(join(worktree, file), "utf8");
+    } catch {
+      return "";
+    }
+  };
+  let scripts: Record<string, string> = {};
+  try {
+    const pkg = JSON.parse(read("package.json")) as { scripts?: unknown };
+    if (typeof pkg.scripts === "object" && pkg.scripts !== null)
+      scripts = pkg.scripts as Record<string, string>;
+  } catch {
+    // Sin package.json legible, solo se compara contra verify.sh.
+  }
+  const workflows = files.filter((f) => /^\.github\/workflows\/[^/]+\.ya?ml$/.test(f)).map(read);
+  const missing = ciStepsVerifyMisses(workflows, read(".flowrunner/verify.sh"), scripts, setup);
+  if (missing.length === 0) return undefined;
+  return {
+    que: "verify contra CI",
+    estado: "inferido",
+    detalle: `el CI corre y verify.sh no: ${missing.map((m) => `\`${m}\``).join(", ")}. Un run puede salir en verde y la PR en rojo: sumalos a verify.sh o decidí dejarlos afuera`,
+  };
+}
+
 /** Si la base ya tiene el cerebro de flowrunner. */
 async function hasBrain(repo: string, base: string, env: NodeJS.ProcessEnv): Promise<boolean> {
   return git(repo, ["cat-file", "-e", `origin/${base}:.flowrunner/config.yaml`], env)
@@ -163,6 +190,7 @@ async function brainSteps(
     const inferred = inferRepo({ baseBranch: base, files, packageJson });
     const pasos: Paso[] = inferred.hallazgos.map((h) => ({ ...h }));
     if (inferred.config === undefined || inferred.verify === undefined) return pasos;
+    const hallazgos = [...inferred.hallazgos];
 
     const dir = join(worktree, ".flowrunner");
     mkdirSync(dir, { recursive: true });
@@ -174,6 +202,11 @@ async function brainSteps(
     chmodSync(join(dir, "verify.sh"), 0o755);
     initBrain(worktree);
     const config = loadRepoConfig(worktree);
+    const gap = ciGap(worktree, files, config.setup);
+    if (gap !== undefined) {
+      hallazgos.push(gap);
+      pasos.push({ ...gap });
+    }
 
     progress(`comprobando que origin/${base} esté en verde: setup y verify`);
     const setup = await runShell(config.setup, { cwd: worktree, env, timeoutMs: SETUP_TIMEOUT_MS });
@@ -210,7 +243,7 @@ async function brainSteps(
     const draft = await draftBrain({
       worktree,
       files,
-      hallazgos: inferred.hallazgos,
+      hallazgos,
       config,
       session: draftSession(env, projectNameFor(repo)),
       deps,
@@ -239,7 +272,7 @@ async function brainSteps(
         body: [
           "El cerebro de flowrunner para este repo, armado por `flowrunner init`.",
           "",
-          ...inferred.hallazgos.map((h) => `- **${h.que}:** ${h.detalle}`),
+          ...hallazgos.map((h) => `- **${h.que}:** ${h.detalle}`),
           "",
           ...(draft.tipo === "ok"
             ? [
@@ -275,11 +308,13 @@ export interface DraftOutcome {
 /**
  * `flowrunner brain draft <repo>`: para un repo que ya tiene el cerebro en la base, redacta el
  * borrador leyendo el código y lo propone en su propia PR. Lo que ya escribió la persona queda arriba.
+ * Con `reemplazar`, un borrador anterior de init se descarta y se redacta otro en su lugar.
  */
 export async function draftExistingBrain(
   path: string,
   deps: Deps,
   progress: Progress,
+  reemplazar = false,
 ): Promise<DraftOutcome> {
   const { env } = deps;
   const repo = await gitRootOf(path, env);
@@ -307,22 +342,36 @@ export async function draftExistingBrain(
   await git(repo, ["worktree", "add", "--quiet", "--detach", worktree, `origin/${base}`], env);
   try {
     const brain = loadBrain(worktree);
-    if (
-      [brain.convenciones, brain.contexto, brain.queEsBien].some((t) => t.includes(DRAFT_HEADING))
-    ) {
+    const drafted = [brain.convenciones, brain.contexto, brain.queEsBien].some((t) =>
+      t.includes(DRAFT_HEADING),
+    );
+    if (drafted && !reemplazar) {
       return outcome(
         "ya estaba",
-        `el cerebro de origin/${base} ya tiene un borrador de init: borrá esa sección para pedir otro`,
+        `el cerebro de origin/${base} ya tiene un borrador de init: para cambiarlo por uno nuevo, flowrunner brain draft ${repo} --reemplazar`,
       );
     }
+    if (drafted) {
+      for (const { file } of [
+        BRAIN_FILES.convenciones,
+        BRAIN_FILES.contexto,
+        BRAIN_FILES.queEsBien,
+      ]) {
+        const target = join(worktree, ".flowrunner", file);
+        writeFileSync(target, withoutDraft(readFileSync(target, "utf8")));
+      }
+    }
     const config = loadRepoConfig(worktree);
+    const files = (await git(worktree, ["ls-files"], env)).split("\n").filter(Boolean);
+    const gap = ciGap(worktree, files, config.setup);
     const draft = await draftBrain({
       worktree,
-      files: (await git(worktree, ["ls-files"], env)).split("\n").filter(Boolean),
+      files,
       hallazgos: [
         { que: "setup", detalle: config.setup },
         { que: "tests_globs", detalle: config.tests_globs.join(", ") },
         { que: "harness_files", detalle: config.harness_files.join(", ") || "(ninguno)" },
+        ...(gap === undefined ? [] : [gap]),
       ],
       config,
       session: draftSession(env, name),
@@ -338,11 +387,14 @@ export async function draftExistingBrain(
         base,
         title: "chore: borrador del cerebro de flowrunner",
         body: [
-          `Un borrador de ${BRAIN_DOCS} que \`flowrunner brain draft\` dedujo del código.`,
+          `Un borrador de ${BRAIN_DOCS} que \`flowrunner brain draft\` dedujo del repo.`,
           "",
           `Va en la sección «${DRAFT_HEADING.replace(/^## /, "")}» de cada archivo, debajo de lo que ya`,
-          "estaba. Corregí o borrá lo que no sea así antes de mergear: planificar, implementar y revisar",
-          "lo leen en cada run.",
+          drafted
+            ? "estaba, y reemplaza al borrador anterior. Corregí o borrá lo que no sea así antes de mergear:"
+            : "estaba. Corregí o borrá lo que no sea así antes de mergear:",
+          "planificar, implementar y revisar lo leen en cada run.",
+          ...(gap === undefined ? [] : ["", `- **${gap.que}:** ${gap.detalle}`]),
         ],
       },
       env,

@@ -44,13 +44,18 @@ function draftScript(fuente = "servidor/api.ts"): SimScript {
   };
 }
 
-function world(testScript = "node -e 0", draft = draftScript()) {
+function world(
+  testScript = "node -e 0",
+  draft = draftScript(),
+  extra: Readonly<Record<string, string>> = {},
+) {
   const { work, remote } = repoWithRemote({
     "package.json": JSON.stringify({ name: "pizarra", scripts: { test: testScript } }),
     "package-lock.json": LOCK,
     "vitest.config.ts": "export default {};\n",
     "servidor/api.ts": "export class ErrorDeApi extends Error {}\n",
     "servidor/api.test.ts": "// test\n",
+    ...extra,
   });
   const scripts = join(tempDir("init-guiones-"), "guiones.json");
   writeFileSync(scripts, JSON.stringify([draft]));
@@ -127,7 +132,7 @@ describe("init", () => {
     expect(convenciones.startsWith(template("convenciones.md"))).toBe(true);
     expect(convenciones).toContain("## Borrador de flowrunner init");
     expect(convenciones).toContain("Los errores de la API salen como `ErrorDeApi`");
-    expect(convenciones).toContain("Fuentes: `servidor/api.ts`");
+    expect(convenciones).toMatch(/del repo en `[0-9a-f]{7,}` el \d{4}-\d\d-\d\d/);
     expect(brainFile(w.remote, "contexto.md")).toContain("### Qué reusar antes de escribir");
     expect(brainFile(w.remote, "que-es-bien.md")).toContain("como `servidor/api.test.ts`");
     expect(prBody(w.env)).toContain("traen un borrador que init dedujo");
@@ -137,6 +142,31 @@ describe("init", () => {
     expect(prompt).toContain("Sos el que arma el cerebro");
     expect(prompt).toContain("servidor/api.ts");
     expect(prompt).toContain("inicial");
+  }, 120_000);
+
+  // Regresión: en mango-portal-colaborador el borrador ignoró CLAUDE.md y verify.sh salió sin los
+  // e2e que corre el CI, y nada en la PR lo decía.
+  test("le pasa a la sesión la documentación del repo y avisa lo que el CI corre y verify no", () => {
+    const ci =
+      "jobs:\n  ci:\n    steps:\n      - run: npm ci\n      - run: npm test\n      - run: npm run e2e\n";
+    const w = world("node -e 0", draftScript(), {
+      "CLAUDE.md": "# Reglas\n",
+      "docs/adr/0001-dinero.md": "# Dinero en enteros\n",
+      ".github/workflows/ci.yml": ci,
+    });
+    const out = runCli(["init", w.work, "--aplicar", "--json"], w.env);
+    expect(out.status, out.stdout + out.stderr).toBe(0);
+    expect(paso(out.stdout, "verify contra CI")?.detalle).toContain("`npm run e2e`");
+    expect(paso(out.stdout, "verify contra CI")?.detalle).not.toContain("`npm test`");
+    expect(prBody(w.env)).toContain("el CI corre y verify.sh no: `npm run e2e`");
+
+    const prompt = readFileSync(join(w.home, "prompts.log"), "utf8");
+    const docs = prompt.slice(prompt.indexOf("# Documentación del repo"));
+    expect(docs.slice(0, docs.indexOf("# Lo que ya dice el cerebro"))).toMatch(
+      /CLAUDE\.md\n\.github\/workflows\/ci\.yml\ndocs\/adr\/0001-dinero\.md/,
+    );
+    // Y la sesión supo del hueco, para anotarlo en contexto.
+    expect(prompt).toContain("verify contra CI");
   }, 120_000);
 
   // Si regresiona, la PR del cerebro afirma reglas sobre archivos que no existen en el repo.
@@ -302,7 +332,7 @@ describe("brain draft", () => {
     expect(convenciones).toContain("## Borrador de flowrunner init");
     expect(convenciones).toContain("Los errores de la API salen como `ErrorDeApi`");
     expect(git(w.remote, "show", `${DRAFT_REF}/contexto.md`)).toContain("Qué reusar");
-    expect(prBody(w.env)).toContain("`flowrunner brain draft` dedujo del código");
+    expect(prBody(w.env)).toContain("`flowrunner brain draft` dedujo del repo");
     // La sesión vio lo que ya decía el cerebro, para no repetirlo.
     expect(readFileSync(join(w.home, "prompts.log"), "utf8")).toContain(PERSONA);
 
@@ -346,8 +376,31 @@ describe("brain draft", () => {
     const out = runCli(["brain", "draft", w.work, "--json"], w.env);
     expect(out.status).toBe(0);
     expect(drafted(out.stdout).paso).toMatchObject({ estado: "ya estaba" });
+    expect(drafted(out.stdout).paso.detalle).toContain("--reemplazar");
     expect(existsSync(join(w.home, "prompts.log"))).toBe(false);
     expect(remoteBranches(w.remote)).toBe("main");
+  }, 120_000);
+
+  // Si regresiona, un borrador de una versión vieja de init no se puede rehacer sin dos PRs: una que
+  // borra la sección y otra que pide el nuevo.
+  test("con --reemplazar cambia el borrador de la base por uno nuevo y conserva lo de la persona", () => {
+    const w = world();
+    const mine = `${template("convenciones.md")}\n${PERSONA}\n`;
+    withBrain(w, `${mine}\n## Borrador de flowrunner init\n\n- regla vieja del borrador\n`);
+    const out = runCli(["brain", "draft", w.work, "--reemplazar", "--json"], w.env);
+    expect(out.status, out.stdout + out.stderr).toBe(0);
+    expect(drafted(out.stdout).paso).toMatchObject({ estado: "hecho" });
+
+    const convenciones = git(w.remote, "show", `${DRAFT_REF}/convenciones.md`);
+    expect(convenciones.startsWith(mine.trimEnd())).toBe(true);
+    expect(convenciones).not.toContain("regla vieja del borrador");
+    expect(convenciones.split("## Borrador de flowrunner init")).toHaveLength(2);
+    expect(convenciones).toContain("Los errores de la API salen como `ErrorDeApi`");
+    expect(prBody(w.env)).toContain("reemplaza al borrador anterior");
+    // La sesión no vio el borrador viejo como si fuera lo que escribió la persona.
+    expect(readFileSync(join(w.home, "prompts.log"), "utf8")).not.toContain(
+      "regla vieja del borrador",
+    );
   }, 120_000);
 
   // Si regresiona, el borrador deja un archivo pasado de tope y el próximo run no carga el cerebro.

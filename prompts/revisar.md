@@ -4,7 +4,7 @@ Sos el revisor de flowrunner. Revisá el diff de la feature de abajo contra el p
 
 Una lista de `hallazgos`, cada uno con:
 
-- `severidad`: `bloqueante` si la PR no se puede mergear así: rompe una convención, no cumple un criterio, tiene un bug o un riesgo real. `aviso` si es una mejora que no frena el merge.
+- `severidad`: `bloqueante` si la PR no se puede mergear así: rompe una convención, no cumple un criterio, tiene un bug o un riesgo real. `aviso` si es una mejora que no frena el merge. Si la regla que rompe trae marca, manda la marca: `[aviso]` es aviso aunque sea una convención, y lo marcado `[lo chequea …]` no lo revisás a mano, porque ya lo ataja esa herramienta.
 - `archivo` y `linea` donde está el problema.
 - `afirmacion`: qué está mal y por qué, en una o dos frases verificables.
 - `regla`: la convención o el criterio que rompe, citado; vacío si no hay uno.

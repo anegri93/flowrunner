@@ -1,6 +1,14 @@
 import { describe, expect, test } from "vitest";
 import { BRAIN_FILES } from "../brain/brain.ts";
-import { describeToolUse, DRAFT_HEADING, inventedSources, withDraft, type Draft } from "./draft.ts";
+import {
+  describeToolUse,
+  docFiles,
+  DRAFT_HEADING,
+  inventedSources,
+  withDraft,
+  withoutDraft,
+  type Draft,
+} from "./draft.ts";
 
 const FILES = ["package.json", "src/setup/init.ts", "src/setup/infer.ts", "test/init.int.test.ts"];
 const part = (fuentes: string[]) => ({ texto: "- regla", fuentes });
@@ -39,21 +47,71 @@ describe("inventedSources", () => {
 
 describe("withDraft", () => {
   // Si regresiona, lo inferido se mezcla con lo que escribió la persona y no se sabe qué revisar.
-  test("deja lo de la persona arriba y el borrador en su sección, con fecha y fuentes", () => {
+  test("deja lo de la persona arriba y el borrador en su sección, con fecha y commit", () => {
     const persona = "# Convenciones del repo\n\n- regla mía\n";
-    const text = withDraft(persona, part(["src/setup/init.ts", "package.json"]), "2026-11-09");
+    const text = withDraft(
+      persona,
+      part(["src/setup/init.ts", "package.json"]),
+      "2026-11-09",
+      "f7e1ac2",
+    );
     expect(text.startsWith(persona)).toBe(true);
     const section = text.slice(text.indexOf(DRAFT_HEADING));
-    expect(section).toContain("flowrunner init` del código el 2026-11-09, sin revisión humana");
+    expect(section).toContain("del repo en `f7e1ac2` el 2026-11-09, sin revisión humana");
     expect(section).toContain("- regla");
-    expect(section).toContain("Fuentes: `src/setup/init.ts`, `package.json`");
     expect(text.indexOf("- regla mía")).toBeLessThan(text.indexOf(DRAFT_HEADING));
+    // Si regresiona, la lista de fuentes repite las citas de cada regla y se carga en cada prompt.
+    expect(section).not.toContain("Fuentes:");
   });
 
   // Si regresiona, un borrador largo pasa el tope del archivo y el primer run no carga el cerebro.
   test("el borrador más largo que acepta el schema entra en el tope del archivo", () => {
     const fuentes = Array.from({ length: 40 }, (_, i) => `src/modulo-${String(i)}/archivo.ts`);
-    const text = withDraft("# Convenciones\n", { texto: "x".repeat(4_000), fuentes }, "2026-11-09");
+    const text = withDraft(
+      "# Convenciones\n",
+      { texto: "x".repeat(6_000), fuentes },
+      "2026-11-09",
+      "f7e1ac2",
+    );
     expect(Array.from(text).length).toBeLessThan(BRAIN_FILES.convenciones.max);
+  });
+});
+
+describe("withoutDraft", () => {
+  // Si regresiona, --reemplazar apila el borrador nuevo sobre el viejo o se come lo de la persona.
+  test("saca la sección del borrador y deja intacto lo que está arriba", () => {
+    const persona = "# Convenciones\n\n- regla mía\n";
+    const text = withDraft(persona, part(["package.json"]), "2026-11-09", "f7e1ac2");
+    expect(withoutDraft(text)).toBe(persona);
+    expect(withoutDraft(persona)).toBe(persona);
+  });
+});
+
+describe("docFiles", () => {
+  // Si regresiona, el borrador redescubre del código reglas que el repo ya tenía escritas, o se
+  // pierde las de una carpeta de reglas de agentes.
+  test("lista lo que el repo documenta para personas y agentes, la raíz primero, sin el cerebro", () => {
+    expect(
+      docFiles([
+        "src/a.ts",
+        "apps/api/CLAUDE.md",
+        "CLAUDE.md",
+        ".claude/rules/arquitectura.md",
+        ".claude/settings.json",
+        ".github/workflows/ci.yml",
+        "docs/adr/0001-algo.md",
+        "docs/img/logo.png",
+        ".flowrunner/contexto.md",
+        "node_modules/x/README.md",
+        ".nvmrc",
+      ]),
+    ).toEqual([
+      ".nvmrc",
+      "CLAUDE.md",
+      ".claude/rules/arquitectura.md",
+      ".github/workflows/ci.yml",
+      "apps/api/CLAUDE.md",
+      "docs/adr/0001-algo.md",
+    ]);
   });
 });

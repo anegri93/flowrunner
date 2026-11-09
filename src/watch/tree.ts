@@ -141,6 +141,10 @@ export function sessionNode(nombre: string, file: SessionFile, now: number): Ses
       model?: string;
       total_cost_usd?: number;
       usage?: Usage;
+      modelUsage?: Record<
+        string,
+        { inputTokens?: number; outputTokens?: number; cacheCreationInputTokens?: number }
+      >;
       parent_tool_use_id?: string | null;
       message?: { id?: string; model?: string; content?: unknown; usage?: Usage };
     };
@@ -154,7 +158,20 @@ export function sessionNode(nombre: string, file: SessionFile, now: number): Ses
     modelo ??= m.message?.model;
     if (m.type === "result") {
       costoUsd = m.total_cost_usd ?? 0;
-      if (m.usage !== undefined) final = fresh(m.usage);
+      // `usage` es solo de la sesión principal; `modelUsage` suma también a sus subagentes.
+      final =
+        m.modelUsage === undefined
+          ? m.usage === undefined
+            ? undefined
+            : fresh(m.usage)
+          : Object.values(m.modelUsage).reduce(
+              (a, u) =>
+                a +
+                (u.inputTokens ?? 0) +
+                (u.cacheCreationInputTokens ?? 0) +
+                (u.outputTokens ?? 0),
+              0,
+            );
     }
     if (m.type === "assistant" && m.message?.usage !== undefined) {
       const model = m.message.model ?? modelo ?? "";

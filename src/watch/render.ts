@@ -59,7 +59,8 @@ export function tokenCount(n: number): string {
   return n % 1_000_000 === 0 ? `${String(n / 1_000_000)}M` : `${(n / 1_000_000).toFixed(1)}M`;
 }
 
-const usd = (n: number | undefined) => (n === undefined || n === 0 ? "–" : n.toFixed(2));
+const usd = (n: number | undefined, partial = false) =>
+  n === undefined || n === 0 ? "–" : `${partial ? "≥ " : ""}${n.toFixed(2)}`;
 
 /** `claude-opus-5-5` y `high` como `opus-5-5 (high)`. */
 export function modelTag(id: string | undefined, effort?: string): string {
@@ -93,6 +94,8 @@ interface Row {
   /** Qué parte de los tokens del run se llevó, de 0 a 1; undefined en la fila del run. */
   readonly share: number | undefined;
   readonly usd: number | undefined;
+  /** El costo incluye una sesión que corre: es un mínimo, la salida se conoce al terminar. */
+  readonly partial: boolean;
   readonly time: string;
   readonly status: string;
   readonly note: string | undefined;
@@ -206,6 +209,7 @@ function runRows(tree: RunTree): Row[] {
       tokens: total,
       share: undefined,
       usd: tree.costoUsd + runningCost(all),
+      partial: all.some((s) => s.corriendo),
       time:
         tree.haceSegundos === undefined
           ? duration(tree.segundos)
@@ -237,6 +241,7 @@ function runRows(tree: RunTree): Row[] {
       tokens,
       share: share(tokens),
       usd: p.costoUsd + runningCost(own),
+      partial: own.some((s) => s.corriendo),
       time: p.segundos === undefined ? "" : duration(p.segundos),
     });
     p.unidades.forEach((u, j) => {
@@ -260,6 +265,7 @@ function runRows(tree: RunTree): Row[] {
           u.sesiones.length === 0
             ? undefined
             : sum(done.map((s) => s.costoUsd ?? 0)) + runningCost(u.sesiones),
+        partial: u.sesiones.some((s) => s.corriendo),
         time: u.sesiones.length === 0 ? "" : duration(sum(u.sesiones.map((s) => s.segundos))),
       });
     });
@@ -317,7 +323,7 @@ export function renderBoard(
     Math.max(len("MODELO (ESFUERZO)"), ...rows.map((r) => len(r.model))),
     MAX_MODEL,
   );
-  const usdW = Math.max(len("≈ USD"), ...rows.map((r) => len(usd(r.usd))));
+  const usdW = Math.max(len("≈ USD"), ...rows.map((r) => len(usd(r.usd, r.partial))));
   const timeW = Math.max(len("TIEMPO"), ...rows.map((r) => len(r.time)));
   const statusW = Math.max(len("ESTADO"), ...rows.map((r) => len(r.status)));
   let columnsW = idW + TOKENS_W + usdW + timeW + statusW + 5 * 2;
@@ -341,7 +347,7 @@ export function renderBoard(
       style(colored, "90", padEnd(r.id, idW)),
       ...(showModel ? [padEnd(cut(r.model, modelW), modelW)] : []),
       tokensCell(r, colored),
-      padStart(usd(r.usd), usdW),
+      padStart(usd(r.usd, r.partial), usdW),
       padStart(r.time, timeW),
       style(colored, k.code, padEnd(r.status, statusW)),
     ];
@@ -414,7 +420,7 @@ export function renderDetail(
   const { width, color } = opts;
   const body = sessions.flatMap(({ node: s, steps }) => [
     cut(
-      `${s.nombre} · ${modelTag(s.modelo, s.esfuerzo)} · ${tokenCount(s.tokens)} tokens nuevos · ${contextText(s)} · ≈ USD ${usd(s.costoUsd ?? s.costoEstimado)} · ${duration(s.segundos)}`,
+      `${s.nombre} · ${modelTag(s.modelo, s.esfuerzo)} · ${tokenCount(s.tokens)} tokens nuevos · ${contextText(s)} · ≈ USD ${usd(s.costoUsd ?? s.costoEstimado, s.costoUsd === undefined)} · ${duration(s.segundos)}`,
       width,
     ),
     ...steps.map((st) => {

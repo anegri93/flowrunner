@@ -85,9 +85,9 @@ usando o por qué volvió algo. Se refresca cada 2 segundos. Con las flechas ele
 ves los pasos de sus sesiones; `q` sale. Con `--once`, o fuera de una terminal, la dibuja una vez.
 
 Los tokens son los **nuevos**: lo que cada fase leyó o escribió por primera vez, sin las relecturas
-de caché, que se cobran a una fracción. Lo que corre muestra su costo estimado en vivo, con los precios
-de cada modelo, y en gris cuánto contexto arrastra en cada vuelta; al terminar, el estimado se
-reemplaza por el costo real. Los USD son el equivalente de API: con la suscripción no se cobran, y lo
+de caché, que se cobran a una fracción. Lo que corre muestra su costo estimado en vivo como un mínimo, `≥ 2.97`, porque la
+salida de cada mensaje se conoce recién al terminar, y en gris cuánto contexto arrastra en cada vuelta.
+Al terminar, el mínimo se reemplaza por el costo real. Los USD son el equivalente de API: con la suscripción no se cobran, y lo
 que limita es su cupo. Un run no tiene tope de gasto salvo que el repo lo pida con `budget.run_usd` en
 `.flowrunner/config.yaml`.
 

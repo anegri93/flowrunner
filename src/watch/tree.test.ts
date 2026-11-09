@@ -404,4 +404,47 @@ describe("runTree", () => {
       contexto: 170_000,
     });
   });
+
+  // Si regresiona, el total de una sesión terminada deja afuera a sus exploradores y no coincide con lo
+  // que se veía en vivo: en VF-1, 487k en vivo y 348k al terminar.
+  test("al terminar, los tokens nuevos suman todos los modelos de la sesión, subagentes incluidos", () => {
+    const result = line({
+      type: "result",
+      total_cost_usd: 5.5,
+      usage: { input_tokens: 92, cache_creation_input_tokens: 229_211, output_tokens: 118_425 },
+      modelUsage: {
+        "claude-opus-5-5": {
+          inputTokens: 92,
+          outputTokens: 118_425,
+          cacheCreationInputTokens: 229_211,
+          cacheReadInputTokens: 5_907_833,
+        },
+        "claude-haiku-5-5": {
+          inputTokens: 4_417,
+          outputTokens: 69_300,
+          cacheCreationInputTokens: 260_009,
+          cacheReadInputTokens: 1_655_886,
+        },
+      },
+    });
+    const tree = runTree({
+      events: base,
+      tasks,
+      titulo: "x",
+      sessions: new Map([
+        [
+          "planificar-1",
+          session(
+            [line({ type: "system", subtype: "init", model: "claude-opus-5-5" }), result],
+            40,
+            60,
+          ),
+        ],
+      ]),
+      now: T0 + 100_000,
+    });
+    expect(tree.fases[1]?.sesiones[0]?.tokens).toBe(
+      92 + 118_425 + 229_211 + 4_417 + 69_300 + 260_009,
+    );
+  });
 });

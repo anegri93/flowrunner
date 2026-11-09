@@ -145,7 +145,7 @@ describe("renderBoard", () => {
       "sonnet-5-5 (high)",
       "━━──────",
       "200k",
-      "0.16",
+      "≥ 0.16",
       "1m20s",
       "trabajando",
     ]);
@@ -244,14 +244,15 @@ describe("renderBoard", () => {
       ],
     };
     const { lines } = renderBoard([planning], { width: 160, color: false });
+    // En vivo el costo es un mínimo: la salida de cada mensaje se conoce recién al terminar.
     expect(cols(rowOf(lines, "Cambios de un toque")).slice(-4)).toEqual([
       "435k",
-      "4.40",
+      "≥ 4.40",
       "9m00s",
       "en curso",
     ]);
     const row = rowOf(lines, "planificar");
-    expect(cols(row).slice(-4)).toEqual(["435k", "4.40", "6m34s", "trabajando"]);
+    expect(cols(row).slice(-4)).toEqual(["435k", "≥ 4.40", "6m34s", "trabajando"]);
     expect(lines[lines.indexOf(row) + 1]?.trim()).toBe("▸ Grep videoUrl · contexto 174k de 1M");
   });
 

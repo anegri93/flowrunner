@@ -159,7 +159,7 @@ const aborting = atom<string | null>(null);
 const abortNote = atom<{ run: string; mensaje: string } | null>(null);
 
 /**
- * Abortar el run entero, al pie de su tarjeta: no es una decisión de la etapa actual. Pide
+ * Abortar el run entero, al pie de su tarjeta y a la derecha: no es una decisión de la etapa actual. Pide
  * confirmación diciendo qué se pierde y qué queda.
  */
 export function Abort({ run, after }: { run: Run; after: () => Promise<void> }) {
@@ -196,7 +196,7 @@ export function Abort({ run, after }: { run: Run; after: () => Promise<void> }) 
           Corta lo que esté corriendo, en cualquier etapa, y borra sus worktrees. La rama y la PR
           quedan.
         </Text>
-        <Row gap="xs">
+        <Row gap="xs" justify="end">
           <Button size="sm" tone="danger" onPress={confirm}>
             Sí, abortar el run
           </Button>
@@ -214,15 +214,17 @@ export function Abort({ run, after }: { run: Run; after: () => Promise<void> }) 
           {note.mensaje}
         </Text>
       ) : null}
-      <Button
-        size="sm"
-        variant="ghost"
-        tone="danger"
-        icon="stop"
-        onPress={() => set(aborting, run.id)}
-      >
-        Abortar el run
-      </Button>
+      <Row justify="end">
+        <Button
+          size="sm"
+          variant="ghost"
+          tone="danger"
+          icon="stop"
+          onPress={() => set(aborting, run.id)}
+        >
+          Abortar el run
+        </Button>
+      </Row>
     </Stack>
   );
 }

@@ -242,6 +242,26 @@ describe("init", () => {
     expect(paso(out.stdout, "cerebro del repo")?.detalle).toContain("flowrunner brain draft");
     expect(paso(out.stdout, "setup")).toBeUndefined();
   }, 120_000);
+
+  // Regresión: con el borrador ya mergeado en videoFactory, init seguía sugiriendo correr
+  // `brain draft`, y al correrlo la persona recibía «ya tiene un borrador».
+  test("si el cerebro de la base ya tiene el borrador, no sugiere pedir otro", () => {
+    const w = world();
+    mkdirSync(join(w.work, ".flowrunner"), { recursive: true });
+    writeFileSync(join(w.work, ".flowrunner", "config.yaml"), 'setup: "true"\n');
+    writeFileSync(
+      join(w.work, ".flowrunner", "convenciones.md"),
+      "# Convenciones\n\n## Borrador de flowrunner init\n\n- algo\n",
+    );
+    git(w.work, "add", "-A");
+    git(w.work, "commit", "-qm", "cerebro con borrador");
+    git(w.work, "push", "-q", "origin", "main");
+    const out = runCli(["init", w.work, "--json"], w.env);
+    expect(paso(out.stdout, "cerebro del repo")).toMatchObject({
+      estado: "ya estaba",
+      detalle: "en origin/main, con el borrador leído del código",
+    });
+  }, 120_000);
 });
 
 const PERSONA = "- Regla de la persona: los handlers no tocan la base directo.";

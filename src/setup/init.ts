@@ -14,7 +14,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
 import { readKeychainToken } from "../agent/auth.ts";
-import { initBrain, loadBrain } from "../brain/brain.ts";
+import { BRAIN_FILES, initBrain, loadBrain } from "../brain/brain.ts";
 import { claudeLoggedIn, doctor } from "../cli/doctor.ts";
 import { installLaunchd, plistPath } from "../cli/launchd.ts";
 import { gitRootOf, projectNameFor, updateGlobalConfig } from "../cli/project.ts";
@@ -111,6 +111,17 @@ async function hasBrain(repo: string, base: string, env: NodeJS.ProcessEnv): Pro
     .catch(() => false);
 }
 
+/** El cerebro de la base ya tiene el borrador que se lee del código: no hay que pedir otro. */
+async function hasDraft(repo: string, base: string, env: NodeJS.ProcessEnv): Promise<boolean> {
+  const files = [BRAIN_FILES.convenciones, BRAIN_FILES.contexto, BRAIN_FILES.queEsBien];
+  const texts = await Promise.all(
+    files.map(({ file }) =>
+      git(repo, ["show", `origin/${base}:.flowrunner/${file}`], env).catch(() => ""),
+    ),
+  );
+  return texts.some((t) => t.includes(DRAFT_HEADING));
+}
+
 /** El cerebro del repo, inferido sobre un worktree limpio de la base, con la base comprobada. */
 async function brainSteps(
   repo: string,
@@ -126,7 +137,9 @@ async function brainSteps(
       {
         que: "cerebro del repo",
         estado: "ya estaba",
-        detalle: `en origin/${base}; para sumarle un borrador leído del código: flowrunner brain draft ${repo}`,
+        detalle: (await hasDraft(repo, base, env))
+          ? `en origin/${base}, con el borrador leído del código`
+          : `en origin/${base}; para sumarle un borrador leído del código: flowrunner brain draft ${repo}`,
       },
     ];
   }

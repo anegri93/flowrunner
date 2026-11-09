@@ -5,7 +5,8 @@ import { notifyMac } from "../notify/notify.ts";
 import { productionRuntime } from "../runner/production.ts";
 import { runUntilStop } from "../runner/runner.ts";
 import { isAlive } from "../store/lock.ts";
-import { appendEvent } from "../store/run-log.ts";
+import type { RunEvent } from "../store/events.ts";
+import { appendEvent, readLog } from "../store/run-log.ts";
 import { listRunIds, loadState, runPaths } from "../store/runs.ts";
 import { UserError } from "./output.ts";
 import { handOver } from "./runs.ts";
@@ -23,6 +24,16 @@ function tryLock(file: string): boolean {
   }
 }
 
+/**
+ * Por qué un run entregado sigue esperando: tu merge, o, con la PR ya mergeada, que el proyecto se
+ * libere para aprender (corre un run a la vez por proyecto).
+ */
+export function waitingReason(events: readonly RunEvent[]): string {
+  return events.some((e) => e.tipo === "pr_cerrada" && e.mergeada)
+    ? "PR mergeada: aprende cuando se libere el proyecto"
+    : "la PR sigue abierta";
+}
+
 /** Aprende de un run entregado, si nadie más lo está haciendo. Devuelve el estado en que quedó. */
 export async function learnRun(home: string, id: string, env: NodeJS.ProcessEnv): Promise<string> {
   const run = runPaths(home, id);
@@ -33,7 +44,9 @@ export async function learnRun(home: string, id: string, env: NodeJS.ProcessEnv)
       notifyMac(t, b, env);
     });
     const final = await runUntilStop(run, phases, deps, { tick: true });
-    return final.status === "entregado" ? "la PR sigue abierta" : `quedó ${final.status}`;
+    return final.status === "entregado"
+      ? waitingReason(readLog(run.dir).events)
+      : `quedó ${final.status}`;
   } finally {
     rmSync(lock, { force: true });
   }

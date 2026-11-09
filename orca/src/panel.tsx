@@ -31,7 +31,7 @@ import {
   isFinished,
   needsYou,
   nowOf,
-  RUN_CHIP,
+  runChip,
   sortRuns,
   stageRows,
   tail,
@@ -202,7 +202,7 @@ function Stage({ run, row }: { run: Run; row: StageRow }) {
 
 function RunCard({ run }: { run: Run }) {
   const open = isOpen(run);
-  const chip = RUN_CHIP[run.status];
+  const chip = runChip(run);
   const rows = stageRows(run);
   const shown = open ? rows : rows.filter((r) => r.actual);
   const footer = nowOf(run).meta;

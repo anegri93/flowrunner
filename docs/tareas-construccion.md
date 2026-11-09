@@ -823,6 +823,17 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. Se sacaron la barra de avance y el tiempo por etapa aparte: la lista los reemplaza.
 - **Desbloquea:** Gate Fase 8
 
+### T8.8 · Un run entregado con la PR mergeada no dice «espera merge», y su reloj para en la entrega
+- **Estado:** `[x] Hecho`
+- **Regresión de:** T7.1
+- **Descripción:** con las PRs de VF-2 y VF-3 ya mergeadas, el panel seguía mostrando «PR ABIERTA» y «Aprender — espera merge», y el log del chequeo decía «la PR sigue abierta». Lo que esperaba Aprender era que VF-3 liberara el proyecto, porque corre un run a la vez por proyecto. Además el tiempo de un run entregado seguía sumando lo que tardaba el merge. Ahora `RunTree` trae `prMergeada`, que sale del evento `pr_cerrada`. `watch` dice «PR mergeada» y «aprende al próximo chequeo», el log del chequeo dice «PR mergeada: aprende cuando se libere el proyecto», y el panel de Orca usa las mismas palabras. El reloj del run para en la entrega.
+- **Lint:** `pnpm lint` y `orca plugin validate`.
+- **Test:** `src/watch/tree.test.ts` › «un run entregado para el reloj en la entrega y sabe si su PR ya se mergeó». `src/watch/render.test.ts` › «un run entregado con la PR mergeada dice que aprende al próximo chequeo». `src/cli/tick.test.ts` › «un run entregado espera tu merge, o con la PR mergeada, que se libere el proyecto». `orca/src/runs.test.ts` › «un run entregado con la PR mergeada no dice que espera tu merge».
+- **Canario:** los tres de flowrunner fallaron con el código de main; el del plugin, sin la etiqueta de mergeada.
+- **Criterio de aprobación:** con la PR de un run mergeada y otro run del mismo proyecto corriendo, `watch` y el panel dicen que aprende al próximo chequeo y el tiempo no sigue sumando.
+- **Revisión ponytail:** a mano. Un campo derivado de un evento que ya existía; ningún estado nuevo en el motor.
+- **Desbloquea:** Gate Fase 8
+
 ### Gate Fase 8
 - **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.

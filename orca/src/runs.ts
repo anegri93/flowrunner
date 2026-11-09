@@ -50,6 +50,8 @@ export interface Run {
   readonly proyecto: string;
   readonly repo: string;
   readonly status: RunStatus;
+  /** La PR ya se mergeó: un run entregado espera aprender, no tu merge. */
+  readonly prMergeada?: boolean;
   readonly costoUsd: number;
   readonly segundos: number;
   readonly motivo?: string;
@@ -114,6 +116,12 @@ export function clock(seconds: number | undefined): string | undefined {
   return h > 0 ? `${String(h)}:${String(m).padStart(2, "0")}:${s}` : `${String(m)}:${s}`;
 }
 
+/** El estado del run en una etiqueta: con la PR mergeada, ya no está abierta. */
+export const runChip = (run: Run): { texto: string; tone: Tone } =>
+  run.status === "entregado" && run.prMergeada === true
+    ? { texto: "PR MERGEADA", tone: "success" }
+    : RUN_CHIP[run.status];
+
 /** El estado del run en una etiqueta, con las palabras de `flowrunner watch`. */
 export const RUN_CHIP: Record<RunStatus, { texto: string; tone: Tone }> = {
   en_curso: { texto: "EN CURSO", tone: "accent" },
@@ -164,6 +172,7 @@ export interface Station {
 export function phaseLabel(
   fase: string,
   estado: string,
+  prMergeada = false,
 ): { mark: string; texto: string; tone: Tone } {
   switch (estado) {
     case "ok":
@@ -177,7 +186,9 @@ export function phaseLabel(
     case "espera":
       return fase === "aprobar"
         ? { mark: "●", texto: "te espera", tone: "warning" }
-        : { mark: "●", texto: "espera merge", tone: "warning" };
+        : prMergeada
+          ? { mark: "●", texto: "aprende al próximo chequeo", tone: "accent" }
+          : { mark: "●", texto: "espera merge", tone: "warning" };
     case "vuelve":
       return { mark: "↺", texto: "volvió", tone: "warning" };
     case "falla":
@@ -217,7 +228,7 @@ export interface StageRow {
 export function stageRows(run: Run): StageRow[] {
   return stationsOf(run).map((station) => {
     const p = run.fases.find((x) => x.fase === station.fase);
-    const label = phaseLabel(station.fase, station.estado);
+    const label = phaseLabel(station.fase, station.estado, run.prMergeada === true);
     const tries =
       p !== undefined && p.sesiones.length > 1
         ? `${String(p.sesiones.length)} intentos`
@@ -266,7 +277,7 @@ export function headlineOf(run: Run): Headline {
     return { emoji: EMOJI.neutral, texto: "abortado", tone: "neutral" };
   const phase = activePhase(run);
   if (phase === undefined) return { emoji: EMOJI.neutral, texto: run.status, tone: "neutral" };
-  const label = phaseLabel(phase.fase, phase.estado);
+  const label = phaseLabel(phase.fase, phase.estado, run.prMergeada === true);
   const integradas =
     phase.unidades.length === 0
       ? undefined

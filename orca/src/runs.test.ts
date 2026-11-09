@@ -10,6 +10,7 @@ import {
   parseWatch,
   planView,
   rerunPhase,
+  runChip,
   stageRows,
   clock,
   sortRuns,
@@ -118,6 +119,16 @@ test("cada etapa como fila: su estado, sus intentos si hubo más de uno, su tiem
     ],
   );
   assert.equal(clock(3_725), "1:02:05");
+});
+
+// Regresión: con la PR de VF-2 ya mergeada, el panel seguía diciendo «PR ABIERTA» y «espera merge».
+test("un run entregado con la PR mergeada no dice que espera tu merge", () => {
+  const merged: Run = { ...byKey("VF-1"), prMergeada: true };
+  assert.deepEqual(runChip(byKey("VF-1")), { texto: "PR ABIERTA", tone: "success" });
+  assert.deepEqual(runChip(merged), { texto: "PR MERGEADA", tone: "success" });
+  assert.equal(stageRows(byKey("VF-1")).at(-1)?.texto, "espera merge");
+  assert.equal(stageRows(merged).at(-1)?.texto, "aprende al próximo chequeo");
+  assert.equal(headlineOf(merged).texto, "Aprender — aprende al próximo chequeo");
 });
 
 // Si regresiona, el panel ofrece aprobar un run que no espera, o no ofrece rehacer uno detenido.

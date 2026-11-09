@@ -66,6 +66,8 @@ export interface RunTree {
   /** La ruta del repo, para que una vista lo cruce con la carpeta que tiene abierta. */
   readonly repo: string;
   readonly status: RunStatus;
+  /** La PR ya se mergeó: un run entregado espera aprender, no tu merge. */
+  readonly prMergeada: boolean;
   readonly costoUsd: number;
   readonly segundos: number;
   /** Hace cuánto terminó, si ya terminó. */
@@ -337,9 +339,18 @@ export function runTree(input: TreeInput): RunTree {
   });
 
   const id = state.runId;
-  // Un run terminado no sigue sumando tiempo: cuenta hasta su último evento.
+  // El reloj del run para en la entrega: lo que tarda tu merge no es tiempo del run. Un run que no
+  // llegó a entregar y ya terminó cuenta hasta su último evento.
+  const delivered = events.findLast(
+    (e) => e.tipo === "accion_terminada" && e.fase === "entregar" && e.resultado.tipo === "ok",
+  )?.at;
   const lastAt = events.at(-1)?.at;
-  const end = TERMINAL.has(state.status) && lastAt !== undefined ? Date.parse(lastAt) : now;
+  const end =
+    delivered !== undefined
+      ? Date.parse(delivered)
+      : TERMINAL.has(state.status) && lastAt !== undefined
+        ? Date.parse(lastAt)
+        : now;
   const pr = events.findLast((e) => e.tipo === "pr");
   const siguiente =
     state.status === "esperando_aprobacion"
@@ -356,9 +367,10 @@ export function runTree(input: TreeInput): RunTree {
     proyecto: state.proyecto,
     repo: state.repo,
     status: state.status,
+    prMergeada: events.some((e) => e.tipo === "pr_cerrada" && e.mergeada),
     costoUsd: state.costoUsd,
     segundos: created === undefined ? 0 : Math.round((end - Date.parse(created.at)) / 1000),
-    haceSegundos: end === now ? undefined : Math.round((now - end) / 1000),
+    haceSegundos: TERMINAL.has(state.status) ? Math.round((now - end) / 1000) : undefined,
     motivo: state.halt?.motivo,
     siguiente,
     fases,

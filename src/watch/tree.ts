@@ -34,8 +34,9 @@ export interface SessionNode {
   readonly ultimo: string | undefined;
 }
 
+/** `cortada`: estaba corriendo cuando el run terminó (un abort), y ya no corre nada. */
 export type UnitState =
-  "pendiente" | "corriendo" | "commiteada" | "integrada" | "fallida" | "sin_cambios";
+  "pendiente" | "corriendo" | "cortada" | "commiteada" | "integrada" | "fallida" | "sin_cambios";
 
 export interface UnitNode {
   readonly id: string;
@@ -45,7 +46,8 @@ export interface UnitNode {
   readonly sesiones: SessionNode[];
 }
 
-export type PhaseState = "pendiente" | "corriendo" | "ok" | "espera" | "falla" | "vuelve" | "pausa";
+export type PhaseState =
+  "pendiente" | "corriendo" | "cortada" | "ok" | "espera" | "falla" | "vuelve" | "pausa";
 
 export interface PhaseNode {
   readonly fase: Phase;
@@ -237,13 +239,19 @@ export function runTree(input: TreeInput): RunTree {
   const { events, now } = input;
   const state = stateOf(events);
   const created = events.find((e) => e.tipo === "run_creado");
+  // Un run abortado a mitad de una fase no deja su fin: sin esto, la fase, su sub-task y su sesión
+  // seguían «trabajando» horas después, con el reloj y el costo estimado corriendo (CUENTAS-1).
+  const terminal = TERMINAL.has(state.status);
+  const lastAt = events.at(-1)?.at;
+  const clock = terminal && lastAt !== undefined ? Date.parse(lastAt) : now;
 
   const sessions = [...input.sessions.entries()]
     .sort(([, a], [, b]) => a.birthMs - b.birthMs)
     .map(([nombre, file]) => {
       const owner = sessionOwner(nombre);
       const esfuerzo = owner === undefined ? undefined : input.esfuerzos?.[owner.fase];
-      return { owner, node: { ...sessionNode(nombre, file, now), esfuerzo } };
+      const node = sessionNode(nombre, file, clock);
+      return { owner, node: { ...node, corriendo: node.corriendo && !terminal, esfuerzo } };
     });
 
   const unitStates = new Map<string, UnitState>();
@@ -297,7 +305,9 @@ export function runTree(input: TreeInput): RunTree {
           ? "espera"
           : "pendiente"
         : r === undefined
-          ? "corriendo"
+          ? terminal
+            ? "cortada"
+            : "corriendo"
           : r.tipo === "limite"
             ? "pausa"
             : r.tipo;
@@ -323,7 +333,9 @@ export function runTree(input: TreeInput): RunTree {
                 ? "corriendo"
                 : overtaken !== undefined && everIntegrated.has(t.id)
                   ? "integrada"
-                  : (unitStates.get(t.id) ?? "pendiente"),
+                  : terminal && unitStates.get(t.id) === "corriendo"
+                    ? "cortada"
+                    : (unitStates.get(t.id) ?? "pendiente"),
               dependeDe: t.depende_de,
               sesiones: own,
             };
@@ -333,7 +345,7 @@ export function runTree(input: TreeInput): RunTree {
       fase,
       estado,
       segundos:
-        started === undefined ? undefined : Math.round(((ended?.at ?? now) - started) / 1000),
+        started === undefined ? undefined : Math.round(((ended?.at ?? clock) - started) / 1000),
       costoUsd,
       detalle,
       nota,
@@ -348,7 +360,6 @@ export function runTree(input: TreeInput): RunTree {
   const delivered = events.findLast(
     (e) => e.tipo === "accion_terminada" && e.fase === "entregar" && e.resultado.tipo === "ok",
   )?.at;
-  const lastAt = events.at(-1)?.at;
   const end =
     delivered !== undefined
       ? Date.parse(delivered)

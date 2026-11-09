@@ -529,6 +529,17 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. Un `paso()` de una línea en el script, sin dependencias. Los repos que ya tienen su `verify.sh` lo conservan: `init` no lo reescribe.
 - **Desbloquea:** T5.5
 
+### T5.4d · Verificar repara con el lint y el formato del repo los tests bloqueados
+- **Estado:** `[x] Hecho`
+- **Regresión de:** T5.4
+- **Descripción:** en VF-4, un test bloqueado tenía `let ahora = HOY;` y el lint del repo pide `const`. Verify quedaba en rojo, ninguna sub-task lo podía tocar, y el run se trabó cuatro veces: «Reanudar» volvía a verificar el mismo test, y rehacer desde planificar costaba USD 3 a 5 por una palabra. Ahora verificar pasa el lint en modo arreglar y el formateador del repo, `lint_fix` y `format`, por los tests bloqueados que siguen intactos. Si cambian, commitea el arreglo aparte («test: lint y formato de los tests de criterios»), actualiza su hash en `locked.json` y deja un aviso en el log. Un test que cambió por otra cosa sigue deteniendo el run como invariante. El paso del lint y el formateador vive en `src/phases/fixers.ts`, que comparten planificar y verificar.
+- **Lint:** `pnpm lint`.
+- **Test:** `src/phases/verificar.test.ts` › «repara con el lint del repo un test bloqueado, lo commitea con su hash nuevo y sigue»: un test bloqueado con `let`, un lint que lo cambia por `const` y un verify que falla mientras quede un `let`. Verificar sigue, el commit es el del arreglo, el hash es el del archivo arreglado y queda el aviso.
+- **Canario:** con el verificar de main, el test falló con `vuelve`, como VF-4.
+- **Criterio de aprobación:** en un run de un repo con `lint_fix`, un test bloqueado con un error de lint arreglable no traba verify.
+- **Revisión ponytail:** a mano. Un módulo compartido en vez de dos copias del paso.
+- **Desbloquea:** T5.5
+
 ### T5.5 · Diagnosticar en vez de reintentar a ciegas
 - **Estado:** `[x] Hecho`
 - **Descripción:** en PIZ-2, verificar le devolvió tres veces a ST-1 un error que estaba en el entorno, y ST-1 gastó sus reintentos sin nada que cambiar. Ahora: una señal de entorno en la salida de un criterio hace que verificar reinstale y repita, y si persiste se detiene como entorno; una sub-task devuelta que no cambia nada queda `sin_cambios`, sin reintentos; y si el ciclo no converge, porque una sub-task devuelta no cambió nada o el mismo criterio falló dos vueltas seguidas, una sesión de solo lectura diagnostica si el problema es de código, y de qué sub-task, de entorno o del plan. Código devuelve a la sub-task correcta con una instrucción; entorno y plan se detienen con cómo seguir. `watch` muestra resuelto lo que el run dejó atrás.

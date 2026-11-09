@@ -17,18 +17,16 @@ import type { RepoConfig } from "../config/schemas.ts";
 import { checkCommandsFail, checkPlanShape, planSchema, type Plan } from "../gates/plan.ts";
 import { changesSince, commitAll, resetHard } from "../git/git.ts";
 import { GRAFT_TOOLS, graftMcpServer } from "../graft/graft.ts";
-import { shellQuote } from "../agent/env.ts";
-import { runShell, tail } from "../proc/proc.ts";
 import { featureText, render } from "../prompts/render.ts";
 import type { PhaseFn, RunPaths } from "../runner/types.ts";
 import { runSession } from "../agent/session.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
+import { runFixers } from "./fixers.ts";
 import { graftIndex, prepared, runFeature } from "./inputs.ts";
 import { archivePlan, previousDir, replanOf, replanText } from "./plan-anterior.ts";
 
 export const PLANIFICAR_BUDGET_USD = 8;
 export const PLANIFICAR_TIMEOUT_MS = 30 * 60_000;
-export const FORMAT_TIMEOUT_MS = 5 * 60_000;
 
 /** `planificar-3`: un nombre de sesión que no pisa los de intentos anteriores, ni de un rerun. */
 export function sessionName(run: RunPaths, base: string): string {
@@ -173,26 +171,10 @@ export const planificar: PhaseFn = async (ctx) => {
     .filter((c) => c.status !== "borrado")
     .map((c) => c.path);
   if (written.length === 0) problems.push("planificar no escribió ningún test");
-  // Los tests quedan bloqueados byte a byte y ninguna sub-task los puede tocar: se les pasa el lint
-  // en modo arreglar y el formateador acá, antes del gate y del hash. Si no, un `let` que debía ser
-  // `const` o una línea larga dejan verify en rojo sin arreglo, como en VF-4 y VF-1. Lo que el lint no
-  // arregla solo rechaza el plan, y el planificador lo corrige en el próximo intento.
-  const fixers = [
-    { command: config.lint_fix, falla: "el lint dejó errores que no arregla solo" },
-    { command: config.format, falla: "el formateador falló" },
-  ];
-  for (const { command, falla } of fixers) {
-    if (command === undefined || written.length === 0) continue;
-    const fixed = await runShell(`${command} ${written.map(shellQuote).join(" ")}`, {
-      cwd: worktree,
-      env: deps.env,
-      timeoutMs: FORMAT_TIMEOUT_MS,
-    });
-    if (fixed.code !== 0) {
-      problems.push(
-        `${falla} en los tests: \`${command}\` salió ${String(fixed.code)}:\n${tail(fixed, 12)}`,
-      );
-    }
+  // Los tests quedan bloqueados byte a byte: el lint y el formateador del repo los arreglan antes del
+  // gate y del hash. Lo que el lint no arregla solo rechaza el plan, y el planificador lo corrige.
+  for (const f of await runFixers(worktree, config, written, deps.env)) {
+    problems.push(`${f.falla} en los tests: ${f.detalle}`);
   }
   for (const declared of plan.tests.filter((t) => !written.includes(t))) {
     problems.push(`el plan declara el test ${declared}, pero no está escrito`);

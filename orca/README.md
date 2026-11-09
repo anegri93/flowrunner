@@ -27,7 +27,10 @@ como `flowrunner watch`, pensada para el ancho angosto de la barra:
 - Al pie de cada run vivo, separado de las decisiones de la etapa, «Abortar el run»: corta lo que
   corre, en cualquier etapa, y borra sus worktrees; la rama y la PR quedan. Pide confirmación.
 
-Se refresca cada 3 segundos mientras la pestaña se ve.
+Se refresca cada 3 segundos mientras la pestaña se ve, y sigue al proyecto que tenés enfocado en Orca,
+como el explorador y los agentes: muestra los runs de ese proyecto, incluidos los de sus worktrees,
+con su nombre arriba y cuántos runs hay en otros. Para saber cuál está enfocado pide el permiso
+`workspace:read`; sin él, o sin un proyecto enfocado, muestra todos.
 
 - `src/worker.ts` corre el CLI de flowrunner en un shell de login, para tener tu PATH: `watch`,
   `report --sesion`, `plan`, y cada decisión como un comando fijo (`approve`, `changes`, `resume`,

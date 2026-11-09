@@ -3,7 +3,7 @@
 import { execFile } from "node:child_process";
 import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { userInfo } from "node:os";
-import { isAbsolute, join, relative } from "node:path";
+import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import type { OrcaWorkerApi } from "orca/worker";
 import type { Openable, Outcome, Snapshot } from "./protocol";
 import {
@@ -140,6 +140,82 @@ function outcomeOf(proc: Proc): Outcome {
   }
 }
 
+/** El `.git` común de un repo o de cualquiera de sus worktrees: lo que los hace el mismo proyecto. */
+async function gitCommonDir(path: string): Promise<string | undefined> {
+  const proc = await exec("git", [
+    "-C",
+    path,
+    "rev-parse",
+    "--path-format=absolute",
+    "--git-common-dir",
+  ]);
+  if (proc.code !== 0) return undefined;
+  try {
+    return realpathSync(proc.stdout.trim());
+  } catch {
+    return undefined;
+  }
+}
+
+const branchName = (ref: string | null) => (ref ?? "").replace(/^refs\/heads\//, "");
+
+/**
+ * La ruta del workspace enfocado en Orca. `readContext` no la da: se saca de sus terminales, porque el
+ * CLI de Orca dice en qué worktree está cada una. Sin terminales, por su nombre y su rama, si un solo
+ * workspace coincide.
+ */
+async function focusedPath(orca: OrcaWorkerApi): Promise<string | undefined> {
+  const context = await orca.host.call("workspace.readContext");
+  if (context === null) return undefined;
+  if (context.terminals.length > 0) {
+    const proc = await exec(orcaCli(), ["terminal", "list", "--json"]);
+    try {
+      const list = (
+        JSON.parse(proc.stdout) as {
+          result?: { terminals?: { handle?: unknown; ptyId?: unknown; worktreePath?: unknown }[] };
+        }
+      ).result?.terminals;
+      const ids = new Set(context.terminals.map((t) => t.id));
+      const mine = list?.find(
+        (t) =>
+          typeof t.worktreePath === "string" &&
+          ((typeof t.handle === "string" && ids.has(t.handle)) ||
+            (typeof t.ptyId === "string" && ids.has(t.ptyId))),
+      );
+      if (typeof mine?.worktreePath === "string") return mine.worktreePath;
+    } catch {
+      // el CLI no contestó JSON: queda buscar por nombre
+    }
+  }
+  const { workspaces } = await orca.host.call("workspace.list");
+  const same = workspaces.filter(
+    (w) => w.name === context.displayName && branchName(w.branch) === branchName(context.branch),
+  );
+  return same.length === 1 ? same[0]?.path : undefined;
+}
+
+/**
+ * El proyecto del workspace enfocado en Orca, como lo siguen el explorador y los agentes. Sin uno
+ * enfocado, sin el permiso `workspace:read` o si Orca no contesta, ninguno: el panel muestra todos.
+ */
+async function activeProject(
+  orca: OrcaWorkerApi,
+): Promise<{ commonDir: string; nombre: string } | undefined> {
+  let path: string | undefined;
+  try {
+    path = await focusedPath(orca);
+  } catch {
+    return undefined;
+  }
+  if (path === undefined) return undefined;
+  const commonDir = await gitCommonDir(path);
+  if (commonDir === undefined) return undefined;
+  // `.../mango-portal-colaborador/.git` se llama como su repo.
+  const nombre =
+    basename(commonDir) === ".git" ? basename(dirname(commonDir)) : basename(commonDir);
+  return { commonDir, nombre };
+}
+
 function exec(file: string, args: readonly string[]): Promise<Proc> {
   return new Promise((resolve) => {
     execFile(
@@ -177,7 +253,12 @@ export default function activate(orca: OrcaWorkerApi): void {
   orca.panels.handle("flowrunner.runs", async (): Promise<Snapshot> => {
     const at = Date.now();
     try {
-      return { runs: await watch(), at };
+      const runs = await watch();
+      const active = await activeProject(orca);
+      if (active === undefined) return { runs, at };
+      const mine: typeof runs = [];
+      for (const r of runs) if ((await gitCommonDir(r.repo)) === active.commonDir) mine.push(r);
+      return { runs: mine, at, proyecto: active.nombre, otros: runs.length - mine.length };
     } catch (error) {
       return { runs: [], error: error instanceof Error ? error.message : String(error), at };
     }

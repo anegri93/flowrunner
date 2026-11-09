@@ -54,6 +54,105 @@ test("lee los runs con el comando de la config", async () => {
   }
 });
 
+// Si regresiona, el panel muestra los runs de todos los proyectos, en lugar de seguir al proyecto que
+// tiene enfocado Orca como el explorador o los agentes.
+test("lee solo los runs del proyecto enfocado en Orca y cuenta los demás; sin permiso, todos", async () => {
+  const tmp = mkdtempSync(join(tmpdir(), "flowrunner-proyectos-"));
+  const repoA = join(tmp, "videoFactory");
+  const repoB = join(tmp, "pizarra-en-vivo");
+  const gitEnv = {
+    ...process.env,
+    GIT_AUTHOR_NAME: "t",
+    GIT_AUTHOR_EMAIL: "t@t",
+    GIT_COMMITTER_NAME: "t",
+    GIT_COMMITTER_EMAIL: "t@t",
+  };
+  for (const r of [repoA, repoB]) {
+    execFileSync("git", ["init", "-q", "-b", "main", r]);
+    execFileSync("git", ["-C", r, "commit", "-q", "--allow-empty", "-m", "x"], { env: gitEnv });
+  }
+  // Un worktree del repo A, como los que abre Orca o los de un run: es el mismo proyecto.
+  const linked = join(tmp, "videoFactory-otra-rama");
+  execFileSync("git", ["-C", repoA, "worktree", "add", "-q", "-b", "otra", linked]);
+  const watch = join(tmp, "watch.json");
+  const data = JSON.parse(readFileSync(WATCH, "utf8")) as {
+    runs: { clave: string; repo: string }[];
+  };
+  for (const r of data.runs) r.repo = r.clave.startsWith("VF-") ? repoA : repoB;
+  writeFileSync(watch, JSON.stringify(data));
+  process.env.FAKE_WATCH = watch;
+  process.env.ORCA_CLI = FAKE_ORCA;
+  const workspaces = {
+    workspaces: [
+      {
+        id: "a",
+        kind: "worktree",
+        name: "otra",
+        path: linked,
+        branch: "refs/heads/otra",
+        hostId: "local",
+      },
+      {
+        id: "b",
+        kind: "worktree",
+        name: "main",
+        path: repoB,
+        branch: "refs/heads/main",
+        hostId: "local",
+      },
+    ],
+    truncated: false,
+  };
+  const mount = async (
+    context: { branch: string; displayName: string; terminals: { id: string }[] },
+    capabilities?: string[],
+  ) =>
+    mountWorker(main, {
+      host: mockHost({
+        settings: { comando: FAKE },
+        ...(capabilities === undefined ? {} : { capabilities }),
+        results: { "workspace.readContext": context, "workspace.list": workspaces },
+      }),
+    });
+  try {
+    // Por su terminal: el CLI de Orca dice en qué worktree está.
+    process.env.FAKE_TERMINAL = "term_1";
+    process.env.FAKE_TERMINAL_PATH = linked;
+    const byTerminal = await mount({
+      branch: "otra",
+      displayName: "otra",
+      terminals: [{ id: "term_1" }],
+    });
+    const a = await byTerminal.request("flowrunner.runs");
+    await byTerminal.deactivate();
+    assert.deepEqual(
+      a.runs.map((r) => r.clave),
+      ["VF-1", "VF-2"],
+    );
+    assert.deepEqual([a.proyecto, a.otros], ["videoFactory", 1]);
+    // Sin terminales, por nombre y rama.
+    const byName = await mount({ branch: "main", displayName: "main", terminals: [] });
+    const b = await byName.request("flowrunner.runs");
+    await byName.deactivate();
+    assert.deepEqual(
+      b.runs.map((r) => r.clave),
+      ["PIZ-3"],
+    );
+    assert.deepEqual([b.proyecto, b.otros], ["pizarra-en-vivo", 2]);
+    // Sin el permiso `workspace:read`, aprobado todavía no: todos, como antes.
+    const denied = await mount({ branch: "main", displayName: "main", terminals: [] }, [
+      "settings:own",
+    ]);
+    const c = await denied.request("flowrunner.runs");
+    await denied.deactivate();
+    assert.equal(c.runs.length, 3);
+    assert.equal(c.proyecto, undefined);
+  } finally {
+    delete process.env.FAKE_TERMINAL;
+    delete process.env.FAKE_TERMINAL_PATH;
+  }
+});
+
 // Si regresiona, «Pasos» y «Plan» no abren una pestaña de Orca con el archivo, o ensucian el repo.
 test("abrir escribe los pasos o el plan en el .git del repo y los abre como pestaña en su proyecto", async () => {
   const { worker, calls, repo } = await fakeWorker();

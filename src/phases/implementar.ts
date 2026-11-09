@@ -7,6 +7,7 @@ import { loadBrain } from "../brain/brain.ts";
 import { loadRepoConfig } from "../config/load.ts";
 import type { RepoConfig } from "../config/schemas.ts";
 import { blockedByFailure, readyToStart } from "../engine/scheduler.ts";
+import { AVISO_TEST_EXISTENTE, existedAt, testsTouched, undeclared } from "../gates/existente.ts";
 import { allDependencies, type Subtask } from "../gates/plan.ts";
 import {
   addWorktree,
@@ -23,7 +24,7 @@ import type { Outcome, RunEvent } from "../store/events.ts";
 import { checkChanges } from "../tripwires/diff.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
 import type { Scope } from "../tripwires/rules.ts";
-import { featureWorktree, runFeature, unitWorktree } from "./inputs.ts";
+import { featureWorktree, prepared, runFeature, unitWorktree } from "./inputs.ts";
 import { brainVars, readPlan, sessionName } from "./planificar.ts";
 import { SETUP_TIMEOUT_MS } from "./preparar.ts";
 
@@ -298,6 +299,20 @@ export const implementar: PhaseFn = async (ctx) => {
           });
         continue;
       }
+      // No se frena: una sub-task puede tener que actualizar un test existente por un cambio legítimo.
+      // Pero si el plan aprobado no lo declaraba, la persona tiene que verlo en la PR.
+      const existing = await existedAt(
+        wt,
+        prepared(ctx.events).base_sha,
+        testsTouched(changes, config.tests_globs),
+        deps.env,
+      );
+      for (const path of undeclared(existing, plan.cambia_lo_existente))
+        emit({
+          tipo: "aviso",
+          fase: "implementar",
+          texto: `${AVISO_TEST_EXISTENTE}${task.id} cambió ${path}, que ya existía y el plan aprobado no declaraba`,
+        });
       const sha = await commitAll(
         wt,
         `feat: ${task.titulo} · ${task.id}`,

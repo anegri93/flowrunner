@@ -29,6 +29,7 @@ const planWith = (subtareas: Subtask[], criterios: Plan["criterios"] = []): Plan
       : [{ id: "AC-1", comando: "node tests/ac1.mjs", subtarea: subtareas[0]?.id ?? "ST-1" }],
   tests: ["tests/ac1.mjs"],
   decisiones: [],
+  cambia_lo_existente: [],
 });
 
 const TESTS = { "tests/ac1.mjs": "process.exit(1);\n" };
@@ -241,5 +242,47 @@ describe("implementar", () => {
     expect(outcome).toEqual({ tipo: "ok" });
     expect(sim.records).toHaveLength(1);
     expect(sim.records[0]?.prompt).toContain("AC-2 sigue rojo: esperaba 403");
+  });
+
+  describe("un test que ya existía", () => {
+    const OLD = { files: { "tests/viejo.mjs": "process.exit(0);\n" } };
+    const avisos = (dir: string) =>
+      readLog(dir).events.flatMap((e) => (e.tipo === "aviso" ? [e.texto] : []));
+    const rewrites = () =>
+      simQuery(
+        byUnit({
+          "ST-1": [
+            {
+              calls: [
+                write("tests/viejo.mjs", "process.exit(1);\n"),
+                write("tests/nuevo.mjs", "process.exit(0);\n"),
+              ],
+            },
+          ],
+        }),
+      );
+
+    // Si regresiona, una sub-task cambia el test que fija una regla vigente y la PR no lo dice.
+    test("si una sub-task lo cambia y el plan no lo declaraba, queda un aviso; uno nuevo no avisa", async () => {
+      const sim = rewrites();
+      const deps = testDeps({ query: sim.query });
+      const { run } = await plannedRun(planWith([st("ST-1", ["tests/"])]), TESTS, deps, OLD);
+      expect(await implementar(contextFor(run, "implementar", deps))).toEqual({ tipo: "ok" });
+      expect(avisos(run.dir)).toEqual([
+        "test existente cambiado: ST-1 cambió tests/viejo.mjs, que ya existía y el plan aprobado no declaraba",
+      ]);
+    });
+
+    test("si el plan aprobado lo declaraba, no avisa de nuevo", async () => {
+      const sim = rewrites();
+      const deps = testDeps({ query: sim.query });
+      const plan = {
+        ...planWith([st("ST-1", ["tests/"])]),
+        cambia_lo_existente: [{ que: "q", donde: "tests/viejo.mjs:1", criterio: "AC-1" }],
+      };
+      const { run } = await plannedRun(plan, TESTS, deps, OLD);
+      expect(await implementar(contextFor(run, "implementar", deps))).toEqual({ tipo: "ok" });
+      expect(avisos(run.dir)).toEqual([]);
+    });
   });
 });

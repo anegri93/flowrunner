@@ -58,6 +58,7 @@ const PLAN: Plan = {
   ],
   tests: ["tests/ac1.mjs", "tests/ac2.mjs"],
   decisiones: [{ que: "dos archivos", por_que: "son independientes" }],
+  cambia_lo_existente: [],
 };
 const planScript = (delayMs?: number): SimScript => ({
   match: "Sos el planificador",

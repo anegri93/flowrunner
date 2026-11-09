@@ -67,6 +67,7 @@ const ONE: Plan = {
   criterios: [{ id: "AC-1", comando: "node tests/ac1.mjs", subtarea: "ST-1" }],
   tests: ["tests/ac1.mjs"],
   decisiones: [{ que: "a", por_que: "b" }],
+  cambia_lo_existente: [],
 };
 
 /** AC-1 la cubre ST-1, pero lo que la rompe está en el archivo de ST-2. */

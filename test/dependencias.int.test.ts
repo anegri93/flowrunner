@@ -24,6 +24,7 @@ const PLAN: Plan = {
   criterios: [{ id: "AC-1", comando: "node tests/ac1.mjs", subtarea: "ST-1" }],
   tests: ["tests/ac1.mjs"],
   decisiones: [{ que: "jsqr", por_que: "decodifica QR" }],
+  cambia_lo_existente: [],
 };
 const write = (file_path: string, content: string) => ({
   tool: "Write",

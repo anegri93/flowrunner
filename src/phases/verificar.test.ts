@@ -3,14 +3,14 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { plannedRun } from "../../test/helpers/planned.ts";
-import { git as gitOut } from "../../test/helpers/git.ts";
+import { git as gitOut, repoWith } from "../../test/helpers/git.ts";
 import { contextFor, testDeps, writeFiles } from "../../test/helpers/project.ts";
 import type { Plan } from "../gates/plan.ts";
 import { commitAll } from "../git/git.ts";
 import { verifyScript } from "../setup/infer.ts";
 import { readLog } from "../store/run-log.ts";
 import { readPlan } from "./planificar.ts";
-import { verificar } from "./verificar.ts";
+import { namedFiles, verificar } from "./verificar.ts";
 
 const plan: Plan = {
   plan: "plan",
@@ -153,5 +153,54 @@ describe("verificar", () => {
     const outcome = await verificar(contextFor(run, "verificar", deps));
     expect(outcome).toMatchObject({ tipo: "vuelve", unidades: ["ST-1", "ST-2"] });
     expect(outcome.tipo === "vuelve" && outcome.motivo).toMatch(/lint: 2 errores/);
+  });
+
+  // Si regresiona, un verify rojo por un archivo de una sola sub-task le devuelve trabajo a todas.
+  test("verify rojo en un archivo con dueño: vuelve solo esa sub-task", async () => {
+    const { run, deps } = await featureWith(
+      { "src/csv.js": "x", "src/permiso.js": "403" },
+      'if [ -f src/permiso.js ]; then echo "src/permiso.js:1:1  error  falta punto y coma" >&2; exit 1; fi',
+    );
+    const outcome = await verificar(contextFor(run, "verificar", deps));
+    expect(outcome).toMatchObject({ tipo: "vuelve", unidades: ["ST-2"] });
+  });
+
+  // Regresión: en CUENTAS-1, dos seeds que llamaban a una función que cambió rompían el typecheck y no
+  // estaban en ningún alcance. Devolver trabajo a implementar se iba a repetir hasta agotar intentos.
+  test("verify rojo solo en archivos sin dueño: se detiene con el archivo y cómo replanificar", async () => {
+    const { run, deps } = await featureWith(
+      { "src/csv.js": "x", "src/permiso.js": "403" },
+      'if [ -f src/csv.js ]; then echo "src/seeds/seed-nomina.js(213,5): error TS18047: usuario is possibly null" >&2; exit 1; fi',
+      { "src/seeds/seed-nomina.js": "usar(usuario);\n" },
+    );
+    const outcome = await verificar(contextFor(run, "verificar", deps));
+    expect(outcome).toMatchObject({ tipo: "falla", clase: "entorno" });
+    expect(outcome.tipo === "falla" && outcome.motivo).toContain(
+      "verify está en rojo por src/seeds/seed-nomina.js, y ningún archivo de esos está en el alcance de una sub-task",
+    );
+    expect(outcome.tipo === "falla" && outcome.motivo).toContain(
+      `flowrunner rerun ${run.id} --desde planificar`,
+    );
+  });
+});
+
+describe("namedFiles", () => {
+  // Si regresiona, la salida de tsc dentro de un paquete del monorepo no se atribuye a ningún archivo.
+  test("reconoce rutas con línea, absolutas o relativas a un paquete, y no lo que no es del repo", async () => {
+    const repo = repoWith({
+      "apps/api/src/seeds/seed-nomina.ts": "x\n",
+      "apps/api/src/usuarios/usuarios.service.ts": "x\n",
+      "README.md": "x\n",
+    });
+    const output = [
+      "src/seeds/seed-nomina.ts(213,5): error TS18047",
+      `${repo}/apps/api/src/usuarios/usuarios.service.ts:168:3 error`,
+      "README.md sin línea no cuenta",
+      "node_modules/x/index.js:1:1 tampoco, no es del repo",
+    ].join("\n");
+    expect((await namedFiles(output, repo, process.env)).sort()).toEqual([
+      "apps/api/src/seeds/seed-nomina.ts",
+      "apps/api/src/usuarios/usuarios.service.ts",
+    ]);
   });
 });

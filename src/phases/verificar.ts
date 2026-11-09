@@ -201,13 +201,60 @@ export const verificar: PhaseFn = async (ctx) => {
   const verify = await runVerify(worktree, config, deps.env);
   if (!verify.ok) {
     if (verify.unrunnable) return { tipo: "falla", clase: "entorno", motivo: verify.detail };
-    // ponytail: un verify rojo con todos los criterios verdes vuelve con todas las sub-tasks; no se
-    // adivina cuál lo rompió. Salida: atribuirlo por los archivos que nombra la salida.
+    // Se atribuye por los archivos que nombra la salida: vuelve la sub-task dueña de cada uno. Sin
+    // archivos reconocibles, vuelven todas, porque no se adivina cuál lo rompió.
+    const output =
+      verify.result === undefined
+        ? verify.detail
+        : `${verify.result.stdout}\n${verify.result.stderr}`;
+    const named = (await namedFiles(output, worktree, deps.env)).filter(
+      (f) => !Object.keys(plan.locked).includes(f),
+    );
+    const ownerOf = (file: string) =>
+      plan.subtareas.filter((t) => t.alcance.some((a) => covers(a, file)));
+    const owners = [...new Set(named.flatMap((f) => ownerOf(f).map((t) => t.id)))];
+    const orphans = named.filter((f) => ownerOf(f).length === 0);
+    if (named.length > 0 && owners.length === 0) {
+      // Devolverlo no sirve: ninguna sub-task puede escribir esos archivos, y el ciclo se repetiría
+      // hasta agotar los intentos (CUENTAS-1, con seeds que llamaban a una función que cambió).
+      return {
+        tipo: "falla",
+        clase: "entorno",
+        motivo: `verify está en rojo por ${orphans.slice(0, 5).join(", ")}${orphans.length > 5 ? ` y ${String(orphans.length - 5)} más` : ""}, y ningún archivo de esos está en el alcance de una sub-task: nadie lo puede arreglar. Para replanificar con esos archivos en algún alcance: flowrunner rerun ${run.id} --desde planificar\n\n${verify.detail}`,
+      };
+    }
     return {
       tipo: "vuelve",
-      unidades: plan.subtareas.map((t) => t.id),
-      motivo: `los criterios pasan pero verify está en rojo: ${verify.detail}`,
+      unidades: owners.length > 0 ? owners : plan.subtareas.map((t) => t.id),
+      motivo: `los criterios pasan pero verify está en rojo${owners.length > 0 ? ` en ${named.join(", ")}` : ""}: ${verify.detail}`,
     };
   }
   return { tipo: "ok" };
 };
+
+const normalize = (p: string) => p.replace(/^\.\//, "").replace(/\/+$/, "");
+const covers = (scope: string, file: string) =>
+  file === normalize(scope) || file.startsWith(`${normalize(scope)}/`);
+
+/**
+ * Los archivos versionados que nombra una salida con su línea, como `src/a.ts:12`, `src/a.ts(12,5)` o
+ * la ruta absoluta del worktree. Una ruta relativa a un paquete del monorepo, como la que imprime
+ * `tsc` desde `apps/api`, cuenta si termina un único archivo del repo.
+ */
+export async function namedFiles(
+  output: string,
+  worktree: string,
+  env: NodeJS.ProcessEnv,
+): Promise<string[]> {
+  const tracked = (await git(worktree, ["ls-files"], env)).split("\n").filter((f) => f !== "");
+  const relative = output.replaceAll(`${worktree}/`, "");
+  const mentioned = [
+    ...relative.matchAll(/(?:^|[\s'"`(])((?:[\w@.-]+\/)*[\w@.-]+\.[A-Za-z0-9]{1,6})(?=[:(]\d)/gm),
+  ].map((m) => (m[1] ?? "").replace(/^\.\//, ""));
+  const found = mentioned.flatMap((m) => {
+    if (tracked.includes(m)) return [m];
+    const suffix = tracked.filter((t) => t.endsWith(`/${m}`));
+    return suffix.length === 1 ? suffix : [];
+  });
+  return [...new Set(found)];
+}

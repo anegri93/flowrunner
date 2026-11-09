@@ -48,6 +48,12 @@ export const cambioExistenteSchema = z.object({
     .min(1)
     .describe("archivo:línea del código o del test que hoy fija ese comportamiento"),
   criterio: z.string().min(1).describe("el criterio de la feature que obliga a cambiarlo, AC-n"),
+  simbolo: z
+    .string()
+    .optional()
+    .describe(
+      "si cambia la firma o el contrato de una función o un método: su nombre, como `Clase.metodo` o `funcion`. flowrunner busca a todos sus llamadores",
+    ),
 });
 export type CambioExistente = z.infer<typeof cambioExistenteSchema>;
 

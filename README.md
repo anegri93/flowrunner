@@ -52,9 +52,11 @@ Una vez por repo. El repo tiene que estar en GitHub y su rama base en verde.
    flowrunner init ~/ruta/al/repo --aplicar
    ```
 
-3. En esa PR, revisá la config que infirió y completá `contexto.md`, `convenciones.md` y
-   `que-es-bien.md`, o pedile a Claude que los redacte a partir del README y el `CLAUDE.md` del repo.
-   Después mergeala: los runs leen el cerebro desde la rama base.
+3. En esa PR, revisá la config que infirió y el borrador de `contexto.md`, `convenciones.md` y
+   `que-es-bien.md`: init lo redacta leyendo el código del repo y lo deja en una sección
+   «Borrador de flowrunner init», con los archivos de los que salió. Corregí lo que no sea así y
+   escribí tus reglas arriba de esa sección. Después mergeala: los runs leen el cerebro desde la rama
+   base.
 
 4. Confirmá que quedó listo. Todo tiene que salir con ✓:
 

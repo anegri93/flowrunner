@@ -1,12 +1,14 @@
 // flowrunner init: infiere la config de un repo real, comprueba la base y, con --aplicar, deja la
 // máquina y el repo listos. Con repos en tmpdir, el gh y el claude falsos, y un HOME de prueba.
 import { execFileSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { parse } from "yaml";
 import { describe, expect, test } from "vitest";
 import { runCli, TEST_BIN } from "./helpers/cli.ts";
 import { git, repoWithRemote, tempDir } from "./helpers/git.ts";
+import type { SimScript } from "./helpers/sim-sdk.ts";
+import { SIM_HOOKS } from "./helpers/sim-world.ts";
 
 const LOCK = JSON.stringify({
   name: "pizarra",
@@ -20,13 +22,38 @@ const GRAFT_DIR = dirname(
 );
 const SYSTEM_BIN = [GRAFT_DIR, "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"];
 
-function world(testScript = "node -e 0") {
+/** El borrador que redacta la sesión simulada: cita archivos del repo de prueba. */
+function draftScript(fuente = "servidor/api.ts"): SimScript {
+  return {
+    match: "Sos el que arma el cerebro",
+    calls: [{ tool: "Read", input: { file_path: "servidor/api.ts" } }],
+    output: {
+      convenciones: {
+        texto: "- Los errores de la API salen como `ErrorDeApi`, como en `servidor/api.ts`.",
+        fuentes: [fuente],
+      },
+      contexto: {
+        texto: "### Qué reusar antes de escribir\n\n- `servidor/api.ts`: el cliente HTTP.",
+        fuentes: ["servidor/api.ts"],
+      },
+      que_es_bien: {
+        texto: "- Cada endpoint nuevo trae su test al lado, como `servidor/api.test.ts`.",
+        fuentes: ["servidor/api.test.ts"],
+      },
+    },
+  };
+}
+
+function world(testScript = "node -e 0", draft = draftScript()) {
   const { work, remote } = repoWithRemote({
     "package.json": JSON.stringify({ name: "pizarra", scripts: { test: testScript } }),
     "package-lock.json": LOCK,
     "vitest.config.ts": "export default {};\n",
+    "servidor/api.ts": "export class ErrorDeApi extends Error {}\n",
     "servidor/api.test.ts": "// test\n",
   });
+  const scripts = join(tempDir("init-guiones-"), "guiones.json");
+  writeFileSync(scripts, JSON.stringify([draft]));
   const home = tempDir("init-home-");
   const localBin = join(home, ".local", "bin");
   mkdirSync(localBin, { recursive: true });
@@ -39,6 +66,9 @@ function world(testScript = "node -e 0") {
     TMPDIR: process.env.TMPDIR ?? "/tmp",
     FAKE_LOG_DIR: tempDir("init-logs-"),
     FLOWRUNNER_LAUNCH_AGENTS: tempDir("init-agents-"),
+    // El SDK simulado: la sesión del borrador corre de verdad, con el guion de `draft`.
+    FLOWRUNNER_TEST_HOOKS: SIM_HOOKS,
+    FAKE_SIM_SCRIPTS: scripts,
     GIT_AUTHOR_NAME: "test",
     GIT_AUTHOR_EMAIL: "test@example.com",
     GIT_COMMITTER_NAME: "test",
@@ -55,6 +85,16 @@ interface Paso {
 const pasos = (stdout: string) => (JSON.parse(stdout) as { pasos: Paso[] }).pasos;
 const paso = (stdout: string, que: string) => pasos(stdout).find((p) => p.que === que);
 const remoteBranches = (remote: string) => git(remote, "branch", "--format=%(refname:short)");
+const brainFile = (remote: string, file: string) =>
+  git(remote, "show", `chore/flowrunner-init:.flowrunner/${file}`);
+const template = (file: string) =>
+  readFileSync(join(import.meta.dirname, "..", "templates", "brain", file), "utf8").trimEnd();
+const prBody = (env: NodeJS.ProcessEnv) =>
+  (
+    JSON.parse(readFileSync(join(env.FAKE_LOG_DIR ?? "", "gh-state.json"), "utf8")) as {
+      prs: { body: string }[];
+    }
+  ).prs[0]?.body ?? "";
 
 describe("init", () => {
   // Si regresiona, mirar el informe de init ya cambia la máquina o el repo de la persona.
@@ -72,6 +112,45 @@ describe("init", () => {
     ).toBe(false);
     expect(existsSync(join(w.home, ".claude"))).toBe(false);
     expect(remoteBranches(w.remote)).toBe("main");
+    // Si regresiona, mirar el informe cuesta una sesión del modelo.
+    expect(existsSync(join(w.home, "prompts.log"))).toBe(false);
+  }, 120_000);
+
+  // Si regresiona, el cerebro llega vacío y los runs no siguen la lógica que el repo ya tiene.
+  test("con --aplicar redacta convenciones, contexto y qué es bien con lo que leyó del repo", () => {
+    const w = world();
+    const out = runCli(["init", w.work, "--aplicar", "--json"], w.env);
+    expect(out.status, out.stdout + out.stderr).toBe(0);
+    expect(paso(out.stdout, "borrador del cerebro")).toMatchObject({ estado: "inferido" });
+
+    const convenciones = brainFile(w.remote, "convenciones.md");
+    expect(convenciones.startsWith(template("convenciones.md"))).toBe(true);
+    expect(convenciones).toContain("## Borrador de flowrunner init");
+    expect(convenciones).toContain("Los errores de la API salen como `ErrorDeApi`");
+    expect(convenciones).toContain("Fuentes: `servidor/api.ts`");
+    expect(brainFile(w.remote, "contexto.md")).toContain("### Qué reusar antes de escribir");
+    expect(brainFile(w.remote, "que-es-bien.md")).toContain("como `servidor/api.test.ts`");
+    expect(prBody(w.env)).toContain("traen un borrador que init dedujo");
+
+    // La sesión recibió el repo real: sus archivos y sus commits.
+    const prompt = readFileSync(join(w.home, "prompts.log"), "utf8");
+    expect(prompt).toContain("Sos el que arma el cerebro");
+    expect(prompt).toContain("servidor/api.ts");
+    expect(prompt).toContain("inicial");
+  }, 120_000);
+
+  // Si regresiona, la PR del cerebro afirma reglas sobre archivos que no existen en el repo.
+  test("si el borrador cita un archivo que no existe, quedan las plantillas y la PR igual se abre", () => {
+    const w = world("node -e 0", draftScript("servidor/inventado.ts"));
+    const out = runCli(["init", w.work, "--aplicar", "--json"], w.env);
+    expect(out.status, out.stdout + out.stderr).toBe(0);
+    expect(paso(out.stdout, "borrador del cerebro")).toMatchObject({ estado: "pendiente" });
+    expect(paso(out.stdout, "borrador del cerebro")?.detalle).toContain("servidor/inventado.ts");
+    for (const file of ["convenciones.md", "contexto.md", "que-es-bien.md"]) {
+      expect(brainFile(w.remote, file)).toBe(template(file));
+    }
+    expect(paso(out.stdout, "PR del cerebro")?.detalle).toMatch(/pull\/412/);
+    expect(prBody(w.env)).toContain("completá `contexto.md`");
   }, 120_000);
 
   // Si regresiona, la persona tiene que hacer a mano los nueve pasos de la puesta en marcha.

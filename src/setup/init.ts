@@ -6,6 +6,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -25,6 +26,8 @@ import { fetchOrigin, git, GitError, pushBranch, removeWorktree } from "../git/g
 import { createPr, findPr } from "../github/gh.ts";
 import { runVerify } from "../phases/verify.ts";
 import { runProc, runShell, tail } from "../proc/proc.ts";
+import type { Deps, RunPaths } from "../runner/types.ts";
+import { draftBrain, DRAFT_HEADING } from "./draft.ts";
 import { inferRepo } from "./infer.ts";
 
 export const INIT_BRANCH = "chore/flowrunner-init";
@@ -73,14 +76,26 @@ async function onPath(env: NodeJS.ProcessEnv): Promise<boolean> {
   return (await runShell("command -v flowrunner", { cwd: process.cwd(), env })).code === 0;
 }
 
+/**
+ * Dónde deja init el stream de la sesión del borrador, porque no tiene un run propio. Borra el de
+ * una corrida anterior; va fuera de `init/`, donde viven los worktrees por nombre de proyecto.
+ */
+function draftSession(env: NodeJS.ProcessEnv, name: string): RunPaths {
+  const home = flowrunnerHome(env);
+  const dir = join(home, "init-sesiones", name);
+  rmSync(join(dir, "sesiones"), { recursive: true, force: true });
+  return { id: `init-${name}`, home, dir, worktrees: join(home, "init") };
+}
+
 /** El cerebro del repo, inferido sobre un worktree limpio de la base, con la base comprobada. */
 async function brainSteps(
   repo: string,
   worktree: string,
   base: string,
   aplicar: boolean,
-  env: NodeJS.ProcessEnv,
+  deps: Deps,
 ): Promise<Paso[]> {
+  const { env } = deps;
   const exists = await git(repo, ["cat-file", "-e", `origin/${base}:.flowrunner/config.yaml`], env)
     .then(() => true)
     .catch(() => false);
@@ -150,6 +165,27 @@ async function brainSteps(
       });
       return pasos;
     }
+    const draft = await draftBrain({
+      worktree,
+      files,
+      hallazgos: inferred.hallazgos,
+      config,
+      session: draftSession(env, projectNameFor(repo)),
+      deps,
+    });
+    pasos.push(
+      draft.tipo === "ok"
+        ? {
+            que: "borrador del cerebro",
+            estado: "inferido",
+            detalle: `convenciones.md, contexto.md y que-es-bien.md, leyendo el código (USD ${draft.costoUsd.toFixed(2)})`,
+          }
+        : {
+            que: "borrador del cerebro",
+            estado: "pendiente",
+            detalle: `no se redactó: ${draft.motivo}. Quedan las plantillas para completar a mano`,
+          },
+    );
     await git(worktree, ["switch", "--quiet", "-C", INIT_BRANCH], env);
     await git(worktree, ["add", ".flowrunner"], env);
     await git(
@@ -166,8 +202,16 @@ async function brainSteps(
         "",
         ...inferred.hallazgos.map((h) => `- **${h.que}:** ${h.detalle}`),
         "",
-        "Antes de mergear, completá `contexto.md`, `convenciones.md` y `que-es-bien.md`:",
-        "son plantillas y planificar, implementar y revisar los leen en cada run.",
+        ...(draft.tipo === "ok"
+          ? [
+              "`contexto.md`, `convenciones.md` y `que-es-bien.md` traen un borrador que init dedujo",
+              `del código, en la sección «${DRAFT_HEADING.replace(/^## /, "")}». Revisalo antes de mergear:`,
+              "planificar, implementar y revisar lo leen en cada run.",
+            ]
+          : [
+              "Antes de mergear, completá `contexto.md`, `convenciones.md` y `que-es-bien.md`:",
+              "son plantillas y planificar, implementar y revisar los leen en cada run.",
+            ]),
         "",
       ].join("\n"),
     );
@@ -187,7 +231,8 @@ async function brainSteps(
   }
 }
 
-export async function init(path: string, env: NodeJS.ProcessEnv, aplicar: boolean) {
+export async function init(path: string, deps: Deps, aplicar: boolean) {
+  const { env } = deps;
   const repo = await gitRootOf(path, env);
   const name = projectNameFor(repo);
   const pasos: Paso[] = [];
@@ -235,7 +280,14 @@ export async function init(path: string, env: NodeJS.ProcessEnv, aplicar: boolea
   if (!pasos.some((p) => p.que === "remote origin")) {
     try {
       pasos.push(
-        ...(await brainSteps(repo, join(flowrunnerHome(env), "init", name), base, aplicar, env)),
+        ...(await brainSteps(
+          repo,
+          join(flowrunnerHome(env), "init", name),
+          base,
+          aplicar,
+          // La config global todavía puede no existir: la sesión usa el auth que init acaba de inferir.
+          auth === "login" ? { ...deps, env: { ...env, FLOWRUNNER_AUTH: "login" } } : deps,
+        )),
       );
     } catch (error) {
       if (!(error instanceof ConfigError || error instanceof GitError)) throw error;

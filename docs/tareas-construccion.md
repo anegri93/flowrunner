@@ -950,6 +950,16 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. Sin spinner ni dependencias: una línea por evento en stderr.
 - **Desbloquea:** Gate final
 
+### T9.8 · Una sesión en modo login no depende de que el lanzador pase USER
+- **Estado:** `[x] Hecho`
+- **Descripción:** en VF-4, implementar falló dos veces con «Claude rechazó la credencial de la sesión: revisá el token del Keychain» después de aprobar y reanudar desde el panel de Orca. Las sesiones respondían «Not logged in». Orca lanza su host de plugins sin USER, y Claude Code busca su sesión del Keychain con la cuenta de USER: `claude auth status` sin USER da `loggedIn: false`. El worker de Orca ya pasa USER desde T8.9c. Ahora además `buildSessionEnv` completa USER con LOGNAME o con el usuario del sistema, así que ningún otro lanzador vuelve a dejar las sesiones sin login. El motivo de la falla depende del modo: en modo token sigue mandando a revisar el token del Keychain, y en modo login dice que Claude Code no encontró la sesión y cómo revisarla.
+- **Lint:** `pnpm lint`.
+- **Test:** `src/agent/env.test.ts` › «completa USER cuando el lanzador no lo pasa»: USER propio, LOGNAME o el usuario del sistema; el test de lo que pasa a la sesión ahora espera USER. `src/agent/session.test.ts` › «en modo login, sin sesión, el motivo dice cómo revisar la sesión de Claude Code»; el test de la credencial rechazada pasó a modo token, donde el motivo no cambia.
+- **Canario:** con `env.ts` y `session.ts` de la base, los 3 tests que cambiaron fallaron. Restaurado.
+- **Criterio de aprobación:** un run aprobado o reanudado con un entorno sin USER arranca implementar con la sesión de Claude Code de la persona.
+- **Revisión ponytail:** a mano. Una línea en `buildSessionEnv` y el motivo según el entorno que ya se arma; `doctor` no cambia porque se corre desde la terminal.
+- **Desbloquea:** Gate final
+
 ### Gate Fase 9
 - **Estado:** `[~] En progreso` — falta correrlo sobre un repo real
 - **Validación de lint:** `pnpm lint` verde.

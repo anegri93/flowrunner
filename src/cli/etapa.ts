@@ -4,10 +4,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { stateOf } from "../engine/engine.ts";
+import { lastTestDir } from "../phases/probar.ts";
 import { reviewSchema } from "../phases/revisar.ts";
 import { planChanges, previousDir } from "../phases/plan-anterior.ts";
 import { readPlan, readPlanAt } from "../phases/planificar.ts";
-import { phaseSummaries, plain } from "../report/report.ts";
+import { phaseSummaries, plain, testResults } from "../report/report.ts";
 import type { RunPaths } from "../runner/types.ts";
 import { PHASES, type Outcome, type Phase, type RunEvent } from "../store/events.ts";
 import { readLog } from "../store/run-log.ts";
@@ -22,6 +23,7 @@ const NAMES: Record<Phase, string> = {
   implementar: "Implementar",
   verificar: "Verificar",
   revisar: "Revisar",
+  probar: "Probar",
   entregar: "Entregar",
   aprender: "Aprender",
 };
@@ -183,6 +185,10 @@ function own(events: readonly RunEvent[], run: RunPaths, fase: Phase): string[] 
                 `- **${h.severidad}** \`${h.archivo}:${String(h.linea)}\` (${h.subtarea}): ${plain(h.afirmacion)}${h.regla === "" ? "" : ` · ${plain(h.regla)}`}`,
             ),
       );
+    }
+    case "probar": {
+      const dir = lastTestDir(run);
+      return dir === undefined ? [] : section("Pruebas en el entorno", testResults(dir, true));
     }
     case "entregar": {
       const pr = events.findLast((e) => e.tipo === "pr");

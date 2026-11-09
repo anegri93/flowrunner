@@ -1,10 +1,12 @@
 // El informe del run, armado solo con los eventos del log. Lo que escribió un modelo se muestra como
 // texto: ningún `<` o `>` se interpreta.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { stateOf } from "../engine/engine.ts";
 import { AVISO_TEST_EXISTENTE } from "../gates/existente.ts";
 import type { CambioExistente } from "../gates/plan.ts";
+import { lastTestDir, readTests } from "../phases/probar.ts";
 import { reviewSchema } from "../phases/revisar.ts";
 import type { RunPaths } from "../runner/types.ts";
 import { PHASES, type Phase, type RunEvent } from "../store/events.ts";
@@ -128,6 +130,7 @@ export function buildReport(events: readonly RunEvent[], run: RunPaths): string 
   const lines = [
     ...header(events, run),
     ...(existing.length === 0 ? [] : ["", ...existing]),
+    ...tested(run, true),
     ...howToTest(run),
     ...decisions(events),
     "",
@@ -168,6 +171,36 @@ export function writeReport(run: RunPaths, events: readonly RunEvent[]): string 
   const text = buildReport(events, run);
   writeFileSync(join(run.dir, "informe.md"), text);
   return text;
+}
+
+const RESULT = { ok: "✅", falla: "❌", no_probado: "⚪ sin probar" } as const;
+
+/**
+ * Lo que probó la fase probar en el entorno, prueba por prueba. Con `paths`, dónde quedó la evidencia:
+ * el log de la API y los videos, que son locales y no van a la PR.
+ */
+export function testResults(dir: string, paths: boolean): string[] {
+  const { pruebas, videos } = readTests(dir);
+  if (pruebas === undefined) return ["La sesión no llegó a devolver las pruebas."];
+  const lines = pruebas.pruebas.flatMap((p) => [
+    `- ${RESULT[p.resultado]} **${p.criterio === "" ? "—" : plain(p.criterio)}** ${plain(p.que)}`,
+    ...p.pasos.map((s, i) => `    ${String(i + 1)}. ${plain(s)}`),
+    `    - Evidencia: ${plain(p.evidencia)}`,
+  ]);
+  if (!paths) return lines;
+  const log = join(dir, "http.md");
+  return [
+    ...lines,
+    "",
+    `Evidencia en \`${dir}\`:`,
+    ...(existsSync(log) ? [`- [Log de la API](${pathToFileURL(log).href})`] : []),
+    ...videos.map((v) => `- [Video ${basename(v)}](${pathToFileURL(v).href})`),
+  ];
+}
+
+function tested(run: RunPaths, paths: boolean): string[] {
+  const dir = lastTestDir(run);
+  return dir === undefined ? [] : ["", "## Pruebas en el entorno", "", ...testResults(dir, paths)];
 }
 
 /** El paso a paso para probar la feature a mano, que escribe la última revisión. */
@@ -251,6 +284,7 @@ export function prBody(events: readonly RunEvent[], run: RunPaths): string {
     "## Criterios",
     "",
     criteria,
+    ...tested(run, false),
     ...howToTest(run),
     "",
     "## Plan",

@@ -9,6 +9,7 @@ export const AGENT_PHASES = [
   "explorar",
   "implementar",
   "revisar",
+  "probar",
   "aprender",
 ] as const;
 export type AgentPhase = (typeof AGENT_PHASES)[number];
@@ -21,6 +22,7 @@ export const DEFAULT_MODELS: Record<AgentPhase, ModelChoice> = {
   explorar: { model: "claude-haiku-5-5", effort: "low" },
   implementar: { model: "claude-sonnet-5-5", effort: "high" },
   revisar: { model: "claude-opus-5-5", effort: "high" },
+  probar: { model: "claude-sonnet-5-5", effort: "high" },
   aprender: { model: "claude-sonnet-5-5", effort: "medium" },
 };
 
@@ -48,6 +50,22 @@ export const repoConfigSchema = z
     /** Tope opcional en USD por run. Sin él, el run no se corta por gasto. */
     budget: z.strictObject({ run_usd: z.number().positive() }).optional(),
     models: z.partialRecord(z.enum(AGENT_PHASES), modelChoice).default({}),
+    /** Cómo levantar el entorno de desarrollo para que la fase probar use la feature. Sin él, se saltea. */
+    probar: z
+      .strictObject({
+        /** Deja el entorno respondiendo en `urls`; puede quedar corriendo o terminar. Nunca contra datos reales. */
+        levantar: z.string().min(1),
+        /** Baja lo que `levantar` dejó desacoplado, como un `stop.sh`. */
+        bajar: z.string().min(1).optional(),
+        /** Lo que el agente puede tocar, por nombre: `{ api: "http://localhost:3000" }`. */
+        urls: z.record(z.string().min(1), z.url({ protocol: /^https?$/ })),
+        /** Archivos fuera de git, como los `.env`, que se copian del repo al worktree de la feature. */
+        env_files: z.array(relativePath).default([]),
+        /** Lo que el agente necesita saber para probar: usuarios de prueba, cómo entrar. */
+        notas: z.string().default(""),
+        espera_segundos: z.int().min(1).max(1800).default(300),
+      })
+      .optional(),
   })
   .transform((config) => ({ ...config, models: { ...DEFAULT_MODELS, ...config.models } }));
 export type RepoConfig = z.output<typeof repoConfigSchema>;

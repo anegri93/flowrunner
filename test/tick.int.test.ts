@@ -27,7 +27,7 @@ describe("tick", () => {
       acciones: [`${id}: retomado después del límite`],
     });
     await waitFor("entregado otra vez", () => stateNow(w, id).status === "entregado");
-    expect(executions(w, id).slice(-2)).toEqual(["revisar", "entregar"]);
+    expect(executions(w, id).slice(-3)).toEqual(["revisar", "probar", "entregar"]);
   });
 
   test("PR abierta: sin cambios; PR cerrada sin merge: cerrado sin ninguna sesión", async () => {

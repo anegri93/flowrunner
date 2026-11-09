@@ -50,7 +50,7 @@ export const entregar: PhaseFn = async (ctx) => {
       );
     }
     emit({ tipo: "pr", url: pr.url, numero: pr.number });
-    const rounds = state.vueltas.verificar + state.vueltas.revisar;
+    const rounds = Object.values(state.vueltas).reduce((a, b) => a + b, 0);
     deps.notify(
       "flowrunner",
       `${feature.clave}: PR abierta${rounds === 0 ? "" : `, ${rounds} ${rounds === 1 ? "vuelta" : "vueltas"}`}. Pedile a Claude que te explique el informe.`,

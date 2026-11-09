@@ -23,6 +23,8 @@ export interface HookPolicy {
   readonly agents: boolean;
   /** Las herramientas del servidor MCP de graft. */
   readonly graft: boolean;
+  /** Otras herramientas MCP permitidas, por nombre completo: `mcp__<servidor>__<herramienta>`. */
+  readonly mcp?: readonly string[];
 }
 
 const READ_ONLY = new Set(["Read", "Grep", "Glob", "TodoWrite", "StructuredOutput"]);
@@ -83,6 +85,14 @@ export function decide(
     default:
       if (READ_ONLY.has(tool)) return { verdict: { ok: true } };
       if (tool.startsWith("mcp__graft__") && policy.graft) return { verdict: { ok: true } };
+      if (policy.mcp?.includes(tool) === true) {
+        // Una captura con nombre se escribe donde diga el nombre; sin él, en la carpeta de pruebas.
+        if (tool.endsWith("__browser_take_screenshot") && "filename" in input) {
+          const { filename: _, ...rest } = input;
+          return { verdict: { ok: true }, updatedInput: rest };
+        }
+        return { verdict: { ok: true } };
+      }
       return { verdict: { ok: false, motivo: `${tool} no está permitida en ${policy.fase}` } };
   }
 }

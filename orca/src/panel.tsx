@@ -1,5 +1,5 @@
 // La pestaña de los runs en la barra derecha de Orca, al estilo de flowindex. Cada run es una
-// tarjeta: su estado, el título, el tiempo, y las ocho etapas del flujo en una lista con sus
+// tarjeta: su estado, el título, el tiempo, y las nueve etapas del flujo en una lista con sus
 // intentos y su tiempo. La etapa que trabaja gira, y debajo dice qué está haciendo, con las
 // decisiones que espera. Los más recientes arriba; los terminados muestran solo la etapa actual
 // hasta que se abren. El refresco no borra nada: si una lectura falla, queda la anterior.

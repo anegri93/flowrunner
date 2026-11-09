@@ -72,6 +72,7 @@ describe("Fase 1 ensamblada", () => {
       "verificar",
       "revisar",
       "revisar",
+      "probar",
       "entregar",
     ]);
   }, 120_000);

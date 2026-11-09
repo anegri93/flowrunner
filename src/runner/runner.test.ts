@@ -56,8 +56,8 @@ describe("runUntilStop", () => {
     expect(state.status).toBe("entregado");
     expect(executions(run)).toEqual(PHASES.filter((p) => p !== "aprender"));
     const { events } = readLog(run.dir);
-    expect(events.filter((e) => e.tipo === "accion_iniciada")).toHaveLength(7);
-    expect(events.filter((e) => e.tipo === "accion_terminada")).toHaveLength(7);
+    expect(events.filter((e) => e.tipo === "accion_iniciada")).toHaveLength(8);
+    expect(events.filter((e) => e.tipo === "accion_terminada")).toHaveLength(8);
   });
 
   // Si regresiona, un corte en medio de una fase deja su trabajo a medias para siempre.

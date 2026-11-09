@@ -106,6 +106,26 @@ describe("tripwireHook", () => {
     ).toBe("allow");
   });
 
+  // Si regresiona, probar corre código en la máquina con el navegador o escribe capturas fuera del run.
+  test("las herramientas MCP permitidas pasan por nombre; una captura no elige dónde escribirse", async () => {
+    const tester = policy({
+      fase: "probar",
+      write: false,
+      bash: false,
+      mcp: ["mcp__navegador__browser_click", "mcp__navegador__browser_take_screenshot"],
+    });
+    expect((await call(tester, "mcp__navegador__browser_click", {})).decision).toBe("allow");
+    expect((await call(tester, "mcp__navegador__browser_run_code_unsafe", {})).decision).toBe(
+      "deny",
+    );
+    const shot = await call(tester, "mcp__navegador__browser_take_screenshot", {
+      filename: "../../.ssh/x.png",
+      fullPage: true,
+    });
+    expect(shot).toMatchObject({ decision: "allow", updated: { fullPage: true } });
+    expect(shot.updated).not.toHaveProperty("filename");
+  });
+
   test("Edit dentro del alcance que agrega un secreto: deny", async () => {
     const r = await call(policy(), "Edit", {
       file_path: "src/auth/roles.ts",

@@ -55,7 +55,7 @@ test("una sesión real prueba la API y la pantalla, y deja el log y el video", a
         setup: "true",
         tests_globs: ["tests/**"],
         models: { probar: { model: "claude-haiku-5-5", effort: "low" } },
-        probar: { levantar: "node app.cjs", urls: { app: url } },
+        probar: { levantar: "node app.cjs", sigue_corriendo: true, urls: { app: url } },
       },
     },
     FEATURE,

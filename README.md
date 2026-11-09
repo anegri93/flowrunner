@@ -108,7 +108,8 @@ que falla vuelve a su sub-task con la evidencia. Para eso el repo dice cómo lev
 
 ```yaml
 probar:
-  levantar: ./start.sh --local # siempre local: nunca contra datos reales
+  levantar: ./start.sh --local # siempre local: nunca contra datos reales; termina cuando está listo
+  sigue_corriendo: false # true si levantar no termina, como un `pnpm dev`
   bajar: ./stop.sh # si levantar deja procesos desacoplados
   urls: # lo único a lo que llegan el navegador y la API
     api: http://localhost:3000
@@ -118,6 +119,7 @@ probar:
   espera_segundos: 300
 ```
 
+El agente no puede leer ni buscar en los `env_files`, y al terminar se borran de la copia de la feature.
 Si algo ya responde en esas URLs antes de levantar, por ejemplo tu propio entorno, probar se detiene:
 probar contra eso no probaría la feature. Cada prueba queda en el informe y en la PR. El log de cada
 pedido a la API y el video de cada navegación quedan en `~/.flowrunner/runs/<id>/pruebas/`, y el

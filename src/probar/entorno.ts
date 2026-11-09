@@ -1,7 +1,15 @@
 // El entorno de desarrollo donde la fase probar usa la feature: se levanta desde el worktree de la
 // feature con el comando del repo y se baja al terminar. Ver ADR 0016.
 import { spawn } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, openSync, closeSync, readFileSync } from "node:fs";
+import {
+  closeSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { descendants, killAll } from "../agent/procesos.ts";
@@ -36,9 +44,10 @@ const logTail = (file: string) =>
   existsSync(file) ? readFileSync(file, "utf8").trimEnd().split("\n").slice(-30).join("\n") : "";
 
 /**
- * Copia los archivos de fuera de git, levanta el entorno y espera a que respondan todas sus URLs.
- * Si una URL ya responde antes de levantar, es otro entorno, por ejemplo el de la persona: probar
- * contra él daría verde con un código que no es el de la feature.
+ * Copia los archivos de fuera de git, levanta el entorno y espera a que esté listo: que `levantar`
+ * termine bien, o que siga corriendo si la config dice `sigue_corriendo`, y que respondan todas sus
+ * URLs. Si una URL ya responde antes de levantar, es otro entorno, por ejemplo el de la persona:
+ * probar contra él daría verde con un código que no es el de la feature.
  */
 export async function levantarEntorno(opts: {
   readonly worktree: string;
@@ -48,12 +57,6 @@ export async function levantarEntorno(opts: {
   readonly env: NodeJS.ProcessEnv;
 }): Promise<Levantado> {
   const { worktree, repo, probar, log } = opts;
-  for (const file of probar.env_files) {
-    const from = join(repo, file);
-    if (!existsSync(from)) return { tipo: "falla", motivo: `${file} no existe en ${repo}` };
-    mkdirSync(dirname(join(worktree, file)), { recursive: true });
-    copyFileSync(from, join(worktree, file));
-  }
   const urls = Object.values(probar.urls);
   const busy = [];
   for (const url of urls) if (await responds(url)) busy.push(url);
@@ -63,8 +66,28 @@ export async function levantarEntorno(opts: {
       motivo: `ya hay algo respondiendo en ${busy.join(", ")}, antes de levantar el entorno de la feature: probar contra eso no probaría la feature. Bajalo y seguí con el comando de abajo`,
     };
   }
+  // Los secretos copiados no quedan en el worktree después de probar: revisar y las sub-tasks leen ahí.
+  const copied: string[] = [];
+  const removeCopies = () => {
+    for (const file of copied) rmSync(file, { force: true });
+  };
+  for (const file of probar.env_files) {
+    const from = join(repo, file);
+    const to = join(worktree, file);
+    if (!existsSync(from)) {
+      removeCopies();
+      return { tipo: "falla", motivo: `${file} no existe en ${repo}` };
+    }
+    if (existsSync(to)) continue;
+    mkdirSync(dirname(to), { recursive: true });
+    copyFileSync(from, to);
+    copied.push(to);
+  }
   const node = await repoNode(worktree, opts.env);
-  if (node.tipo === "falta") return { tipo: "falla", motivo: node.motivo };
+  if (node.tipo === "falta") {
+    removeCopies();
+    return { tipo: "falla", motivo: node.motivo };
+  }
   mkdirSync(dirname(log), { recursive: true });
   const fd = openSync(log, "a");
   // En su propio grupo: al bajar, el grupo entero cae aunque `levantar` no termine.
@@ -96,6 +119,7 @@ export async function levantarEntorno(opts: {
           // el grupo ya no existe
         }
       }
+      removeCopies();
       const alive = [];
       for (const url of urls) if (await responds(url)) alive.push(url);
       return alive;
@@ -104,21 +128,22 @@ export async function levantarEntorno(opts: {
   const deadline = Date.now() + probar.espera_segundos * 1_000;
   let up: boolean[] = [];
   while (Date.now() < deadline) {
-    up = await Promise.all(urls.map(responds));
-    if (up.every(Boolean)) return { tipo: "ok", entorno };
     if (exit !== undefined && exit !== 0) {
       await entorno.bajar();
       return {
         tipo: "falla",
-        motivo: `\`${probar.levantar}\` salió ${String(exit)} antes de que respondiera el entorno:\n${logTail(log)}`,
+        motivo: `\`${probar.levantar}\` salió ${String(exit)}:\n${logTail(log)}`,
       };
     }
+    up = await Promise.all(urls.map(responds));
+    if (up.every(Boolean) && (exit === 0 || probar.sigue_corriendo)) return { tipo: "ok", entorno };
     await sleep(1_000);
   }
   await entorno.bajar();
   const down = urls.filter((_, i) => up[i] !== true);
-  return {
-    tipo: "falla",
-    motivo: `el entorno no respondió en ${String(probar.espera_segundos)} s (${down.join(", ")}):\n${logTail(log)}`,
-  };
+  const motivo =
+    down.length > 0
+      ? `el entorno no respondió en ${String(probar.espera_segundos)} s (${down.join(", ")})`
+      : `\`${probar.levantar}\` no terminó en ${String(probar.espera_segundos)} s; si queda corriendo, como un \`pnpm dev\`, poné \`sigue_corriendo: true\` en la config de probar`;
+  return { tipo: "falla", motivo: `${motivo}:\n${logTail(log)}` };
 }

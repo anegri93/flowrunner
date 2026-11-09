@@ -149,6 +149,7 @@ export const probar: PhaseFn = async (ctx) => {
               depsDeclared: false,
               testGlobs: config.tests_globs,
               bash: [],
+              unreadable: config.probar.env_files,
             },
             fase: "probar",
             write: false,

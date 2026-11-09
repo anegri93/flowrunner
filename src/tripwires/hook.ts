@@ -7,6 +7,7 @@ import {
   checkBash,
   checkContent,
   checkReadPath,
+  checkSearchPath,
   checkWritePath,
   insideRoot,
   type Scope,
@@ -51,6 +52,7 @@ export function decide(
     case "Read":
       return { verdict: checkReadPath(policy.scope, asString(input.file_path)) };
     case "Grep":
+      return { verdict: checkSearchPath(policy.scope, asString(input.path)) };
     case "Glob":
       return { verdict: checkReadPath(policy.scope, asString(input.path)) };
     case "Write":

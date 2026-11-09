@@ -48,7 +48,12 @@ async function testWith(output: Pruebas | undefined, withConfig = true) {
           config: {
             setup: "true",
             tests_globs: ["tests/**"],
-            probar: { levantar: "node server.cjs", urls: { api: url }, notas: "usuario demo" },
+            probar: {
+              levantar: "node server.cjs",
+              sigue_corriendo: true,
+              urls: { api: url },
+              notas: "usuario demo",
+            },
           },
         }
       : {}),

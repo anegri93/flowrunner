@@ -126,6 +126,23 @@ describe("tripwireHook", () => {
     expect(shot.updated).not.toHaveProperty("filename");
   });
 
+  // Si regresiona, los secretos del .env que probar copia al worktree llegan al modelo y al transcript.
+  test("un archivo de entorno con secretos no se lee ni queda dentro de una búsqueda", async () => {
+    const base = policy({ fase: "probar", write: false, bash: false });
+    const tester = { ...base, scope: { ...base.scope, unreadable: [".env"] } };
+    expect((await call(tester, "Read", { file_path: ".env" })).reason).toBe(
+      ".env tiene secretos del entorno: no se lee",
+    );
+    expect((await call(tester, "Read", { file_path: `${tester.scope.root}/.env` })).decision).toBe(
+      "deny",
+    );
+    expect((await call(tester, "Grep", { pattern: "SECRET" })).reason).toMatch(
+      /^buscar en la raíz incluye \.env/,
+    );
+    expect((await call(tester, "Grep", { pattern: "x", path: "src" })).decision).toBe("allow");
+    expect((await call(tester, "Read", { file_path: "src/a.ts" })).decision).toBe("allow");
+  });
+
   test("Edit dentro del alcance que agrega un secreto: deny", async () => {
     const r = await call(policy(), "Edit", {
       file_path: "src/auth/roles.ts",

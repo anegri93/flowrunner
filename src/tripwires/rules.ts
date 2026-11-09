@@ -33,6 +33,8 @@ export interface Scope {
   readonly testGlobs: readonly string[];
   /** Comandos de Bash permitidos tal cual. */
   readonly bash: readonly string[];
+  /** Archivos con secretos que no se leen ni se buscan, como los `.env` que copia probar. */
+  readonly unreadable?: readonly string[];
 }
 
 /** El realpath del ancestro existente más cercano, más lo que falta: atrapa carpetas que son links. */
@@ -90,7 +92,23 @@ export function checkWritePath(scope: Scope, path: string): Verdict {
 
 export function checkReadPath(scope: Scope, path: string | undefined): Verdict {
   if (path === undefined || path === "") return OK;
-  return insideRoot(scope, path) === undefined ? no(`${path} queda fuera del worktree`) : OK;
+  const rel = insideRoot(scope, path);
+  if (rel === undefined) return no(`${path} queda fuera del worktree`);
+  const secret = scope.unreadable?.find((u) => covers(u, rel));
+  return secret === undefined ? OK : no(`${secret} tiene secretos del entorno: no se lee`);
+}
+
+/** Como leer, y además una búsqueda no puede abarcar un archivo con secretos. */
+export function checkSearchPath(scope: Scope, path: string | undefined): Verdict {
+  const read = checkReadPath(scope, path);
+  if (!read.ok) return read;
+  const rel = insideRoot(scope, path === undefined || path === "" ? scope.root : path) ?? "";
+  const secret = scope.unreadable?.find((u) => rel === "" || covers(rel, u));
+  return secret === undefined
+    ? OK
+    : no(
+        `buscar en ${rel === "" ? "la raíz" : rel} incluye ${secret}, que tiene secretos del entorno: buscá dentro de una carpeta que no lo tenga, como src/`,
+      );
 }
 
 const DISABLED_TEST = [

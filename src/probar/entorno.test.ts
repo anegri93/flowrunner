@@ -10,6 +10,7 @@ const config = (port: number, extra: Partial<ProbarConfig> = {}): ProbarConfig =
   levantar: "node server.cjs",
   urls: { api: `http://127.0.0.1:${String(port)}` },
   env_files: [],
+  sigue_corriendo: true,
   notas: "",
   espera_segundos: 20,
   ...extra,
@@ -38,20 +39,53 @@ describe("levantarEntorno", () => {
     }
   });
 
-  // Si regresiona, el entorno queda vivo después de probar, o no tiene los .env que no están en git.
+  // Si regresiona, el entorno queda vivo después de probar, no tiene los .env que no están en git, o
+  // sus secretos quedan en el worktree donde después leen revisar y las sub-tasks.
   test("copia los archivos de fuera de git, espera a que responda y al bajar no queda nada", async () => {
     const port = await freePort();
     const s = setup(port);
     writeFileSync(join(s.repo, ".env"), "CLAVE=1\n");
+    writeFileSync(join(s.repo, "propio.env"), "DEL_REPO=1\n");
+    writeFileSync(join(s.worktree, "propio.env"), "DEL_WORKTREE=1\n");
     const out = await levantarEntorno({
       ...s,
-      probar: config(port, { env_files: [".env"] }),
+      probar: config(port, { env_files: [".env", "propio.env"] }),
     });
     expect(out.tipo).toBe("ok");
     expect(readFileSync(join(s.worktree, ".env"), "utf8")).toBe("CLAVE=1\n");
     expect(await responds(`http://127.0.0.1:${String(port)}`)).toBe(true);
     if (out.tipo !== "ok") return;
     expect(await out.entorno.bajar()).toEqual([]);
+    expect(await responds(`http://127.0.0.1:${String(port)}`)).toBe(false);
+    expect(existsSync(join(s.worktree, ".env"))).toBe(false);
+    // Lo que ya estaba en el worktree no se pisa ni se borra.
+    expect(readFileSync(join(s.worktree, "propio.env"), "utf8")).toBe("DEL_WORKTREE=1\n");
+  });
+
+  // Si regresiona, probar arranca con las URLs arriba mientras levantar todavía prepara datos, como
+  // la sesión de prueba de mango, y el agente no los encuentra.
+  test("si levantar termina, espera a que termine aunque las URLs ya respondan", async () => {
+    const port = await freePort();
+    const s = setup(port);
+    const out = await levantarEntorno({
+      ...s,
+      probar: config(port, {
+        levantar: "node server.cjs & sleep 2; echo listo > listo.txt",
+        sigue_corriendo: false,
+      }),
+    });
+    expect(out.tipo).toBe("ok");
+    expect(existsSync(join(s.worktree, "listo.txt"))).toBe(true);
+    if (out.tipo === "ok") await out.entorno.bajar();
+  });
+
+  test("un levantar que no termina sin `sigue_corriendo` falla con cómo arreglarlo", async () => {
+    const port = await freePort();
+    const out = await levantarEntorno({
+      ...setup(port),
+      probar: config(port, { sigue_corriendo: false, espera_segundos: 3 }),
+    });
+    expect(out.tipo === "falla" && out.motivo).toContain("poné `sigue_corriendo: true`");
     expect(await responds(`http://127.0.0.1:${String(port)}`)).toBe(false);
   });
 

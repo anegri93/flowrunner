@@ -550,6 +550,17 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. Las señales de entorno son una lista de expresiones; el diagnóstico reusa el hook de tripwires y el esquema de salida estructurada; el tope sigue siendo el de vueltas de verificar.
 - **Desbloquea:** Gate final
 
+### T5.5b · Reparar un test bloqueado cuando el problema es el test
+- **Estado:** `[x] Hecho`
+- **Regresión de:** T5.5
+- **Descripción:** en VF-4, un `let` en un test bloqueado trabó el run cinco veces. La config del run era anterior a `lint_fix`, así que ni el arreglo de planificar ni la reparación con las herramientas del repo le llegaban, y el diagnóstico solo podía decir «el plan no se puede cumplir». Ahora el diagnóstico tiene una cuarta causa, `test`: el código de la feature está bien y lo que falla es un test bloqueado por un detalle que no cambia lo que prueba. Una sesión chica (`prompts/reparar.md`, el modelo de implementar, USD 1) edita solo ese archivo. Flowrunner acepta el cambio solo si la sesión no tocó otro archivo, si el test pasa con la feature y si sigue fallando sobre el commit de los tests, sin la feature. El arreglo se commitea aparte, se actualiza su hash, y la PR lo lista en «Cambios de flowrunner en los tests de criterios». Si un control falla, el test vuelve a como estaba y el run se detiene con el motivo. Una reparación por test y por run.
+- **Lint:** `pnpm lint`.
+- **Test:** `test/diagnosticar.int.test.ts` › «si la causa es un test bloqueado, lo repara, lo commitea aparte y el run entrega»: el escenario de VF-4 con un criterio que rechaza `let`, por el CLI real. `test/diagnosticar.int.test.ts` › «una reparación que ablanda el test se descarta»: una reparación que pasaría sin la feature se descarta, el test queda como estaba y el run se detiene. `src/report/report.test.ts` › «la PR lista lo que flowrunner cambió en los tests de criterios».
+- **Canario:** con verificar y diagnosticar de main, el de la reparación falló. Sin el control de la base, el de la reparación que ablanda falló. Con el report de main, el de la PR falló.
+- **Criterio de aprobación:** reanudar VF-4 lo repara y lo entrega.
+- **Revisión ponytail:** a mano. La causa nueva reusa el diagnóstico que ya existía; la reparación es una sesión acotada con controles de código.
+- **Desbloquea:** T5.6
+
 ### T5.6 · Dependencias válidas, de desarrollo aparte, y sub-tasks que no avanzan
 - **Estado:** `[x] Hecho`
 - **Descripción:** en el replan de PIZ-2, el plan pidió `jsqr (devDependency)` como dependencia, y flowrunner armó `npm install uqr jsqr (devDependency)`, que el shell rechaza. ST-1 no pudo instalar y gastó 3 intentos en «no cambió ningún archivo». Ahora cada dependencia tiene que ser un nombre de paquete con versión opcional, o el plan se rechaza con un motivo que dice dónde va la de desarrollo. Las de desarrollo van en `dependencias_dev` y se instalan con `-D`, y si el manifiesto del repo fija todas sus versiones, se instalan con `-E`. Una sub-task que no cambia nada dos intentos seguidos se corta, con lo último que dijo en el motivo.

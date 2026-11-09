@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { STREAMS } from "../../test/helpers/fake-query.ts";
 import type { NewEvent, Outcome, Phase, RunEvent } from "../store/events.ts";
 import { runPaths } from "../store/runs.ts";
-import { buildReport } from "./report.ts";
+import { buildReport, prBody } from "./report.ts";
 import { transcriptSteps } from "./transcript.ts";
 
 let clock = Date.parse("2026-11-07T10:00:00Z");
@@ -131,4 +131,23 @@ describe("transcriptSteps", () => {
     ).toBe(true);
     expect(steps.at(-1)?.tipo).toBe("final");
   });
+});
+
+// Si regresiona, un test de criterios que flowrunner cambió llega a la PR sin que la persona lo vea.
+test("la PR lista lo que flowrunner cambió en los tests de criterios", () => {
+  const body = prBody(
+    [
+      ev({
+        tipo: "aviso",
+        fase: "verificar",
+        texto:
+          "flowrunner reparó el test bloqueado tests/a.ts: let por const. El cambio está en su propio commit; revisalo en la PR.",
+      }),
+      ev({ tipo: "aviso", fase: "revisar", texto: "src/a.ts:3: nombre poco claro" }),
+    ],
+    { id: "R", home: "/nada", dir: "/nada", worktrees: "/nada" },
+  );
+  expect(body).toContain("## Cambios de flowrunner en los tests de criterios");
+  expect(body).toContain("- flowrunner reparó el test bloqueado tests/a.ts: let por const.");
+  expect(body).not.toContain("nombre poco claro");
 });

@@ -129,7 +129,11 @@ vueltas. Cuando reintentar no tiene sentido, flowrunner corta antes:
   verificar reinstala y repite. Si sigue, se detiene y dice qué falta.
 - **Una sub-task que no avanza** dos intentos seguidos se corta, con lo último que dijo.
 - **Si el ciclo no converge**, un agente de solo lectura diagnostica si el problema está en el código de
-  alguna sub-task, en el entorno o en el plan, y actúa según eso.
+  alguna sub-task, en el entorno, en un test bloqueado o en el plan, y actúa según eso.
+- **Un test bloqueado con un detalle que no cambia lo que prueba**, como un `let` que el lint quiere
+  `const`, se repara: una sesión chica edita solo ese archivo, y flowrunner acepta el cambio solo si
+  el test pasa con la feature y sigue fallando sin ella. El arreglo va en su propio commit y la PR lo
+  muestra para que lo revises.
 
 Todo tiene tope. Si el run se detiene, `flowrunner watch` y `flowrunner status` dicen el motivo y el
 comando exacto para seguir.

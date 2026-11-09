@@ -62,6 +62,23 @@ describe("inferRepo", () => {
     expect(without.config).not.toHaveProperty("format");
   });
 
+  // Si regresiona, planificar bloquea tests que el lint del repo rechaza, como el `let` de VF-4.
+  test("con eslint en las dependencias infiere el lint en modo arreglar; sin eslint, ninguno", () => {
+    const withEslint = inferRepo({
+      baseBranch: "main",
+      files: ["package.json", "pnpm-lock.yaml"],
+      packageJson: { scripts: { test: "vitest" }, devDependencies: { eslint: "^9.0.0" } },
+    });
+    expect(withEslint.config?.lint_fix).toBe("pnpm exec eslint --fix");
+    expect(
+      inferRepo({
+        baseBranch: "main",
+        files: ["package.json"],
+        packageJson: pkg({ test: "vitest" }),
+      }).config,
+    ).not.toHaveProperty("lint_fix");
+  });
+
   // Si regresiona, un repo sin tests pasa por bueno y verify no prueba nada.
   test("sin script de test: falta, y lo dice", () => {
     const inferred = inferRepo({

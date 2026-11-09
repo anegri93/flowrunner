@@ -403,6 +403,17 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. Sin formateador configurado no hay chequeo de formato en el gate: flowrunner no tiene con qué correrlo, y un repo con prettier ya lo infiere.
 - **Desbloquea:** T4.3
 
+### T4.2c · Planificar les pasa el lint a sus tests antes de bloquearlos
+- **Estado:** `[x] Hecho`
+- **Regresión de:** T4.2b
+- **Descripción:** en VF-4, el planificador escribió `let ahora = HOY;` en un test y el lint del repo pedía `const`. El test quedó bloqueado así, ninguna sub-task lo podía tocar, y verify se trabó al final con las cuatro sub-tasks integradas. Es lo mismo que pasó con el formato en VF-1, ahora con el lint. `.flowrunner/config.yaml` acepta `lint_fix`, el lint en modo arreglar al que flowrunner le agrega las rutas. Planificar lo corre sobre los tests escritos antes del formateador, del gate y del hash. Si deja errores que no arregla solo, el plan no pasa, con la salida del lint, y el planificador lo corrige en el próximo intento. `init` lo infiere cuando `eslint` está en las dependencias. El prompt pide escribir los tests ya limpios para el lint.
+- **Lint:** `pnpm lint`.
+- **Test:** `src/phases/planificar.test.ts`: un lint que cambia `let` por `const` deja el test arreglado, con el hash del archivo arreglado y el worktree limpio; un lint que sale 1 rechaza el plan con su salida. `src/setup/infer.test.ts`: eslint en las dependencias da `pnpm exec eslint --fix`, y sin eslint no hay `lint_fix`.
+- **Canario:** con planificar e infer de main, los tres tests nuevos fallaron.
+- **Criterio de aprobación:** en el próximo run de un repo con `lint_fix`, un test con un error de lint arreglable no traba verify.
+- **Revisión ponytail:** a mano. El lint y el formateador comparten un solo paso, uno después del otro.
+- **Desbloquea:** T4.3
+
 ### T4.3 · Aprobar: espera sin proceso, approve, changes
 - **Estado:** `[x] Hecho`
 - **Descripción:** `src/notify/` con `osascript` y la fase aprobar: registra la espera, avisa con un texto que dice qué pedirle a Claude, como *"SHOP-214: el plan espera tu aprobación. Pedile a Claude que te lo muestre."*, y termina el proceso. `flowrunner plan <run>` muestra plan, sub-tasks con alcance y diff de los tests. `approve` relanza hacia implementar; `changes <run> "<motivo>"` relanza hacia planificar con la instrucción.

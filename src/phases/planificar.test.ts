@@ -51,12 +51,13 @@ const writeTest = {
   },
 };
 
-async function prepared_(scripts: SimScript[], format?: string) {
+async function prepared_(scripts: SimScript[], format?: string, lint_fix?: string) {
   const { work } = makeProject({
     config: {
       setup: "true",
       tests_globs: ["tests/**"],
       ...(format === undefined ? {} : { format }),
+      ...(lint_fix === undefined ? {} : { lint_fix }),
     },
   });
   const run = newRun(work, FEATURE);
@@ -208,6 +209,51 @@ describe("planificar", () => {
     });
   });
 
+  describe("con lint", () => {
+    const letTest = {
+      ...writeTest,
+      input: {
+        ...writeTest.input,
+        content:
+          'import { existsSync } from "node:fs";\nlet ruta = "src/export/csv.js";\nprocess.exit(existsSync(ruta) ? 0 : 1);\n',
+      },
+    };
+    // Un lint de mentira con un arreglo de verdad: cambia `let` por `const`, como `eslint --fix` con
+    // prefer-const.
+    const LET_TO_CONST = "perl -pi -e 's/\\blet\\b/const/g'";
+
+    // Regresión: en VF-4 el planificador escribió `let ahora = HOY;`, el lint del repo pedía `const`, y
+    // el test quedó bloqueado así: verify se trabó al final y ninguna sub-task lo podía arreglar.
+    test("el lint arregla los tests antes de bloquearlos: el hash es del archivo arreglado", async () => {
+      const { run, deps, worktree } = await prepared_(
+        [{ calls: [letTest], output: goodPlan }],
+        undefined,
+        LET_TO_CONST,
+      );
+      expect(await planificar(contextFor(run, "planificar", deps))).toEqual({ tipo: "ok" });
+      const content = readFileSync(join(worktree, "tests/ac1.mjs"), "utf8");
+      expect(content).toContain('const ruta = "src/export/csv.js";');
+      expect(readPlan(run).locked["tests/ac1.mjs"]).toBe(
+        createHash("sha256").update(content).digest("hex"),
+      );
+      expect(git(worktree, "status", "--porcelain")).toBe("");
+    });
+
+    // Si regresiona, un error que el lint no arregla solo entra bloqueado y traba el run al final.
+    test("un error que el lint no arregla solo rechaza el plan con su salida", async () => {
+      const { run, deps } = await prepared_(
+        [{ calls: [writeTest], output: goodPlan }],
+        undefined,
+        "sh -c 'echo \"tests/ac1.mjs 2:1 error no-unused-vars\"; exit 1' --",
+      );
+      const outcome = await planificar(contextFor(run, "planificar", deps));
+      expect(outcome).toMatchObject({ tipo: "falla", clase: "gate" });
+      expect(outcome.tipo === "falla" && outcome.motivo).toMatch(
+        /el lint dejó errores que no arregla solo en los tests: .*\n.*no-unused-vars/,
+      );
+    });
+  });
+
   describe("con formateador", () => {
     const PRETTIER = fileURLToPath(new URL("../../node_modules/.bin/prettier", import.meta.url));
     const longLine = {
@@ -243,7 +289,7 @@ describe("planificar", () => {
       const outcome = await planificar(contextFor(run, "planificar", deps));
       expect(outcome).toMatchObject({ tipo: "falla", clase: "gate" });
       expect(outcome.tipo === "falla" && outcome.motivo).toMatch(
-        /el formateador `false` salió 1 sobre los tests/,
+        /el formateador falló en los tests: `false` salió 1/,
       );
     });
   });

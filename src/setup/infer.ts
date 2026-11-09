@@ -12,6 +12,7 @@ export interface InferredConfig {
   readonly base_branch: string;
   readonly setup: string;
   readonly tests_globs: string[];
+  readonly lint_fix?: string;
   readonly format?: string;
   readonly harness_files: string[];
   readonly lockfiles: string[];
@@ -163,9 +164,19 @@ export function inferRepo(facts: RepoFacts): Inferred {
   });
 
   const { dependencies, devDependencies } = parsed.data;
+  const exec = manager?.exec ?? "npx";
+  const lint_fix =
+    "eslint" in devDependencies || "eslint" in dependencies ? `${exec} eslint --fix` : undefined;
+  if (lint_fix !== undefined) {
+    hallazgos.push({
+      que: "lint_fix",
+      estado: "inferido",
+      detalle: `\`${lint_fix}\`: flowrunner le pasa el lint a los tests que escribe planificar antes de bloquearlos`,
+    });
+  }
   const format =
     "prettier" in devDependencies || "prettier" in dependencies
-      ? `${manager?.exec ?? "npx"} prettier --write --ignore-unknown`
+      ? `${exec} prettier --write --ignore-unknown`
       : undefined;
   if (format !== undefined) {
     hallazgos.push({
@@ -185,6 +196,7 @@ export function inferRepo(facts: RepoFacts): Inferred {
       base_branch: facts.baseBranch,
       setup,
       tests_globs,
+      ...(lint_fix === undefined ? {} : { lint_fix }),
       ...(format === undefined ? {} : { format }),
       harness_files,
       lockfiles: manager === undefined ? [] : [manager.lockfile],

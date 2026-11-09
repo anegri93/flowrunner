@@ -496,6 +496,17 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. Un `git diff --name-only` contra la base y el mismo setup de preparar.
 - **Desbloquea:** Gate final
 
+### T5.4c · verify corre todos los pasos y nombra todos los rojos
+- **Estado:** `[x] Hecho`
+- **Regresión de:** T9.2
+- **Descripción:** en VF-1, el `verify.sh` que armó `init` empezaba con `set -e` y ponía `format:check` primero. Un formato rojo frenaba los tests, y el motivo decía que lo único que fallaba era el formato cuando había 3 tests rotos. El criterio final del plan encadenaba con `&&` y escondía lo mismo. Ahora `verifyScript` corre todos los pasos aunque alguno falle, los tests primero, y al final imprime `verify en rojo:` con los pasos que fallaron. Sale 1 si falló alguno. El prompt de planificar pide que un criterio de «todo en verde» use el verify del repo, no una cadena con `&&`.
+- **Lint:** `pnpm lint`.
+- **Test:** `src/phases/verificar.test.ts` › «el motivo nombra todos los pasos rojos»: con el verify que arma init, una feature que rompe un test y el formato vuelve con las dos salidas y la lista `sh paso.sh test; sh paso.sh format:check;`. `src/setup/infer.test.ts`: los tests van primero y no hay `set -e`. `src/phases/planificar.test.ts`: el prompt pide el verify para el criterio de todo en verde.
+- **Canario:** con `set -e` en el script, el test de verificar se puso en rojo: al motivo le faltaba `[warn] src/a.ts`.
+- **Criterio de aprobación:** en el próximo run con el formato y un test rojos, el motivo de verificar nombra los dos.
+- **Revisión ponytail:** a mano. Un `paso()` de una línea en el script, sin dependencias. Los repos que ya tienen su `verify.sh` lo conservan: `init` no lo reescribe.
+- **Desbloquea:** T5.5
+
 ### T5.5 · Diagnosticar en vez de reintentar a ciegas
 - **Estado:** `[x] Hecho`
 - **Descripción:** en PIZ-2, verificar le devolvió tres veces a ST-1 un error que estaba en el entorno, y ST-1 gastó sus reintentos sin nada que cambiar. Ahora: una señal de entorno en la salida de un criterio hace que verificar reinstale y repita, y si persiste se detiene como entorno; una sub-task devuelta que no cambia nada queda `sin_cambios`, sin reintentos; y si el ciclo no converge, porque una sub-task devuelta no cambió nada o el mismo criterio falló dos vueltas seguidas, una sesión de solo lectura diagnostica si el problema es de código, y de qué sub-task, de entorno o del plan. Código devuelve a la sub-task correcta con una instrucción; entorno y plan se detienen con cómo seguir. `watch` muestra resuelto lo que el run dejó atrás.

@@ -110,6 +110,7 @@ export const planificar: PhaseFn = async (ctx) => {
       prompt: render("planificar", {
         feature: featureText(feature),
         tests_globs: config.tests_globs.join(", "),
+        verify: config.verify,
         harness: config.harness_files.length === 0 ? "(ninguno)" : config.harness_files.join(", "),
         instruccion,
         ...brainVars(brain),

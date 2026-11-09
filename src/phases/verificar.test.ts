@@ -5,6 +5,7 @@ import { plannedRun } from "../../test/helpers/planned.ts";
 import { contextFor, testDeps, writeFiles } from "../../test/helpers/project.ts";
 import type { Plan } from "../gates/plan.ts";
 import { commitAll } from "../git/git.ts";
+import { verifyScript } from "../setup/infer.ts";
 import { verificar } from "./verificar.ts";
 
 const plan: Plan = {
@@ -42,9 +43,13 @@ const TESTS = {
     'import { readFileSync } from "node:fs";\nconsole.error("esperaba 403");\nprocess.exit(readFileSync("src/permiso.js", "utf8").includes("403") ? 0 : 1);\n',
 };
 
-async function featureWith(files: Record<string, string>, verify = "exit 0") {
+async function featureWith(
+  files: Record<string, string>,
+  verify = "exit 0",
+  baseFiles: Record<string, string> = {},
+) {
   const deps = testDeps();
-  const { run, featureWt } = await plannedRun(plan, TESTS, deps, { verify });
+  const { run, featureWt } = await plannedRun(plan, TESTS, deps, { verify, files: baseFiles });
   writeFiles(featureWt, files);
   await commitAll(featureWt, "feat: implementado", {}, deps.env);
   return { run, featureWt, deps };
@@ -64,6 +69,25 @@ describe("verificar", () => {
     expect(outcome.tipo === "vuelve" && outcome.motivo).toMatch(
       /AC-2 sigue en rojo: `node tests\/ac2\.mjs` salió 1:\nesperaba 403/,
     );
+  });
+
+  // Si regresiona, un formato rojo esconde los tests rotos que vienen después, y el motivo dice que
+  // lo único que falla es el formato: en VF-1 había 3 tests rotos que flowrunner nunca vio.
+  test("con el verify que arma init, el motivo nombra todos los pasos rojos, no solo el primero", async () => {
+    // La base está en verde; la feature, que agrega src/roto, rompe un test y el formato.
+    const paso =
+      '[ -f src/roto ] || exit 0\ncase "$1" in\n  test) echo "FAIL src/marcas.test.ts"; exit 1 ;;\n  format:check) echo "[warn] src/a.ts"; exit 1 ;;\nesac\n';
+    const { run, deps } = await featureWith(
+      { "src/csv.js": "x", "src/permiso.js": "403", "src/roto": "" },
+      verifyScript("sh paso.sh", ["test", "lint", "format:check"]),
+      { "paso.sh": paso },
+    );
+    const outcome = await verificar(contextFor(run, "verificar", deps));
+    expect(outcome.tipo).toBe("vuelve");
+    const motivo = outcome.tipo === "vuelve" ? outcome.motivo : "";
+    expect(motivo).toContain("FAIL src/marcas.test.ts");
+    expect(motivo).toContain("[warn] src/a.ts");
+    expect(motivo).toContain("verify en rojo: sh paso.sh test; sh paso.sh format:check;");
   });
 
   // Si regresiona, un criterio se pone verde porque alguien ablandó su test.

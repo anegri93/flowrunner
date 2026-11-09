@@ -96,6 +96,8 @@ describe("planificar", () => {
     const prompt = sim.records[0]?.prompt ?? "";
     expect(prompt).toContain("graft_find_code");
     expect(prompt).toContain("`offset` y `limit`");
+    // Si regresiona, el criterio de «todo en verde» encadena con && y el primer rojo esconde el resto.
+    expect(prompt).toContain("su comando es `./.flowrunner/verify.sh`, no una cadena con `&&`");
   });
 
   // Si regresiona, un plan rechazado deja tests a medias commiteados en la rama de la feature.

@@ -1,11 +1,15 @@
-import { writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { plannedRun } from "../../test/helpers/planned.ts";
+import { git as gitOut } from "../../test/helpers/git.ts";
 import { contextFor, testDeps, writeFiles } from "../../test/helpers/project.ts";
 import type { Plan } from "../gates/plan.ts";
 import { commitAll } from "../git/git.ts";
 import { verifyScript } from "../setup/infer.ts";
+import { readLog } from "../store/run-log.ts";
+import { readPlan } from "./planificar.ts";
 import { verificar } from "./verificar.ts";
 
 const plan: Plan = {
@@ -88,6 +92,40 @@ describe("verificar", () => {
     expect(motivo).toContain("FAIL src/marcas.test.ts");
     expect(motivo).toContain("[warn] src/a.ts");
     expect(motivo).toContain("verify en rojo: sh paso.sh test; sh paso.sh format:check;");
+  });
+
+  // Regresión: en VF-4 un test bloqueado tenía `let` donde el lint del repo pide `const`, verify quedaba
+  // en rojo y ninguna sub-task lo podía tocar: el run se trabó cuatro veces.
+  test("repara con el lint del repo un test bloqueado, lo commitea con su hash nuevo y sigue", async () => {
+    const deps = testDeps();
+    const tests = {
+      ...TESTS,
+      "tests/ac1.mjs":
+        'import { existsSync } from "node:fs";\nlet ruta = "src/csv.js";\nprocess.exit(existsSync(ruta) ? 0 : 1);\n',
+    };
+    const { run, featureWt } = await plannedRun(plan, tests, deps, {
+      config: {
+        setup: "true",
+        tests_globs: ["tests/**"],
+        lint_fix: "perl -pi -e 's/\\blet\\b/const/g'",
+      },
+      // El verify de mentira falla mientras quede un `let` en los tests, como el lint del repo.
+      verify: "! grep -rqs 'let ' tests",
+    });
+    writeFiles(featureWt, { "src/csv.js": "x", "src/permiso.js": "403" });
+    await commitAll(featureWt, "feat: implementado", {}, deps.env);
+    expect(await verificar(contextFor(run, "verificar", deps))).toEqual({ tipo: "ok" });
+    const content = readFileSync(join(featureWt, "tests/ac1.mjs"), "utf8");
+    expect(content).toContain('const ruta = "src/csv.js";');
+    expect(readPlan(run).locked["tests/ac1.mjs"]).toBe(
+      createHash("sha256").update(content).digest("hex"),
+    );
+    expect(gitOut(featureWt, "log", "-1", "--format=%s")).toBe(
+      "test: lint y formato de los tests de criterios",
+    );
+    expect(readLog(run.dir).events).toContainEqual(
+      expect.objectContaining({ tipo: "aviso", fase: "verificar" }),
+    );
   });
 
   // Si regresiona, un criterio se pone verde porque alguien ablandó su test.

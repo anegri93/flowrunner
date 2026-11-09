@@ -3,7 +3,7 @@
 // cambió lockfiles o manifiestos, primero reinstala: el setup de preparar corrió con los de la base.
 // Ante una señal de entorno reinstala y repite; si el ciclo no converge, diagnostica antes de devolver.
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadRepoConfig } from "../config/load.ts";
 import { ACCEPTANCE_TIMEOUT_MS } from "../gates/plan.ts";
@@ -12,6 +12,7 @@ import type { PhaseFn } from "../runner/types.ts";
 import type { RunEvent } from "../store/events.ts";
 import { git } from "../git/git.ts";
 import { diagnose, environmentHint, type Failing } from "./diagnosticar.ts";
+import { runFixers } from "./fixers.ts";
 import { featureWorktree, prepared } from "./inputs.ts";
 import { SETUP_TIMEOUT_MS } from "./preparar.ts";
 import { readPlan } from "./planificar.ts";
@@ -30,7 +31,7 @@ function unitsLeftUnchanged(events: readonly RunEvent[]): string[] {
 }
 
 export const verificar: PhaseFn = async (ctx) => {
-  const { run, deps } = ctx;
+  const { run, deps, emit } = ctx;
   const worktree = featureWorktree(run);
   const config = loadRepoConfig(worktree);
   const plan = readPlan(run);
@@ -65,6 +66,39 @@ export const verificar: PhaseFn = async (ctx) => {
         clase: "invariante",
         motivo: `el test bloqueado ${path} cambió desde que lo escribió planificar: lo tiene que mirar una persona`,
       };
+    }
+  }
+
+  // Un test bloqueado que no pasa el lint o el formato del repo deja verify en rojo y ninguna sub-task
+  // lo puede tocar: en VF-4, un `let` que debía ser `const` trabó el run cuatro veces. Las herramientas
+  // del repo lo arreglan sin cambiar lo que prueba; el arreglo va en su propio commit, con el hash nuevo.
+  const lockedPaths = Object.keys(plan.locked);
+  if (config.lint_fix !== undefined || config.format !== undefined) {
+    await runFixers(worktree, config, lockedPaths, deps.env);
+    const hashOf = (path: string) => sha256(readFileSync(join(worktree, path), "utf8"));
+    const fixed = lockedPaths.filter((path) => hashOf(path) !== plan.locked[path]);
+    if (fixed.length > 0) {
+      await git(worktree, ["add", "--", ...fixed], deps.env);
+      await git(
+        worktree,
+        [
+          "commit",
+          "--quiet",
+          "--no-verify",
+          "-m",
+          "test: lint y formato de los tests de criterios",
+          "--trailer",
+          `Flowrunner-Run: ${run.id}`,
+        ],
+        deps.env,
+      );
+      const locked = { ...plan.locked, ...Object.fromEntries(fixed.map((p) => [p, hashOf(p)])) };
+      writeFileSync(join(run.dir, "locked.json"), `${JSON.stringify(locked, null, 2)}\n`);
+      emit({
+        tipo: "aviso",
+        fase: "verificar",
+        texto: `flowrunner pasó el lint y el formateador del repo por ${fixed.join(", ")} y commiteó el arreglo`,
+      });
     }
   }
 

@@ -1,100 +1,184 @@
 # flowrunner
 
-Runner local y desatendido que lleva una feature escrita en conversación hasta una PR lista para
-revisar. El código decide las fases, los gates y los tripwires; los agentes del Claude Agent SDK
-hacen el trabajo de cada fase. Cada repo tiene un cerebro en `.flowrunner/` que aprende de las
-correcciones de la persona.
+Le pedís una feature a Claude Code y flowrunner la lleva sola hasta una PR lista para revisar. Vos
+intervenís en dos momentos: cuando aprobás el plan y cuando revisás la PR. Todo lo demás corre sin
+vos, en segundo plano, y cada repo tiene un cerebro en `.flowrunner/` que aprende de tus correcciones.
+
+## Instalar
+
+Una sola vez por máquina. Necesitás macOS, Node 24 o más nuevo, pnpm 10, git y Claude Code con tu
+sesión abierta.
+
+1. Instalá las herramientas que usa flowrunner y abrí sesión en GitHub:
+
+   ```bash
+   npm i -g pnpm@10 @nanonets/graft
+   ```
+
+   ```bash
+   gh auth login
+   ```
+
+2. Cloná flowrunner e instalá sus dependencias:
+
+   ```bash
+   git clone https://github.com/anegri93/flowrunner.git ~/Documents/PersonalProjects/flowrunner
+   ```
+
+   ```bash
+   cd ~/Documents/PersonalProjects/flowrunner && pnpm install
+   ```
+
+3. Dejá el comando `flowrunner` en tu PATH:
+
+   ```bash
+   ln -s ~/Documents/PersonalProjects/flowrunner/bin/flowrunner.js ~/.local/bin/flowrunner
+   ```
+
+## Sumar un repo
+
+Una vez por repo. El repo tiene que estar en GitHub y su rama base en verde.
+
+1. Mirá qué hay y qué falta. No toca nada:
+
+   ```bash
+   flowrunner init ~/ruta/al/repo
+   ```
+
+2. Aplicalo. Registra el repo, instala la skill de Claude Code, el chequeo cada 10 minutos y el comando,
+   y abre una PR con el cerebro del repo en `.flowrunner/`:
+
+   ```bash
+   flowrunner init ~/ruta/al/repo --aplicar
+   ```
+
+3. En esa PR, revisá la config que infirió y completá `contexto.md`, `convenciones.md` y
+   `que-es-bien.md`, o pedile a Claude que los redacte a partir del README y el `CLAUDE.md` del repo.
+   Después mergeala: los runs leen el cerebro desde la rama base.
+
+4. Confirmá que quedó listo. Todo tiene que salir con ✓:
+
+   ```bash
+   flowrunner init ~/ruta/al/repo
+   ```
+
+## Usar
+
+1. Abrí Claude Code en el repo y pedile la feature, como se la pedirías a una persona.
+2. La skill te hace preguntas de a una, escribe la feature y la lanza. Desde ahí el run corre solo.
+3. Para ver cómo va, abrí una pestaña de terminal:
+
+   ```bash
+   flowrunner watch PIZ-1
+   ```
+
+4. Cuando el plan está listo te llega un aviso de macOS. Pedile a Claude que te lo muestre y decidí:
+   aprobarlo o pedir cambios.
+5. flowrunner implementa, verifica, revisa y abre la PR.
+6. Revisá la PR, corregí lo que haga falta y mergeala. En el próximo chequeo, flowrunner aprende de tus
+   correcciones.
+
+## Cómo funciona
+
+![El flujo de un run: de la feature a la PR, y de tus correcciones al cerebro del repo](docs/img/flujo.png)
+
+Cada run pasa por puestos en orden. Los grises los hace código, sin modelo; los azules, un agente; los
+naranjas, vos.
+
+| Puesto          | Quién          | Qué hace                                                                | Qué deja               |
+| --------------- | -------------- | ----------------------------------------------------------------------- | ---------------------- |
+| 0 · Feature     | vos            | La escribís conversando con la skill en Claude Code                     | `feature.md`           |
+| 1 · Preparar    | código         | Una copia de trabajo aparte, dependencias instaladas y la base en verde | la base comprobada     |
+| 2 · Planificar  | Opus           | Lee el código, escribe los tests de aceptación y divide en sub-tasks    | `plan.md` y los tests  |
+| 3 · Aprobar     | vos            | Aprobás el plan o pedís cambios con tu motivo                           | el plan aprobado       |
+| 4 · Implementar | Sonnet × N     | Cada sub-task en su propia copia, en paralelo si no se pisan            | un commit por sub-task |
+| 5 · Verificar   | código         | Corre los criterios y el `verify.sh` del repo                           | los criterios en verde |
+| 6 · Revisar     | Opus, solo lee | Compara el cambio con las convenciones del repo                         | la revisión            |
+| 7 · Entregar    | código         | Sube la rama y abre la PR, con lo que aprendió el run                   | la PR y el informe     |
+| 8 · Aprender    | agente         | Después del merge, convierte tus correcciones en lecciones              | una PR de lecciones    |
+
+Las líneas punteadas del diagrama son el trabajo que vuelve atrás: un criterio en rojo o un bloqueante de
+la revisión vuelven a implementar, y tus cambios al plan vuelven a planificar. Las lecciones llegan al
+cerebro del repo, y el próximo run las lee.
+
+Mientras trabajan, los agentes no pueden salirse de lo suyo: cada sub-task solo escribe dentro de su
+alcance, y flowrunner lo controla en cada herramienta y otra vez sobre el diff.
+
+## Qué pasa cuando algo falla
+
+Una sub-task que falla se reintenta con el motivo, y verificar y revisar pueden devolver trabajo hasta 2
+vueltas. Cuando reintentar no tiene sentido, flowrunner corta antes:
+
+- **Un problema del entorno**, como una dependencia sin instalar, no se le devuelve a una sub-task:
+  verificar reinstala y repite. Si sigue, se detiene y dice qué falta.
+- **Una sub-task que no avanza** dos intentos seguidos se corta, con lo último que dijo.
+- **Si el ciclo no converge**, un agente de solo lectura diagnostica si el problema está en el código de
+  alguna sub-task, en el entorno o en el plan, y actúa según eso.
+
+Todo tiene tope. Si el run se detiene, `flowrunner watch` y `flowrunner status` dicen el motivo y el
+comando exacto para seguir.
+
+## Cómo aprende el cerebro
+
+`.flowrunner/` es el cerebro del repo: su contexto, sus convenciones, qué es una buena PR y las lecciones.
+Aprende de dos fuentes, y en las dos decidís vos:
+
+- **Lo que al run le costó corregirse solo.** Si hubo vueltas o pediste cambios al plan, la PR de entrega
+  trae lecciones propuestas en un commit aparte. Si una no te convence, la borrás antes de mergear.
+- **Tus correcciones a la PR.** Después del merge, tus commits y comentarios se vuelven lecciones que
+  entran por una PR chica con auto-merge.
+
+## Ver un run en vivo
+
+`flowrunner watch` muestra, al estilo de [agents-tree](https://github.com/anegri93/agents-tree), cada run
+con sus fases y sub-tasks: el modelo, los tokens nuevos, los USD aproximados, el tiempo y el estado. Lo
+que corre muestra en gris la herramienta que está usando y cuánto contexto arrastra. Se refresca cada 2
+segundos; con las flechas elegís una fila, con Enter ves sus pasos y con `q` salís. Con `--once` la
+dibuja una vez.
+
+Los tokens nuevos son lo que cada fase leyó o escribió por primera vez, sin las relecturas de caché. El
+costo de lo que corre es un mínimo, `≥ 2.97`, porque la salida se conoce al terminar. Los USD son el
+equivalente de API: con la suscripción no se cobran, y lo que limita es su cupo.
+
+## Comandos
+
+| Comando                                 | Para qué                                      |
+| --------------------------------------- | --------------------------------------------- |
+| `flowrunner init <ruta> [--aplicar]`    | revisar y dejar listo un repo                 |
+| `flowrunner watch [run]`                | ver un run, o todos los activos, en vivo      |
+| `flowrunner status [run]`               | el estado de los runs, o de uno fase por fase |
+| `flowrunner plan <run>`                 | el plan que espera aprobación                 |
+| `flowrunner approve <run>`              | aprobar el plan                               |
+| `flowrunner changes <run> "<motivo>"`   | pedir cambios al plan                         |
+| `flowrunner report <run>`               | el informe del run                            |
+| `flowrunner resume <run>`               | retomar un run detenido                       |
+| `flowrunner rerun <run> --desde <fase>` | rehacer desde una fase                        |
+| `flowrunner abort <run>`                | cancelar un run                               |
+| `flowrunner learn <run>`                | aprender ya de una PR mergeada                |
+| `flowrunner stats [proyecto]`           | en qué fase se va el tiempo y el costo        |
+| `flowrunner doctor`                     | qué le falta a esta máquina                   |
+
+`run` puede ser el id completo o la clave de la feature, como `PIZ-1`. Casi nunca hace falta escribirlos:
+la skill de Claude Code los usa por vos.
+
+## Autenticación
+
+flowrunner usa tu suscripción de Claude: la sesión de Claude Code que ya tenés, con `auth: login` en
+`~/.flowrunner/config.yaml`, que es lo que deja `init`, o un token de `claude setup-token` guardado en el
+Keychain. La documentación del Agent SDK no permite ofrecer el login de claude.ai en productos de
+terceros: antes de compartir flowrunner con otras personas hay que pasar a API key o confirmarlo con
+Anthropic.
+
+## Desarrollo
+
+```bash
+pnpm lint              # eslint, prettier y tsc
+pnpm test              # unitarios, sin red ni suscripción
+pnpm test:integration  # git real, CLI como proceso hijo, SDK y gh simulados
+pnpm smoke             # SDK real con la suscripción
+pnpm verify            # lint, unitarios e integración: la verificación local completa
+```
 
 - Diseño: [`docs/specs/2026-11-07-flowrunner-v0-design.md`](docs/specs/2026-11-07-flowrunner-v0-design.md)
 - Plan de construcción: [`docs/tareas-construccion.md`](docs/tareas-construccion.md)
 - Decisiones: [`docs/adr/`](docs/adr/)
-
-## Desarrollo
-
-Requiere Node 24 o más nuevo, pnpm 10, git, `gh` y `graft`.
-
-```bash
-pnpm install
-pnpm lint              # eslint, prettier y tsc
-pnpm test              # unitarios, sin red ni suscripción
-pnpm test:integration  # git real, CLI como proceso hijo, query y gh falsos
-pnpm smoke             # SDK real con la suscripción; aparte de verify
-pnpm verify            # lint, test e integración: la verificación local completa
-```
-
-## Puesta en marcha
-
-```bash
-pnpm install
-ln -s "$PWD/bin/flowrunner.js" ~/.local/bin/flowrunner   # o cualquier carpeta de tu PATH
-flowrunner init <ruta-del-repo>             # revisa, infiere y dice qué falta; no toca nada
-flowrunner init <ruta-del-repo> --aplicar   # config, skill, launchd y la PR con el cerebro
-```
-
-`init` también instala la skill de Claude Code y un hook de inicio de sesión: en un repo registrado, la
-sesión arranca sabiendo que las features nuevas van por flowrunner.
-
-`init` infiere el setup, el `verify.sh` y dónde van los tests a partir del `package.json` y de los
-archivos del repo, y comprueba que la base esté en verde antes de abrir la PR. Completá
-`contexto.md`, `convenciones.md` y `que-es-bien.md` en esa PR antes de mergearla.
-
-Después, abrí una sesión de Claude Code y pedile que escriba y lance una feature: la skill
-`flowrunner` hace el resto con el CLI.
-
-## Qué pasa cuando algo falla
-
-flowrunner reintenta, pero no a ciegas. Una sub-task que falla se reintenta hasta 3 veces con el
-motivo, y verificar y revisar pueden devolver trabajo hasta 2 vueltas. Cuando reintentar no tiene
-sentido, se corta antes:
-
-- **Una señal de entorno** en la salida de un criterio, como `Cannot find package` o `command not
-found`, no se le devuelve a una sub-task: verificar reinstala y repite. Si sigue, se detiene y dice
-  qué falta.
-- **Una sub-task devuelta que no encuentra nada que cambiar** no gasta reintentos: su código queda
-  integrado y verificar decide de qué lado está el problema.
-- **Si el ciclo no converge**, porque pasó lo anterior o el mismo criterio falló dos vueltas
-  seguidas, una sesión de solo lectura diagnostica la causa: el código de alguna sub-task, que puede
-  no ser la que se culpó; el entorno; o el plan. Con código, devuelve el trabajo a la sub-task
-  correcta con una instrucción precisa; con entorno o plan, se detiene y dice cómo seguir.
-
-Todo tiene tope: al agotarse, el run se detiene con el motivo y el comando exacto para continuar.
-
-## Cómo aprende el cerebro
-
-El cerebro aprende de dos fuentes, y en las dos decide la persona:
-
-- **Lo que le costó al run corregirse solo.** Las vueltas de verificar y revisar y los cambios que
-  pediste al plan se vuelven lecciones propuestas, en un commit aparte de la misma PR de entrega,
-  explicadas en su descripción. Si una no te convence, la borrás de `.flowrunner/lecciones.md` antes
-  de mergear; si mergeás, quedan. Un run sin vueltas no gasta en esto y la PR lo dice.
-- **Tus correcciones a la PR.** Después del merge, tus commits y comentarios se vuelven lecciones que
-  llegan por una PR chica con auto-merge. Un commit tuyo que solo toca `.flowrunner/`, como borrar una
-  lección propuesta, no cuenta como corrección del código.
-
-## Ver un run en vivo
-
-```bash
-flowrunner watch PIZ-1        # un run por su clave o su id; sin nada, todos los activos
-```
-
-Una vista al estilo de [agents-tree](https://github.com/anegri93/agents-tree): arriba, cuántos runs te
-esperan, trabajan o terminaron; abajo, por proyecto y con lo urgente primero, cada run con sus fases y
-sub-tasks como árbol. Cada fila muestra el modelo con su esfuerzo, los tokens con una barra de qué parte
-del run se llevó, los USD aproximados, el tiempo y el estado; debajo, en gris, la herramienta que está
-usando o por qué volvió algo. Se refresca cada 2 segundos. Con las flechas elegís una fila y con Enter
-ves los pasos de sus sesiones; `q` sale. Con `--once`, o fuera de una terminal, la dibuja una vez.
-
-Los tokens son los **nuevos**: lo que cada fase leyó o escribió por primera vez, sin las relecturas
-de caché, que se cobran a una fracción. Lo que corre muestra su costo estimado en vivo como un mínimo, `≥ 2.97`, porque la
-salida de cada mensaje se conoce recién al terminar, y en gris cuánto contexto arrastra en cada vuelta.
-Al terminar, el mínimo se reemplaza por el costo real. Los USD son el equivalente de API: con la suscripción no se cobran, y lo
-que limita es su cupo. Un run no tiene tope de gasto salvo que el repo lo pida con `budget.run_usd` en
-`.flowrunner/config.yaml`.
-
-## Uso personal
-
-flowrunner se autentica con la suscripción de Claude mediante `claude setup-token`, o con la
-sesión de Claude Code que ya tenés si ponés `auth: login` en `~/.flowrunner/config.yaml`. La
-documentación del Agent SDK no permite ofrecer el login de claude.ai en productos de terceros:
-antes de compartir flowrunner con otras personas hay que pasar a API key o confirmarlo con
-Anthropic.

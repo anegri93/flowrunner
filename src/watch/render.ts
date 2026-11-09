@@ -148,6 +148,8 @@ function phaseRow(
       return { kind: "pending", status: "pendiente", note: undefined };
     case "corriendo":
       return { kind: "running", status: "trabajando", note: toolNote(p.sesiones) };
+    case "cortada":
+      return { kind: "inactive", status: "cortada", note: undefined };
     case "ok": {
       const status =
         p.fase === "aprobar" ? "aprobado" : p.fase === "entregar" ? "PR creada" : "listo";
@@ -175,6 +177,8 @@ function unitRow(
   switch (u.estado) {
     case "corriendo":
       return { kind: "running", status: "trabajando", note: toolNote(u.sesiones) };
+    case "cortada":
+      return { kind: "inactive", status: "cortada", note: undefined };
     case "integrada":
     case "commiteada":
       return { kind: "done", status: u.estado, note: undefined };

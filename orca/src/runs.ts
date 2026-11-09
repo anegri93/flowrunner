@@ -201,6 +201,8 @@ export function phaseLabel(
       };
     case "corriendo":
       return { mark: "●", texto: "trabajando", tone: "accent" };
+    case "cortada":
+      return { mark: "–", texto: "cortada", tone: "neutral" };
     case "espera":
       return fase === "aprobar"
         ? { mark: "●", texto: "te espera", tone: "warning" }
@@ -340,6 +342,7 @@ export interface Now {
 const TASK: Record<string, { mark: string; tone: Tone; texto: string }> = {
   pendiente: { mark: "○", tone: "neutral", texto: "pendiente" },
   corriendo: { mark: "●", tone: "accent", texto: "trabajando" },
+  cortada: { mark: "–", tone: "neutral", texto: "cortada" },
   commiteada: { mark: "✓", tone: "success", texto: "commiteada" },
   integrada: { mark: "✓", tone: "success", texto: "integrada" },
   fallida: { mark: "✕", tone: "danger", texto: "falló" },

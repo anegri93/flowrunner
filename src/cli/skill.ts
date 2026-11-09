@@ -1,5 +1,5 @@
 // `flowrunner skill install`: la skill de consola en ~/.claude/skills y, con confirmación, las reglas
-// ask para que Claude Code pregunte antes de aprobar o pedir cambios.
+// ask para que Claude Code pregunte antes de aprobar, pedir cambios o entregar sin probar.
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -8,7 +8,12 @@ import { UserError } from "./output.ts";
 import { BIN } from "./runs.ts";
 
 const SKILL_DIR = join(import.meta.dirname, "..", "..", "skills", "flowrunner");
-export const ASK_RULES = ["Bash(flowrunner approve:*)", "Bash(flowrunner changes:*)"] as const;
+export const ASK_RULES = [
+  "Bash(flowrunner approve:*)",
+  "Bash(flowrunner changes:*)",
+  // Entregar con criterios sin probar es de la persona, como aprobar (ADR 0017).
+  "Bash(flowrunner accept-untested:*)",
+] as const;
 /** El hook SessionStart: con la ruta del bin, para no depender del PATH con que arranca Claude Code. */
 export const SESSION_HOOK = `${shellQuote(BIN)} hook session-start`;
 

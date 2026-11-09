@@ -378,3 +378,49 @@ test("sin runs lo dice", async () => {
     },
   );
 });
+
+// Si regresiona, al cambiar de proyecto la pestaña queda casi en blanco hasta que llegan los runs.
+test("antes de la primera lectura muestra la nave en camino", async () => {
+  // Solo el componente, sin `setup`: queda en el estado de antes de leer los runs.
+  const view = await mount(panel.default, { host: mockHost() });
+  try {
+    assert.ok(view.find({ type: "Image" }));
+    assert.ok(view.find({ text: "Leyendo los runs…" }));
+    assert.deepEqual(view.errors, []);
+    assert.deepEqual(view.refusals, []);
+  } finally {
+    await view.unmount();
+  }
+});
+
+// Si regresiona, al cambiar de proyecto se ven los runs del anterior hasta el próximo refresco.
+test("al cambiar de workspace lee enseguida; un cambio de sus terminales no cuenta", async () => {
+  let pedidos = 0;
+  let proyecto = "uno";
+  const host = mockHost({
+    requests: {
+      "flowrunner.runs": () => {
+        pedidos += 1;
+        return { runs: proyecto === "uno" ? runs : [], at: 0, proyecto };
+      },
+    },
+  });
+  const focused = (displayName: string, terminals: { id: string }[] = []) => ({
+    context: { branch: "main", displayName, terminals },
+  });
+  await withPanel(host, async (view) => {
+    await view.emit("workspace.changed", focused("uno"));
+    assert.ok(view.findAll({ type: "Card" }).length > 0);
+    const antes = pedidos;
+    await view.emit("workspace.changed", focused("uno", [{ id: "t1" }]));
+    assert.equal(pedidos, antes);
+    proyecto = "dos";
+    await view.emit("workspace.changed", focused("dos"));
+    assert.equal(pedidos, antes + 1);
+    assert.equal(view.findAll({ type: "Card" }).length, 0);
+    assert.ok(
+      view.find({ label: "No hay runs activos en dos" }) ??
+        view.find({ text: "No hay runs activos en dos" }),
+    );
+  });
+});

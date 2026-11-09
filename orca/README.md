@@ -29,13 +29,14 @@ como `flowrunner watch`, pensada para el ancho angosto de la barra:
 
 Se refresca cada 3 segundos mientras la pestaña se ve, y sigue al proyecto que tenés enfocado en Orca,
 como el explorador y los agentes: muestra los runs de ese proyecto, incluidos los de sus worktrees,
-con su nombre arriba y cuántos runs hay en otros. Para saber cuál está enfocado pide el permiso
+con su nombre arriba y cuántos runs hay en otros. Al cambiar de proyecto lee enseguida, sin esperar los 3 segundos, y mientras tanto muestra
+la nave en camino en vez de los runs del anterior. Para saber cuál está enfocado pide el permiso
 `workspace:read`; sin él, o sin un proyecto enfocado, muestra todos.
 
 - `src/worker.ts` corre el CLI de flowrunner en un shell de login, para tener tu PATH: `watch`,
   `report --sesion`, `plan`, y cada decisión como un comando fijo (`approve`, `changes`, `resume`,
   `rerun --desde`, `learn`, `abort`). Valida el id del run, la fase y el motivo antes de llegar al shell.
-- `src/panel.tsx` dibuja la pestaña con los componentes de Orca 1.4.246.
+- `src/panel.tsx` dibuja la pestaña con los componentes de Orca 1.4.247; mientras lee los runs por primera vez, por ejemplo al cambiar de proyecto, muestra la nave de `assets/nave.png`, que sale de `scripts/nave.svg` con `scripts/nave-png.mjs`. Es fija: Orca rechaza las imágenes animadas de un plugin, así que lo que se mueve es el spinner.
 - `src/runs.ts` ordena los runs, agrupa las fases y decide qué decisiones ofrecer, sin depender de
   Orca.
 

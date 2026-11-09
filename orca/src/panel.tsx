@@ -10,7 +10,9 @@ import {
   Card,
   EmptyState,
   IconButton,
+  Image,
   Link,
+  on,
   plugin,
   read,
   Row,
@@ -51,6 +53,8 @@ const closedOpen = atom(false);
 const closedToggled = atom({} as Record<string, boolean>);
 
 let reading = false;
+/** Sube con cada cambio de workspace: una lectura pedida antes ya no es de lo que se ve. */
+let generation = 0;
 /**
  * Los runs que se cerraron entre dos lecturas: estaban entregados, esperando el merge, y ya no están
  * entre los activos. Al cerrarse, su informe se abre solo.
@@ -67,13 +71,16 @@ function closedSince(prev: Snapshot | null, next: Snapshot): string[] {
 
 /**
  * Lee los runs sin borrar lo que se ve: una lectura que falla deja los runs anteriores con el
- * error arriba, y una que no cambió nada no vuelve a dibujar. Nunca dos lecturas a la vez.
+ * error arriba, y una que no cambió nada no vuelve a dibujar. Nunca dos lecturas a la vez. Una
+ * lectura que quedó vieja por un cambio de workspace se descarta y se vuelve a leer.
  */
 export async function refresh(): Promise<void> {
   if (reading) return;
   reading = true;
+  const asked = generation;
   try {
     const next = await plugin.request("flowrunner.runs");
+    if (asked !== generation) return;
     const prev = read(snapshot);
     if (next.error === undefined)
       for (const id of closedSince(prev, next)) void open(id, { tipo: "informe" });
@@ -82,6 +89,7 @@ export async function refresh(): Promise<void> {
       prev !== null && JSON.stringify({ ...prev, at: 0 }) === JSON.stringify({ ...shown, at: 0 });
     if (!same) set(snapshot, shown);
   } catch (error) {
+    if (asked !== generation) return;
     const prev = read(snapshot);
     set(snapshot, {
       runs: prev?.runs ?? [],
@@ -91,6 +99,7 @@ export async function refresh(): Promise<void> {
     });
   } finally {
     reading = false;
+    if (asked !== generation) void refresh();
   }
 }
 
@@ -105,8 +114,25 @@ async function open(run: string, que: Openable): Promise<void> {
   }
 }
 
-/** Lee los runs al abrir y cada 3 segundos mientras el panel se ve. */
+/**
+ * Lee los runs al abrir y cada 3 segundos mientras el panel se ve. Al cambiar de workspace en Orca
+ * vuelve a la nave y lee enseguida, sin mostrar mientras tanto los runs del anterior. El evento
+ * también llega cuando cambian sus terminales: eso no cuenta como cambio.
+ */
 export function setup(ctx: PanelContext): void {
+  let workspace: string | undefined;
+  ctx.subscriptions.push(
+    on("workspace.changed", ({ context }) => {
+      const key = context === null ? "" : `${context.displayName}\n${context.branch}`;
+      // El primer aviso es el workspace de ahora, no un cambio.
+      if (workspace !== undefined && key !== workspace) {
+        generation += 1;
+        set(snapshot, null);
+        void refresh();
+      }
+      workspace = key;
+    }),
+  );
   void refresh();
   const timer = setInterval(() => {
     if (read(ctx.visible)) void refresh();
@@ -338,7 +364,19 @@ function Closed({ runs }: { runs: Run[] }) {
 
 export default function Panel() {
   const snap = read(snapshot);
-  if (snap === null) return <Spinner label="Leyendo los runs de flowrunner" />;
+  if (snap === null)
+    return (
+      // ponytail: la nave queda fija y el movimiento lo da el Spinner: Orca rechaza imágenes animadas.
+      <Stack gap="sm" align="center">
+        <Image src="assets/nave.png" alt="" size="md" />
+        <Row gap="sm" align="center">
+          <Spinner label="Leyendo los runs" labelHidden />
+          <Text size="sm" muted>
+            Leyendo los runs…
+          </Text>
+        </Row>
+      </Stack>
+    );
   const runs = sortRuns(snap.runs);
   const others = snap.otros ?? 0;
   const elsewhere =

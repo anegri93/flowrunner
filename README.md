@@ -99,6 +99,19 @@ Homebrew; si no está instalada, verify no corre y el run se detiene diciendo c�
 6. Revisá la PR, corregí lo que haga falta y mergeala. En el próximo chequeo, que corre cada 10 minutos,
    flowrunner aprende de tus correcciones y cierra el run.
 
+### Archivos fuera de git que necesitan los criterios
+
+La copia de la feature sale de git: no tiene tus `.env`. Si los comandos de los criterios los
+necesitan, como un e2e que levanta la app, listalos en `.flowrunner/config.yaml`:
+
+```yaml
+env_files: [.env.local] # se copian de tu checkout mientras corren los comandos de los criterios
+```
+
+Se copian solo mientras corren esos comandos (al comprobar que los criterios están en rojo, en cada
+sub-task y en verificar) y se borran después. El agente no puede leerlos ni buscar en ellos, y nunca
+entran en un commit. Sin ellos, un e2e que no puede levantar la app «falla» sin probar nada.
+
 ### Probar la feature en el entorno
 
 Después de revisar, la fase probar usa la feature como lo harías vos: levanta el entorno de desarrollo

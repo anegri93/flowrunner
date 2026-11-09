@@ -12,7 +12,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { loadBrain, type Brain } from "../brain/brain.ts";
-import { loadRepoConfig } from "../config/load.ts";
+import { isVerifyCommand, loadRepoConfig } from "../config/load.ts";
 import type { RepoConfig } from "../config/schemas.ts";
 import { testsInScope, testsTouched, undeclared } from "../gates/existente.ts";
 import { callersOutOfScope } from "../gates/llamadores.ts";
@@ -24,6 +24,7 @@ import type { PhaseFn, RunPaths } from "../runner/types.ts";
 import { runSession } from "../agent/session.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
 import { isTestFile } from "../tripwires/rules.ts";
+import { copyEnvFiles } from "./env-files.ts";
 import { runFixers } from "./fixers.ts";
 import { graftIndex, prepared, runFeature } from "./inputs.ts";
 import { archivePlan, previousDir, replanOf, replanText } from "./plan-anterior.ts";
@@ -218,7 +219,20 @@ export const planificar: PhaseFn = async (ctx) => {
   for (const declared of plan.tests.filter((t) => !written.includes(t))) {
     problems.push(`el plan declara el test ${declared}, pero no está escrito`);
   }
-  if (problems.length === 0) problems.push(...(await checkCommandsFail(plan, worktree, deps.env)));
+  if (problems.length === 0) {
+    const env = copyEnvFiles(ctx.state.repo, worktree, config.env_files);
+    if (!env.ok) return { tipo: "falla", clase: "entorno", motivo: env.motivo };
+    try {
+      problems.push(
+        // «verify en verde» pasa sobre la base, como debe: lo comprueba verificar, no este rojo.
+        ...(await checkCommandsFail(plan, worktree, deps.env, (comando) =>
+          isVerifyCommand(config, comando),
+        )),
+      );
+    } finally {
+      env.remove();
+    }
+  }
   if (problems.length > 0) {
     return {
       tipo: "falla",

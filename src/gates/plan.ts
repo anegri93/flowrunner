@@ -202,14 +202,18 @@ export function checkPlanShape(
 
 export const ACCEPTANCE_TIMEOUT_MS = 10 * 60_000;
 
-/** La parte del gate que corre los comandos: cada uno tiene que fallar, y fallar de verdad. */
+/**
+ * La parte del gate que corre los comandos: cada uno tiene que fallar, y fallar de verdad. `skip`
+ * deja afuera los que no se corren en rojo, como el verify del repo: los comprueba verificar.
+ */
 export async function checkCommandsFail(
   plan: Plan,
   worktree: string,
   env: NodeJS.ProcessEnv,
+  skip: (comando: string) => boolean = () => false,
 ): Promise<string[]> {
   const problems: string[] = [];
-  for (const criterion of plan.criterios) {
+  for (const criterion of plan.criterios.filter((c) => !skip(c.comando))) {
     const result = await runShell(criterion.comando, {
       cwd: worktree,
       env,

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { shellQuote } from "../agent/env.ts";
 import { runSession } from "../agent/session.ts";
 import { loadBrain } from "../brain/brain.ts";
-import { loadRepoConfig } from "../config/load.ts";
+import { isVerifyCommand, loadRepoConfig } from "../config/load.ts";
 import type { RepoConfig } from "../config/schemas.ts";
 import { blockedByFailure, readyToStart } from "../engine/scheduler.ts";
 import { AVISO_TEST_EXISTENTE, existedAt, testsTouched, undeclared } from "../gates/existente.ts";
@@ -25,6 +25,7 @@ import type { Outcome, RunEvent } from "../store/events.ts";
 import { checkChanges } from "../tripwires/diff.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
 import type { Scope } from "../tripwires/rules.ts";
+import { copyEnvFiles } from "./env-files.ts";
 import { featureWorktree, prepared, runFeature, unitWorktree } from "./inputs.ts";
 import { brainVars, readPlan, sessionName } from "./planificar.ts";
 import { SETUP_TIMEOUT_MS } from "./preparar.ts";
@@ -88,16 +89,6 @@ export function installCommands(config: RepoConfig, task: Subtask, exact: boolea
   ];
 }
 
-/** `./.flowrunner/verify.sh`, `.flowrunner/verify.sh` o `bash .flowrunner/verify.sh`: el verify del repo. */
-export function isVerifyCommand(config: RepoConfig, comando: string): boolean {
-  const bare = (p: string) =>
-    p
-      .trim()
-      .replace(/^(?:ba)?sh\s+/, "")
-      .replace(/^\.\//, "");
-  return bare(comando) === bare(config.verify);
-}
-
 export function unitCommands(
   config: RepoConfig,
   task: Subtask,
@@ -140,6 +131,7 @@ export function unitScope(
     depsDeclared: allDependencies(task).length > 0,
     testGlobs: config.tests_globs,
     bash,
+    unreadable: config.env_files,
   };
 }
 
@@ -218,6 +210,16 @@ export const implementar: PhaseFn = async (ctx) => {
         estado: "iniciada",
         sha: start,
       });
+      // Sus criterios los corre el agente: los .env están mientras dura la sesión, sin poder leerse, y
+      // se borran antes de mirar qué cambió, así no entran en el commit.
+      const env = copyEnvFiles(state.repo, wt, config.env_files);
+      if (!env.ok) {
+        return {
+          ok: false,
+          motivo: env.motivo,
+          fatal: { tipo: "falla", clase: "entorno", motivo: env.motivo },
+        };
+      }
       const scope = unitScope(wt, config, task, locked, bash);
       const result = await runSession(
         {
@@ -268,7 +270,7 @@ export const implementar: PhaseFn = async (ctx) => {
           timeoutMs: UNIT_TIMEOUT_MS,
         },
         { run, deps, emit },
-      );
+      ).finally(env.remove);
       if (result.tipo === "limite") return { ok: false, motivo: "límite", fatal: result };
       if (result.tipo === "falla") {
         if (result.clase === "entorno")

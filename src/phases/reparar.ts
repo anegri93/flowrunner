@@ -21,6 +21,7 @@ import { isUnrunnable, runShell } from "../proc/proc.ts";
 import { render } from "../prompts/render.ts";
 import type { PhaseContext } from "../runner/types.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
+import { withEnvFiles } from "./env-files.ts";
 import { runFixers } from "./fixers.ts";
 import { sessionName } from "./planificar.ts";
 
@@ -131,16 +132,20 @@ export async function repairTest(ctx: PhaseContext, input: RepairInput): Promise
 
   // Los criterios que corren este test: tienen que pasar con la feature y fallar sin ella.
   const own = input.plan.criterios.filter((c) => c.comando.includes(archivo));
-  for (const c of own) {
-    const now = await runShell(c.comando, {
-      cwd: worktree,
-      env: deps.env,
-      timeoutMs: ACCEPTANCE_TIMEOUT_MS,
-    });
-    if (now.code !== 0) {
-      restore();
-      return refuse(`${c.id} sigue en rojo con el test reparado`);
+  const red = await withEnvFiles(ctx.state.repo, worktree, config.env_files, async () => {
+    for (const c of own) {
+      const now = await runShell(c.comando, {
+        cwd: worktree,
+        env: deps.env,
+        timeoutMs: ACCEPTANCE_TIMEOUT_MS,
+      });
+      if (now.code !== 0) return c;
     }
+    return undefined;
+  });
+  if (red !== undefined) {
+    restore();
+    return refuse(`${red.id} sigue en rojo con el test reparado`);
   }
   const redOnBase = await stillRedWithoutFeature(ctx, input, readFileSync(file, "utf8"), own);
   if (redOnBase !== undefined) {
@@ -208,18 +213,20 @@ async function stillRedWithoutFeature(
     if (existsSync(modules) && !existsSync(join(base, "node_modules"))) {
       symlinkSync(modules, join(base, "node_modules"));
     }
-    for (const c of own) {
-      const before = await runShell(c.comando, {
-        cwd: base,
-        env: deps.env,
-        timeoutMs: ACCEPTANCE_TIMEOUT_MS,
-      });
-      if (before.code === 0)
-        return `${c.id} pasa sin la feature con el test reparado: el cambio ablandó el test`;
-      if (isUnrunnable(before))
-        return `${c.id} no se pudo correr sin la feature para comprobar el test`;
-    }
-    return undefined;
+    return await withEnvFiles(ctx.state.repo, base, input.config.env_files, async () => {
+      for (const c of own) {
+        const before = await runShell(c.comando, {
+          cwd: base,
+          env: deps.env,
+          timeoutMs: ACCEPTANCE_TIMEOUT_MS,
+        });
+        if (before.code === 0)
+          return `${c.id} pasa sin la feature con el test reparado: el cambio ablandó el test`;
+        if (isUnrunnable(before))
+          return `${c.id} no se pudo correr sin la feature para comprobar el test`;
+      }
+      return undefined;
+    });
   } finally {
     await removeWorktree(input.worktree, base, deps.env).catch(() => undefined);
   }

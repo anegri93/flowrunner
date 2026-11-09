@@ -49,6 +49,16 @@ export function repoConfigPath(repo: string): string {
   return join(repo, ".flowrunner", "config.yaml");
 }
 
+/** `./.flowrunner/verify.sh`, `.flowrunner/verify.sh` o `bash .flowrunner/verify.sh`: el verify del repo. */
+export function isVerifyCommand(config: RepoConfig, comando: string): boolean {
+  const bare = (p: string) =>
+    p
+      .trim()
+      .replace(/^(?:ba)?sh\s+/, "")
+      .replace(/^\.\//, "");
+  return bare(comando) === bare(config.verify);
+}
+
 export function loadRepoConfig(repo: string): RepoConfig {
   if (!isAbsolute(repo)) throw new Error(`la ruta del repo tiene que ser absoluta: ${repo}`);
   const file = repoConfigPath(repo);

@@ -27,6 +27,7 @@ import type { Openable, Snapshot } from "./protocol";
 import {
   canAbort,
   clock,
+  closedSummary,
   decisionsFor,
   isFinished,
   needsYou,
@@ -213,9 +214,8 @@ function Stage({ run, row }: { run: Run; row: StageRow }) {
   );
 }
 
-/** Un run, con sus etapas si la persona lo abrió; `whole`, siempre con todas y sin botón para cerrarlo. */
-function RunCard({ run, whole = false }: { run: Run; whole?: boolean }) {
-  const open = whole || isOpen(run);
+function RunCard({ run }: { run: Run }) {
+  const open = isOpen(run);
   const chip = runChip(run);
   const rows = stageRows(run);
   const shown = open ? rows : rows.filter((r) => r.actual);
@@ -225,15 +225,13 @@ function RunCard({ run, whole = false }: { run: Run; whole?: boolean }) {
       <Stack gap="sm">
         <Row justify="between" align="center">
           <Badge tone={chip.tone}>{chip.texto}</Badge>
-          {whole ? null : (
-            <IconButton
-              icon={open ? "collapse" : "expand"}
-              label={open ? `Ocultar las etapas de ${run.clave}` : `Ver las etapas de ${run.clave}`}
-              variant="ghost"
-              size="sm"
-              onPress={() => update(toggled, (m) => ({ ...m, [run.id]: !open }))}
-            />
-          )}
+          <IconButton
+            icon={open ? "collapse" : "expand"}
+            label={open ? `Ocultar las etapas de ${run.clave}` : `Ver las etapas de ${run.clave}`}
+            variant="ghost"
+            size="sm"
+            onPress={() => update(toggled, (m) => ({ ...m, [run.id]: !open }))}
+          />
         </Row>
         <Stack gap="none">
           <Text weight="semibold">{run.titulo}</Text>
@@ -269,39 +267,47 @@ function RunCard({ run, whole = false }: { run: Run; whole?: boolean }) {
 }
 
 /**
- * Un run cerrado en una línea: cómo terminó, la clave y el título, que abre su informe, y el tiempo y
- * el costo. La flecha despliega la tarjeta entera debajo.
+ * Un run cerrado, compacto: la marca de cómo terminó, `CLAVE · título`, que abre su informe, y debajo
+ * en gris cómo terminó, cuándo arrancó, cuánto tardó y cuánto costó. La flecha despliega las etapas
+ * que corrieron.
  */
 function ClosedRow({ run }: { run: Run }) {
   const expanded = read(closedToggled)[run.id] === true;
   const aborted = run.status === "abortado";
+  const ran = stageRows(run).filter((r) => r.estado !== "pendiente");
   return (
     <Stack gap="xs">
       <Row justify="between" align="center" gap="sm">
         <Row gap="sm" align="center">
-          <Text size="xs" tone={aborted ? "neutral" : "success"} muted={aborted}>
-            {aborted ? "⨯" : "✓"}
+          <Text tone={aborted ? "neutral" : "success"} muted={aborted}>
+            {aborted ? "✕" : "✓"}
           </Text>
-          <Text size="xs" truncate>
-            <Link onPress={() => open(run.id, { tipo: "informe" })}>
-              {`${run.clave} · ${run.titulo}`}
-            </Link>
-          </Text>
+          <Stack gap="none">
+            <Text size="sm" truncate>
+              <Link onPress={() => open(run.id, { tipo: "informe" })}>
+                {`${run.clave} · ${run.titulo}`}
+              </Link>
+            </Text>
+            <Text size="xs" muted truncate>
+              {closedSummary(run)}
+            </Text>
+          </Stack>
         </Row>
-        <Row gap="xs" align="center">
-          <Text size="xs" muted>
-            {`${clock(run.segundos) ?? "–"} · $${run.costoUsd.toFixed(2)}`}
-          </Text>
-          <IconButton
-            icon={expanded ? "collapse" : "expand"}
-            label={expanded ? `Ocultar ${run.clave}` : `Ver ${run.clave} entero`}
-            variant="ghost"
-            size="sm"
-            onPress={() => update(closedToggled, (m) => ({ ...m, [run.id]: !expanded }))}
-          />
-        </Row>
+        <IconButton
+          icon={expanded ? "collapse" : "expand"}
+          label={expanded ? `Ocultar las etapas de ${run.clave}` : `Ver las etapas de ${run.clave}`}
+          variant="ghost"
+          size="sm"
+          onPress={() => update(closedToggled, (m) => ({ ...m, [run.id]: !expanded }))}
+        />
       </Row>
-      {expanded ? <RunCard run={run} whole /> : null}
+      {expanded ? (
+        <Stack gap="xs">
+          {ran.map((row) => (
+            <Stage key={row.fase} run={run} row={row} />
+          ))}
+        </Stack>
+      ) : null}
     </Stack>
   );
 }

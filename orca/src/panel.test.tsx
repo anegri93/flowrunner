@@ -321,14 +321,19 @@ test("al cambiar de proyecto, los runs del anterior se dejan de ver sin abrir su
   );
 });
 
-// Si regresiona, los runs cerrados desaparecen del panel, o lo llenan con tarjetas enteras.
-test("los cerrados van aparte, colapsados, una línea cada uno; el título abre el informe", async () => {
+// Si regresiona, los runs cerrados desaparecen del panel, lo llenan con tarjetas enteras, o uno
+// abortado aparece trabajando.
+test("los cerrados van aparte y compactos; el título abre el informe y la flecha sus etapas", async () => {
+  const base = runs[2] as Run;
   const closed = {
-    ...runs[2],
-    id: "VF-0-20261101-000000",
+    ...base,
+    id: "VF-0-20261101-102507",
     clave: "VF-0",
-    status: "cerrado",
-    costoUsd: 7.2,
+    status: "abortado",
+    costoUsd: 5.22,
+    segundos: 527,
+    // El árbol dice que aprobar seguía corriendo cuando se abortó.
+    fases: base.fases.map((f) => (f.fase === "aprobar" ? { ...f, estado: "corriendo" } : f)),
   } as Run;
   const opened: unknown[] = [];
   await withPanel(
@@ -345,17 +350,18 @@ test("los cerrados van aparte, colapsados, una línea cada uno; el título abre 
       assert.ok(view.find({ text: "CERRADOS · 1" }));
       assert.equal(view.find({ text: `VF-0 · ${closed.titulo}` }), null);
       await view.press({ label: "Ver los runs cerrados" });
-      // Una línea: la marca, la clave y el título, el tiempo y el costo; sin la tarjeta.
-      assert.ok(view.find({ text: "✓" }));
       assert.ok(view.find({ text: `VF-0 · ${closed.titulo}` }));
-      assert.ok(view.find({ text: /· \$7\.20$/ }));
+      assert.ok(view.find({ text: "abortado · 01/11 10:25 · 8:47 · $5.22" }));
       assert.equal(view.findAll({ type: "Card" }).length, 0);
       await view.press({ text: `VF-0 · ${closed.titulo}` });
       assert.deepEqual(opened, [{ run: closed.id, que: { tipo: "informe" } }]);
-      // La flecha despliega la tarjeta con todas sus etapas, sin «Abortar el run».
-      await view.press({ label: "Ver VF-0 entero" });
-      assert.equal(view.findAll({ type: "Card" }).length, 1);
-      assert.equal(view.findAll({ text: "Preparar" }).length, 1);
+      // Desplegado: solo las etapas que corrieron, ninguna trabajando, y sin abortar.
+      await view.press({ label: "Ver las etapas de VF-0" });
+      assert.ok(view.find({ text: "Preparar" }));
+      assert.equal(view.find({ text: "Implementar" }), null);
+      assert.equal(view.find({ text: "trabajando" }), null);
+      assert.equal(view.find({ label: "Aprobar: trabajando" }), null);
+      assert.ok(view.find({ text: "cortada" }));
       assert.equal(view.find({ text: "Abortar el run" }), null);
     },
   );

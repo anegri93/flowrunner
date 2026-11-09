@@ -16,7 +16,6 @@ export const DRAFT_HEADING = "## Borrador de flowrunner init";
 
 /** Una línea de avance para la persona que espera en la terminal. */
 export type Progress = (line: string) => void;
-export const DRAFT_BUDGET_USD = 3;
 export const DRAFT_TIMEOUT_MS = 15 * 60_000;
 /** Cada texto, bien por debajo del tope de 16.000 caracteres de su archivo. */
 const MAX_TEXT = 6_000;
@@ -209,9 +208,7 @@ export async function draftBrain(input: DraftInput): Promise<DraftResult> {
   const commits = await git(worktree, ["log", "-n", "20", "--no-merges", "--format=%s"], deps.env);
   const commit = (await git(worktree, ["rev-parse", "--short", "HEAD"], deps.env)).trim();
   const root = realpathSync(worktree);
-  input.progress(
-    `Claude lee el código y redacta el borrador: puede tardar unos minutos, con un tope de USD ${String(DRAFT_BUDGET_USD)}`,
-  );
+  input.progress("Claude lee el código y redacta el borrador: puede tardar unos minutos");
   // Init no es una fase de un run: la sesión usa la etiqueta y el modelo de planificar, que es la
   // otra que lee el repo para entenderlo antes de actuar.
   const result = await runSession(
@@ -246,7 +243,7 @@ export async function draftBrain(input: DraftInput): Promise<DraftResult> {
         () => undefined,
       ),
       schema: draftSchema,
-      maxBudgetUsd: DRAFT_BUDGET_USD,
+      // Sin tope de gasto: un borrador cortado a mitad no deja nada y obliga a pagar otra vuelta.
       timeoutMs: DRAFT_TIMEOUT_MS,
     },
     {

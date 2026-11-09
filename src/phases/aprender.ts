@@ -97,7 +97,6 @@ export function autoMergeAllowed(touched: readonly string[], consolidated: boole
   );
 }
 
-export const APRENDER_BUDGET_USD = 2;
 export const APRENDER_TIMEOUT_MS = 15 * 60_000;
 
 export const nextLessonNumber = (text: string) =>
@@ -186,7 +185,6 @@ export const aprender: PhaseFn = async (ctx) => {
         tools: [],
         hook: readOnlyHook(ctx, wt),
         schema: lessonsSchema,
-        maxBudgetUsd: APRENDER_BUDGET_USD,
         timeoutMs: APRENDER_TIMEOUT_MS,
       },
       { run, deps, emit },
@@ -228,7 +226,6 @@ export const aprender: PhaseFn = async (ctx) => {
           tools: [],
           hook: readOnlyHook(ctx, wt),
           schema: consolidationSchema,
-          maxBudgetUsd: APRENDER_BUDGET_USD,
           timeoutMs: APRENDER_TIMEOUT_MS,
         },
         { run, deps, emit },

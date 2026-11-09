@@ -28,7 +28,6 @@ import { brainVars, readPlan, sessionName } from "./planificar.ts";
 import { SETUP_TIMEOUT_MS } from "./preparar.ts";
 
 export const MAX_UNIT_ATTEMPTS = 3;
-export const UNIT_BUDGET_USD = 4;
 export const UNIT_TIMEOUT_MS = 60 * 60_000;
 
 type UnitEvent = Extract<RunEvent, { tipo: "unidad" }>;
@@ -243,7 +242,6 @@ export const implementar: PhaseFn = async (ctx) => {
             },
             emit,
           ),
-          maxBudgetUsd: UNIT_BUDGET_USD,
           timeoutMs: UNIT_TIMEOUT_MS,
         },
         { run, deps, emit },

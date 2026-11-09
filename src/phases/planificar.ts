@@ -25,7 +25,6 @@ import { runFixers } from "./fixers.ts";
 import { graftIndex, prepared, runFeature } from "./inputs.ts";
 import { archivePlan, previousDir, replanOf, replanText } from "./plan-anterior.ts";
 
-export const PLANIFICAR_BUDGET_USD = 8;
 export const PLANIFICAR_TIMEOUT_MS = 30 * 60_000;
 
 /** `planificar-3`: un nombre de sesión que no pisa los de intentos anteriores, ni de un rerun. */
@@ -150,7 +149,6 @@ export const planificar: PhaseFn = async (ctx) => {
           model: config.models.explorar.model,
         },
       },
-      maxBudgetUsd: PLANIFICAR_BUDGET_USD,
       timeoutMs: PLANIFICAR_TIMEOUT_MS,
     },
     { run, deps, emit },

@@ -29,7 +29,6 @@ export const reviewSchema = z.object({
 });
 export type Review = z.infer<typeof reviewSchema>;
 
-export const REVISAR_BUDGET_USD = 4;
 export const REVISAR_TIMEOUT_MS = 30 * 60_000;
 /** Un diff más largo que esto se corta en el prompt; el revisor puede leer los archivos con Read. */
 export const MAX_DIFF_CHARS = 60_000;
@@ -94,7 +93,6 @@ export const revisar: PhaseFn = async (ctx) => {
       ),
       schema: reviewSchema,
       mcpServers: { graft: graftMcpServer(worktree, graftIndex(run), deps.env) },
-      maxBudgetUsd: REVISAR_BUDGET_USD,
       timeoutMs: REVISAR_TIMEOUT_MS,
     },
     { run, deps, emit },

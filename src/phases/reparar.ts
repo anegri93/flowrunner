@@ -24,7 +24,6 @@ import { tripwireHook } from "../tripwires/hook.ts";
 import { runFixers } from "./fixers.ts";
 import { sessionName } from "./planificar.ts";
 
-export const REPARAR_BUDGET_USD = 1;
 export const REPARAR_TIMEOUT_MS = 10 * 60_000;
 
 /** El comienzo del aviso de una reparación hecha: con él se cuenta una por test. */
@@ -102,7 +101,6 @@ export async function repairTest(ctx: PhaseContext, input: RepairInput): Promise
         },
         emit,
       ),
-      maxBudgetUsd: REPARAR_BUDGET_USD,
       timeoutMs: REPARAR_TIMEOUT_MS,
     },
     { run, deps, emit },

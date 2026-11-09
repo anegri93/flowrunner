@@ -2,7 +2,7 @@
 import { realpathSync } from "node:fs";
 import { z } from "zod";
 import type { Feature } from "../feature/feature.ts";
-import { isUnrunnable, runShell, tail } from "../proc/proc.ts";
+import { isUnrunnable, runShell, tail, type ProcResult } from "../proc/proc.ts";
 import { insideRoot, type Scope } from "../tripwires/rules.ts";
 
 /** Un nombre de paquete, con scope y versión opcionales: `jsqr`, `@types/qrcode`, `jsqr@1.4.0`. */
@@ -203,6 +203,23 @@ export function checkPlanShape(
 export const ACCEPTANCE_TIMEOUT_MS = 10 * 60_000;
 
 /**
+ * Corre los comandos de los criterios, cada comando distinto una sola vez: varios criterios suelen
+ * compartir la misma spec (COMPARTIR-1: cuatro corridas de la misma spec e2e, 6 min de gate en vez de
+ * 1,5). Uno nuevo por pasada, así una pasada posterior vuelve a correr todo.
+ */
+export function acceptanceRunner(worktree: string, env: NodeJS.ProcessEnv) {
+  const results = new Map<string, Promise<ProcResult>>();
+  return (comando: string): Promise<ProcResult> => {
+    let result = results.get(comando);
+    if (result === undefined) {
+      result = runShell(comando, { cwd: worktree, env, timeoutMs: ACCEPTANCE_TIMEOUT_MS });
+      results.set(comando, result);
+    }
+    return result;
+  };
+}
+
+/**
  * La parte del gate que corre los comandos: cada uno tiene que fallar, y fallar de verdad. `skip`
  * deja afuera los que no se corren en rojo, como el verify del repo: los comprueba verificar.
  */
@@ -212,13 +229,10 @@ export async function checkCommandsFail(
   env: NodeJS.ProcessEnv,
   skip: (comando: string) => boolean = () => false,
 ): Promise<string[]> {
+  const run = acceptanceRunner(worktree, env);
   const problems: string[] = [];
   for (const criterion of plan.criterios.filter((c) => !skip(c.comando))) {
-    const result = await runShell(criterion.comando, {
-      cwd: worktree,
-      env,
-      timeoutMs: ACCEPTANCE_TIMEOUT_MS,
-    });
+    const result = await run(criterion.comando);
     if (isUnrunnable(result)) {
       problems.push(
         `${criterion.id} no se puede ejecutar (exit ${result.code}): \`${criterion.comando}\` no es un rojo válido:\n${tail(result, 8)}`,

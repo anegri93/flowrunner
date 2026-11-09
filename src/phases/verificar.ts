@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadRepoConfig } from "../config/load.ts";
-import { ACCEPTANCE_TIMEOUT_MS } from "../gates/plan.ts";
+import { acceptanceRunner } from "../gates/plan.ts";
 import { runShell, tail } from "../proc/proc.ts";
 import type { PhaseFn } from "../runner/types.ts";
 import type { RunEvent } from "../store/events.ts";
@@ -112,13 +112,10 @@ export const verificar: PhaseFn = async (ctx) => {
   // Los .env solo mientras corren los comandos: diagnosticar y reparar leen este worktree.
   const runCriteria = (criteria: readonly (typeof plan.criterios)[number][]) =>
     withEnvFiles(ctx.state.repo, worktree, config.env_files, async () => {
+      const run = acceptanceRunner(worktree, deps.env);
       const failing: (Failing & { hint: string | undefined })[] = [];
       for (const criterion of criteria) {
-        const result = await runShell(criterion.comando, {
-          cwd: worktree,
-          env: deps.env,
-          timeoutMs: ACCEPTANCE_TIMEOUT_MS,
-        });
+        const result = await run(criterion.comando);
         if (result.code !== 0) {
           failing.push({
             id: criterion.id,

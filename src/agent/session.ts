@@ -91,8 +91,10 @@ export function buildOptions<T>(
   };
 }
 
-const AUTH_FAILED =
+const TOKEN_REJECTED =
   "Claude rechazó la credencial de la sesión: revisá el token del Keychain con `flowrunner doctor`";
+const LOGIN_MISSING =
+  "Claude Code no encontró tu sesión: corré `claude auth status` en la terminal y, si no hay sesión, abrí `claude` y corré `/login`";
 
 export async function runSession<T>(
   spec: SessionSpec<T>,
@@ -107,6 +109,9 @@ export async function runSession<T>(
       return { tipo: "falla", clase: "entorno", motivo: error.message };
     throw error;
   }
+  // En modo token la sesión lleva su token; en modo login, la sesión de Claude Code de la persona.
+  const authFailedMotivo =
+    options.env?.CLAUDE_CODE_OAUTH_TOKEN === undefined ? LOGIN_MISSING : TOKEN_REJECTED;
   const dir = join(rt.run.dir, "sesiones");
   mkdirSync(dir, { recursive: true });
   const streamFile = join(dir, `${spec.nombre}.jsonl`);
@@ -128,7 +133,7 @@ export async function runSession<T>(
     }
   } catch (error) {
     if (limitUntil !== undefined) return { tipo: "limite", hasta: limitUntil };
-    if (authFailed) return { tipo: "falla", clase: "entorno", motivo: AUTH_FAILED };
+    if (authFailed) return { tipo: "falla", clase: "entorno", motivo: authFailedMotivo };
     const motivo = abort.signal.aborted
       ? `la sesión ${spec.nombre} pasó su timeout de ${Math.round(spec.timeoutMs / 60_000)} min`
       : `la sesión ${spec.nombre} falló: ${error instanceof Error ? error.message : String(error)}`;
@@ -137,7 +142,7 @@ export async function runSession<T>(
     clearTimeout(timer);
   }
   if (limitUntil !== undefined) return { tipo: "limite", hasta: limitUntil };
-  if (authFailed) return { tipo: "falla", clase: "entorno", motivo: AUTH_FAILED };
+  if (authFailed) return { tipo: "falla", clase: "entorno", motivo: authFailedMotivo };
   if (result === undefined) {
     return {
       tipo: "falla",

@@ -76,6 +76,29 @@ test("las sub-tasks con su estado; Pasos y Plan piden abrir su archivo en una pe
   );
 });
 
+// Si regresiona, un plan ya aprobado no se puede volver a ver desde el panel.
+test("tocar Aprobar abre el plan, también el de un run que ya lo aprobó", async () => {
+  const opened: unknown[] = [];
+  await withPanel(
+    withRuns({
+      "flowrunner.abrir": (input: unknown) => {
+        opened.push(input);
+        return { ok: true, mensaje: "abierto" };
+      },
+    }),
+    async (view) => {
+      // PIZ-3 espera aprobación; VF-2 ya pasó de planificar. Los dos tienen plan para ver.
+      const links = view.findAll({ type: "Link", text: "Aprobar" });
+      assert.equal(links.length, 2);
+      for (const link of links) await view.press(link);
+      assert.deepEqual(opened, [
+        { run: "PIZ-3-20261109-010000", que: { tipo: "plan" } },
+        { run: "VF-2-20261109-001527", que: { tipo: "plan" } },
+      ]);
+    },
+  );
+});
+
 // Si regresiona, un archivo que no se pudo abrir falla en silencio.
 test("si no se puede abrir, lo dice en el run", async () => {
   await withPanel(

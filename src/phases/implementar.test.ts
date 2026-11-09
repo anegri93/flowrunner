@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -153,6 +153,44 @@ describe("implementar", () => {
     expect(motivo).toContain("no avanzó en dos intentos seguidos");
     expect(motivo).toContain("No pude instalar jsqr");
     expect(unitEvents(run.dir).filter((e) => e === "ST-1:iniciada")).toHaveLength(2);
+  });
+
+  // Regresión: en COMPARTIR-1 (rskate) el worktree no tenía .env.local y los e2e de una sub-task no
+  // podían levantar la app. Los secretos tienen que estar para los comandos y no para el agente.
+  test("la sub-task corre con los env_files sin poder leerlos, y no quedan en su commit", async () => {
+    const sim = simQuery(
+      byUnit({
+        "ST-1": [
+          {
+            calls: [
+              { tool: "Read", input: { file_path: ".env.local" } },
+              write("src/a/uno.js", "export const a = 1;\n"),
+            ],
+          },
+        ],
+      }),
+    );
+    let during: boolean | undefined;
+    const query: typeof sim.query = (args) => {
+      during = existsSync(join(args.options?.cwd ?? "", ".env.local"));
+      return sim.query(args);
+    };
+    const deps = testDeps({ query });
+    const { run, featureWt, work } = await plannedRun(
+      planWith([st("ST-1", ["src/a/"])]),
+      TESTS,
+      deps,
+      {
+        config: { setup: "true", tests_globs: ["tests/**"], env_files: [".env.local"] },
+      },
+    );
+    writeFileSync(join(work, ".env.local"), "DATABASE_URL=local\n");
+
+    expect(await implementar(contextFor(run, "implementar", deps))).toEqual({ tipo: "ok" });
+    expect(during).toBe(true);
+    expect(sim.records[0]?.decisions[0]).toMatchObject({ tool: "Read", decision: "deny" });
+    expect(sim.records[0]?.decisions[0]?.reason).toContain("secretos");
+    expect(git(featureWt, "show", "--name-only", "--format=", "HEAD")).toBe("src/a/uno.js");
   });
 
   // Si regresiona, las sub-tasks independientes corren de a una y el run tarda el doble.

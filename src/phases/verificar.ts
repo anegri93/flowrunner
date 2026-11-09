@@ -12,6 +12,7 @@ import type { PhaseFn } from "../runner/types.ts";
 import type { RunEvent } from "../store/events.ts";
 import { git } from "../git/git.ts";
 import { diagnose, environmentHint, type Failing } from "./diagnosticar.ts";
+import { copyEnvFiles, withEnvFiles } from "./env-files.ts";
 import { runFixers } from "./fixers.ts";
 import { repairTest } from "./reparar.ts";
 import { featureWorktree, prepared } from "./inputs.ts";
@@ -103,26 +104,33 @@ export const verificar: PhaseFn = async (ctx) => {
     }
   }
 
-  const runCriteria = async (criteria: readonly (typeof plan.criterios)[number][]) => {
-    const failing: (Failing & { hint: string | undefined })[] = [];
-    for (const criterion of criteria) {
-      const result = await runShell(criterion.comando, {
-        cwd: worktree,
-        env: deps.env,
-        timeoutMs: ACCEPTANCE_TIMEOUT_MS,
-      });
-      if (result.code !== 0) {
-        failing.push({
-          id: criterion.id,
-          comando: criterion.comando,
-          subtarea: criterion.subtarea,
-          detalle: `${criterion.id} sigue en rojo: \`${criterion.comando}\` salió ${result.code}:\n${tail(result, 20)}`,
-          hint: environmentHint(`${result.stdout}\n${result.stderr}`),
+  // Los .env existen antes de correr nada: si faltan, ningún criterio puede pasar y no es del código.
+  const envCheck = copyEnvFiles(ctx.state.repo, worktree, config.env_files);
+  if (!envCheck.ok) return { tipo: "falla", clase: "entorno", motivo: envCheck.motivo };
+  envCheck.remove();
+
+  // Los .env solo mientras corren los comandos: diagnosticar y reparar leen este worktree.
+  const runCriteria = (criteria: readonly (typeof plan.criterios)[number][]) =>
+    withEnvFiles(ctx.state.repo, worktree, config.env_files, async () => {
+      const failing: (Failing & { hint: string | undefined })[] = [];
+      for (const criterion of criteria) {
+        const result = await runShell(criterion.comando, {
+          cwd: worktree,
+          env: deps.env,
+          timeoutMs: ACCEPTANCE_TIMEOUT_MS,
         });
+        if (result.code !== 0) {
+          failing.push({
+            id: criterion.id,
+            comando: criterion.comando,
+            subtarea: criterion.subtarea,
+            detalle: `${criterion.id} sigue en rojo: \`${criterion.comando}\` salió ${result.code}:\n${tail(result, 20)}`,
+            hint: environmentHint(`${result.stdout}\n${result.stderr}`),
+          });
+        }
       }
-    }
-    return failing;
-  };
+      return failing;
+    });
 
   let failing = await runCriteria(plan.criterios);
   // Una señal de entorno no la arregla una sub-task: se reinstala y se repite una vez.

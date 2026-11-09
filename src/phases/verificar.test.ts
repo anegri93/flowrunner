@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { plannedRun } from "../../test/helpers/planned.ts";
@@ -64,6 +64,39 @@ describe("verificar", () => {
   test("todo verde: avanza", async () => {
     const { run, deps } = await featureWith({ "src/csv.js": "x", "src/permiso.js": "403" });
     expect(await verificar(contextFor(run, "verificar", deps))).toEqual({ tipo: "ok" });
+  });
+
+  // Regresión: en COMPARTIR-1 (rskate) sin .env.local los e2e no podían levantar la app, así que un
+  // criterio e2e no podía pasar nunca y el run volvía a implementar sin salida.
+  describe("con env_files", () => {
+    const needsEnv = {
+      ...TESTS,
+      "tests/ac1.mjs":
+        'import { existsSync } from "node:fs";\nprocess.exit(existsSync("src/csv.js") && existsSync(".env.local") ? 0 : 1);\n',
+    };
+    const project = {
+      config: { setup: "true", tests_globs: ["tests/**"], env_files: [".env.local"] },
+    };
+
+    test("los criterios corren con ellos y después no quedan en el worktree", async () => {
+      const deps = testDeps();
+      const { run, featureWt, work } = await plannedRun(plan, needsEnv, deps, project);
+      writeFileSync(join(work, ".env.local"), "DATABASE_URL=local\n");
+      writeFiles(featureWt, { "src/csv.js": "x", "src/permiso.js": "403" });
+      await commitAll(featureWt, "feat: implementado", {}, deps.env);
+      expect(await verificar(contextFor(run, "verificar", deps))).toEqual({ tipo: "ok" });
+      expect(existsSync(join(featureWt, ".env.local"))).toBe(false);
+    });
+
+    test("si falta uno en el repo, se detiene por el entorno sin devolver trabajo", async () => {
+      const deps = testDeps();
+      const { run, featureWt } = await plannedRun(plan, needsEnv, deps, project);
+      writeFiles(featureWt, { "src/csv.js": "x", "src/permiso.js": "403" });
+      await commitAll(featureWt, "feat: implementado", {}, deps.env);
+      const outcome = await verificar(contextFor(run, "verificar", deps));
+      expect(outcome).toMatchObject({ tipo: "falla", clase: "entorno" });
+      expect(outcome.tipo === "falla" && outcome.motivo).toMatch(/^\.env\.local no existe en /);
+    });
   });
 
   // Si regresiona, verificar rehace todas las sub-tasks por un criterio que cubre una sola.

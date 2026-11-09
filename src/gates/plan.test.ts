@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { repoWith } from "../../test/helpers/git.ts";
 import type { Feature } from "../feature/feature.ts";
@@ -216,5 +218,21 @@ describe("los comandos de los criterios", () => {
     expect(await checkCommandsFail(p, repo, process.env)).toEqual([
       "AC-1 ya pasa antes de implementar: `true` tiene que fallar",
     ]);
+  });
+
+  // Regresión: en COMPARTIR-1 (rskate) el criterio «verify en verde» pasaba sobre main, como debe, y
+  // el gate lo rechazaba por no estar en rojo: una vuelta entera de planificar. Ese criterio lo
+  // comprueba verificar, sobre la rama integrada.
+  test("un criterio que el gate no debe correr en rojo no se corre", async () => {
+    const dir = repoWith({ "a.txt": "x\n" });
+    const p = plan(
+      [task("ST-1", ["a"]), task("ST-2", ["b"])],
+      [
+        { id: "AC-1", comando: "touch corrio.txt", subtarea: "ST-1" },
+        { id: "AC-2", comando: "test -f no-existe.txt", subtarea: "ST-2" },
+      ],
+    );
+    expect(await checkCommandsFail(p, dir, process.env, (c) => c.startsWith("touch"))).toEqual([]);
+    expect(existsSync(join(dir, "corrio.txt"))).toBe(false);
   });
 });

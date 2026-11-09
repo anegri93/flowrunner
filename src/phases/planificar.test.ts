@@ -4,7 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
-import { git } from "../../test/helpers/git.ts";
+import { git, tempDir } from "../../test/helpers/git.ts";
 import { contextFor, makeProject, newRun, testDeps } from "../../test/helpers/project.ts";
 import { simQuery, type SimScript } from "../../test/helpers/sim-sdk.ts";
 import type { Plan } from "../gates/plan.ts";
@@ -437,5 +437,63 @@ describe("planificar", () => {
         /el formateador falló en los tests: `false` salió 1/,
       );
     });
+  });
+
+  // Regresión: en COMPARTIR-1 (rskate) el worktree no tenía .env.local: cada e2e esperó 180 s a un
+  // servidor que no podía arrancar y «falló» sin probar nada (18 min de gate). Además el gate rechazó
+  // «verify en verde» por pasar sobre la base, y el plan dio otra vuelta.
+  test("el gate corre los criterios con los env_files y sin el del verify, y no los deja en el commit", async () => {
+    const marks = tempDir("fr-gate-env-");
+    const { work } = makeProject({
+      config: { setup: "true", tests_globs: ["tests/**"], env_files: [".env.local"] },
+    });
+    writeFileSync(join(work, ".env.local"), "DATABASE_URL=local\n");
+    const run = newRun(
+      work,
+      FEATURE.replace(
+        "- AC-1: existe src/export/csv.js.",
+        "- AC-1: existe src/export/csv.js.\n- AC-2: el repo sigue en verde.",
+      ),
+    );
+    const sim = simQuery([
+      {
+        calls: [
+          {
+            tool: "Write",
+            input: {
+              file_path: "tests/ac1.mjs",
+              content: `import { appendFileSync, readFileSync } from "node:fs";\nappendFileSync(${JSON.stringify(`${marks}/vio.log`)}, readFileSync(".env.local", "utf8"));\nprocess.exit(1);\n`,
+            },
+          },
+        ],
+        output: {
+          ...goodPlan,
+          criterios: [
+            { id: "AC-1", comando: "node tests/ac1.mjs", subtarea: "ST-1" },
+            { id: "AC-2", comando: "./.flowrunner/verify.sh", subtarea: "ST-1" },
+          ],
+        },
+      },
+    ]);
+    const deps = testDeps({ query: sim.query });
+    expect(await preparar(contextFor(run, "preparar", deps))).toEqual({ tipo: "ok" });
+    const worktree = prepared(readLog(run.dir).events).worktree;
+    expect(await planificar(contextFor(run, "planificar", deps))).toEqual({ tipo: "ok" });
+    expect(readFileSync(join(marks, "vio.log"), "utf8")).toBe("DATABASE_URL=local\n");
+    expect(existsSync(join(worktree, ".env.local"))).toBe(false);
+    expect(git(worktree, "show", "--name-only", "--format=", "HEAD")).toBe("tests/ac1.mjs");
+  });
+
+  test("si falta un env_file en el repo, planificar se detiene por el entorno", async () => {
+    const { work } = makeProject({
+      config: { setup: "true", tests_globs: ["tests/**"], env_files: [".env.local"] },
+    });
+    const run = newRun(work, FEATURE);
+    const sim = simQuery([{ calls: [writeTest], output: goodPlan }]);
+    const deps = testDeps({ query: sim.query });
+    expect(await preparar(contextFor(run, "preparar", deps))).toEqual({ tipo: "ok" });
+    const outcome = await planificar(contextFor(run, "planificar", deps));
+    expect(outcome).toMatchObject({ tipo: "falla", clase: "entorno" });
+    expect(outcome.tipo === "falla" && outcome.motivo).toMatch(/^\.env\.local no existe en /);
   });
 });

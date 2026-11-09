@@ -1,20 +1,13 @@
 // El entorno de desarrollo donde la fase probar usa la feature: se levanta desde el worktree de la
 // feature con el comando del repo y se baja al terminar. Ver ADR 0016.
 import { spawn } from "node:child_process";
-import {
-  closeSync,
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  rmSync,
-} from "node:fs";
-import { dirname, join } from "node:path";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { descendants, killAll } from "../agent/procesos.ts";
 import type { RepoConfig } from "../config/schemas.ts";
 import { repoNode } from "../proc/node.ts";
+import { copyEnvFiles } from "../phases/env-files.ts";
 import { cleanEnv, runProc } from "../proc/proc.ts";
 
 export type ProbarConfig = NonNullable<RepoConfig["probar"]>;
@@ -67,22 +60,9 @@ export async function levantarEntorno(opts: {
     };
   }
   // Los secretos copiados no quedan en el worktree después de probar: revisar y las sub-tasks leen ahí.
-  const copied: string[] = [];
-  const removeCopies = () => {
-    for (const file of copied) rmSync(file, { force: true });
-  };
-  for (const file of probar.env_files) {
-    const from = join(repo, file);
-    const to = join(worktree, file);
-    if (!existsSync(from)) {
-      removeCopies();
-      return { tipo: "falla", motivo: `${file} no existe en ${repo}` };
-    }
-    if (existsSync(to)) continue;
-    mkdirSync(dirname(to), { recursive: true });
-    copyFileSync(from, to);
-    copied.push(to);
-  }
+  const copies = copyEnvFiles(repo, worktree, probar.env_files);
+  if (!copies.ok) return { tipo: "falla", motivo: copies.motivo };
+  const removeCopies = copies.remove;
   const node = await repoNode(worktree, opts.env);
   if (node.tipo === "falta") {
     removeCopies();

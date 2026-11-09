@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HookCallback, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, test } from "vitest";
@@ -10,6 +11,16 @@ import type { NewEvent } from "../store/events.ts";
 import { runSession, type SessionSpec } from "./session.ts";
 
 const allow: HookCallback = () => Promise.resolve({});
+
+/** Si el proceso existe: la señal 0 no hace nada, solo falla si ya no está. */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
 const outputSchema = z.object({
   resumen: z.string(),
   decisiones: z.array(z.object({ que: z.string(), por_que: z.string() })),
@@ -81,6 +92,57 @@ describe("runSession", () => {
       clase: "gate",
       motivo: "planificar no logró una salida que cumpla su schema",
     });
+  });
+
+  // Regresión: en CUENTAS-1, ST-2 ya había terminado pero su stream no cerraba mientras vivieran dos
+  // Jest que no salían. La sub-task no se commiteó hasta que alguien los mató a mano.
+  test("con el resultado la sesión termina, aunque el stream no cierre", async () => {
+    const result = stream("salida-estructurada");
+    const fake = fakeQuery((options) =>
+      (async function* () {
+        yield* result;
+        yield* hanging(options);
+      })(),
+    );
+    const { rt } = runtime(fake.query);
+    const outcome = await runSession(spec({ timeoutMs: 60_000 }), rt);
+    expect(outcome.tipo).toBe("ok");
+  });
+
+  // Regresión: un runner de tests que no sale seguía vivo después de la sesión, colgado del CLI.
+  test("lo que el CLI dejó corriendo se corta al terminar, y queda un aviso con el comando", async () => {
+    const pidFile = join(mkdtempSync(join(tmpdir(), "flowrunner-procesos-")), "nieto.pid");
+    // Un «CLI» que lanza un nieto en otro grupo, como un Jest que el Bash tool dejó atrás.
+    const cli = `const { spawn } = require("node:child_process");
+const nieto = spawn("sleep", ["271"], { detached: true, stdio: "ignore" });
+require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(nieto.pid));
+setInterval(() => {}, 1000);`;
+    const result = stream("salida-estructurada");
+    const fake = fakeQuery((options) =>
+      (async function* () {
+        const spawned = options?.spawnClaudeCodeProcess?.({
+          command: process.execPath,
+          args: ["-e", cli],
+          env: { PATH: process.env.PATH },
+          signal: new AbortController().signal,
+        });
+        if (spawned === undefined) throw new Error("la sesión no lanza el CLI con su propio spawn");
+        while (!existsSync(pidFile)) await new Promise((r) => setTimeout(r, 20));
+        yield* result;
+        yield* hanging(options);
+      })(),
+    );
+    const { rt, emitted } = runtime(fake.query);
+    expect((await runSession(spec({ timeoutMs: 60_000 }), rt)).tipo).toBe("ok");
+    const nieto = Number(readFileSync(pidFile, "utf8"));
+    await expect.poll(() => alive(nieto), { timeout: 3_000 }).toBe(false);
+    expect(emitted).toContainEqual(
+      expect.objectContaining({
+        tipo: "aviso",
+        fase: "planificar",
+        texto: expect.stringContaining("`sleep 271`") as unknown,
+      }),
+    );
   });
 
   // Si regresiona, una sesión colgada frena el run para siempre o se reintenta como fallo del modelo.

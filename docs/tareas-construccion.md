@@ -728,6 +728,16 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. Sigue el render de agents-tree regla por regla, sin dependencias.
 - **Desbloquea:** Gate final
 
+### T8.6 · Planificar lee menos, y watch muestra el costo en vivo
+- **Estado:** `[x] Hecho`
+- **Descripción:** en VF-1, planificar leyó 95 archivos enteros y usó graft una sola vez. Su contexto llegó a 226k tokens y el costo vino sobre todo de escribir en caché lo leído. `watch` mostraba 4.4M de tokens, casi todos relecturas baratas de caché, y ningún costo hasta terminar. Ahora el prompt de planificar pide ubicar con graft y leer solo rangos, y delegar los recorridos en el explorador, que recibe las herramientas de graft. `watch` cuenta tokens nuevos, estima en vivo el costo de lo que corre con los precios de cada modelo, y muestra el contexto actual de la sesión. El modelo de una sesión es el de su arranque, no el de su último subagente.
+- **Lint:** `pnpm lint`.
+- **Test:** `src/watch/pricing.test.ts`: precio por tipo de token y modelo, escrituras de caché de 5 minutos y de 1 hora, tarifa larga de Haiku y modelo desconocido. `src/watch/tree.test.ts`: tokens nuevos sin relecturas, contexto y costo estimado en vivo; modelo y contexto de la sesión principal con un subagente corriendo. `src/watch/render.test.ts`: la sesión que corre suma su estimado a su fila y al run, con su contexto en la nota. `src/phases/planificar.test.ts`: el explorador recibe graft y sigue sin escribir ni ejecutar, y el prompt pide graft y rangos.
+- **Canario:** el explorador sin graft, el modelo tomado del último mensaje y la fila sin el costo en vivo pusieron en rojo sus tests.
+- **Criterio de aprobación:** con VF-1 corriendo, `watch` muestra planificar con 487k tokens nuevos, ≈ USD 2.97 y «contexto 226k de 1M», en vez de 4.4M y «–». El efecto del prompt sobre cuánto lee planificar se mide en el próximo run, con `flowrunner stats`.
+- **Revisión ponytail:** a mano. Precios en una tabla con su fuente y fecha; el cambio de prompt es texto.
+- **Desbloquea:** Gate final
+
 ### Gate Fase 8
 - **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.

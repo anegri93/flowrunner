@@ -56,7 +56,7 @@ export function tokenCount(n: number): string {
   if (n === 0) return "–";
   if (n < 1000) return String(n);
   if (n < 1_000_000) return `${String(Math.round(n / 1000))}k`;
-  return `${(n / 1_000_000).toFixed(1)}M`;
+  return n % 1_000_000 === 0 ? `${String(n / 1_000_000)}M` : `${(n / 1_000_000).toFixed(1)}M`;
 }
 
 const usd = (n: number | undefined) => (n === undefined || n === 0 ? "–" : n.toFixed(2));
@@ -116,10 +116,24 @@ const tags = (ss: readonly SessionNode[]) =>
   [
     ...new Set(ss.flatMap((s) => (s.modelo === undefined ? [] : [modelTag(s.modelo, s.esfuerzo)]))),
   ].join(", ");
+/** El contexto que arrastra una sesión en cada vuelta: `174k de 1M`, o solo los tokens. */
+const contextText = (s: SessionNode) =>
+  `contexto ${tokenCount(s.contexto)}${s.ventana === undefined ? "" : ` de ${tokenCount(s.ventana)}`}`;
+
+/** Lo que hace la sesión que corre y cuánto contexto arrastra. */
 const toolNote = (ss: readonly SessionNode[]) => {
-  const now = ss.find((s) => s.corriendo)?.ultimo;
-  return now === undefined ? undefined : `▸ ${now}`;
+  const now = ss.find((s) => s.corriendo);
+  if (now === undefined) return undefined;
+  const parts = [
+    ...(now.ultimo === undefined ? [] : [`▸ ${now.ultimo}`]),
+    ...(now.contexto > 0 ? [contextText(now)] : []),
+  ];
+  return parts.length === 0 ? undefined : parts.join(" · ");
 };
+
+/** Lo que todavía no tiene costo real: la estimación de las sesiones que corren. */
+const runningCost = (ss: readonly SessionNode[]) =>
+  sum(ss.filter((s) => s.corriendo).map((s) => s.costoEstimado ?? 0));
 const times = (ss: readonly SessionNode[]) => (ss.length > 1 ? ` ×${String(ss.length)}` : "");
 
 function phaseRow(p: PhaseNode): { kind: Kind; status: string; note: string | undefined } {
@@ -191,7 +205,7 @@ function runRows(tree: RunTree): Row[] {
       model: "",
       tokens: total,
       share: undefined,
-      usd: tree.costoUsd,
+      usd: tree.costoUsd + runningCost(all),
       time:
         tree.haceSegundos === undefined
           ? duration(tree.segundos)
@@ -222,7 +236,7 @@ function runRows(tree: RunTree): Row[] {
       model: tags(own),
       tokens,
       share: share(tokens),
-      usd: p.costoUsd,
+      usd: p.costoUsd + runningCost(own),
       time: p.segundos === undefined ? "" : duration(p.segundos),
     });
     p.unidades.forEach((u, j) => {
@@ -242,7 +256,10 @@ function runRows(tree: RunTree): Row[] {
         model: tags(u.sesiones),
         tokens: unitTokens,
         share: share(unitTokens),
-        usd: done.length === 0 ? undefined : sum(done.map((s) => s.costoUsd ?? 0)),
+        usd:
+          u.sesiones.length === 0
+            ? undefined
+            : sum(done.map((s) => s.costoUsd ?? 0)) + runningCost(u.sesiones),
         time: u.sesiones.length === 0 ? "" : duration(sum(u.sesiones.map((s) => s.segundos))),
       });
     });
@@ -397,7 +414,7 @@ export function renderDetail(
   const { width, color } = opts;
   const body = sessions.flatMap(({ node: s, steps }) => [
     cut(
-      `${s.nombre} · ${modelTag(s.modelo, s.esfuerzo)} · ${tokenCount(s.tokens)} tokens · ≈ USD ${usd(s.costoUsd)} · ${duration(s.segundos)}`,
+      `${s.nombre} · ${modelTag(s.modelo, s.esfuerzo)} · ${tokenCount(s.tokens)} tokens nuevos · ${contextText(s)} · ≈ USD ${usd(s.costoUsd ?? s.costoEstimado)} · ${duration(s.segundos)}`,
       width,
     ),
     ...steps.map((st) => {

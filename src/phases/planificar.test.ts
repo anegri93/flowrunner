@@ -75,6 +75,20 @@ describe("planificar", () => {
     expect(decisions).toHaveLength(1);
   });
 
+  // Si regresiona, el planificador y su explorador leen archivos enteros en vez de ubicar con graft,
+  // y planificar se encarece: en VF-1, 95 lecturas y graft una sola vez.
+  test("el explorador recibe las herramientas de graft, y el prompt pide ubicar con graft y leer rangos", async () => {
+    const { run, deps, sim } = await prepared_([{ calls: [writeTest], output: goodPlan }]);
+    await planificar(contextFor(run, "planificar", deps));
+    const options = sim.records[0]?.options;
+    expect(options?.agents?.explorador?.tools).toEqual(
+      expect.arrayContaining(["mcp__graft__graft_find_code", "mcp__graft__graft_trace_calls"]),
+    );
+    const prompt = sim.records[0]?.prompt ?? "";
+    expect(prompt).toContain("graft_find_code");
+    expect(prompt).toContain("`offset` y `limit`");
+  });
+
   // Si regresiona, un plan rechazado deja tests a medias commiteados en la rama de la feature.
   test("un plan cuyo criterio ya pasa se rechaza con el motivo y no commitea nada", async () => {
     const passing = { ...writeTest, input: { ...writeTest.input, content: "process.exit(0);\n" } };
@@ -98,7 +112,9 @@ describe("planificar", () => {
     );
     expect(sim.records[0]?.prompt).toContain("separá la validación en ST-2");
     expect(sim.records[0]?.prompt).toContain("Exportar pedidos a CSV");
-    expect(sim.records[0]?.options?.agents?.explorador?.tools).toEqual(["Read", "Grep", "Glob"]);
+    // El explorador solo lee: Read, Grep, Glob y las herramientas de graft, nada que escriba ni ejecute.
+    const explorer = sim.records[0]?.options?.agents?.explorador?.tools ?? [];
+    expect(explorer.filter((t) => !t.startsWith("mcp__graft__"))).toEqual(["Read", "Grep", "Glob"]);
     expect(Object.keys(sim.records[0]?.options?.mcpServers ?? {})).toEqual(["graft"]);
   });
 

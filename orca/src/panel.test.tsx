@@ -156,6 +156,24 @@ test("si una lectura falla, los runs que se veían quedan, con el error arriba",
   );
 });
 
+// Si regresiona, después de mergear la PR hay que esperar el chequeo de cada 10 minutos para aprender.
+test("Aprender ahora, en un run con la PR abierta, aprende sin esperar y muestra lo que dijo", async () => {
+  const sent: { run: string; decision: Decision }[] = [];
+  await withPanel(
+    withRuns({
+      "flowrunner.decidir": (input: { run: string; decision: Decision }) => {
+        sent.push(input);
+        return { ok: true, mensaje: "la PR sigue abierta" };
+      },
+    }),
+    async (view) => {
+      await view.press({ role: "button", text: "Aprender ahora" });
+      assert.deepEqual(sent, [{ run: "VF-1-20261108-211454", decision: { accion: "aprender" } }]);
+      assert.ok(view.find({ text: "la PR sigue abierta" }));
+    },
+  );
+});
+
 // Si regresiona, un flowrunner roto o sin runs deja el panel vacío sin decir por qué.
 test("sin runs lo dice", async () => {
   await withPanel(

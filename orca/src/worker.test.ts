@@ -114,10 +114,16 @@ test("cada decisión corre su comando fijo, con el motivo tal cual, y devuelve l
       ok: false,
       mensaje: `el run ${id} está en_curso, no detenido\nPara seguir: flowrunner status ${id}`,
     });
+    const learned = await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "aprender" },
+    });
+    assert.deepEqual(learned, { ok: true, mensaje: "la PR sigue abierta" });
     assert.deepEqual(calls(), [
       `approve ${id} --json`,
       `changes ${id} ${motivo} --json`,
       `resume ${id} --json`,
+      `learn ${id} --json`,
     ]);
   } finally {
     await worker.deactivate();

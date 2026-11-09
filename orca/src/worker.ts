@@ -107,6 +107,8 @@ export function decisionArgs(id: string, decision: Decision): string {
       if (!PHASES.includes(decision.desde))
         throw new Error(`fase inválida: ${String(decision.desde)}`);
       return `rerun ${quote(id)} --desde ${decision.desde}`;
+    case "aprender":
+      return `learn ${quote(id)}`;
     default:
       throw new Error("decisión desconocida");
   }
@@ -118,9 +120,11 @@ function outcomeOf(proc: Proc): Outcome {
     const data = JSON.parse(proc.stdout) as {
       ok?: boolean;
       accion?: string;
+      /** Lo que contesta `learn`: «la PR sigue abierta», «quedó cerrado». */
+      resultado?: string;
       error?: { message?: string; next?: string };
     };
-    if (data.ok === true) return { ok: true, mensaje: data.accion ?? "hecho" };
+    if (data.ok === true) return { ok: true, mensaje: data.accion ?? data.resultado ?? "hecho" };
     const next = data.error?.next === undefined ? "" : `\nPara seguir: ${data.error.next}`;
     return { ok: false, mensaje: `${data.error?.message ?? "flowrunner no pudo"}${next}` };
   } catch {

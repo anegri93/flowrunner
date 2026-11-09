@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { stateOf } from "../engine/engine.ts";
 import { AVISO_TEST_EXISTENTE } from "../gates/existente.ts";
 import type { CambioExistente } from "../gates/plan.ts";
+import { reviewSchema } from "../phases/revisar.ts";
 import type { RunPaths } from "../runner/types.ts";
 import { PHASES, type Phase, type RunEvent } from "../store/events.ts";
 
@@ -19,6 +20,8 @@ export interface PhaseSummary {
   readonly tokensEntrada: number;
   readonly tokensSalida: number;
   readonly ejecuciones: number;
+  /** Los modelos de las sesiones de la fase, en el orden en que se usaron. */
+  readonly modelos: string[];
   readonly fallas: { readonly clase: string; readonly motivo: string }[];
   readonly vueltas: string[];
 }
@@ -35,6 +38,7 @@ export function phaseSummaries(events: readonly RunEvent[]): PhaseSummary[] {
         tokensEntrada: 0,
         tokensSalida: 0,
         ejecuciones: 0,
+        modelos: [],
         fallas: [],
         vueltas: [],
       };
@@ -66,6 +70,7 @@ export function phaseSummaries(events: readonly RunEvent[]): PhaseSummary[] {
         costoUsd: s.costoUsd + e.costo_usd,
         tokensEntrada: s.tokensEntrada + e.tokens_entrada,
         tokensSalida: s.tokensSalida + e.tokens_salida,
+        modelos: s.modelos.includes(e.modelo) ? s.modelos : [...s.modelos, e.modelo],
       });
     }
   }
@@ -123,14 +128,19 @@ export function buildReport(events: readonly RunEvent[], run: RunPaths): string 
   const lines = [
     ...header(events, run),
     ...(existing.length === 0 ? [] : ["", ...existing]),
+    ...howToTest(run),
     ...decisions(events),
     "",
     "## Por fase",
     "",
   ];
   for (const s of summaries) {
+    const models =
+      s.modelos.length === 0
+        ? ""
+        : `, ${s.modelos.length === 1 ? "modelo" : "modelos"} ${s.modelos.join(", ")}`;
     lines.push(
-      `- **${s.fase}:** ${s.minutos.toFixed(1)} min, ${usd(s.costoUsd)}, ${s.tokensEntrada + s.tokensSalida} tokens, ${s.ejecuciones} ${s.ejecuciones === 1 ? "ejecución" : "ejecuciones"}`,
+      `- **${s.fase}:** ${s.minutos.toFixed(1)} min, ${usd(s.costoUsd)}, ${s.tokensEntrada + s.tokensSalida} tokens, ${s.ejecuciones} ${s.ejecuciones === 1 ? "ejecución" : "ejecuciones"}${models}`,
     );
   }
   const gate = summaries.flatMap((s) =>
@@ -158,6 +168,20 @@ export function writeReport(run: RunPaths, events: readonly RunEvent[]): string 
   const text = buildReport(events, run);
   writeFileSync(join(run.dir, "informe.md"), text);
   return text;
+}
+
+/** El paso a paso para probar la feature a mano, que escribe la última revisión. */
+function howToTest(run: RunPaths): string[] {
+  const file = join(run.dir, "review.json");
+  if (!existsSync(file)) return [];
+  const review = reviewSchema.safeParse(JSON.parse(readFileSync(file, "utf8")));
+  if (!review.success || review.data.como_probar.length === 0) return [];
+  return [
+    "",
+    "## Cómo probarlo",
+    "",
+    ...review.data.como_probar.map((paso, i) => `${i + 1}. ${plain(paso)}`),
+  ];
 }
 
 /** Lo que el run propone sumar al cerebro, o por qué no propone nada. */
@@ -227,6 +251,7 @@ export function prBody(events: readonly RunEvent[], run: RunPaths): string {
     "## Criterios",
     "",
     criteria,
+    ...howToTest(run),
     "",
     "## Plan",
     "",

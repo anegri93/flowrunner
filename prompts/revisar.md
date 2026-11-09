@@ -12,6 +12,8 @@ Una lista de `hallazgos`, cada uno con:
 
 Si no hay nada que objetar, devolvé `hallazgos` vacío. No inventes hallazgos para llenar la lista. Anotá en `decisiones` lo que decidiste dejar pasar y por qué.
 
+Además devolvé `como_probar`: el paso a paso para que una persona pruebe a mano lo que la PR implementa, un paso por elemento, en el orden en que se hacen. Sacá del repo (README, `package.json`, `docker-compose`, `.env.example`) cómo se levanta lo necesario. Si lo implementado es de API, nombrá el endpoint con un `curl` de ejemplo, el cuerpo y la respuesta esperada. Si es de la plataforma, la pantalla, qué se hace en ella y qué se tiene que ver. Cubrí cada criterio de la feature y el caso que tiene que fallar, si lo hay. Usá solo lo que existe en el repo: no inventes rutas, puertos ni usuarios. Para un valor que la persona tiene que completar usá MAYÚSCULAS, como `TOKEN`, no `<token>`.
+
 {{instruccion}}
 
 # La feature

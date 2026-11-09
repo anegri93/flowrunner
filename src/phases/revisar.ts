@@ -26,8 +26,11 @@ export const findingSchema = z.object({
 export const reviewSchema = z.object({
   hallazgos: z.array(findingSchema),
   decisiones: z.array(decisionSchema),
+  // Con default: un review.json de antes de este campo se sigue leyendo.
+  como_probar: z.array(z.string().min(1)).default([]),
 });
-export type Review = z.infer<typeof reviewSchema>;
+/** Lo que devuelve el revisor; `como_probar` puede faltar en un review.json viejo. */
+export type Review = z.input<typeof reviewSchema>;
 
 export const REVISAR_TIMEOUT_MS = 30 * 60_000;
 /** Un diff más largo que esto se corta en el prompt; el revisor puede leer los archivos con Read. */

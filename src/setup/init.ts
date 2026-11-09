@@ -27,7 +27,7 @@ import { createPr, findPr, type PullRequest } from "../github/gh.ts";
 import { runVerify } from "../phases/verify.ts";
 import { runProc, runShell, tail } from "../proc/proc.ts";
 import type { Deps, RunPaths } from "../runner/types.ts";
-import { draftBrain, DRAFT_HEADING } from "./draft.ts";
+import { draftBrain, DRAFT_HEADING, type Progress } from "./draft.ts";
 import { inferRepo } from "./infer.ts";
 
 export const INIT_BRANCH = "chore/flowrunner-init";
@@ -118,6 +118,7 @@ async function brainSteps(
   base: string,
   aplicar: boolean,
   deps: Deps,
+  progress: Progress,
 ): Promise<Paso[]> {
   const { env } = deps;
   if (await hasBrain(repo, base, env)) {
@@ -161,6 +162,7 @@ async function brainSteps(
     initBrain(worktree);
     const config = loadRepoConfig(worktree);
 
+    progress(`comprobando que origin/${base} esté en verde: setup y verify`);
     const setup = await runShell(config.setup, { cwd: worktree, env, timeoutMs: SETUP_TIMEOUT_MS });
     const verify =
       setup.code === 0
@@ -199,6 +201,7 @@ async function brainSteps(
       config,
       session: draftSession(env, projectNameFor(repo)),
       deps,
+      progress,
     });
     pasos.push(
       draft.tipo === "ok"
@@ -213,6 +216,7 @@ async function brainSteps(
             detalle: `no se redactó: ${draft.motivo}. Quedan las plantillas para completar a mano`,
           },
     );
+    progress(`abriendo la PR en ${INIT_BRANCH}`);
     const pr = await openBrainPr(
       worktree,
       {
@@ -259,7 +263,11 @@ export interface DraftOutcome {
  * `flowrunner brain draft <repo>`: para un repo que ya tiene el cerebro en la base, redacta el
  * borrador leyendo el código y lo propone en su propia PR. Lo que ya escribió la persona queda arriba.
  */
-export async function draftExistingBrain(path: string, deps: Deps): Promise<DraftOutcome> {
+export async function draftExistingBrain(
+  path: string,
+  deps: Deps,
+  progress: Progress,
+): Promise<DraftOutcome> {
   const { env } = deps;
   const repo = await gitRootOf(path, env);
   const name = projectNameFor(repo);
@@ -268,6 +276,7 @@ export async function draftExistingBrain(path: string, deps: Deps): Promise<Draf
     repo,
     paso: { que: "borrador del cerebro", estado, detalle },
   });
+  progress("trayendo origin");
   await fetchOrigin(repo, env);
   const base = await defaultBranch(repo, env);
   if (!(await hasBrain(repo, base, env))) {
@@ -280,6 +289,7 @@ export async function draftExistingBrain(path: string, deps: Deps): Promise<Draf
   if (open?.state === "OPEN") return outcome("ya estaba", `${open.url}: revisala y mergeala`);
 
   const worktree = join(flowrunnerHome(env), "init", `${name}-borrador`);
+  progress(`preparando un worktree limpio de origin/${base}`);
   await removeWorktree(repo, worktree, env);
   await git(repo, ["worktree", "add", "--quiet", "--detach", worktree, `origin/${base}`], env);
   try {
@@ -304,8 +314,10 @@ export async function draftExistingBrain(path: string, deps: Deps): Promise<Draf
       config,
       session: draftSession(env, name),
       deps,
+      progress,
     });
     if (draft.tipo === "falla") return outcome("falta", `no se redactó: ${draft.motivo}`);
+    progress(`abriendo la PR en ${DRAFT_BRANCH}`);
     const pr = await openBrainPr(
       worktree,
       {
@@ -328,7 +340,7 @@ export async function draftExistingBrain(path: string, deps: Deps): Promise<Draf
   }
 }
 
-export async function init(path: string, deps: Deps, aplicar: boolean) {
+export async function init(path: string, deps: Deps, aplicar: boolean, progress: Progress) {
   const { env } = deps;
   const repo = await gitRootOf(path, env);
   const name = projectNameFor(repo);
@@ -384,6 +396,7 @@ export async function init(path: string, deps: Deps, aplicar: boolean) {
           aplicar,
           // La config global todavía puede no existir: la sesión usa el auth que init acaba de inferir.
           auth === "login" ? { ...deps, env: { ...env, FLOWRUNNER_AUTH: "login" } } : deps,
+          progress,
         )),
       );
     } catch (error) {

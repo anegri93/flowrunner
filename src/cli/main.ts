@@ -4,7 +4,7 @@ import { flowrunnerHome } from "../config/load.ts";
 import type { z } from "zod";
 import type { statusListSchema, statusRunSchema } from "./contracts.ts";
 import { checkFeature, describeCheckedFeature } from "./feature-check.ts";
-import { processIo, reportError, UserError, type Io } from "./output.ts";
+import { processIo, progressLog, reportError, UserError, type Io } from "./output.ts";
 import { addProject, initRepoBrain } from "./project.ts";
 import { approveRun, describePlan, requestChanges, showPlan } from "./approval.ts";
 import { showReport, showSession } from "./report.ts";
@@ -142,7 +142,12 @@ export async function main(
       case "init": {
         const aplicar = values.aplicar === true;
         const { deps } = await productionRuntime(env, () => undefined);
-        const result = await init(need(first, "la ruta del repo"), deps, aplicar);
+        const result = await init(
+          need(first, "la ruta del repo"),
+          deps,
+          aplicar,
+          progressLog(io, json),
+        );
         print(result, describeInit(result, aplicar));
         return result.ok ? 0 : 1;
       }
@@ -275,7 +280,11 @@ export async function main(
       case "brain": {
         if (first === "draft") {
           const { deps } = await productionRuntime(env, () => undefined);
-          const drafted = await draftExistingBrain(need(rest[0], "la ruta del repo"), deps);
+          const drafted = await draftExistingBrain(
+            need(rest[0], "la ruta del repo"),
+            deps,
+            progressLog(io, json),
+          );
           print(drafted, `${drafted.paso.que}: ${drafted.paso.detalle}`);
           return drafted.ok ? 0 : 1;
         }

@@ -272,6 +272,8 @@ describe("brain draft", () => {
     withBrain(w, mine);
     const out = runCli(["brain", "draft", w.work, "--json"], w.env);
     expect(out.status, out.stdout + out.stderr).toBe(0);
+    // Con --json el avance no se mezcla con lo que lee la skill.
+    expect(out.stderr).toBe("");
     expect(drafted(out.stdout).paso).toMatchObject({ estado: "hecho" });
     expect(drafted(out.stdout).paso.detalle).toMatch(/pull\/412/);
 
@@ -293,6 +295,28 @@ describe("brain draft", () => {
     ) as { prs: unknown[] };
     expect(state.prs).toHaveLength(1);
     expect(readFileSync(join(w.home, "prompts.log"), "utf8").split("\n---\n")).toHaveLength(2);
+  }, 120_000);
+
+  // Si regresiona, la persona mira una terminal muda durante minutos y no sabe si se colgó.
+  test("en la terminal muestra cada etapa y lo que Claude va leyendo", () => {
+    const w = world();
+    withBrain(w, `${template("convenciones.md")}\n${PERSONA}\n`);
+    const out = runCli(["brain", "draft", w.work], w.env);
+    expect(out.status, out.stdout + out.stderr).toBe(0);
+    const lines = out.stderr.trimEnd().split("\n");
+    expect(
+      lines.every((l) => /^\[\d+:\d\d\] /.test(l)),
+      out.stderr,
+    ).toBe(true);
+    const said = lines.map((l) => l.replace(/^\[\d+:\d\d\] /, ""));
+    expect(said).toEqual([
+      "trayendo origin",
+      "preparando un worktree limpio de origin/main",
+      expect.stringMatching(/^Claude lee el código y redacta el borrador/),
+      "  lee servidor/api.ts",
+      "abriendo la PR en chore/flowrunner-borrador",
+    ]);
+    expect(out.stdout).toMatch(/^borrador del cerebro: .*pull\/412/);
   }, 120_000);
 
   // Si regresiona, cada pedido apila otro borrador sobre el que la persona ya revisó.

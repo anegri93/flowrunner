@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { BRAIN_FILES } from "../brain/brain.ts";
-import { DRAFT_HEADING, inventedSources, withDraft, type Draft } from "./draft.ts";
+import { describeToolUse, DRAFT_HEADING, inventedSources, withDraft, type Draft } from "./draft.ts";
 
 const FILES = ["package.json", "src/setup/init.ts", "src/setup/infer.ts", "test/init.int.test.ts"];
 const part = (fuentes: string[]) => ({ texto: "- regla", fuentes });
@@ -8,6 +8,21 @@ const draft = (fuentes: string[]): Draft => ({
   convenciones: part(["package.json"]),
   contexto: part(fuentes),
   que_es_bien: part(["test/init.int.test.ts"]),
+});
+
+describe("describeToolUse", () => {
+  // Si regresiona, la terminal muestra rutas absolutas del worktree temporal, o nada.
+  test("dice qué mira la sesión con rutas del repo, y calla lo que no es una lectura", () => {
+    const root = "/home/x/.flowrunner/init/repo-borrador";
+    expect(describeToolUse("Read", { file_path: `${root}/src/a.ts` }, root)).toBe("lee src/a.ts");
+    expect(describeToolUse("Read", { file_path: "/etc/hosts" }, root)).toBe("lee /etc/hosts");
+    expect(describeToolUse("Grep", { pattern: "throw new", path: `${root}/src` }, root)).toBe(
+      "busca «throw new» en src",
+    );
+    expect(describeToolUse("Glob", { pattern: "**/*.test.ts" }, root)).toBe("lista **/*.test.ts");
+    expect(describeToolUse("StructuredOutput", { convenciones: {} }, root)).toBeUndefined();
+    expect(describeToolUse("Read", null, root)).toBeUndefined();
+  });
 });
 
 describe("inventedSources", () => {

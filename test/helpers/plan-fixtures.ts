@@ -28,6 +28,7 @@ export const PLAN: Plan = {
   criterios: [{ id: "AC-1", comando: "node tests/ac1.mjs", subtarea: "ST-1" }],
   tests: ["tests/ac1.mjs"],
   decisiones: [{ que: "node:fs", por_que: "sin dependencias" }],
+  cambia_lo_existente: [],
 };
 
 export const WRITE_TEST = {

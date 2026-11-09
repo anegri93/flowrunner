@@ -48,6 +48,7 @@ const plan: Plan = {
   ],
   tests: ["tests/ac1.mjs", "tests/ac2.mjs", "tests/ac3.mjs"],
   decisiones: [],
+  cambia_lo_existente: [],
 };
 
 const exists = (p: string) =>

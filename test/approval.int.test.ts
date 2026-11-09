@@ -111,3 +111,50 @@ describe("aprobar", () => {
     );
   });
 });
+
+describe("aprobar un plan que cambia lo existente", () => {
+  const CAMBIO = {
+    que: "hoy el alta rechaza un correo de otro dominio; pasa a aceptarlo",
+    donde: "src/alta.ts:585",
+    criterio: "AC-1",
+  };
+  const changing = () =>
+    simWorld({
+      real: ["preparar", "planificar", "aprobar"],
+      scripts: [{ calls: [WRITE_TEST], output: { ...PLAN, cambia_lo_existente: [CAMBIO] } }],
+      feature: FEATURE,
+      project: { config: { setup: "true", tests_globs: ["tests/**"] } },
+    });
+
+  // Si regresiona, un plan que afloja una regla vigente se aprueba con el mismo aviso y el mismo
+  // comando que uno inofensivo, como pasó en CUENTAS-1.
+  test("el aviso lo dice, plan lo muestra primero, approve sin --acepto-cambios sale 1 y con el flag sigue", async () => {
+    const w = changing();
+    const id = w.launch();
+    await waitFor("esperando", () => w.state(id).status === "esperando_aprobacion", 60_000);
+    await waitFor("el aviso", () => w.notices().includes("⚠ SHOP-214"), 10_000);
+    expect(w.notices()).toContain(
+      "⚠ SHOP-214: el plan cambia 1 cosa que ya existe. Pedile a Claude que te lo muestre antes de aprobar.",
+    );
+    const view = planViewSchema.parse(JSON.parse(runCli(["plan", id, "--json"], w.env).stdout));
+    expect(view.cambia_lo_existente).toEqual([CAMBIO]);
+    expect(runCli(["plan", id], w.env).stdout).toContain(
+      "⚠ Cambia lo que ya existe (1). Aprobar pide --acepto-cambios:\n  - hoy el alta rechaza un correo de otro dominio; pasa a aceptarlo (src/alta.ts:585) ← AC-1",
+    );
+
+    const plain = runCli(["approve", id], w.env);
+    expect(plain.status).toBe(1);
+    expect(plain.stderr).toContain("hoy el alta rechaza un correo de otro dominio");
+    expect(plain.stderr).toContain("--acepto-cambios");
+    expect(w.state(id).status).toBe("esperando_aprobacion");
+
+    expect(runCli(["approve", id, "--acepto-cambios"], w.env).status).toBe(0);
+  });
+
+  test("un plan que no cambia nada se aprueba sin el flag, como siempre", async () => {
+    const w = world();
+    const id = w.launch();
+    await waitFor("esperando", () => w.state(id).status === "esperando_aprobacion", 60_000);
+    expect(runCli(["approve", id], w.env).status).toBe(0);
+  });
+});

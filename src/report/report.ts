@@ -3,6 +3,8 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { stateOf } from "../engine/engine.ts";
+import { AVISO_TEST_EXISTENTE } from "../gates/existente.ts";
+import type { CambioExistente } from "../gates/plan.ts";
 import type { RunPaths } from "../runner/types.ts";
 import { PHASES, type Phase, type RunEvent } from "../store/events.ts";
 
@@ -117,7 +119,15 @@ function decisions(events: readonly RunEvent[]): string[] {
 
 export function buildReport(events: readonly RunEvent[], run: RunPaths): string {
   const summaries = phaseSummaries(events);
-  const lines = [...header(events, run), ...decisions(events), "", "## Por fase", ""];
+  const existing = existingChanges(events, run);
+  const lines = [
+    ...header(events, run),
+    ...(existing.length === 0 ? [] : ["", ...existing]),
+    ...decisions(events),
+    "",
+    "## Por fase",
+    "",
+  ];
   for (const s of summaries) {
     lines.push(
       `- **${s.fase}:** ${s.minutos.toFixed(1)} min, ${usd(s.costoUsd)}, ${s.tokensEntrada + s.tokensSalida} tokens, ${s.ejecuciones} ${s.ejecuciones === 1 ? "ejecución" : "ejecuciones"}`,
@@ -170,6 +180,38 @@ function testChanges(events: readonly RunEvent[]): string[] {
     : ["", "## Cambios de flowrunner en los tests de criterios", "", ...changes];
 }
 
+/**
+ * Lo que la PR cambia de lo que ya existía: lo que el plan declaró y la persona aceptó al aprobar, y
+ * los tests existentes que una sub-task tocó sin que el plan lo dijera. Va primero en la PR porque es
+ * lo que más fácil se aprueba sin ver.
+ */
+function existingChanges(events: readonly RunEvent[], run: RunPaths): string[] {
+  const file = join(run.dir, "cambios-existentes.json");
+  const declared = existsSync(file)
+    ? (JSON.parse(readFileSync(file, "utf8")) as CambioExistente[])
+    : [];
+  const undeclaredTests = [
+    ...new Set(
+      events.flatMap((e) =>
+        e.tipo === "aviso" && e.texto.startsWith(AVISO_TEST_EXISTENTE)
+          ? [e.texto.slice(AVISO_TEST_EXISTENTE.length)]
+          : [],
+      ),
+    ),
+  ];
+  if (declared.length === 0 && undeclaredTests.length === 0) return [];
+  return [
+    "## ⚠ Cambia lo que ya existe",
+    "",
+    ...declared.map(
+      (c) =>
+        `- ${plain(c.que)} (\`${plain(c.donde)}\`) ← ${plain(c.criterio)}. Aceptado al aprobar.`,
+    ),
+    ...undeclaredTests.map((t) => `- **Sin declarar en el plan:** ${plain(t)}.`),
+    "",
+  ];
+}
+
 /** El cuerpo de la PR: el plan, los criterios y las decisiones, sin el detalle de costos. */
 export function prBody(events: readonly RunEvent[], run: RunPaths): string {
   const planFile = join(run.dir, "plan.md");
@@ -181,6 +223,7 @@ export function prBody(events: readonly RunEvent[], run: RunPaths): string {
       ).trim()
     : "";
   return [
+    ...existingChanges(events, run),
     "## Criterios",
     "",
     criteria,

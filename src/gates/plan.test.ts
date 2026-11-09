@@ -41,7 +41,14 @@ function plan(
     { id: "AC-2", comando: "false", subtarea: "ST-2" },
   ],
 ): Plan {
-  return { plan: "p", subtareas, criterios, tests: ["tests/ac.test.ts"], decisiones: [] };
+  return {
+    plan: "p",
+    subtareas,
+    criterios,
+    tests: ["tests/ac.test.ts"],
+    decisiones: [],
+    cambia_lo_existente: [],
+  };
 }
 
 const repo = repoWith({ "src/a.ts": "x\n" });

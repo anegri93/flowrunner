@@ -36,6 +36,21 @@ export const allDependencies = (task: Subtask) => [
 
 export const decisionSchema = z.object({ que: z.string().min(1), por_que: z.string().min(1) });
 
+/**
+ * Un comportamiento que hoy existe y el plan cambia. No es una decisión técnica: es de la persona, y
+ * `approve` no sigue sin que lo acepte. En CUENTAS-1 el planificador anotó como decisión que
+ * reescribía el test que protegía una regla vigente, y el plan se aprobó sin que nadie lo viera.
+ */
+export const cambioExistenteSchema = z.object({
+  que: z.string().min(1).describe("qué hace hoy el código y cómo queda después del plan"),
+  donde: z
+    .string()
+    .min(1)
+    .describe("archivo:línea del código o del test que hoy fija ese comportamiento"),
+  criterio: z.string().min(1).describe("el criterio de la feature que obliga a cambiarlo, AC-n"),
+});
+export type CambioExistente = z.infer<typeof cambioExistenteSchema>;
+
 export const planSchema = z.object({
   plan: z
     .string()
@@ -52,6 +67,11 @@ export const planSchema = z.object({
   /** Los archivos de test que escribió, relativos al repo. */
   tests: z.array(z.string().min(1)).min(1),
   decisiones: z.array(decisionSchema),
+  cambia_lo_existente: z
+    .array(cambioExistenteSchema)
+    .describe(
+      "cada comportamiento que hoy existe y el plan cambia, incluido todo test existente que se modifica o se borra; vacío si no cambia nada",
+    ),
 });
 export type Plan = z.infer<typeof planSchema>;
 

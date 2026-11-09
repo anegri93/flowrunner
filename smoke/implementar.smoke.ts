@@ -70,6 +70,7 @@ const plan: Plan = {
   ],
   tests: ["test/confirmados.test.js", "test/cancelados.test.js"],
   decisiones: [],
+  cambia_lo_existente: [],
 };
 
 test("dos sub-tasks reales en paralelo quedan integradas y verificar las da por verdes", async () => {

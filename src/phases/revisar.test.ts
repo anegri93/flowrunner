@@ -22,6 +22,7 @@ const plan: Plan = {
   criterios: [{ id: "AC-1", comando: "node tests/ac1.mjs", subtarea: "ST-1" }],
   tests: ["tests/ac1.mjs"],
   decisiones: [],
+  cambia_lo_existente: [],
 };
 
 const finding = (extra: Partial<Review["hallazgos"][number]>): Review["hallazgos"][number] => ({

@@ -14,6 +14,7 @@ import { dirname, join } from "node:path";
 import { loadBrain, type Brain } from "../brain/brain.ts";
 import { loadRepoConfig } from "../config/load.ts";
 import type { RepoConfig } from "../config/schemas.ts";
+import { testsInScope, testsTouched, undeclared } from "../gates/existente.ts";
 import { checkCommandsFail, checkPlanShape, planSchema, type Plan } from "../gates/plan.ts";
 import { changesSince, commitAll, resetHard } from "../git/git.ts";
 import { GRAFT_TOOLS, graftMcpServer } from "../graft/graft.ts";
@@ -55,23 +56,34 @@ export function writePlanArtifacts(
   plan: Plan,
   locked: Record<string, string>,
 ): void {
+  const json = (data: unknown) => `${JSON.stringify(data, null, 2)}\n`;
   writeFileSync(join(run.dir, "plan.md"), plan.plan);
-  writeFileSync(join(run.dir, "tasks.json"), `${JSON.stringify(plan.subtareas, null, 2)}\n`);
-  writeFileSync(join(run.dir, "ac-map.json"), `${JSON.stringify(plan.criterios, null, 2)}\n`);
-  writeFileSync(join(run.dir, "locked.json"), `${JSON.stringify(locked, null, 2)}\n`);
+  writeFileSync(join(run.dir, "tasks.json"), json(plan.subtareas));
+  writeFileSync(join(run.dir, "ac-map.json"), json(plan.criterios));
+  writeFileSync(join(run.dir, "locked.json"), json(locked));
+  writeFileSync(join(run.dir, "cambios-existentes.json"), json(plan.cambia_lo_existente));
 }
 
 export const readPlan = (run: RunPaths) => readPlanAt(run.dir);
 
-export function readPlanAt(
-  dir: string,
-): Pick<Plan, "subtareas" | "criterios"> & { plan: string; locked: Record<string, string> } {
+export function readPlanAt(dir: string): Pick<
+  Plan,
+  "subtareas" | "criterios" | "cambia_lo_existente"
+> & {
+  plan: string;
+  locked: Record<string, string>;
+} {
   const read = (name: string) => readFileSync(join(dir, name), "utf8");
+  const cambios = join(dir, "cambios-existentes.json");
   return {
     plan: read("plan.md"),
     subtareas: JSON.parse(read("tasks.json")) as Plan["subtareas"],
     criterios: JSON.parse(read("ac-map.json")) as Plan["criterios"],
     locked: JSON.parse(read("locked.json")) as Record<string, string>,
+    // Un run planificado antes de que existiera el archivo no declaró nada: se lee como vacío.
+    cambia_lo_existente: existsSync(cambios)
+      ? (JSON.parse(readFileSync(cambios, "utf8")) as Plan["cambia_lo_existente"])
+      : [],
   };
 }
 
@@ -165,10 +177,20 @@ export const planificar: PhaseFn = async (ctx) => {
     emit({ tipo: "decision", fase: "planificar", que: d.que, por_que: d.por_que });
 
   const problems = checkPlanShape(plan, feature, worktree, config);
-  const written = (await changesSince(worktree, prep.base_sha, deps.env))
-    .filter((c) => c.status !== "borrado")
-    .map((c) => c.path);
+  const changes = await changesSince(worktree, prep.base_sha, deps.env);
+  const written = changes.filter((c) => c.status !== "borrado").map((c) => c.path);
   if (written.length === 0) problems.push("planificar no escribió ningún test");
+  // Lo que se detecta y no se declara no pasa: así lo que ve la persona al aprobar no depende de que
+  // el planificador lo cuente.
+  const touched = [
+    ...testsTouched(changes, config.tests_globs),
+    ...testsInScope(plan.subtareas, worktree, config.tests_globs),
+  ];
+  for (const path of undeclared(touched, plan.cambia_lo_existente)) {
+    problems.push(
+      `el plan cambia ${path}, un test que ya existe, y no lo declara en cambia_lo_existente. Declaralo con qué cambia, dónde y qué criterio lo obliga, o dejalo como está`,
+    );
+  }
   // Los tests quedan bloqueados byte a byte: el lint y el formateador del repo los arreglan antes del
   // gate y del hash. Lo que el lint no arregla solo rechaza el plan, y el planificador lo corrige.
   for (const f of await runFixers(worktree, config, written, deps.env)) {

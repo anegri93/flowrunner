@@ -61,8 +61,8 @@ const covers = (entry: string, rel: string) => {
   return rel === clean || rel.startsWith(`${clean}/`);
 };
 
-export const isTestFile = (scope: Scope, rel: string) =>
-  scope.testGlobs.some((g) => matchesGlob(rel, g)) ||
+export const isTestFile = (testGlobs: readonly string[], rel: string) =>
+  testGlobs.some((g) => matchesGlob(rel, g)) ||
   /\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)test_[^/]+\.py$/.test(rel);
 
 export function checkWritePath(scope: Scope, path: string): Verdict {
@@ -114,7 +114,7 @@ const SECRETS: readonly [RegExp, string][] = [
 
 /** Reglas sobre el contenido que se agrega: tests desactivados y secretos. */
 export function checkContent(scope: Scope, rel: string, added: readonly string[]): Verdict {
-  const test = isTestFile(scope, rel);
+  const test = isTestFile(scope.testGlobs, rel);
   for (const line of added) {
     if (test && DISABLED_TEST.some((p) => p.test(line))) {
       return no(

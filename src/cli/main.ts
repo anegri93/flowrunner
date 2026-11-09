@@ -41,7 +41,9 @@ const USAGE = `uso: flowrunner <comando> [--json]
   rerun <run> --desde <fase>     rehace un run desde una fase
   abort <run>                    cancela un run y borra sus worktrees; las ramas quedan
   plan <run>                     muestra el plan que espera aprobación
-  approve <run>                  aprueba el plan y sigue a implementar
+  approve <run> [--acepto-cambios]
+                                 aprueba el plan y sigue a implementar; si el plan cambia
+                                 lo que ya existe, pide --acepto-cambios
   changes <run> "<motivo>"       vuelve a planificar con tu instrucción
   report <run> [--sesion s]      el informe del run, o el transcript de una sesión
   tick                           lo que corre launchd: retoma pausados y aprende de PRs mergeadas
@@ -110,6 +112,7 @@ export async function main(
       once: { type: "boolean", default: false },
       "github-user": { type: "string" },
       approve: { type: "string" },
+      "acepto-cambios": { type: "boolean", default: false },
     },
   });
   const json = values.json === true;
@@ -207,7 +210,12 @@ export async function main(
         return 0;
       }
       case "approve": {
-        const approved = approveRun(home, runArg(home, first), env);
+        const approved = approveRun(
+          home,
+          runArg(home, first),
+          env,
+          values["acepto-cambios"] === true,
+        );
         print(approved, `run ${approved.id} ${approved.accion}`);
         return 0;
       }

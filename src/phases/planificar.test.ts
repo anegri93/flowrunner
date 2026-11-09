@@ -40,6 +40,7 @@ const goodPlan: Plan = {
   criterios: [{ id: "AC-1", comando: "node tests/ac1.mjs", subtarea: "ST-1" }],
   tests: ["tests/ac1.mjs"],
   decisiones: [{ que: "usar node:test", por_que: "el repo no tiene framework" }],
+  cambia_lo_existente: [],
 };
 
 const writeTest = {
@@ -51,8 +52,14 @@ const writeTest = {
   },
 };
 
-async function prepared_(scripts: SimScript[], format?: string, lint_fix?: string) {
+async function prepared_(
+  scripts: SimScript[],
+  format?: string,
+  lint_fix?: string,
+  files?: Record<string, string>,
+) {
   const { work } = makeProject({
+    ...(files === undefined ? {} : { files }),
     config: {
       setup: "true",
       tests_globs: ["tests/**"],
@@ -128,6 +135,81 @@ describe("planificar", () => {
     const explorer = sim.records[0]?.options?.agents?.explorador?.tools ?? [];
     expect(explorer.filter((t) => !t.startsWith("mcp__graft__"))).toEqual(["Read", "Grep", "Glob"]);
     expect(Object.keys(sim.records[0]?.options?.mcpServers ?? {})).toEqual(["graft"]);
+  });
+
+  describe("lo que ya existe", () => {
+    const OLD = { "tests/viejo.mjs": "process.exit(0);\n" };
+    const rewriteOld = {
+      tool: "Write",
+      input: { file_path: "tests/viejo.mjs", content: "process.exit(1);\n" },
+    };
+    const declared = {
+      que: "hoy tests/viejo.mjs exige que pase; queda exigiendo que falle",
+      donde: "tests/viejo.mjs:1",
+      criterio: "AC-1",
+    };
+
+    // Si regresiona, el planificador reescribe el test que fija una regla vigente y lo anota como una
+    // decisión más: el plan se aprueba sin que nadie lo vea, como en CUENTAS-1.
+    test("reescribir un test existente sin declararlo no pasa el gate", async () => {
+      const { run, deps } = await prepared_(
+        [{ calls: [writeTest, rewriteOld], output: goodPlan }],
+        undefined,
+        undefined,
+        OLD,
+      );
+      const outcome = await planificar(contextFor(run, "planificar", deps));
+      expect(outcome).toMatchObject({ tipo: "falla", clase: "gate" });
+      expect(outcome.tipo === "falla" && outcome.motivo).toContain(
+        "el plan cambia tests/viejo.mjs, un test que ya existe, y no lo declara en cambia_lo_existente",
+      );
+    });
+
+    // Si regresiona, el plan le da a una sub-task permiso de reescribir un test existente sin decirlo.
+    test("nombrar un test existente en el alcance sin declararlo no pasa el gate", async () => {
+      const scoped = {
+        ...goodPlan,
+        subtareas: goodPlan.subtareas.map((t) => ({
+          ...t,
+          alcance: [...t.alcance, "tests/viejo.mjs"],
+        })),
+      };
+      const { run, deps } = await prepared_(
+        [{ calls: [writeTest], output: scoped }],
+        undefined,
+        undefined,
+        OLD,
+      );
+      const outcome = await planificar(contextFor(run, "planificar", deps));
+      expect(outcome.tipo === "falla" && outcome.motivo).toContain(
+        "el plan cambia tests/viejo.mjs",
+      );
+    });
+
+    // Si regresiona, lo declarado no llega a aprobar y la persona aprueba sin verlo.
+    test("declarado, pasa y queda en el plan que lee aprobar", async () => {
+      const { run, deps } = await prepared_(
+        [
+          {
+            calls: [writeTest, rewriteOld],
+            output: { ...goodPlan, cambia_lo_existente: [declared] },
+          },
+        ],
+        undefined,
+        undefined,
+        OLD,
+      );
+      expect(await planificar(contextFor(run, "planificar", deps))).toEqual({ tipo: "ok" });
+      expect(readPlan(run).cambia_lo_existente).toEqual([declared]);
+    });
+
+    test("el prompt dice que cambiar lo existente no es una decisión del planificador", async () => {
+      const { run, deps, sim } = await prepared_([{ calls: [writeTest], output: goodPlan }]);
+      await planificar(contextFor(run, "planificar", deps));
+      expect(sim.records[0]?.prompt).toContain(
+        "Lo que ya existe y el plan cambia **no es una decisión tuya**",
+      );
+    });
   });
 
   // Si regresiona, planificar escribe código de producción además de los tests.

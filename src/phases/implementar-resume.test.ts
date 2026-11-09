@@ -25,6 +25,7 @@ const plan: Plan = {
   criterios: [{ id: "AC-1", comando: "node tests/ac1.mjs", subtarea: "ST-1" }],
   tests: ["tests/ac1.mjs"],
   decisiones: [],
+  cambia_lo_existente: [],
 };
 
 describe("retomar implementar", () => {

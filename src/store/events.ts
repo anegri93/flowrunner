@@ -102,7 +102,12 @@ export const eventSchema = z.discriminatedUnion("tipo", [
     worktree: z.string(),
     base_sha: z.string(),
   }),
-  z.strictObject({ tipo: z.literal("aprobado"), at }),
+  z.strictObject({
+    tipo: z.literal("aprobado"),
+    at,
+    /** Cuántos cambios a lo existente aceptó la persona al aprobar; falta en runs anteriores. */
+    cambios_aceptados: z.int().nonnegative().optional(),
+  }),
   z.strictObject({ tipo: z.literal("cambios_pedidos"), at, motivo: z.string().min(1) }),
   z.strictObject({ tipo: z.literal("reanudado"), at }),
   z.strictObject({ tipo: z.literal("rehacer"), at, desde: phaseSchema }),

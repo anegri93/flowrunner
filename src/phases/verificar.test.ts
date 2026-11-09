@@ -38,6 +38,7 @@ const plan: Plan = {
   ],
   tests: ["tests/ac1.mjs", "tests/ac2.mjs"],
   decisiones: [],
+  cambia_lo_existente: [],
 };
 
 const TESTS = {

@@ -1,7 +1,8 @@
 import { describe, expect, test } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { STREAMS } from "../../test/helpers/fake-query.ts";
+import { tempDir } from "../../test/helpers/git.ts";
 import type { NewEvent, Outcome, Phase, RunEvent } from "../store/events.ts";
 import { runPaths } from "../store/runs.ts";
 import { buildReport, prBody } from "./report.ts";
@@ -150,4 +151,42 @@ test("la PR lista lo que flowrunner cambió en los tests de criterios", () => {
   expect(body).toContain("## Cambios de flowrunner en los tests de criterios");
   expect(body).toContain("- flowrunner reparó el test bloqueado tests/a.ts: let por const.");
   expect(body).not.toContain("nombre poco claro");
+});
+
+// Si regresiona, la PR llega sin decir que cambia una regla vigente, y se mergea sin verlo.
+test("la PR arranca con lo que cambia de lo existente: lo aceptado al aprobar y lo que nadie declaró", () => {
+  const dir = tempDir();
+  writeFileSync(
+    join(dir, "cambios-existentes.json"),
+    JSON.stringify([{ que: "el alta acepta <gmail>", donde: "src/alta.ts:12", criterio: "AC-1" }]),
+  );
+  const body = prBody(
+    [
+      ev({
+        tipo: "aviso",
+        fase: "implementar",
+        texto:
+          "test existente cambiado: ST-2 cambió tests/viejo.test.ts, que ya existía y el plan aprobado no declaraba",
+      }),
+      ev({
+        tipo: "aviso",
+        fase: "implementar",
+        texto:
+          "test existente cambiado: ST-2 cambió tests/viejo.test.ts, que ya existía y el plan aprobado no declaraba",
+      }),
+    ],
+    { id: "R", home: "/nada", dir, worktrees: "/nada" },
+  );
+  expect(body.startsWith("## ⚠ Cambia lo que ya existe")).toBe(true);
+  expect(body).toContain(
+    "- el alta acepta &lt;gmail&gt; (`src/alta.ts:12`) ← AC-1. Aceptado al aprobar.",
+  );
+  expect(
+    body.match(/\*\*Sin declarar en el plan:\*\* ST-2 cambió tests\/viejo\.test\.ts/g),
+  ).toHaveLength(1);
+});
+
+test("sin cambios a lo existente, la PR arranca por los criterios como siempre", () => {
+  const body = prBody([], { id: "R", home: "/nada", dir: tempDir(), worktrees: "/nada" });
+  expect(body.startsWith("## Criterios")).toBe(true);
 });

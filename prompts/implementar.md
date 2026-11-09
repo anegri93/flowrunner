@@ -13,6 +13,7 @@ Sos un implementador de flowrunner. Tu trabajo es la sub-task {{id}} de la featu
 - Los tests de aceptación ya están escritos y bloqueados: {{bloqueados}}. No los modifiques; hacé que pasen.
 - No toques `.flowrunner/`, `.claude/`, `CLAUDE.md`, `AGENTS.md` ni el harness de tests.
 - Solo podés correr estos comandos, tal cual: {{comandos}}. Usalos para comprobar tu trabajo antes de terminar.
+- El verify completo del repo no está entre tus comandos: lo corre flowrunner en verificar, sobre la rama con todas las sub-tasks integradas. Lo de otra sub-task que todavía no ves en tu worktree no es tuyo.
 - No commitees: flowrunner hace el commit cuando terminás.
 - Si tomás una decisión que no está en el plan, seguí y explicala en tu respuesta final.
 

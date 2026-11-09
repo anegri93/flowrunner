@@ -93,11 +93,12 @@ export function unitCommands(
   acCommands: readonly string[],
   exact: boolean,
 ): string[] {
-  const verify = config.verify.replace(/^\.\//, "");
+  // Sin el verify del repo: corre en verificar, sobre la rama con todas las sub-tasks integradas. En el
+  // worktree de una, antes de que las demás se integren, daba rojos que no eran suyos y costaba minutos.
+  const lint =
+    config.lint_fix === undefined ? [] : [`${config.lint_fix} ${task.alcance.join(" ")}`];
   return [
-    ...acCommands,
-    verify,
-    `./${verify}`,
+    ...new Set([...acCommands, ...lint]),
     "git status",
     "git diff",
     "git log --oneline -10",

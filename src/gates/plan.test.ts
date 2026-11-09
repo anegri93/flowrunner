@@ -55,6 +55,28 @@ const repo = repoWith({ "src/a.ts": "x\n" });
 const shape = (p: Plan) => checkPlanShape(p, feature, repo, rules);
 
 describe("forma del plan", () => {
+  // Regresión: en CUENTAS-1 el planificador agregó «ST-5 Cierre: verify completo en verde», con la
+  // unión de los alcances de las demás. Rehacía el trabajo de verificar desde una sub-task.
+  test("una sub-task que abarca el alcance de otras dos es de cierre: rechazada", () => {
+    const p = plan([
+      task("ST-1", ["src/export/csv.ts"]),
+      task("ST-2", ["src/auth/roles.ts"]),
+      task("ST-3", ["src/export/", "src/auth/"], { depende_de: ["ST-1", "ST-2"] }),
+    ]);
+    expect(shape(p)).toEqual([
+      "ST-3 abarca el alcance de ST-1, ST-2: una sub-task de cierre o de «verify en verde» no va, porque el verify de conjunto lo corre verificar sobre la rama integrada. Lo que haga falta cambiar va en la sub-task dueña de cada archivo",
+    ]);
+    // Abarcar una sola, como al extender lo que otra dejó, sigue valiendo.
+    expect(
+      shape(
+        plan([
+          task("ST-1", ["src/export/csv.ts"]),
+          task("ST-2", ["src/export/"], { depende_de: ["ST-1"] }),
+        ]),
+      ),
+    ).toEqual([]);
+  });
+
   test("un plan bien formado no tiene problemas", () => {
     expect(
       shape(plan([task("ST-1", ["src/export/"]), task("ST-2", ["src/auth/roles.ts"])])),

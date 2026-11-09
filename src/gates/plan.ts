@@ -177,6 +177,18 @@ export function checkPlanShape(
       }
     }
   }
+  for (const wide of plan.subtareas) {
+    const covered = plan.subtareas.filter(
+      (other) =>
+        other.id !== wide.id &&
+        other.alcance.every((p) => wide.alcance.some((w) => overlaps(normalize(w), normalize(p)))),
+    );
+    // En CUENTAS-1, «ST-5 Cierre: verify completo en verde» tenía la unión de casi todos los alcances.
+    if (covered.length >= 2)
+      problems.push(
+        `${wide.id} abarca el alcance de ${covered.map((t) => t.id).join(", ")}: una sub-task de cierre o de «verify en verde» no va, porque el verify de conjunto lo corre verificar sobre la rama integrada. Lo que haga falta cambiar va en la sub-task dueña de cada archivo`,
+      );
+  }
   return problems;
 }
 

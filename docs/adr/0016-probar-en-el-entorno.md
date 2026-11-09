@@ -15,7 +15,11 @@ probar el entorno de la persona en vez de la feature.
 - **Una fase propia**, después de revisar: si el entorno falla, se reintenta solo probar, sin repetir
   la revisión. Una prueba en falla devuelve su sub-task a implementar, como un bloqueante.
 - **El entorno lo levanta flowrunner**, con `probar.levantar` de la config del repo, desde el worktree
-  de la feature y con los `env_files` copiados del checkout. Si una URL responde antes de levantar, se
+  de la feature y con los `env_files` copiados del checkout. Está listo cuando `levantar` terminó bien
+  y responden las URLs; con `sigue_corriendo`, cuando responden las URLs. Esperar a que termine deja
+  que `levantar` prepare datos después de levantar, como la sesión de prueba de mango. Los
+  `env_files` tienen secretos reales: el agente no los lee ni los abarca en una búsqueda, y al bajar
+  se borran del worktree, donde después leen revisar y las sub-tasks. Si una URL responde antes de levantar, se
   detiene: sería otro entorno. Al terminar corre `probar.bajar` y mata el grupo de procesos.
 - **El agente no corre comandos.** Lee el código, usa la API con una herramienta propia que solo llega
   a las URLs del entorno y deja cada pedido en `http.md` con las cabeceras secretas tapadas, y navega con

@@ -53,7 +53,7 @@ export const repoConfigSchema = z
     /** Cómo levantar el entorno de desarrollo para que la fase probar use la feature. Sin él, se saltea. */
     probar: z
       .strictObject({
-        /** Deja el entorno respondiendo en `urls`; puede quedar corriendo o terminar. Nunca contra datos reales. */
+        /** Deja el entorno respondiendo en `urls` y termina, salvo `sigue_corriendo`. Nunca contra datos reales. */
         levantar: z.string().min(1),
         /** Baja lo que `levantar` dejó desacoplado, como un `stop.sh`. */
         bajar: z.string().min(1).optional(),
@@ -61,6 +61,8 @@ export const repoConfigSchema = z
         urls: z.record(z.string().min(1), z.url({ protocol: /^https?$/ })),
         /** Archivos fuera de git, como los `.env`, que se copian del repo al worktree de la feature. */
         env_files: z.array(relativePath).default([]),
+        /** `levantar` no termina, como un `pnpm dev`: está listo cuando responden las URLs. */
+        sigue_corriendo: z.boolean().default(false),
         /** Lo que el agente necesita saber para probar: usuarios de prueba, cómo entrar. */
         notas: z.string().default(""),
         espera_segundos: z.int().min(1).max(1800).default(300),

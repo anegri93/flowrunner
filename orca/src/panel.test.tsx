@@ -284,6 +284,43 @@ test("cuando un run con la PR abierta se cierra, su informe se abre solo, una ve
   );
 });
 
+// Si regresiona, cambiar de proyecto en Orca abre el informe de cada run entregado del proyecto anterior,
+// como si se hubiera cerrado.
+test("al cambiar de proyecto, los runs del anterior se dejan de ver sin abrir su informe", async () => {
+  let current: { runs: typeof runs; at: number; proyecto: string; otros: number } = {
+    runs,
+    at: 0,
+    proyecto: "videoFactory",
+    otros: 0,
+  };
+  const opened: unknown[] = [];
+  await withPanel(
+    mockHost({
+      requests: {
+        "flowrunner.runs": () => current,
+        "flowrunner.abrir": (input: unknown) => {
+          opened.push(input);
+          return { ok: true, mensaje: "abierto" };
+        },
+      },
+    }),
+    async (view) => {
+      assert.ok(view.find({ text: "videoFactory" }));
+      current = { runs: [], at: 1, proyecto: "pizarra-en-vivo", otros: runs.length };
+      await panel.refresh();
+      await view.settled();
+      assert.deepEqual(opened, []);
+      // El título y la descripción del vacío se leen como su etiqueta y su texto.
+      const empty = view.find({ label: "No hay runs activos en pizarra-en-vivo" });
+      assert.ok(empty);
+      assert.match(
+        empty.text,
+        /3 runs activos en otros proyectos: cambiá de proyecto en Orca para verlos\./,
+      );
+    },
+  );
+});
+
 // Si regresiona, un flowrunner roto o sin runs deja el panel vacío sin decir por qué.
 test("sin runs lo dice", async () => {
   await withPanel(

@@ -2,7 +2,12 @@
 import type { Decision, Run } from "./runs";
 
 export interface Snapshot {
+  /** Los runs del proyecto activo de Orca; todos si no hay uno activo. */
   readonly runs: Run[];
+  /** El proyecto activo, si lo hay: los runs se filtran por él. */
+  readonly proyecto?: string;
+  /** Cuántos runs activos hay en otros proyectos. */
+  readonly otros?: number;
   /** Por qué falló la última lectura, si falló. */
   readonly error?: string;
   /** Cuándo se leyó, en ms desde el epoch. */

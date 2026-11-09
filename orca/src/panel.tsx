@@ -54,6 +54,8 @@ let reading = false;
 function closedSince(prev: Snapshot | null, next: Snapshot): string[] {
   // Una vez por run: en la lectura siguiente, el run ya no está en la anterior.
   if (prev === null) return [];
+  // Al cambiar de proyecto en Orca, los runs del anterior dejan de verse sin haberse cerrado.
+  if (prev.proyecto !== next.proyecto) return [];
   return prev.runs
     .filter((r) => r.status === "entregado" && !next.runs.some((n) => n.id === r.id))
     .map((r) => r.id);
@@ -263,8 +265,18 @@ export default function Panel() {
   const snap = read(snapshot);
   if (snap === null) return <Spinner label="Leyendo los runs de flowrunner" />;
   const runs = sortRuns(snap.runs);
+  const others = snap.otros ?? 0;
+  const elsewhere =
+    others === 0
+      ? null
+      : `${String(others)} ${others === 1 ? "run activo" : "runs activos"} en otros proyectos: cambiá de proyecto en Orca para ${others === 1 ? "verlo" : "verlos"}.`;
   return (
     <Stack gap="md">
+      {snap.proyecto === undefined ? null : (
+        <Text size="xs" muted>
+          {snap.proyecto}
+        </Text>
+      )}
       {snap.error === undefined ? null : (
         <Text size="xs" tone="danger">
           No se pudo leer flowrunner: {snap.error}
@@ -272,12 +284,23 @@ export default function Panel() {
       )}
       {runs.length === 0 && snap.error === undefined ? (
         <EmptyState
-          title="No hay runs activos"
-          description="Cuando lances una feature desde Claude Code, su progreso aparece acá."
+          title={
+            snap.proyecto === undefined
+              ? "No hay runs activos"
+              : `No hay runs activos en ${snap.proyecto}`
+          }
+          description={
+            elsewhere ?? "Cuando lances una feature desde Claude Code, su progreso aparece acá."
+          }
         />
       ) : (
         runs.map((run) => <RunCard key={run.id} run={run} />)
       )}
+      {runs.length > 0 && elsewhere !== null ? (
+        <Text size="xs" muted>
+          {elsewhere}
+        </Text>
+      ) : null}
     </Stack>
   );
 }

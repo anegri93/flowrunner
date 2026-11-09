@@ -40,7 +40,8 @@ function configuredAuth(env: NodeJS.ProcessEnv, home: string): "token" | "login"
 }
 
 /** `auth: login` en la config global usa la sesión de Claude Code de la persona;
- * `FLOWRUNNER_AUTH=login` hace lo mismo sin leer la config, para los tests. */
+ * `FLOWRUNNER_AUTH=login` hace lo mismo sin leer la config: lo usan los tests, e `init` antes de
+ * escribir la config global. */
 export function resolveAuth(env: NodeJS.ProcessEnv, home: string): SessionAuth {
   if (env.FLOWRUNNER_AUTH === "login" || configuredAuth(env, home) === "login") {
     return { kind: "login" };

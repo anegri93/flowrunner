@@ -16,6 +16,7 @@ import { hookOutput, sessionStartContext } from "./hook.ts";
 import { readFileSync } from "node:fs";
 import { renderRuns, watchLive, watchTargets } from "./watch.ts";
 import { describeInit, init } from "../setup/init.ts";
+import { productionRuntime } from "../runner/production.ts";
 import { describeStats, stats } from "../report/stats.ts";
 import {
   abortRun,
@@ -132,7 +133,8 @@ export async function main(
       }
       case "init": {
         const aplicar = values.aplicar === true;
-        const result = await init(need(first, "la ruta del repo"), env, aplicar);
+        const { deps } = await productionRuntime(env, () => undefined);
+        const result = await init(need(first, "la ruta del repo"), deps, aplicar);
         print(result, describeInit(result, aplicar));
         return result.ok ? 0 : 1;
       }

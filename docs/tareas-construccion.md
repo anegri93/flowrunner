@@ -826,6 +826,16 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. El hook reusa `loadGlobalConfig`; la lectura de settings.json quedó en una sola función para `installSkill` y `skillUpToDate`.
 - **Desbloquea:** Gate final
 
+### T9.5 · `init` redacta un borrador del cerebro leyendo el código
+- **Estado:** `[x] Hecho`
+- **Descripción:** `init --aplicar` dejaba `convenciones.md`, `contexto.md` y `que-es-bien.md` como plantillas vacías, y los primeros runs no tenían con qué seguir la lógica del repo. Ahora, con la base en verde y antes de abrir la PR del cerebro, `src/setup/draft.ts` corre una sesión de solo lectura con Read, Grep y Glob. La sesión recibe los archivos versionados, el `package.json`, los últimos commits y lo que infirió `infer.ts`. Con `prompts/borrador-cerebro.md` redacta las convenciones que el repo ya sigue, qué reusar antes de escribir, las buenas prácticas del stack y los criterios de una buena PR, cada regla con el archivo que la muestra. El borrador va debajo de la plantilla, en la sección «Borrador de flowrunner init» con fecha y fuentes, así que se distingue de lo que escribe la persona. Si una fuente no existe en el repo, o la sesión falla, quedan las plantillas, el paso queda pendiente y la PR se abre igual. Usa el modelo de planificar, con un tope de USD 3. Sin `--aplicar` no corre ninguna sesión.
+- **Lint:** `pnpm lint`.
+- **Test:** `test/init.int.test.ts` con el SDK simulado: con `--aplicar`, los tres archivos de la rama `chore/flowrunner-init` conservan la plantilla y traen el borrador con sus fuentes, la PR lo menciona y el prompt llevó los archivos y los commits del repo; un borrador que cita un archivo inventado deja las plantillas, marca el paso pendiente y abre la PR; sin `--aplicar` no hay prompt. `src/setup/draft.test.ts`: `inventedSources` acepta archivos y carpetas versionados y marca el resto; `withDraft` deja lo de la persona arriba, y el borrador más largo entra en el tope del archivo.
+- **Canario:** con `init.ts` y `main.ts` de la base, los 2 tests de integración nuevos fallaron; sin la validación de fuentes, falló el del archivo inventado. Restaurado.
+- **Criterio de aprobación:** `init --aplicar` sobre un repo con código deja los tres archivos con reglas que citan archivos reales del repo.
+- **Revisión ponytail:** a mano. Reusa `runSession`, `tripwireHook`, `render` y el SDK simulado de los runs; `init` recibe las `Deps` de `productionRuntime` en lugar de armar las suyas.
+- **Desbloquea:** Gate final
+
 ### Gate Fase 9
 - **Estado:** `[~] En progreso` — falta correrlo sobre un repo real
 - **Validación de lint:** `pnpm lint` verde.

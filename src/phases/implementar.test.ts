@@ -86,6 +86,26 @@ describe("instalar dependencias", () => {
     ]);
   });
 
+  // Regresión: en CUENTAS-1 (segundo run), AC-9 era «verify en verde» con `./.flowrunner/verify.sh`
+  // como comando. ST-3 lo tenía asignado, lo corrió en su worktree y dio rojo por código de las otras.
+  test("el comando de un criterio que es el verify del repo no pasa a la sub-task", () => {
+    const repo = repoConfigSchema.parse({ setup: "true", tests_globs: ["tests/**"] });
+    const own = st("ST-3", ["src/conexiones/"]);
+    for (const verify of [
+      "./.flowrunner/verify.sh",
+      ".flowrunner/verify.sh",
+      "bash .flowrunner/verify.sh",
+      " sh ./.flowrunner/verify.sh ",
+    ]) {
+      expect(unitCommands(repo, own, ["npx jest conexiones", verify], false)).toEqual([
+        "npx jest conexiones",
+        "git status",
+        "git diff",
+        "git log --oneline -10",
+      ]);
+    }
+  });
+
   test("prefersExact: sí si todas las versiones del manifiesto son exactas, no si alguna es un rango", () => {
     expect(
       prefersExact('{"dependencies":{"a":"1.2.3"},"devDependencies":{"b":"4.0.0-rc.1"}}'),

@@ -69,6 +69,30 @@ export const repoConfigSchema = z
         /** Lo que el agente necesita saber para probar: usuarios de prueba, cómo entrar. */
         notas: z.string().default(""),
         espera_segundos: z.int().min(1).max(1800).default(300),
+        /**
+         * Fallas que el agente puede provocar para probar el camino de error, por nombre:
+         * `{ kms_colgado: { simular: "docker pause portal-localstack", restaurar: "docker unpause portal-localstack" } }`.
+         * El agente elige el nombre, nunca el comando; al bajar el entorno se restaura toda falla que
+         * haya quedado puesta. Ver ADR 0017.
+         */
+        fallas: z
+          .record(
+            z
+              .string()
+              .regex(/^[a-z][a-z0-9_]*$/, "un nombre en minúsculas con _, como kms_colgado"),
+            z.strictObject({
+              /** Qué hace la falla, para el agente: "KMS acepta la conexión y no contesta". */
+              que: z.string().min(1),
+              simular: z.string().min(1),
+              restaurar: z.string().min(1),
+            }),
+          )
+          .default({}),
+        /**
+         * Chrome con ventana: la persona ve la prueba mientras corre. Los runs son de fondo, así que la
+         * ventana puede aparecer en cualquier momento; el video se graba igual con o sin ventana.
+         */
+        navegador_visible: z.boolean().default(false),
       })
       .optional(),
   })

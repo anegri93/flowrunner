@@ -1,10 +1,11 @@
 // Smoke de la fase probar: con el SDK real y el Chrome de la máquina, el agente usa una app de
 // juguete por la API y por el navegador, y la evidencia queda en el run: el log de la API y el video.
 import { execFileSync } from "node:child_process";
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { expect, test } from "vitest";
+import { featureWorktree } from "../src/phases/inputs.ts";
 import { probar, lastTestDir, readTests } from "../src/phases/probar.ts";
 import type { QueryFn } from "../src/runner/types.ts";
 import { responds } from "../src/probar/entorno.ts";
@@ -16,6 +17,10 @@ import { freePort } from "../test/helpers/puerto.ts";
 const app = (port: number) => `const http = require("node:http");
 http.createServer((q, r) => {
   if (q.url === "/api/saludo") {
+    if (require("node:fs").existsSync("caido")) {
+      r.statusCode = 503;
+      return r.end("el servicio de saludo no responde");
+    }
     r.setHeader("content-type", "application/json");
     return r.end(JSON.stringify({ saludo: "hola" }));
   }
@@ -35,10 +40,12 @@ La app saluda por la API y en la pantalla de inicio.
 ## Criterios
 - AC-1: GET /api/saludo responde 200 con {"saludo":"hola"}.
 - AC-2: en la pantalla de inicio, al tocar «Saludar» aparece «Hola, mundo».
+- AC-3: con el servicio de saludo caído, GET /api/saludo responde 503.
 `;
 
-// Si regresiona, probar no llega a usar la feature o la persona se queda sin video para validarla.
-test("una sesión real prueba la API y la pantalla, y deja el log y el video", async () => {
+// Si regresiona, probar no llega a usar la feature, no puede probar el camino de error (KMS-1), deja
+// la falla puesta, o la persona se queda sin un video que se entienda (ADR 0016 y 0017).
+test("una sesión real prueba la API, la pantalla y una falla declarada, y deja el log, el video y todo restaurado", async () => {
   const port = await freePort();
   const url = `http://127.0.0.1:${String(port)}`;
   const deps = testDeps({
@@ -55,7 +62,18 @@ test("una sesión real prueba la API y la pantalla, y deja el log y el video", a
         setup: "true",
         tests_globs: ["tests/**"],
         models: { probar: { model: "claude-haiku-5-5", effort: "low" } },
-        probar: { levantar: "node app.cjs", sigue_corriendo: true, urls: { app: url } },
+        probar: {
+          levantar: "node app.cjs",
+          sigue_corriendo: true,
+          urls: { app: url },
+          fallas: {
+            saludo_caido: {
+              que: "el servicio de saludo deja de responder",
+              simular: "touch caido",
+              restaurar: "rm -f caido",
+            },
+          },
+        },
       },
     },
     FEATURE,
@@ -67,7 +85,12 @@ test("una sesión real prueba la API y la pantalla, y deja el log y el video", a
   expect(pruebas?.pruebas.map((p) => [p.criterio, p.resultado])).toEqual([
     ["AC-1", "ok"],
     ["AC-2", "ok"],
+    ["AC-3", "ok"],
   ]);
+  const fallas = readFileSync(join(dir, "fallas.md"), "utf8");
+  expect(fallas).toContain("## simular saludo_caido");
+  expect(existsSync(join(featureWorktree(run), "caido"))).toBe(false);
+  expect(readFileSync(join(dir, "guion-del-video.js"), "utf8")).toContain("window.flowrunner");
   expect(readFileSync(join(dir, "http.md"), "utf8")).toContain(`GET ${url}/api/saludo`);
   expect(videos.length).toBeGreaterThan(0);
   expect(Math.max(...videos.map((v) => statSync(v).size))).toBeGreaterThan(1_000);

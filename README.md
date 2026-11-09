@@ -115,8 +115,10 @@ entran en un commit. Sin ellos, un e2e que no puede levantar la app «falla» si
 ### Probar la feature en el entorno
 
 Después de revisar, la fase probar usa la feature como lo harías vos: levanta el entorno de desarrollo
-desde la copia de la feature, llama a la API y navega la plataforma con Chrome sin ventana. Una prueba
-que falla vuelve a su sub-task con la evidencia. Para eso el repo dice cómo levantar el entorno en
+desde la copia de la feature, llama a la API y navega la plataforma con Chrome. Una prueba que falla
+vuelve a su sub-task con la evidencia. Un criterio que no se pudo probar detiene el run: arreglás lo que
+faltó y rehacés probar, o decidís entregar igual con `flowrunner accept-untested <run> "<por qué>"`, y
+ese motivo queda en la PR. Para eso el repo dice cómo levantar el entorno en
 `.flowrunner/config.yaml`; sin esto, probar se saltea con un aviso:
 
 ```yaml
@@ -130,7 +132,18 @@ probar:
   env_files: [apps/api/.env, apps/web/.env] # se copian de tu checkout a la copia de la feature
   notas: Entrá con el usuario de prueba que crea el seed, admin@local.test.
   espera_segundos: 300
+  fallas: # lo que el agente puede provocar para probar el camino de error, por nombre
+    kms_colgado:
+      que: KMS acepta la conexión y no contesta
+      simular: docker pause portal-localstack
+      restaurar: docker unpause portal-localstack
+  navegador_visible: false # true abre Chrome con ventana mientras prueba
 ```
+
+El agente elige una falla por su nombre, nunca el comando, y al terminar flowrunner restaura las que
+hayan quedado puestas. El video se entiende solo: antes de cada criterio, una placa con qué se prueba y
+qué debería pasar; un cursor que marca cada clic; lo que se toca queda centrado en la pantalla; y al
+final de cada criterio, el resultado marcado.
 
 El agente no puede leer ni buscar en los `env_files`, y al terminar se borran de la copia de la feature.
 Si algo ya responde en esas URLs antes de levantar, por ejemplo tu propio entorno, probar se detiene:
@@ -232,23 +245,24 @@ equivalente de API: con la suscripción no se cobran, y lo que limita es su cupo
 
 ## Comandos
 
-| Comando                                 | Para qué                                      |
-| --------------------------------------- | --------------------------------------------- |
-| `flowrunner init <ruta> [--aplicar]`    | revisar y dejar listo un repo                 |
-| `flowrunner brain draft <ruta>`         | proponer un borrador del cerebro en una PR    |
-| `brain draft <ruta> --reemplazar`       | cambiar el borrador anterior por uno nuevo    |
-| `flowrunner watch [run] [--json]`       | ver un run, o todos los activos, en vivo      |
-| `flowrunner status [run]`               | el estado de los runs, o de uno fase por fase |
-| `flowrunner plan <run>`                 | el plan que espera aprobación                 |
-| `flowrunner approve <run>`              | aprobar el plan                               |
-| `flowrunner changes <run> "<motivo>"`   | pedir cambios al plan                         |
-| `flowrunner report <run>`               | el informe del run                            |
-| `flowrunner resume <run>`               | retomar un run detenido                       |
-| `flowrunner rerun <run> --desde <fase>` | rehacer desde una fase                        |
-| `flowrunner abort <run>`                | cancelar un run                               |
-| `flowrunner learn <run>`                | aprender ya de una PR mergeada                |
-| `flowrunner stats [proyecto]`           | en qué fase se va el tiempo y el costo        |
-| `flowrunner doctor`                     | qué le falta a esta máquina                   |
+| Comando                                        | Para qué                                      |
+| ---------------------------------------------- | --------------------------------------------- |
+| `flowrunner init <ruta> [--aplicar]`           | revisar y dejar listo un repo                 |
+| `flowrunner brain draft <ruta>`                | proponer un borrador del cerebro en una PR    |
+| `brain draft <ruta> --reemplazar`              | cambiar el borrador anterior por uno nuevo    |
+| `flowrunner watch [run] [--json]`              | ver un run, o todos los activos, en vivo      |
+| `flowrunner status [run]`                      | el estado de los runs, o de uno fase por fase |
+| `flowrunner plan <run>`                        | el plan que espera aprobación                 |
+| `flowrunner approve <run>`                     | aprobar el plan                               |
+| `flowrunner changes <run> "<motivo>"`          | pedir cambios al plan                         |
+| `flowrunner report <run>`                      | el informe del run                            |
+| `flowrunner resume <run>`                      | retomar un run detenido                       |
+| `flowrunner rerun <run> --desde <fase>`        | rehacer desde una fase                        |
+| `flowrunner accept-untested <run> "<por qué>"` | entregar con criterios sin probar             |
+| `flowrunner abort <run>`                       | cancelar un run                               |
+| `flowrunner learn <run>`                       | aprender ya de una PR mergeada                |
+| `flowrunner stats [proyecto]`                  | en qué fase se va el tiempo y el costo        |
+| `flowrunner doctor`                            | qué le falta a esta máquina                   |
 
 `run` puede ser el id completo o la clave de la feature, como `PIZ-1`. Casi nunca hace falta escribirlos:
 la skill de Claude Code los usa por vos.

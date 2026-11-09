@@ -130,7 +130,7 @@ export function buildReport(events: readonly RunEvent[], run: RunPaths): string 
   const lines = [
     ...header(events, run),
     ...(existing.length === 0 ? [] : ["", ...existing]),
-    ...tested(run, true),
+    ...tested(events, run, true),
     ...howToTest(run),
     ...decisions(events),
     "",
@@ -198,9 +198,23 @@ export function testResults(dir: string, paths: boolean): string[] {
   ];
 }
 
-function tested(run: RunPaths, paths: boolean): string[] {
+function tested(events: readonly RunEvent[], run: RunPaths, paths: boolean): string[] {
   const dir = lastTestDir(run);
-  return dir === undefined ? [] : ["", "## Pruebas en el entorno", "", ...testResults(dir, paths)];
+  if (dir === undefined) return [];
+  // La última decisión manda: si el run se detuvo dos veces, vale el motivo de la que lo dejó seguir.
+  const aceptado = events.filter((e) => e.tipo === "sin_probar_aceptado").at(-1);
+  return [
+    "",
+    "## Pruebas en el entorno",
+    "",
+    ...(aceptado === undefined
+      ? []
+      : [
+          `> ⚠️ Se entregó con criterios sin probar, por decisión de la persona: ${plain(aceptado.motivo)}`,
+          "",
+        ]),
+    ...testResults(dir, paths),
+  ];
 }
 
 /** El paso a paso para probar la feature a mano, que escribe la última revisión. */
@@ -284,7 +298,7 @@ export function prBody(events: readonly RunEvent[], run: RunPaths): string {
     "## Criterios",
     "",
     criteria,
-    ...tested(run, false),
+    ...tested(events, run, false),
     ...howToTest(run),
     "",
     "## Plan",

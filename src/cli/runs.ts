@@ -133,6 +133,40 @@ export function resumeRun(home: string, id: string, env: NodeJS.ProcessEnv) {
   return runStartedSchema.parse({ ok: true, id, accion: `retomado en ${state.fase}` });
 }
 
+/**
+ * Entregar aunque probar dejó criterios sin probar. Es una decisión de la persona y queda escrita con
+ * su motivo en el informe y en la PR: sin motivo no se acepta. Ver ADR 0017.
+ */
+export function acceptUntested(
+  home: string,
+  id: string,
+  motivo: string | undefined,
+  env: NodeJS.ProcessEnv,
+) {
+  if (motivo === undefined || motivo.trim() === "") {
+    throw new UserError(
+      "falta el motivo: por qué se entrega con criterios sin probar",
+      `flowrunner accept-untested ${id} "<por qué>"`,
+    );
+  }
+  const state = loadOrExplain(home, id);
+  if (state.status !== "detenido" || !state.sinProbar) {
+    throw new UserError(
+      `el run ${id} no está detenido por criterios sin probar (está ${state.status} en ${state.fase})`,
+      `flowrunner status ${id}`,
+    );
+  }
+  const run = runPaths(home, id);
+  lockOrExplain(home, state.proyecto, id, process.pid);
+  appendEvent(run.dir, { tipo: "sin_probar_aceptado", motivo: motivo.trim() });
+  handOver(home, state.proyecto, run, env);
+  return runStartedSchema.parse({
+    ok: true,
+    id,
+    accion: "aceptado sin probar: entregar arrancó",
+  });
+}
+
 export function rerunRun(
   home: string,
   id: string,

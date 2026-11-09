@@ -1,6 +1,7 @@
-// Las herramientas con las que la fase probar usa la feature: un navegador que graba video y un
-// cliente HTTP para las APIs. Las dos solo llegan a las URLs del entorno, y todo lo que hacen queda
-// en la carpeta de pruebas del run para que la persona lo revise.
+// Las herramientas con las que la fase probar usa la feature: un navegador que graba video, un
+// cliente HTTP para las APIs y las fallas que el repo declaró que se pueden provocar. Navegador y HTTP
+// solo llegan a las URLs del entorno, y todo lo que hacen las tres queda en la carpeta de pruebas del
+// run para que la persona lo revise.
 import { spawn, type ChildProcess } from "node:child_process";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -10,7 +11,9 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { createSdkMcpServer, tool, type McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { descendants, killAll } from "../agent/procesos.ts";
-import { cleanEnv } from "../proc/proc.ts";
+import { cleanEnv, runShell, tail } from "../proc/proc.ts";
+import type { ProbarConfig } from "./entorno.ts";
+import { GUION_DEL_VIDEO } from "./guion-del-video.ts";
 
 /** Las del navegador que la sesión puede usar. Afuera: correr código en el host y subir archivos. */
 export const BROWSER_TOOLS = [
@@ -37,6 +40,95 @@ export const BROWSER_TOOLS = [
   "browser_close",
 ].map((name) => `mcp__navegador__${name}`);
 export const HTTP_TOOL = "mcp__http__request";
+export const FALLA_TOOLS = ["mcp__fallas__simular", "mcp__fallas__restaurar"];
+
+const FALLA_TIMEOUT_MS = 60_000;
+
+export interface Fallas {
+  readonly config: McpServerConfig;
+  readonly simular: (nombre: string) => Promise<{ ok: boolean; text: string }>;
+  readonly restaurar: (nombre: string) => Promise<{ ok: boolean; text: string }>;
+  /** Restaura las que quedaron puestas. Devuelve las que no se pudieron restaurar, con el motivo. */
+  readonly restaurarTodas: () => Promise<string[]>;
+}
+
+/**
+ * Las fallas que declaró el repo, como herramientas: el agente elige el nombre, nunca el comando, así
+ * que sigue sin poder correr nada que el repo no haya escrito (ADR 0016). Cada una queda en `log`.
+ */
+export function fallasServer(
+  fallas: ProbarConfig["fallas"],
+  opts: { readonly cwd: string; readonly env: NodeJS.ProcessEnv; readonly log: string },
+): Fallas {
+  const puestas = new Set<string>();
+  const nombres = Object.keys(fallas);
+  const correr = async (nombre: string, que: "simular" | "restaurar") => {
+    const falla = fallas[nombre];
+    if (falla === undefined) {
+      return {
+        ok: false,
+        text: `no hay una falla "${nombre}": las que declaró el repo son ${nombres.length === 0 ? "ninguna" : nombres.join(", ")}`,
+      };
+    }
+    const result = await runShell(falla[que], {
+      cwd: opts.cwd,
+      env: opts.env,
+      timeoutMs: FALLA_TIMEOUT_MS,
+    });
+    const ok = result.code === 0 && !result.timedOut;
+    mkdirSync(dirname(opts.log), { recursive: true });
+    appendFileSync(
+      opts.log,
+      `## ${que} ${nombre}\n\n\`${falla[que]}\` → ${ok ? "ok" : `salió ${String(result.code)}`}\n\n`,
+    );
+    if (ok && que === "simular") puestas.add(nombre);
+    if (ok && que === "restaurar") puestas.delete(nombre);
+    return {
+      ok,
+      text: ok
+        ? `${que === "simular" ? "puesta" : "restaurada"}: ${nombre} (${falla.que})`
+        : `no se pudo ${que} ${nombre}:\n${tail(result, 10)}`,
+    };
+  };
+  const lista = nombres.map((n) => `- ${n}: ${fallas[n]?.que ?? ""}`).join("\n");
+  const nombre = z.string().describe("El nombre de la falla, uno de los declarados");
+  const config = createSdkMcpServer({
+    name: "fallas",
+    tools: [
+      tool(
+        "simular",
+        `Provoca una falla que el repo declaró, para probar el camino de error de un criterio. Las que hay:\n${lista}`,
+        { nombre },
+        async ({ nombre: n }) => {
+          const out = await correr(n, "simular");
+          return { content: [{ type: "text", text: out.text }], isError: !out.ok };
+        },
+      ),
+      tool(
+        "restaurar",
+        "Saca una falla que pusiste con simular. Restaurala apenas terminás de probar ese criterio.",
+        { nombre },
+        async ({ nombre: n }) => {
+          const out = await correr(n, "restaurar");
+          return { content: [{ type: "text", text: out.text }], isError: !out.ok };
+        },
+      ),
+    ],
+  });
+  return {
+    config,
+    simular: (n) => correr(n, "simular"),
+    restaurar: (n) => correr(n, "restaurar"),
+    restaurarTodas: async () => {
+      const fallidas: string[] = [];
+      for (const n of [...puestas]) {
+        const out = await correr(n, "restaurar");
+        if (!out.ok) fallidas.push(out.text);
+      }
+      return fallidas;
+    },
+  };
+}
 
 const MAX_BODY_CHARS = 20_000;
 const HTTP_TIMEOUT_MS = 30_000;
@@ -149,16 +241,20 @@ const PLAYWRIGHT_CLI = join(
 const START_TIMEOUT_MS = 30_000;
 
 /**
- * Playwright MCP por HTTP, con Chrome sin ventana, que solo llega a `allowed` y graba en video cada
- * página en `dir/video`. Lo lanza y lo baja flowrunner, no el CLI de Claude: así el navegador termina
- * de escribir el video aunque la sesión se corte.
+ * Playwright MCP por HTTP, con Chrome, que solo llega a `allowed` y graba en video cada página en
+ * `dir/video`. Sin ventana salvo `visible`. Cada página carga el guion del video: cursor, scroll
+ * centrado y las placas que pone el agente. Lo lanza y lo baja flowrunner, no el CLI de Claude: así el
+ * navegador termina de escribir el video aunque la sesión se corte.
  */
 export async function startBrowser(
   dir: string,
   allowed: readonly string[],
   env: NodeJS.ProcessEnv,
+  opts: { readonly visible?: boolean } = {},
 ): Promise<Navegador> {
   mkdirSync(join(dir, "video"), { recursive: true });
+  const guion = join(dir, "guion-del-video.js");
+  writeFileSync(guion, GUION_DEL_VIDEO);
   const configFile = join(dir, "navegador.json");
   writeFileSync(
     configFile,
@@ -167,7 +263,8 @@ export async function startBrowser(
         browserName: "chromium",
         // ponytail: el Chrome instalado; si hace falta otro, que sea un campo de `probar`.
         // slowMo: cada acción espera un poco, para que en el video se vea qué se tocó antes del cambio.
-        launchOptions: { channel: "chrome", headless: true, slowMo: 600 },
+        launchOptions: { channel: "chrome", headless: opts.visible !== true, slowMo: 600 },
+        initScript: [guion],
         isolated: true,
         contextOptions: {
           recordVideo: { dir: join(dir, "video"), size: { width: 1280, height: 720 } },

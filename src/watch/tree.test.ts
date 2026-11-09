@@ -291,6 +291,46 @@ describe("runTree", () => {
     expect(done.fases[1]?.sesiones[0]?.tokens).toBe(600);
   });
 
+  // Regresión: CUENTAS-1 se abortó a mitad de planificar y de implementar. Horas después, el panel
+  // seguía mostrando «trabajando», con el reloj de la fase en 5:28:22 y el costo de una sesión viva.
+  test("un run abortado a mitad de una fase no la muestra corriendo, ni a su sub-task ni a su sesión", () => {
+    const viva = session(
+      [
+        line({ type: "system", subtype: "init", model: "claude-sonnet-5-5" }),
+        tool("Write", { file_path: "a.ts" }),
+      ],
+      200,
+      230,
+    );
+    const tree = runTree({
+      events: [
+        ...base,
+        { tipo: "accion_terminada", at: at(161), fase: "aprobar", resultado: { tipo: "ok" } },
+        { tipo: "accion_iniciada", at: at(170), fase: "implementar" },
+        {
+          tipo: "unidad",
+          at: at(200),
+          fase: "implementar",
+          unidad: "ST-1",
+          estado: "iniciada",
+          sha: "a",
+        },
+        { tipo: "abortado", at: at(600) },
+      ],
+      tasks,
+      titulo: "x",
+      sessions: new Map([["implementar-ST-1-1", viva]]),
+      now: T0 + 20_000_000,
+    });
+    const implementar = tree.fases.find((f) => f.fase === "implementar");
+    expect(implementar).toMatchObject({ estado: "cortada", segundos: 430 });
+    expect(implementar?.unidades[0]).toMatchObject({ id: "ST-1", estado: "cortada" });
+    expect(implementar?.unidades[0]?.sesiones[0]).toMatchObject({
+      corriendo: false,
+      segundos: 400,
+    });
+  });
+
   // Si regresiona, un run cerrado hace horas sigue sumando minutos en watch.
   test("un run cerrado cuenta su tiempo hasta el último evento", () => {
     const tree = runTree({

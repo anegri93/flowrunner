@@ -7,20 +7,23 @@ import { decisionsFor, rerunPhase, type Decision, type Run } from "./runs";
 /** La decisión que espera confirmación, o el pedido de cambios que se está escribiendo. */
 const pending = atom<{ run: string; decision: Decision } | null>(null);
 const draft = atom("");
-/** Lo que no salió: el mensaje de flowrunner, por run. Lo que sale se ve en el estado del run. */
-const failed = atom<{ run: string; mensaje: string } | null>(null);
+/**
+ * Lo que dijo flowrunner, por run: lo que no salió, y lo que dijo al aprender, como «la PR sigue
+ * abierta». Lo demás que sale se ve en el estado del run.
+ */
+const said = atom<{ run: string; ok: boolean; mensaje: string } | null>(null);
 const sending = atom<string | null>(null);
 
 async function decide(run: string, decision: Decision, after: () => Promise<void>): Promise<void> {
   set(pending, null);
-  set(failed, null);
+  set(said, null);
   set(sending, run);
   try {
     const answer = await plugin.request("flowrunner.decidir", { run, decision });
     if (answer.ok) set(draft, "");
-    else set(failed, { run, mensaje: answer.mensaje });
+    if (!answer.ok || decision.accion === "aprender") set(said, { run, ...answer });
   } catch (error) {
-    set(failed, { run, mensaje: error instanceof Error ? error.message : String(error) });
+    set(said, { run, ok: false, mensaje: error instanceof Error ? error.message : String(error) });
   } finally {
     set(sending, null);
   }
@@ -41,11 +44,11 @@ export function Decisions({
   const offered = decisionsFor(run);
   const waiting = read(pending);
   const mine = waiting?.run === run.id ? waiting.decision : undefined;
-  const error = read(failed);
+  const message = read(said);
   const note =
-    error?.run === run.id ? (
-      <Text size="sm" tone="danger">
-        {error.mensaje}
+    message?.run === run.id ? (
+      <Text size="sm" tone={message.ok ? "success" : "danger"}>
+        {message.mensaje}
       </Text>
     ) : null;
   if (read(sending) === run.id) return <Spinner label="Enviando tu decisión" />;
@@ -101,6 +104,15 @@ export function Decisions({
     <Stack gap="xs">
       {note}
       <Row gap="xs">
+        {offered.includes("aprender") ? (
+          <Button
+            size="sm"
+            icon="zap"
+            onPress={() => decide(run.id, { accion: "aprender" }, after)}
+          >
+            Aprender ahora
+          </Button>
+        ) : null}
         {offered.includes("aprobar") ? (
           <Button size="sm" tone="success" icon="check" onPress={() => ask({ accion: "aprobar" })}>
             Aprobar

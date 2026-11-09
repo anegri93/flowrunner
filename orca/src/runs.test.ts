@@ -136,6 +136,8 @@ test("un run entregado con la PR mergeada no dice que espera tu merge", () => {
 test("las decisiones dependen del estado del run", () => {
   assert.deepEqual(decisionsFor(byKey("PIZ-3")), ["aprobar", "cambios"]);
   assert.deepEqual(decisionsFor(byKey("VF-2")), []);
+  // Con la PR abierta o recién mergeada, aprender ya, sin esperar el chequeo de cada 10 minutos.
+  assert.deepEqual(decisionsFor(byKey("VF-1")), ["aprender"]);
   const stopped: Run = {
     ...byKey("VF-2"),
     status: "detenido",

@@ -393,7 +393,8 @@ export type Decision =
   | { readonly accion: "aprobar" }
   | { readonly accion: "cambios"; readonly motivo: string }
   | { readonly accion: "reanudar" }
-  | { readonly accion: "rehacer"; readonly desde: PhaseName };
+  | { readonly accion: "rehacer"; readonly desde: PhaseName }
+  | { readonly accion: "aprender" };
 
 /** Las decisiones que tiene sentido ofrecer según el estado del run. */
 export function decisionsFor(run: Run): Decision["accion"][] {
@@ -404,6 +405,9 @@ export function decisionsFor(run: Run): Decision["accion"][] {
       return rerunPhase(run) === undefined ? ["reanudar"] : ["reanudar", "rehacer"];
     case "pausado_por_limite":
       return ["reanudar"];
+    // Aprender corre en el chequeo cada 10 minutos; con la PR recién mergeada, no hace falta esperarlo.
+    case "entregado":
+      return ["aprender"];
     default:
       return [];
   }

@@ -26,6 +26,7 @@ import { Decisions } from "./decisiones";
 import type { Openable, Snapshot } from "./protocol";
 import {
   clock,
+  decisionsFor,
   isFinished,
   needsYou,
   nowOf,
@@ -134,9 +135,7 @@ function Current({ run, row }: { run: Run; row: StageRow }) {
           />
         </Row>
       ))}
-      {row.fase === "aprobar" ||
-      run.status === "detenido" ||
-      run.status === "pausado_por_limite" ? (
+      {decisionsFor(run).length > 0 ? (
         <Decisions run={run} after={refresh} onPlan={() => void open(run.id, { tipo: "plan" })} />
       ) : null}
       {said?.run === run.id ? (

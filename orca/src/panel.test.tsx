@@ -191,6 +191,34 @@ test("cada run vivo tiene «Abortar el run» al pie, que pide confirmación ante
   );
 });
 
+// Si regresiona, el panel aprueba un plan que cambia lo que ya existe sin mostrarlo, o flowrunner
+// rechaza la aprobación porque el panel no manda que la persona lo aceptó.
+test("aprobar un plan que cambia lo existente muestra los cambios y manda que se aceptaron", async () => {
+  const sent: { run: string; decision: Decision }[] = [];
+  const cambio = { que: "el alta rechaza otro dominio", donde: "a.ts:42", criterio: "AC-1" };
+  const withChanges = runs.map((r) => (r.id === PIZ3 ? { ...r, cambiaLoExistente: [cambio] } : r));
+  await withPanel(
+    mockHost({
+      requests: {
+        "flowrunner.runs": () => ({ runs: withChanges, at: 0 }),
+        "flowrunner.decidir": (input: { run: string; decision: Decision }) => {
+          sent.push(input);
+          return { ok: true, mensaje: "hecho" };
+        },
+      },
+    }),
+    async (view) => {
+      assert.ok(view.find({ text: /^⚠ El plan cambia lo que ya existe \(1\): miralo/ }));
+      await view.press({ role: "button", text: "Aprobar" });
+      assert.ok(view.find({ text: "• el alta rechaza otro dominio (a.ts:42) ← AC-1" }));
+      assert.equal(view.find({ text: "Sí, confirmar" }), null);
+      assert.deepEqual(sent, []);
+      await view.press({ role: "button", text: "Acepto los cambios y apruebo" });
+      assert.deepEqual(sent, [{ run: PIZ3, decision: { accion: "aprobar", aceptoCambios: true } }]);
+    },
+  );
+});
+
 // Regresión: una lectura que fallaba dejaba el panel sin runs hasta la siguiente, y todo parpadeaba.
 test("si una lectura falla, los runs que se veían quedan, con el error arriba", async () => {
   let fail = false;

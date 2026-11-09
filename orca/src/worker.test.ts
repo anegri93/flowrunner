@@ -179,6 +179,15 @@ test("cada decisión corre su comando fijo, con el motivo tal cual, y devuelve l
       decision: { accion: "aprender" },
     });
     assert.deepEqual(learned, { ok: true, mensaje: "la PR sigue abierta" });
+    await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "aprobar", aceptoCambios: true },
+    });
+    // Solo `true` acepta: cualquier otra cosa que llegue del panel aprueba sin aceptar nada.
+    await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "aprobar", aceptoCambios: "--force" as unknown as true },
+    });
     assert.deepEqual(
       await worker.request("flowrunner.decidir", { run: id, decision: { accion: "abortar" } }),
       { ok: true, mensaje: "abortado; las ramas quedan" },
@@ -188,6 +197,8 @@ test("cada decisión corre su comando fijo, con el motivo tal cual, y devuelve l
       `changes ${id} ${motivo} --json`,
       `resume ${id} --json`,
       `learn ${id} --json`,
+      `approve ${id} --acepto-cambios --json`,
+      `approve ${id} --json`,
       `abort ${id} --json`,
     ]);
   } finally {

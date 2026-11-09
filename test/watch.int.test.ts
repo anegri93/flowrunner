@@ -1,6 +1,10 @@
 // flowrunner watch --once: el árbol de un run real lanzado con las fases falsas, por id o por clave.
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import { loadTree } from "../src/watch/load.ts";
 import { runCli } from "./helpers/cli.ts";
+import { newRun } from "./helpers/project.ts";
 import { launch, stateNow, waitFor, world } from "./helpers/runs.ts";
 
 describe("watch --once", () => {
@@ -49,5 +53,23 @@ describe("watch --once", () => {
     const out = runCli(["watch", "NOPE-1", "--once"], world().env);
     expect(out.status).toBe(1);
     expect(out.stderr).toContain("no existe el run NOPE-1");
+  });
+});
+
+describe("watch y los cambios a lo existente", () => {
+  // Si regresiona, el panel de Orca aprueba sin mostrar lo que el plan cambia de lo que ya existe, y
+  // flowrunner le rechaza la aprobación sin que la persona sepa por qué.
+  test("cada run trae lo que su plan declaró que cambia de lo existente; un archivo roto se lee vacío", () => {
+    const run = newRun("/r/acme");
+    expect(loadTree(run.home, run.id, Date.now()).cambiaLoExistente).toEqual([]);
+    const cambio = {
+      que: "el alta rechaza correos de otro dominio; después los acepta sin cuenta",
+      donde: "apps/api/src/usuarios/usuarios.service.ts:42",
+      criterio: "AC-1",
+    };
+    writeFileSync(join(run.dir, "cambios-existentes.json"), JSON.stringify([cambio]));
+    expect(loadTree(run.home, run.id, Date.now()).cambiaLoExistente).toEqual([cambio]);
+    writeFileSync(join(run.dir, "cambios-existentes.json"), "[{");
+    expect(loadTree(run.home, run.id, Date.now()).cambiaLoExistente).toEqual([]);
   });
 });

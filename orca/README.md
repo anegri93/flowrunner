@@ -21,6 +21,9 @@ como `flowrunner watch`, pensada para el ancho angosto de la barra:
   detenido o rehacerlo desde la fase que sugiere el motivo, y «Aprender ahora» en un run con la PR
   abierta, para no esperar el chequeo de cada 10 minutos después de mergear. Aprobar, reanudar y
   rehacer piden confirmación.
+- Si el plan cambia lo que ya existe, la tarjeta lo avisa y la pestaña del plan lo pone arriba de
+  todo. Aprobar muestra cada cambio, con dónde está y qué criterio lo pide, y el botón pasa a ser
+  «Acepto los cambios y apruebo», que aprueba con `--acepto-cambios`. Si alguno no va, pedí cambios.
 - Al pie de cada run vivo, separado de las decisiones de la etapa, «Abortar el run»: corta lo que
   corre, en cualquier etapa, y borra sus worktrees; la rama y la PR quedan. Pide confirmación.
 

@@ -3,7 +3,15 @@
 // reanudar y rehacer piden confirmación; pedir cambios, el motivo. Aparte, al pie de la tarjeta,
 // abortar el run entero, también con confirmación.
 import { atom, Button, Input, plugin, read, Row, set, Spinner, Stack, Text } from "orca";
-import { canAbort, decisionsFor, rerunPhase, type Decision, type Run } from "./runs";
+import {
+  canAbort,
+  decisionsFor,
+  describeExisting,
+  existingChanges,
+  rerunPhase,
+  type Decision,
+  type Run,
+} from "./runs";
 
 /** La decisión que espera confirmación, o el pedido de cambios que se está escribiendo. */
 const pending = atom<{ run: string; decision: Decision } | null>(null);
@@ -76,6 +84,37 @@ export function Decisions({
       </Stack>
     );
   }
+  const existing = existingChanges(run);
+  if (mine?.accion === "aprobar" && existing.length > 0) {
+    // Aprobar un plan que cambia lo que ya existe es aceptar esos cambios: se ven antes del botón.
+    return (
+      <Stack gap="xs">
+        <Text size="sm" weight="semibold" tone="warning">
+          {`⚠ El plan cambia lo que ya existe (${String(existing.length)})`}
+        </Text>
+        {existing.map((c) => (
+          <Text key={`${c.donde}-${c.criterio}`} size="xs">
+            {`• ${describeExisting(c)}`}
+          </Text>
+        ))}
+        <Text size="xs" muted>
+          Aprobar es aceptar estos cambios. Si alguno no va, cancelá y pedí cambios.
+        </Text>
+        <Row gap="xs">
+          <Button
+            size="sm"
+            tone="warning"
+            onPress={() => decide(run.id, { accion: "aprobar", aceptoCambios: true }, after)}
+          >
+            Acepto los cambios y apruebo
+          </Button>
+          <Button size="sm" variant="ghost" onPress={() => set(pending, null)}>
+            Cancelar
+          </Button>
+        </Row>
+      </Stack>
+    );
+  }
   if (mine !== undefined) {
     const question =
       mine.accion === "aprobar"
@@ -104,6 +143,11 @@ export function Decisions({
   return (
     <Stack gap="xs">
       {note}
+      {offered.includes("aprobar") && existing.length > 0 ? (
+        <Text size="xs" tone="warning">
+          {`⚠ El plan cambia lo que ya existe (${String(existing.length)}): miralo antes de aprobar.`}
+        </Text>
+      ) : null}
       <Row gap="xs">
         {offered.includes("aprender") ? (
           <Button

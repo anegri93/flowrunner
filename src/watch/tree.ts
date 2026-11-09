@@ -5,6 +5,7 @@ import { stateOf, TERMINAL, type RunStatus } from "../engine/engine.ts";
 import type { Step } from "../report/transcript.ts";
 import { contextWindow, estimateCost, promptTokens, type Usage } from "./pricing.ts";
 import { PHASES, type Phase, type RunEvent } from "../store/events.ts";
+import type { CambioExistente } from "../gates/plan.ts";
 
 export interface SessionFile {
   readonly jsonl: string;
@@ -75,6 +76,8 @@ export interface RunTree {
   readonly motivo: string | undefined;
   /** El comando que la persona corre para seguir, si el run la espera. */
   readonly siguiente: string | undefined;
+  /** Lo que hoy existe y el plan cambia: aprobarlo pide aceptarlo. Vacío sin plan o sin cambios. */
+  readonly cambiaLoExistente: readonly CambioExistente[];
   readonly fases: PhaseNode[];
 }
 
@@ -83,6 +86,7 @@ export interface TreeInput {
   readonly tasks: readonly { id: string; titulo: string; depende_de: readonly string[] }[];
   readonly titulo: string;
   readonly sessions: ReadonlyMap<string, SessionFile>;
+  readonly cambiaLoExistente?: readonly CambioExistente[];
   /** El esfuerzo de cada fase según la config del repo. */
   readonly esfuerzos?: Partial<Record<Phase, string>>;
   readonly now: number;
@@ -373,6 +377,7 @@ export function runTree(input: TreeInput): RunTree {
     haceSegundos: TERMINAL.has(state.status) ? Math.round((now - end) / 1000) : undefined,
     motivo: state.halt?.motivo,
     siguiente,
+    cambiaLoExistente: input.cambiaLoExistente ?? [],
     fases,
   };
 }

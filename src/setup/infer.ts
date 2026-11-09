@@ -12,6 +12,7 @@ export interface InferredConfig {
   readonly base_branch: string;
   readonly setup: string;
   readonly tests_globs: string[];
+  readonly format?: string;
   readonly harness_files: string[];
   readonly lockfiles: string[];
   readonly manifests: string[];
@@ -33,21 +34,33 @@ export interface RepoFacts {
 }
 
 const MANAGERS = [
-  { lockfile: "pnpm-lock.yaml", setup: "pnpm install --frozen-lockfile", run: "pnpm" },
-  { lockfile: "package-lock.json", setup: "npm ci", run: "npm run" },
-  { lockfile: "yarn.lock", setup: "yarn install --frozen-lockfile", run: "yarn" },
-  { lockfile: "bun.lock", setup: "bun install --frozen-lockfile", run: "bun run" },
+  {
+    lockfile: "pnpm-lock.yaml",
+    setup: "pnpm install --frozen-lockfile",
+    run: "pnpm",
+    exec: "pnpm exec",
+  },
+  { lockfile: "package-lock.json", setup: "npm ci", run: "npm run", exec: "npx" },
+  { lockfile: "yarn.lock", setup: "yarn install --frozen-lockfile", run: "yarn", exec: "yarn" },
+  { lockfile: "bun.lock", setup: "bun install --frozen-lockfile", run: "bun run", exec: "bunx" },
 ] as const;
 
-/** Un script propio que ya corre todo gana; si no, los que existan, en este orden. */
+/**
+ * Un script propio que ya corre todo gana; si no, los que existan, en este orden. Los tests van
+ * primero: son los que más dicen de un rojo, y el formato y el lint, los que menos.
+ */
 const ALL_IN_ONE = ["check", "verify"] as const;
-const CHAIN = ["format:check", "lint", "typecheck", "test", "build"] as const;
+const CHAIN = ["test", "typecheck", "lint", "format:check", "build"] as const;
 
 const HARNESS = /^(vitest|jest|playwright)\.(config|workspace)\.[cm]?[jt]s$/;
 const TEST_DIR = /^(tests?)\//;
 const TEST_FILE = /\.(test|spec)\.([cm]?[jt]sx?)$/;
 
-const packageSchema = z.object({ scripts: z.record(z.string(), z.string()).default({}) });
+const packageSchema = z.object({
+  scripts: z.record(z.string(), z.string()).default({}),
+  dependencies: z.record(z.string(), z.string()).default({}),
+  devDependencies: z.record(z.string(), z.string()).default({}),
+});
 
 function testGlobs(files: readonly string[]): string[] {
   const globs = new Set<string>();
@@ -66,17 +79,30 @@ function testGlobs(files: readonly string[]): string[] {
   return [...globs].sort();
 }
 
-function verifyScript(run: string, scripts: Record<string, string>): string | undefined {
-  const own = ALL_IN_ONE.find((name) => name in scripts);
-  const steps = own === undefined ? CHAIN.filter((name) => name in scripts) : [own];
-  if (own === undefined && !("test" in scripts)) return undefined;
+/**
+ * Corre todos los pasos aunque alguno falle, y al final lista los que fallaron: con `set -e`, un
+ * formato rojo escondía los tests rotos que venían después. Sale 0 solo si todos pasan.
+ */
+export function verifyScript(run: string, steps: readonly string[]): string {
   return [
     "#!/bin/sh",
-    "# Lo armó `flowrunner init` con los scripts del package.json. Sale 0 solo si el repo está en verde.",
-    "set -e",
-    ...steps.map((name) => `${run} ${name}`),
+    "# Lo armó `flowrunner init` con los scripts del package.json. Corre todos los pasos aunque alguno",
+    "# falle y sale 0 solo si el repo está en verde.",
+    'fallaron=""',
+    'paso() { "$@" || fallaron="$fallaron $*;"; }',
+    ...steps.map((name) => `paso ${run} ${name}`),
+    'if [ -n "$fallaron" ]; then',
+    '  echo "verify en rojo:$fallaron"',
+    "  exit 1",
+    "fi",
     "",
   ].join("\n");
+}
+
+function verifySteps(scripts: Record<string, string>): string[] | undefined {
+  const own = ALL_IN_ONE.find((name) => name in scripts);
+  if (own !== undefined) return [own];
+  return "test" in scripts ? CHAIN.filter((name) => name in scripts) : undefined;
 }
 
 export function inferRepo(facts: RepoFacts): Inferred {
@@ -107,9 +133,11 @@ export function inferRepo(facts: RepoFacts): Inferred {
         : `\`${setup}\`, por ${manager.lockfile}`,
   });
 
-  const verify = verifyScript(manager?.run ?? "npm run", parsed.data.scripts);
+  const run = manager?.run ?? "npm run";
+  const steps = verifySteps(parsed.data.scripts);
+  const verify = steps === undefined ? undefined : verifyScript(run, steps);
   hallazgos.push(
-    verify === undefined
+    steps === undefined
       ? {
           que: "verify.sh",
           estado: "falta",
@@ -119,7 +147,7 @@ export function inferRepo(facts: RepoFacts): Inferred {
       : {
           que: "verify.sh",
           estado: "inferido",
-          detalle: verify.split("\n").slice(3).filter(Boolean).join(" && "),
+          detalle: steps.map((name) => `${run} ${name}`).join(", "),
         },
   );
 
@@ -134,6 +162,19 @@ export function inferRepo(facts: RepoFacts): Inferred {
         : "no encontré tests: planificar va a escribir los suyos en test/",
   });
 
+  const { dependencies, devDependencies } = parsed.data;
+  const format =
+    "prettier" in devDependencies || "prettier" in dependencies
+      ? `${manager?.exec ?? "npx"} prettier --write --ignore-unknown`
+      : undefined;
+  if (format !== undefined) {
+    hallazgos.push({
+      que: "format",
+      estado: "inferido",
+      detalle: `\`${format}\`: flowrunner formatea los tests que escribe planificar antes de bloquearlos`,
+    });
+  }
+
   const harness_files = facts.files.filter((f) => HARNESS.test(f)).sort();
   if (harness_files.length > 0) {
     hallazgos.push({ que: "harness_files", estado: "inferido", detalle: harness_files.join(", ") });
@@ -144,6 +185,7 @@ export function inferRepo(facts: RepoFacts): Inferred {
       base_branch: facts.baseBranch,
       setup,
       tests_globs,
+      ...(format === undefined ? {} : { format }),
       harness_files,
       lockfiles: manager === undefined ? [] : [manager.lockfile],
       manifests: ["package.json"],

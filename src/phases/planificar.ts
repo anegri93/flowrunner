@@ -17,6 +17,8 @@ import type { RepoConfig } from "../config/schemas.ts";
 import { checkCommandsFail, checkPlanShape, planSchema, type Plan } from "../gates/plan.ts";
 import { changesSince, commitAll, resetHard } from "../git/git.ts";
 import { GRAFT_TOOLS, graftMcpServer } from "../graft/graft.ts";
+import { shellQuote } from "../agent/env.ts";
+import { runShell, tail } from "../proc/proc.ts";
 import { featureText, render } from "../prompts/render.ts";
 import type { PhaseFn, RunPaths } from "../runner/types.ts";
 import { runSession } from "../agent/session.ts";
@@ -26,6 +28,7 @@ import { archivePlan, previousDir, replanOf, replanText } from "./plan-anterior.
 
 export const PLANIFICAR_BUDGET_USD = 8;
 export const PLANIFICAR_TIMEOUT_MS = 30 * 60_000;
+export const FORMAT_TIMEOUT_MS = 5 * 60_000;
 
 /** `planificar-3`: un nombre de sesión que no pisa los de intentos anteriores, ni de un rerun. */
 export function sessionName(run: RunPaths, base: string): string {
@@ -128,6 +131,7 @@ export const planificar: PhaseFn = async (ctx) => {
       prompt: render("planificar", {
         feature: featureText(feature),
         tests_globs: config.tests_globs.join(", "),
+        verify: config.verify,
         harness: config.harness_files.length === 0 ? "(ninguno)" : config.harness_files.join(", "),
         instruccion,
         ...brainVars(brain),
@@ -169,6 +173,20 @@ export const planificar: PhaseFn = async (ctx) => {
     .filter((c) => c.status !== "borrado")
     .map((c) => c.path);
   if (written.length === 0) problems.push("planificar no escribió ningún test");
+  // Los tests quedan bloqueados byte a byte y ninguna sub-task los puede tocar: se formatean acá,
+  // antes del gate y del hash, o un test mal formateado deja verify en rojo sin arreglo.
+  if (config.format !== undefined && written.length > 0) {
+    const formatted = await runShell(`${config.format} ${written.map(shellQuote).join(" ")}`, {
+      cwd: worktree,
+      env: deps.env,
+      timeoutMs: FORMAT_TIMEOUT_MS,
+    });
+    if (formatted.code !== 0) {
+      problems.push(
+        `el formateador \`${config.format}\` salió ${String(formatted.code)} sobre los tests:\n${tail(formatted, 8)}`,
+      );
+    }
+  }
   for (const declared of plan.tests.filter((t) => !written.includes(t))) {
     problems.push(`el plan declara el test ${declared}, pero no está escrito`);
   }

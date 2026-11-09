@@ -149,6 +149,7 @@ base_branch: main
 setup: pnpm install --frozen-lockfile
 verify: .flowrunner/verify.sh
 tests_globs: ["tests/**", "src/**/*.test.ts"]
+format: pnpm exec prettier --write --ignore-unknown
 harness_files: ["vitest.config.ts"]
 lockfiles: ["pnpm-lock.yaml"]
 manifests: ["package.json"]

@@ -1,5 +1,8 @@
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { git } from "../../test/helpers/git.ts";
 import { contextFor, makeProject, newRun, testDeps } from "../../test/helpers/project.ts";
@@ -48,8 +51,14 @@ const writeTest = {
   },
 };
 
-async function prepared_(scripts: SimScript[]) {
-  const { work } = makeProject({ config: { setup: "true", tests_globs: ["tests/**"] } });
+async function prepared_(scripts: SimScript[], format?: string) {
+  const { work } = makeProject({
+    config: {
+      setup: "true",
+      tests_globs: ["tests/**"],
+      ...(format === undefined ? {} : { format }),
+    },
+  });
   const run = newRun(work, FEATURE);
   const sim = simQuery(scripts);
   const deps = testDeps({ query: sim.query });
@@ -87,6 +96,8 @@ describe("planificar", () => {
     const prompt = sim.records[0]?.prompt ?? "";
     expect(prompt).toContain("graft_find_code");
     expect(prompt).toContain("`offset` y `limit`");
+    // Si regresiona, el criterio de «todo en verde» encadena con && y el primer rojo esconde el resto.
+    expect(prompt).toContain("su comando es `./.flowrunner/verify.sh`, no una cadena con `&&`");
   });
 
   // Si regresiona, un plan rechazado deja tests a medias commiteados en la rama de la feature.
@@ -194,6 +205,46 @@ describe("planificar", () => {
       ).toEqual({ tipo: "ok" });
       expect(Object.keys(readPlan(run).locked)).toEqual(["tests/ac1b.mjs"]);
       expect(existsSync(join(worktree, "tests/ac1.mjs"))).toBe(false);
+    });
+  });
+
+  describe("con formateador", () => {
+    const PRETTIER = fileURLToPath(new URL("../../node_modules/.bin/prettier", import.meta.url));
+    const longLine = {
+      ...writeTest,
+      input: {
+        ...writeTest.input,
+        content:
+          'import { existsSync } from "node:fs";\nconst rutas = ["src/export/csv.js", "src/export/encabezados-del-archivo.js", "src/export/filas-del-archivo-exportado.js"];\nprocess.exit(rutas.every((r) => existsSync(r)) ? 0 : 1);\n',
+      },
+    };
+
+    // Si regresiona, un test con una línea larga queda bloqueado así, ninguna sub-task lo puede
+    // formatear y verify se queda en rojo por formato: VF-1 se trabó dos veces por esto.
+    test("los tests se formatean antes de bloquearlos: el hash es del archivo formateado y pasa el chequeo", async () => {
+      const { run, deps, worktree } = await prepared_(
+        [{ calls: [longLine], output: goodPlan }],
+        `${PRETTIER} --write`,
+      );
+      expect(await planificar(contextFor(run, "planificar", deps))).toEqual({ tipo: "ok" });
+      const content = readFileSync(join(worktree, "tests/ac1.mjs"), "utf8");
+      expect(Math.max(...content.split("\n").map((l) => l.length))).toBeLessThanOrEqual(80);
+      const check = spawnSync(PRETTIER, ["--check", "tests/ac1.mjs"], { cwd: worktree });
+      expect(check.status).toBe(0);
+      expect(readPlan(run).locked["tests/ac1.mjs"]).toBe(
+        createHash("sha256").update(content).digest("hex"),
+      );
+      expect(git(worktree, "status", "--porcelain")).toBe("");
+    });
+
+    // Si regresiona, un formateador roto deja pasar tests sin formatear y el run se traba al final.
+    test("si el formateador falla, el plan no pasa el gate y lo dice", async () => {
+      const { run, deps } = await prepared_([{ calls: [writeTest], output: goodPlan }], "false");
+      const outcome = await planificar(contextFor(run, "planificar", deps));
+      expect(outcome).toMatchObject({ tipo: "falla", clase: "gate" });
+      expect(outcome.tipo === "falla" && outcome.motivo).toMatch(
+        /el formateador `false` salió 1 sobre los tests/,
+      );
     });
   });
 });

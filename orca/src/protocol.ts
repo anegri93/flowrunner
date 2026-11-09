@@ -1,5 +1,5 @@
 // El contrato entre el panel y el worker, declarado una vez: lo leen src/panel.tsx y src/worker.ts.
-import type { Decision, Run } from "./runs";
+import type { Decision, PlanView, Run } from "./runs";
 
 export interface Snapshot {
   readonly runs: Run[];
@@ -27,7 +27,7 @@ declare module "orca" {
     /** Los pasos de una sesión: `flowrunner report <run> --sesion <sesion>`. */
     "flowrunner.pasos": { input: { run: string; sesion: string }; output: Steps };
     /** El plan que espera aprobación: `flowrunner plan <run>`. */
-    "flowrunner.plan": { input: { run: string }; output: { texto: string } };
+    "flowrunner.plan": { input: { run: string }; output: PlanView };
     /** Una decisión de la persona: aprobar, pedir cambios, reanudar o rehacer desde una fase. */
     "flowrunner.decidir": { input: { run: string; decision: Decision }; output: Outcome };
   }

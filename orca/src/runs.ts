@@ -1,5 +1,5 @@
-// Lo que el panel muestra de `flowrunner watch --json`, sin imports de Orca: el orden de los runs,
-// cuáles están terminados, la etapa actual con su detalle y las decisiones que la persona puede tomar.
+// Lo que el panel muestra de `flowrunner watch --json`, sin imports de Orca. Cada run se lee como el
+// seguimiento de un pedido: una frase con su estado, cinco pasos y el detalle de lo que pasa ahora.
 
 export type RunStatus =
   | "en_curso"
@@ -57,7 +57,6 @@ export interface Run {
   readonly fases: readonly Phase[];
 }
 
-export type Icon = "check" | "play" | "pause" | "error" | "warning" | "refresh" | "more" | "flag";
 export type Tone = "neutral" | "accent" | "success" | "warning" | "danger";
 
 /** La salida de `flowrunner watch --json`, o un error legible si no es eso. */
@@ -73,19 +72,13 @@ export function parseWatch(stdout: string): Run[] {
   return runs as Run[];
 }
 
-export const RUN_STATE: Record<RunStatus, { text: string; tone: Tone; icon: Icon }> = {
-  esperando_aprobacion: { text: "te espera", tone: "warning", icon: "flag" },
-  detenido: { text: "detenido", tone: "danger", icon: "error" },
-  en_curso: { text: "en curso", tone: "accent", icon: "play" },
-  pausado_por_limite: { text: "en pausa", tone: "warning", icon: "pause" },
-  entregado: { text: "PR abierta", tone: "success", icon: "check" },
-  cerrado: { text: "cerrado", tone: "neutral", icon: "check" },
-  abortado: { text: "abortado", tone: "neutral", icon: "error" },
-};
-
 /** Terminado para la persona: ya no hay nada que mirar mientras trabaja. */
 export const isFinished = (run: Run) =>
   run.status === "entregado" || run.status === "cerrado" || run.status === "abortado";
+
+/** Un run que espera algo de la persona. */
+export const needsYou = (run: Run) =>
+  run.status === "esperando_aprobacion" || run.status === "detenido";
 
 /** El momento en que arrancó, del id: `VF-3-20261109-004512`. */
 const startedAt = (run: Run) => /(\d{8}-\d{6})$/.exec(run.id)?.[1] ?? "";
@@ -94,26 +87,7 @@ const startedAt = (run: Run) => /(\d{8}-\d{6})$/.exec(run.id)?.[1] ?? "";
 export const sortRuns = (runs: readonly Run[]): Run[] =>
   [...runs].sort((a, b) => startedAt(b).localeCompare(startedAt(a)));
 
-const PHASE: Record<string, { mark: string; text: string; tone: Tone }> = {
-  pendiente: { mark: "·", text: "pendiente", tone: "neutral" },
-  corriendo: { mark: "▶", text: "trabajando", tone: "accent" },
-  ok: { mark: "✓", text: "listo", tone: "success" },
-  espera: { mark: "⏸", text: "espera", tone: "warning" },
-  vuelve: { mark: "↺", text: "volvió", tone: "warning" },
-  falla: { mark: "✗", text: "falló", tone: "danger" },
-  pausa: { mark: "⏸", text: "en pausa", tone: "warning" },
-};
-
-const UNIT: Record<string, { mark: string; text: string }> = {
-  pendiente: { mark: "·", text: "pendiente" },
-  corriendo: { mark: "▶", text: "trabajando" },
-  commiteada: { mark: "✓", text: "commiteada" },
-  integrada: { mark: "✓", text: "integrada" },
-  fallida: { mark: "✗", text: "falló" },
-  sin_cambios: { mark: "!", text: "sin cambios" },
-};
-
-/** `12m30s`, `45s`. */
+/** `12m30s`, `45s`, `1h02m`. */
 export function duration(seconds: number | undefined): string | undefined {
   if (seconds === undefined) return undefined;
   if (seconds < 60) return `${String(seconds)}s`;
@@ -131,6 +105,11 @@ export function tokenCount(n: number): string {
   return n >= 1_000 ? `${String(Math.round(n / 1_000))}k` : String(n);
 }
 
+const join = (parts: readonly (string | undefined)[]) =>
+  parts.filter((p): p is string => p !== undefined && p !== "").join(" · ");
+
+const sessionsOf = (p: Phase) => [...p.sesiones, ...p.unidades.flatMap((u) => u.sesiones)];
+
 /** El costo de lo que corre es un mínimo: la salida se conoce al terminar. */
 function cost(ss: readonly Session[], real: number): string | undefined {
   const live = ss.filter((s) => s.corriendo).reduce((a, s) => a + (s.costoEstimado ?? 0), 0);
@@ -139,126 +118,207 @@ function cost(ss: readonly Session[], real: number): string | undefined {
   return `${live > 0 ? "≥ " : ""}$${total.toFixed(2)}`;
 }
 
-const join = (parts: readonly (string | undefined)[]) =>
-  parts.filter((p): p is string => p !== undefined && p !== "").join(" · ");
+// --- Los cinco pasos -------------------------------------------------------------------------
 
-const sessionsOf = (p: Phase) => [...p.sesiones, ...p.unidades.flatMap((u) => u.sesiones)];
+export type StepState = "listo" | "ahora" | "espera" | "falla" | "pendiente";
 
-export interface SessionLine {
-  readonly nombre: string;
+export interface Step {
+  readonly label: string;
+  readonly estado: StepState;
+}
+
+/** Las fases de flowrunner agrupadas como las ve la persona. */
+const STEPS: readonly { label: string; fases: readonly string[] }[] = [
+  { label: "Plan", fases: ["preparar", "planificar"] },
+  { label: "Tu OK", fases: ["aprobar"] },
+  { label: "Código", fases: ["implementar"] },
+  { label: "Control", fases: ["verificar", "revisar"] },
+  { label: "PR", fases: ["entregar", "aprender"] },
+];
+
+export const STEP_MARK: Record<StepState, { mark: string; tone: Tone }> = {
+  listo: { mark: "✓", tone: "success" },
+  ahora: { mark: "●", tone: "accent" },
+  espera: { mark: "●", tone: "warning" },
+  falla: { mark: "✕", tone: "danger" },
+  pendiente: { mark: "○", tone: "neutral" },
+};
+
+function stepState(run: Run, phases: readonly Phase[]): StepState {
+  const states = phases.map((p) => p.estado);
+  if (states.includes("falla")) return "falla";
+  if (states.length > 0 && states.every((s) => s === "ok")) return "listo";
+  if (states.some((s) => s === "espera" || s === "pausa")) return "espera";
+  if (states.some((s) => s === "corriendo" || s === "vuelve")) {
+    return run.status === "detenido" ? "falla" : "ahora";
+  }
+  return states.some((s) => s === "ok") && run.status === "detenido" ? "falla" : "pendiente";
+}
+
+/** Los cinco pasos del run, cada uno con su estado. */
+export function stepsOf(run: Run): Step[] {
+  const steps = STEPS.map((step) => ({
+    label: step.label,
+    estado: stepState(
+      run,
+      run.fases.filter((p) => step.fases.includes(p.fase)),
+    ),
+  }));
+  if (run.status === "cerrado") return steps.map((s) => ({ ...s, estado: "listo" as const }));
+  return steps;
+}
+
+/** Cuánto avanzó, de 0 a 100: cada paso listo suma entero y el actual, medio. */
+export function progressOf(run: Run): number {
+  const steps = stepsOf(run);
+  const points = steps.reduce(
+    (a, s) => a + (s.estado === "listo" ? 1 : s.estado === "pendiente" ? 0 : 0.5),
+    0,
+  );
+  return Math.round((points / steps.length) * 100);
+}
+
+// --- La frase del estado --------------------------------------------------------------------
+
+export interface Headline {
+  readonly emoji: string;
   readonly texto: string;
-  readonly corriendo: boolean;
-  /** Lo que está haciendo, si corre: la herramienta y el contexto. */
+  readonly tone: Tone;
+}
+
+const DOING: Record<string, string> = {
+  preparar: "Preparando el repo",
+  planificar: "Planificando",
+  implementar: "Implementando",
+  verificar: "Verificando los criterios",
+  revisar: "Revisando el cambio",
+  entregar: "Abriendo la PR",
+  aprender: "Aprendiendo de tu merge",
+};
+
+const activePhase = (run: Run) =>
+  run.fases.find((p) => !["ok", "pendiente"].includes(p.estado)) ??
+  run.fases.find((p) => p.estado === "pendiente");
+
+function unitsDone(p: Phase): string | undefined {
+  if (p.unidades.length === 0) return undefined;
+  const done = p.unidades.filter((u) => u.estado === "integrada" || u.estado === "commiteada");
+  return `${String(done.length)} de ${String(p.unidades.length)} sub-tasks`;
+}
+
+/** Lo que pasa con el run, en una frase que se entiende de un vistazo. */
+export function headlineOf(run: Run): Headline {
+  const phase = activePhase(run);
+  switch (run.status) {
+    case "esperando_aprobacion":
+      return { emoji: "🟡", texto: "El plan te espera", tone: "warning" };
+    case "detenido":
+      return {
+        emoji: "🔴",
+        texto: `Se detuvo en ${phase?.fase ?? "una fase"}`,
+        tone: "danger",
+      };
+    case "pausado_por_limite":
+      return { emoji: "🟡", texto: "En pausa por el límite de uso", tone: "warning" };
+    case "entregado":
+      return { emoji: "🟢", texto: "PR abierta: falta tu merge", tone: "success" };
+    case "cerrado":
+      return { emoji: "🟢", texto: "Listo y mergeado", tone: "success" };
+    case "abortado":
+      return { emoji: "⚪", texto: "Cancelado", tone: "neutral" };
+    case "en_curso": {
+      const doing = phase === undefined ? "Trabajando" : (DOING[phase.fase] ?? phase.fase);
+      const units = phase === undefined ? undefined : unitsDone(phase);
+      const back = phase?.estado === "vuelve" ? "corrigiendo" : undefined;
+      return { emoji: "🔵", texto: join([doing, units, back]), tone: "accent" };
+    }
+  }
+}
+
+// --- El detalle de ahora --------------------------------------------------------------------
+
+export interface TaskLine {
+  readonly key: string;
+  readonly mark: string;
+  readonly tone: Tone;
+  readonly texto: string;
+  readonly nota?: string;
+}
+
+export interface Activity {
+  readonly sesion: string;
+  /** El modelo, los tokens y el costo de la sesión que corre. */
+  readonly texto: string;
+  /** La herramienta que está usando y el contexto que arrastra. */
   readonly ahora?: string;
 }
 
-export interface UnitLine {
-  readonly id: string;
-  readonly texto: string;
+export interface Now {
+  /** Las sub-tasks de implementar, como una lista de tareas. */
+  readonly tareas: TaskLine[];
+  /** Las sesiones del paso actual: la que corre primero. */
+  readonly actividad: Activity[];
+  /** El costo total y el tiempo del run. */
   readonly meta: string;
-  readonly sesiones: SessionLine[];
-}
-
-export interface PhaseLine {
-  readonly fase: string;
-  readonly mark: string;
-  readonly estado: string;
-  readonly tone: Tone;
-  readonly meta: string;
+  /** Lo que dijo la última fase que falló o volvió, si hay. */
   readonly detalle?: string;
 }
 
-/** Una fase con todo su detalle: la etapa actual. */
-export interface CurrentPhase extends PhaseLine {
-  readonly sesiones: SessionLine[];
-  readonly unidades: UnitLine[];
-}
+const TASK: Record<string, { mark: string; tone: Tone; texto: string }> = {
+  pendiente: { mark: "○", tone: "neutral", texto: "pendiente" },
+  corriendo: { mark: "●", tone: "accent", texto: "trabajando" },
+  commiteada: { mark: "✓", tone: "success", texto: "lista" },
+  integrada: { mark: "✓", tone: "success", texto: "lista" },
+  fallida: { mark: "✕", tone: "danger", texto: "falló" },
+  sin_cambios: { mark: "!", tone: "warning", texto: "sin cambios" },
+};
 
-export interface RunView {
-  readonly listas: PhaseLine[];
-  readonly actuales: CurrentPhase[];
-  readonly faltan: string[];
-  /** La fase actual en una palabra, para el encabezado del run. */
-  readonly etapa?: string;
-}
-
-function sessionLine(s: Session): SessionLine {
+function activity(s: Session): Activity {
   const ahora = s.corriendo
     ? join([
         s.ultimo === undefined ? undefined : `▸ ${s.ultimo}`,
         s.contexto > 0 ? `ctx ${tokenCount(s.contexto)}` : undefined,
       ])
-    : undefined;
+    : "";
   return {
-    nombre: s.nombre,
-    corriendo: s.corriendo,
+    sesion: s.nombre,
     texto: join([
       s.nombre,
       s.modelo?.replace(/^claude-/, ""),
       s.tokens > 0 ? tokenCount(s.tokens) : undefined,
       cost([s], s.costoUsd ?? 0),
-      duration(s.segundos),
     ]),
-    ...(ahora === undefined || ahora === "" ? {} : { ahora }),
+    ...(ahora === "" ? {} : { ahora }),
   };
 }
 
-function phaseLine(p: Phase): PhaseLine {
-  const state = PHASE[p.estado] ?? { mark: "·", text: p.estado, tone: "neutral" as const };
-  const detalle = p.estado === "corriendo" ? undefined : (p.detalle ?? p.nota);
-  return {
-    fase: `${p.fase}${p.sesiones.length > 1 ? ` ×${String(p.sesiones.length)}` : ""}`,
-    mark: state.mark,
-    estado: state.text,
-    tone: state.tone,
-    meta: join([cost(sessionsOf(p), p.costoUsd), duration(p.segundos)]),
-    ...(detalle === undefined ? {} : { detalle }),
-  };
-}
-
-/**
- * Las fases en tres grupos: las listas, que se muestran en una línea; las actuales, con sus
- * sub-tasks y sesiones; y las que faltan, en otra línea.
- */
-export function runView(run: Run): RunView {
-  const listas: PhaseLine[] = [];
-  const actuales: CurrentPhase[] = [];
-  const faltan: string[] = [];
-  for (const p of run.fases) {
-    if (p.estado === "ok") listas.push(phaseLine(p));
-    else if (p.estado === "pendiente") faltan.push(p.fase);
-    else {
-      actuales.push({
-        ...phaseLine(p),
-        sesiones: p.sesiones.map(sessionLine),
-        unidades: p.unidades.map((u) => {
-          const us = UNIT[u.estado] ?? { mark: "·", text: u.estado };
-          return {
-            id: u.id,
-            texto: `${us.mark} ${u.id} ${u.titulo}`,
-            meta: join([
-              us.text,
-              cost(
-                u.sesiones,
-                u.sesiones.reduce((a, s) => a + (s.costoUsd ?? 0), 0),
-              ),
-            ]),
-            sesiones: u.sesiones.map(sessionLine),
-          };
-        }),
-      });
-    }
-  }
-  const etapa = actuales[0]?.fase ?? faltan[0];
-  return { listas, actuales, faltan, ...(etapa === undefined ? {} : { etapa }) };
-}
-
-/** El encabezado de un run: estado, etapa, costo y tiempo. */
-export function runSummary(run: Run): string {
+/** El detalle del paso en que está el run. */
+export function nowOf(run: Run): Now {
+  const phase = activePhase(run);
   const all = run.fases.flatMap(sessionsOf);
-  const etapa = isFinished(run) ? undefined : runView(run).etapa;
-  return join([RUN_STATE[run.status].text, etapa, cost(all, run.costoUsd), duration(run.segundos)]);
+  const meta = join([cost(all, run.costoUsd), duration(run.segundos)]);
+  const tareas = (phase?.unidades ?? []).map((u): TaskLine => {
+    const t = TASK[u.estado] ?? { mark: "○", tone: "neutral" as const, texto: u.estado };
+    const waiting = u.dependeDe.filter(
+      (d) => phase?.unidades.find((x) => x.id === d)?.estado !== "integrada",
+    );
+    const nota =
+      u.estado === "pendiente" && waiting.length > 0 ? `espera ${waiting.join(", ")}` : t.texto;
+    return { key: u.id, mark: t.mark, tone: t.tone, texto: `${u.id} ${u.titulo}`, nota };
+  });
+  const sessions = phase === undefined ? [] : sessionsOf(phase);
+  const actividad = [
+    ...sessions.filter((s) => s.corriendo),
+    ...sessions.filter((s) => !s.corriendo),
+  ]
+    .slice(0, 3)
+    .map(activity);
+  const failed = run.fases.findLast((p) => p.estado === "falla" || p.estado === "vuelve");
+  const detalle = failed?.detalle;
+  return { tareas, actividad, meta, ...(detalle === undefined ? {} : { detalle }) };
 }
+
+// --- Las decisiones -------------------------------------------------------------------------
 
 export const PHASES = [
   "preparar",
@@ -297,4 +357,53 @@ export function decisionsFor(run: Run): Decision["accion"][] {
 export function rerunPhase(run: Run): PhaseName | undefined {
   const desde = /--desde (\w+)/.exec(run.siguiente ?? "")?.[1];
   return PHASES.find((p) => p === desde);
+}
+
+// --- El plan --------------------------------------------------------------------------------
+
+/** Lo que el panel muestra del plan: lo que hace falta para decidir, en textos que Orca dibuja. */
+export interface PlanView {
+  readonly subtareas: { readonly id: string; readonly titulo: string }[];
+  readonly criterios: number;
+  /** Qué cambió contra el plan anterior, en líneas cortas; vacío en el primer plan. */
+  readonly cambios: string[];
+  /** El plan en Markdown, recortado: Orca no dibuja textos de más de 16 KiB. */
+  readonly texto: string;
+  readonly recortado: boolean;
+}
+
+/** Orca rechaza un dibujo con un texto de más de 16 KiB, en bytes: 4000 caracteres entran aun en UTF-8 ancho. */
+export const MAX_TEXT_CHARS = 4_000;
+
+/** El final de un texto largo, para que entre en lo que Orca dibuja. */
+export const tail = (text: string, max = MAX_TEXT_CHARS) =>
+  text.length > max ? `…${text.slice(-max)}` : text;
+
+/** La salida de `flowrunner plan --json`, reducida a lo que el panel muestra. */
+export function planView(data: unknown): PlanView {
+  const d = data as {
+    plan?: string;
+    subtareas?: { id: string; titulo: string }[];
+    criterios?: unknown[];
+    cambios?: Record<string, string[]> | null;
+  };
+  const LABELS: Record<string, string> = {
+    subtareas_agregadas: "sub-tasks nuevas",
+    subtareas_quitadas: "sub-tasks que ya no están",
+    alcance_agregado: "alcance nuevo",
+    alcance_quitado: "alcance que ya no está",
+    tests_agregados: "tests nuevos",
+    tests_quitados: "tests que ya no están",
+  };
+  const cambios = Object.entries(d.cambios ?? {})
+    .filter(([, items]) => items.length > 0)
+    .map(([key, items]) => `${LABELS[key] ?? key}: ${items.join(", ")}`);
+  const plan = d.plan ?? "";
+  return {
+    subtareas: (d.subtareas ?? []).map((t) => ({ id: t.id, titulo: t.titulo })),
+    criterios: d.criterios?.length ?? 0,
+    cambios,
+    texto: plan.length > MAX_TEXT_CHARS ? `${plan.slice(0, MAX_TEXT_CHARS)}…` : plan,
+    recortado: plan.length > MAX_TEXT_CHARS,
+  };
 }

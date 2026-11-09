@@ -3,11 +3,12 @@
 Una pestaña en la barra derecha de [Orca](https://www.onorca.dev) con el progreso de los runs,
 como `flowrunner watch`, pensada para el ancho angosto de la barra:
 
-- Los runs más recientes arriba. Cada uno se contrae o se expande tocándolo; los terminados, con la
-  PR abierta, arrancan contraídos.
-- Las fases listas en una línea que se expande, la etapa actual destacada con sus sub-tasks y
-  sesiones, y en otra línea las que faltan.
-- El botón de cada sesión muestra sus pasos.
+- Cada run es una tarjeta, como el seguimiento de un pedido: una frase con su estado («🟡 El plan
+  te espera», «🔵 Implementando · 1 de 2 sub-tasks»), una barra de avance y cinco pasos, Plan, Tu
+  OK, Código, Control y PR, que marcan lo listo, lo actual, lo que te espera y lo que falló.
+- Los más recientes arriba. Los terminados muestran solo el resumen hasta que abrís su detalle.
+- El detalle muestra las sub-tasks como lista de tareas y lo que hace la sesión que corre, con sus
+  pasos a un toque.
 - Las decisiones que el run espera: ver el plan, aprobarlo o pedir cambios; reanudar un run
   detenido o rehacerlo desde la fase que sugiere el motivo. Aprobar, reanudar y rehacer piden
   confirmación.

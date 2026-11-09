@@ -3,7 +3,7 @@
 import { execFile } from "node:child_process";
 import type { OrcaWorkerApi } from "orca/worker";
 import type { Outcome, Snapshot } from "./protocol";
-import { parseWatch, PHASES, type Decision } from "./runs";
+import { parseWatch, PHASES, planView, type Decision } from "./runs";
 
 const TIMEOUT_MS = 20_000;
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -116,9 +116,9 @@ export default function activate(orca: OrcaWorkerApi): void {
     return { sesion, texto: typeof data.texto === "string" ? data.texto : "" };
   });
 
-  orca.panels.handle("flowrunner.plan", async ({ run: id }) => ({
-    texto: await ok(`${await command(orca)} plan ${quote(runId(id))}`),
-  }));
+  orca.panels.handle("flowrunner.plan", async ({ run: id }) =>
+    planView(JSON.parse(await ok(`${await command(orca)} plan ${quote(runId(id))} --json`))),
+  );
 
   orca.panels.handle("flowrunner.decidir", async ({ run: id, decision }) => {
     let args: string;

@@ -40,7 +40,13 @@ test("lee los runs con el comando de la config, los pasos de una sesión y el pl
     });
     assert.deepEqual(steps, { sesion: "implementar-ST-2-1", texto: "Edit src/precio.ts\nlisto" });
     const plan = await worker.request("flowrunner.plan", { run: "PIZ-3-20261109-010000" });
-    assert.match(plan.texto, /^PIZ-3 · esperando_aprobacion/);
+    assert.deepEqual(plan, {
+      subtareas: [{ id: "ST-1", titulo: "Variables de color" }],
+      criterios: 1,
+      cambios: ["sub-tasks nuevas: ST-1 Variables de color"],
+      texto: "# Plan\nModo oscuro con variables.",
+      recortado: false,
+    });
     assert.deepEqual(worker.refusals, []);
   } finally {
     await worker.deactivate();

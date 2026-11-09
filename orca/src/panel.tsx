@@ -1,22 +1,21 @@
-// El panel de flowrunner en la barra derecha de Orca. Los runs más recientes arriba; cada uno se
-// contrae o se expande tocándolo, y los terminados arrancan contraídos. Dentro, las fases listas en
-// una línea, la etapa actual con su detalle, lo que falta, y las decisiones que el run espera.
+// El panel de flowrunner en la barra derecha de Orca. Cada run se lee como el seguimiento de un
+// pedido: una frase con su estado, una barra de avance, cinco pasos (Plan, Tu OK, Código, Control,
+// PR) y el detalle de lo que pasa ahora, con las decisiones que espera. Los más recientes arriba;
+// los terminados muestran solo el resumen hasta que se abren.
 // Sin paso de build: Orca quita los tipos y compila el JSX al cargarlo.
 import {
   atom,
-  Badge,
   Button,
+  Card,
   Code,
   EmptyState,
   IconButton,
   Input,
   Link,
-  List,
-  ListItem,
   plugin,
+  Progress,
   read,
   Row,
-  Separator,
   set,
   Spinner,
   Stack,
@@ -27,47 +26,53 @@ import {
 import type { Outcome, Snapshot, Steps } from "./protocol";
 import {
   decisionsFor,
+  headlineOf,
   isFinished,
+  needsYou,
+  nowOf,
+  progressOf,
   rerunPhase,
-  RUN_STATE,
-  runSummary,
-  runView,
   sortRuns,
-  type CurrentPhase,
+  STEP_MARK,
+  stepsOf,
+  tail,
   type Decision,
+  type PlanView,
   type Run,
-  type SessionLine,
 } from "./runs";
 
 const REFRESH_MS = 3_000;
-/** Lo último de un texto largo: los pasos o el plan. */
-const TAIL_CHARS = 4_000;
-const PLAN_CHARS = 20_000;
 
 const snapshot = atom<Snapshot | null>(null);
-/** Runs que la persona abrió o cerró a mano; el resto sigue el default: terminados, cerrados. */
+/** Runs que la persona abrió o cerró a mano; el resto sigue el default. */
 const toggled = atom("abiertos", {} as Record<string, boolean>, { persist: "plugin" });
-const doneOpen = atom({} as Record<string, boolean>);
 const steps = atom<(Steps & { run: string }) | null>(null);
-const plan = atom<{ run: string; texto: string } | null>(null);
+const plan = atom<(PlanView & { run: string }) | null>(null);
 /** La decisión que espera confirmación, o el pedido de cambios que se está escribiendo. */
 const pending = atom<{ run: string; decision: Decision } | null>(null);
 const draft = atom("");
 const outcome = atom<(Outcome & { run: string }) | null>(null);
-const busy = atom<string | null>(null);
-
-const tail = (text: string, max: number) => (text.length > max ? `…${text.slice(-max)}` : text);
+const busy = atom<{ run: string; texto: string } | null>(null);
 
 async function refresh(): Promise<void> {
   set(snapshot, await plugin.request("flowrunner.runs"));
 }
 
-async function withBusy<T>(label: string, task: () => Promise<T>): Promise<T | undefined> {
-  set(busy, label);
+/** Corre un pedido al worker mostrando qué espera; un error queda escrito en el run. */
+async function withBusy<T>(
+  run: string,
+  texto: string,
+  task: () => Promise<T>,
+): Promise<T | undefined> {
+  set(busy, { run, texto });
   try {
     return await task();
   } catch (error) {
-    set(outcome, { run: "", ok: false, mensaje: String(error) });
+    set(outcome, {
+      run,
+      ok: false,
+      mensaje: error instanceof Error ? error.message : String(error),
+    });
     return undefined;
   } finally {
     set(busy, null);
@@ -75,22 +80,22 @@ async function withBusy<T>(label: string, task: () => Promise<T>): Promise<T | u
 }
 
 async function showSteps(run: string, sesion: string): Promise<void> {
-  const answer = await withBusy(`Leyendo los pasos de ${sesion}`, () =>
+  const answer = await withBusy(run, `Leyendo los pasos de ${sesion}`, () =>
     plugin.request("flowrunner.pasos", { run, sesion }),
   );
   if (answer !== undefined) set(steps, { run, ...answer });
 }
 
 async function showPlan(run: string): Promise<void> {
-  const answer = await withBusy("Leyendo el plan", () =>
+  const answer = await withBusy(run, "Leyendo el plan", () =>
     plugin.request("flowrunner.plan", { run }),
   );
-  if (answer !== undefined) set(plan, { run, texto: answer.texto });
+  if (answer !== undefined) set(plan, { run, ...answer });
 }
 
 async function decide(run: string, decision: Decision): Promise<void> {
   set(pending, null);
-  const answer = await withBusy("Enviando la decisión", () =>
+  const answer = await withBusy(run, "Enviando tu decisión", () =>
     plugin.request("flowrunner.decidir", { run, decision }),
   );
   if (answer === undefined) return;
@@ -111,64 +116,32 @@ export function setup(ctx: PanelContext): void {
   ctx.signal.addEventListener("abort", () => clearInterval(timer));
 }
 
-const isOpen = (run: Run) => read(toggled)[run.id] ?? !isFinished(run);
+const isOpen = (run: Run) => read(toggled)[run.id] ?? (needsYou(run) || !isFinished(run));
 
-function SessionRow({ run, s, indent }: { run: string; s: SessionLine; indent: string }) {
+/** Los cinco pasos, como en el seguimiento de un pedido. */
+function Tracker({ run }: { run: Run }) {
   return (
-    <Stack gap="none">
-      <Row justify="between" align="center">
-        <Text size="xs" muted={!s.corriendo} truncate>
-          {`${indent}${s.corriendo ? "▶" : "·"} ${s.texto}`}
-        </Text>
-        <IconButton
-          icon="file-text"
-          label={`Pasos de ${s.nombre}`}
-          variant="ghost"
-          size="sm"
-          onPress={() => showSteps(run, s.nombre)}
-        />
-      </Row>
-      {s.ahora === undefined ? null : (
-        <Text size="xs" tone="accent" truncate>
-          {`${indent}   ${s.ahora}`}
-        </Text>
-      )}
-    </Stack>
-  );
-}
-
-function Current({ run, p }: { run: Run; p: CurrentPhase }) {
-  return (
-    <Stack gap="xs">
-      <Row justify="between" align="center">
-        <Text weight="semibold" tone={p.tone} truncate>{`${p.mark} ${p.fase}`}</Text>
-        <Badge tone={p.tone}>{p.estado}</Badge>
-      </Row>
-      {p.meta === "" ? null : (
-        <Text size="xs" muted>
-          {p.meta}
-        </Text>
-      )}
-      {p.detalle === undefined ? null : <Text size="xs">{p.detalle}</Text>}
-      {p.sesiones.map((s) => (
-        <SessionRow key={s.nombre} run={run.id} s={s} indent="" />
-      ))}
-      {p.unidades.map((u) => (
-        <Stack key={u.id} gap="none">
-          <Row justify="between" align="center">
-            <Text size="xs" truncate>
-              {u.texto}
+    <Row justify="between">
+      {stepsOf(run).map((step) => {
+        const { mark, tone } = STEP_MARK[step.estado];
+        const now = step.estado === "ahora" || step.estado === "espera" || step.estado === "falla";
+        return (
+          <Stack key={step.label} gap="none" align="center">
+            <Text tone={tone} muted={step.estado === "pendiente"} weight="semibold">
+              {mark}
             </Text>
-            <Text size="xs" muted>
-              {u.meta}
+            <Text
+              size="xs"
+              tone={now ? tone : "neutral"}
+              muted={!now}
+              weight={now ? "semibold" : "regular"}
+            >
+              {step.label}
             </Text>
-          </Row>
-          {u.sesiones.map((s) => (
-            <SessionRow key={s.nombre} run={run.id} s={s} indent={"  "} />
-          ))}
-        </Stack>
-      ))}
-    </Stack>
+          </Stack>
+        );
+      })}
+    </Row>
   );
 }
 
@@ -177,13 +150,13 @@ function Decisions({ run }: { run: Run }) {
   const waiting = read(pending);
   const mine = waiting?.run === run.id ? waiting.decision : undefined;
   if (offered.length === 0) return null;
-  if (mine !== undefined && mine.accion === "cambios") {
+  if (mine?.accion === "cambios") {
     const send = () => decide(run.id, { accion: "cambios", motivo: read(draft) });
     return (
       <Stack gap="xs">
         <Input
           label="Qué cambiar del plan"
-          placeholder="En tus palabras: qué corregir y qué mantener"
+          placeholder="Qué corregir y qué mantener"
           value={read(draft)}
           onChange={(v) => set(draft, v)}
           onSubmit={send}
@@ -202,13 +175,15 @@ function Decisions({ run }: { run: Run }) {
   if (mine !== undefined) {
     const question =
       mine.accion === "aprobar"
-        ? `¿Aprobar el plan de ${run.clave}? Arranca la implementación.`
+        ? "¿Aprobar el plan? Arranca la implementación."
         : mine.accion === "reanudar"
           ? `¿Reanudar ${run.clave}?`
           : `¿Rehacer ${run.clave} desde ${mine.accion === "rehacer" ? mine.desde : ""}?`;
     return (
       <Stack gap="xs">
-        <Text size="sm">{question}</Text>
+        <Text size="sm" weight="semibold">
+          {question}
+        </Text>
         <Row gap="xs">
           <Button size="sm" tone="success" onPress={() => decide(run.id, mine)}>
             Sí, confirmar
@@ -224,28 +199,38 @@ function Decisions({ run }: { run: Run }) {
   const desde = rerunPhase(run);
   return (
     <Row gap="xs" wrap>
-      {run.status === "esperando_aprobacion" ? (
-        <Button size="sm" variant="outline" onPress={() => showPlan(run.id)}>
-          Ver plan
-        </Button>
-      ) : null}
       {offered.includes("aprobar") ? (
-        <Button size="sm" onPress={() => ask({ accion: "aprobar" })}>
+        <Button size="sm" tone="success" icon="check" onPress={() => ask({ accion: "aprobar" })}>
           Aprobar
         </Button>
       ) : null}
       {offered.includes("cambios") ? (
-        <Button size="sm" variant="outline" onPress={() => ask({ accion: "cambios", motivo: "" })}>
+        <Button
+          size="sm"
+          variant="outline"
+          icon="edit"
+          onPress={() => ask({ accion: "cambios", motivo: "" })}
+        >
           Pedir cambios
         </Button>
       ) : null}
+      {run.status === "esperando_aprobacion" ? (
+        <Button size="sm" variant="ghost" icon="file-text" onPress={() => showPlan(run.id)}>
+          Ver plan
+        </Button>
+      ) : null}
       {offered.includes("reanudar") ? (
-        <Button size="sm" onPress={() => ask({ accion: "reanudar" })}>
+        <Button size="sm" icon="play" onPress={() => ask({ accion: "reanudar" })}>
           Reanudar
         </Button>
       ) : null}
       {offered.includes("rehacer") && desde !== undefined ? (
-        <Button size="sm" variant="outline" onPress={() => ask({ accion: "rehacer", desde })}>
+        <Button
+          size="sm"
+          variant="outline"
+          icon="refresh"
+          onPress={() => ask({ accion: "rehacer", desde })}
+        >
           {`Rehacer desde ${desde}`}
         </Button>
       ) : null}
@@ -253,67 +238,108 @@ function Decisions({ run }: { run: Run }) {
   );
 }
 
-function RunBody({ run }: { run: Run }) {
-  const view = runView(run);
-  const showDone = read(doneOpen)[run.id] === true;
+function PlanPanel({ p }: { p: PlanView }) {
+  return (
+    <Stack gap="xs">
+      <Text size="sm" weight="semibold">
+        {`Plan: ${String(p.subtareas.length)} sub-tasks · ${String(p.criterios)} criterios`}
+      </Text>
+      {p.subtareas.map((t) => (
+        <Text key={t.id} size="xs" truncate>
+          {`${t.id}  ${t.titulo}`}
+        </Text>
+      ))}
+      {p.cambios.length === 0 ? null : (
+        <Stack gap="none">
+          <Text size="xs" weight="semibold" tone="warning">
+            Contra el plan anterior
+          </Text>
+          {p.cambios.map((c) => (
+            <Text key={c} size="xs" tone="warning">
+              {c}
+            </Text>
+          ))}
+        </Stack>
+      )}
+      <Code block>{p.texto}</Code>
+      {p.recortado ? (
+        <Text size="xs" muted>
+          Es el comienzo del plan; completo con flowrunner plan.
+        </Text>
+      ) : null}
+      <Row>
+        <Button size="sm" variant="ghost" onPress={() => set(plan, null)}>
+          Cerrar el plan
+        </Button>
+      </Row>
+    </Stack>
+  );
+}
+
+function Detail({ run }: { run: Run }) {
+  const now = nowOf(run);
   const said = read(outcome);
+  const working = read(busy);
   const shownSteps = read(steps);
   const shownPlan = read(plan);
   return (
     <Stack gap="sm">
       {run.motivo === undefined ? null : (
         <Text size="sm" tone="danger">
-          {run.motivo}
+          {tail(run.motivo, 1_500)}
+        </Text>
+      )}
+      {now.detalle === undefined || run.motivo !== undefined ? null : (
+        <Text size="xs" tone="warning">
+          {tail(now.detalle, 1_500)}
         </Text>
       )}
       <Decisions run={run} />
+      {working?.run === run.id ? <Spinner label={working.texto} /> : null}
       {said?.run === run.id ? (
         <Text size="sm" tone={said.ok ? "success" : "danger"}>
           {said.mensaje}
         </Text>
       ) : null}
-      {run.siguiente?.startsWith("https://") === true ? (
-        <Row>
-          <Link href={run.siguiente}>Abrir la PR</Link>
-        </Row>
-      ) : null}
-      {shownPlan?.run === run.id ? (
-        <Stack gap="xs">
-          <Code block>{tail(shownPlan.texto, PLAN_CHARS)}</Code>
-          <Row>
-            <Button size="sm" variant="ghost" onPress={() => set(plan, null)}>
-              Cerrar el plan
-            </Button>
-          </Row>
-        </Stack>
-      ) : null}
-      {view.listas.length === 0 ? null : (
+      {shownPlan?.run === run.id ? <PlanPanel p={shownPlan} /> : null}
+      {now.tareas.length === 0 ? null : (
         <Stack gap="none">
-          <Row>
-            <Button
-              size="sm"
-              variant="ghost"
-              onPress={() => update(doneOpen, (m) => ({ ...m, [run.id]: !showDone }))}
-            >
-              {`${showDone ? "▾" : "▸"} ✓ ${String(view.listas.length)} ${view.listas.length === 1 ? "lista" : "listas"}`}
-            </Button>
-          </Row>
-          {showDone
-            ? view.listas.map((p) => (
-                <Text key={p.fase} size="xs" muted truncate>
-                  {`✓ ${p.fase}${p.meta === "" ? "" : ` · ${p.meta}`}`}
-                </Text>
-              ))
-            : null}
+          {now.tareas.map((t) => (
+            <Row key={t.key} justify="between" align="center">
+              <Text size="sm" tone={t.tone} muted={t.tone === "neutral"} truncate>
+                {`${t.mark} ${t.texto}`}
+              </Text>
+              <Text size="xs" muted>
+                {t.nota ?? ""}
+              </Text>
+            </Row>
+          ))}
         </Stack>
       )}
-      {view.actuales.map((p) => (
-        <Current key={p.fase} run={run} p={p} />
+      {now.actividad.map((a) => (
+        <Stack key={a.sesion} gap="none">
+          <Row justify="between" align="center">
+            <Text size="xs" muted truncate>
+              {a.texto}
+            </Text>
+            <IconButton
+              icon="file-text"
+              label={`Pasos de ${a.sesion}`}
+              variant="ghost"
+              size="sm"
+              onPress={() => showSteps(run.id, a.sesion)}
+            />
+          </Row>
+          {a.ahora === undefined ? null : (
+            <Text size="xs" tone="accent" truncate>
+              {a.ahora}
+            </Text>
+          )}
+        </Stack>
       ))}
       {shownSteps?.run === run.id ? (
         <Stack gap="xs">
-          <Text size="xs" weight="semibold">{`Pasos de ${shownSteps.sesion}`}</Text>
-          <Code block>{tail(shownSteps.texto, TAIL_CHARS) || "(sin pasos todavía)"}</Code>
+          <Code block>{tail(shownSteps.texto) || "(sin pasos todavía)"}</Code>
           <Row>
             <Button size="sm" variant="ghost" onPress={() => set(steps, null)}>
               Cerrar los pasos
@@ -321,57 +347,62 @@ function RunBody({ run }: { run: Run }) {
           </Row>
         </Stack>
       ) : null}
-      {view.faltan.length === 0 ? null : (
-        <Text size="xs" muted>
-          {`Faltan: ${view.faltan.join(", ")}`}
-        </Text>
-      )}
+      {run.siguiente?.startsWith("https://") === true ? (
+        <Row>
+          <Link href={run.siguiente}>Abrir la PR</Link>
+        </Row>
+      ) : null}
+      <Text size="xs" muted>
+        {now.meta}
+      </Text>
     </Stack>
   );
 }
 
-function RunBlock({ run }: { run: Run }) {
+function RunCard({ run }: { run: Run }) {
   const open = isOpen(run);
+  const headline = headlineOf(run);
   return (
-    <Stack gap="xs">
-      <List label={`Run ${run.clave}`}>
-        <ListItem
-          title={`${open ? "▾" : "▸"} ${run.clave} · ${run.titulo}`}
-          description={runSummary(run)}
-          icon={RUN_STATE[run.status].icon}
-          onPress={() => update(toggled, (m) => ({ ...m, [run.id]: !open }))}
-        />
-      </List>
-      {open ? <RunBody run={run} /> : null}
-    </Stack>
+    <Card title={`${run.clave} · ${run.titulo}`}>
+      <Stack gap="sm">
+        <Row justify="between" align="center">
+          <Text weight="semibold" tone={headline.tone}>
+            {`${headline.emoji} ${headline.texto}`}
+          </Text>
+          <IconButton
+            icon={open ? "collapse" : "expand"}
+            label={open ? `Ocultar el detalle de ${run.clave}` : `Ver el detalle de ${run.clave}`}
+            variant="ghost"
+            size="sm"
+            onPress={() => update(toggled, (m) => ({ ...m, [run.id]: !open }))}
+          />
+        </Row>
+        <Progress label={`Avance de ${run.clave}`} labelHidden value={progressOf(run)} />
+        <Tracker run={run} />
+        {open ? <Detail run={run} /> : null}
+      </Stack>
+    </Card>
   );
 }
 
 export default function Panel() {
   const snap = read(snapshot);
-  const working = read(busy);
   if (snap === null) return <Spinner label="Leyendo los runs de flowrunner" />;
   const runs = sortRuns(snap.runs);
   return (
-    <Stack gap="sm">
+    <Stack gap="md">
       {snap.error === undefined ? null : (
         <Text size="sm" tone="danger">
           No se pudo leer flowrunner: {snap.error}
         </Text>
       )}
-      {working === null ? null : <Spinner label={working} />}
       {runs.length === 0 && snap.error === undefined ? (
         <EmptyState
           title="No hay runs activos"
           description="Cuando lances una feature desde Claude Code, su progreso aparece acá."
         />
       ) : (
-        runs.map((run, i) => (
-          <Stack key={run.id} gap="sm">
-            {i === 0 ? null : <Separator />}
-            <RunBlock run={run} />
-          </Stack>
-        ))
+        runs.map((run) => <RunCard key={run.id} run={run} />)
       )}
     </Stack>
   );

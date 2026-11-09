@@ -791,6 +791,17 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. Sin `Tree` ni `Collapsible`, que piden Orca 1.4.247: el contraer es un atom por run.
 - **Desbloquea:** Gate Fase 8
 
+### T8.7c · El panel de Orca como seguimiento de un pedido, y el plan que no se veía
+- **Estado:** `[x] Hecho`
+- **Regresión de:** T8.7b
+- **Descripción:** en VF-3, «Ver plan» y «Pedir cambios» no hacían nada. El plan pasaba los 16 KiB que Orca dibuja por texto. Orca rechazaba ese dibujo y todos los que seguían, así que el panel quedaba congelado. Ahora el worker lee `plan --json`, y el panel muestra las sub-tasks, los criterios, lo que cambió contra el plan anterior y el comienzo del plan, con todo texto por debajo del límite. La persona pidió además algo más visual, que se entienda de un vistazo. Cada run es una tarjeta con una frase de estado («🟡 El plan te espera», «🔵 Implementando · 1 de 2 sub-tasks»), una barra de avance y cinco pasos: Plan, Tu OK, Código, Control y PR. Cada paso marca si está listo, si es el actual, si te espera o si falló. El detalle muestra las sub-tasks como lista de tareas, lo que hace la sesión que corre y las decisiones.
+- **Lint:** `pnpm lint` y `orca plugin validate`.
+- **Test:** `pnpm orca:test`, 18 tests. Regresión: `panel.test.tsx` › «un plan largo se ve, y después se puede pedir cambios», que falló con el panel anterior; `runs.test.ts` › «el plan se recorta a lo que Orca dibuja». Además, los cinco pasos por estado, un run detenido en rojo, la frase de estado, el detalle de ahora y las tarjetas en el panel.
+- **Canario:** el plan sin recortar, el paso que te espera tratado como pendiente y el panel sin los cinco pasos pusieron en rojo sus tests.
+- **Criterio de aprobación:** `orca plugin shot` a 300 px muestra VF-3 con «El plan te espera», Tu OK marcado y los botones; VF-2 con «PR abierta: falta tu merge».
+- **Revisión ponytail:** a mano. Los cinco pasos agrupan las ocho fases como las ve la persona; no hay estado nuevo en flowrunner.
+- **Desbloquea:** Gate Fase 8
+
 ### Gate Fase 8
 - **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.

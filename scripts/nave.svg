@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <!-- La nave en camino, mientras el panel lee los runs. Es la fuente de orca/assets/nave.webp:
+       Orca solo muestra png, jpg o webp, y nave-webp.mjs la pasa a un WebP animado. Todo cierra en un
+       ciclo de 2,4 s para que el loop no salte. Colores fijos: una imagen no ve el tema de Orca, así
+       que van tonos que se leen sobre fondo claro y oscuro. -->
+  <style>
+    .estela { stroke: #94a3b8; stroke-width: 2; stroke-linecap: round; opacity: 0; animation: pasa 1.2s linear infinite; }
+    .estela.b { animation-delay: -0.4s; }
+    .estela.c { animation-delay: -0.8s; }
+    .estrella { fill: #94a3b8; opacity: 0; animation: pasa 2.4s linear infinite; }
+    .estrella.b { animation-delay: -0.8s; }
+    .estrella.c { animation-delay: -1.6s; }
+    .nave { animation: flota 2.4s ease-in-out infinite; }
+    .llama { transform-box: fill-box; transform-origin: 50% 0; animation: arde 0.3s ease-in-out infinite alternate; }
+    @keyframes pasa {
+      0% { transform: translateY(-30px); opacity: 0; }
+      20% { opacity: 0.8; }
+      100% { transform: translateY(70px); opacity: 0; }
+    }
+    @keyframes flota {
+      0%, 100% { transform: translateY(-3px); }
+      50% { transform: translateY(3px); }
+    }
+    @keyframes arde {
+      from { transform: scaleY(0.75); }
+      to { transform: scaleY(1.15); }
+    }
+  </style>
+  <line class="estela" x1="28" y1="30" x2="28" y2="44" />
+  <line class="estela b" x1="92" y1="24" x2="92" y2="38" />
+  <line class="estela c" x1="40" y1="12" x2="40" y2="22" />
+  <circle class="estrella" cx="16" cy="40" r="1.6" />
+  <circle class="estrella b" cx="104" cy="50" r="1.6" />
+  <circle class="estrella c" cx="80" cy="20" r="1.4" />
+  <g class="nave">
+    <path class="llama" d="M52 84 Q60 112 68 84 Z" fill="#fb923c" />
+    <path class="llama" d="M55 84 Q60 102 65 84 Z" fill="#fde047" />
+    <path d="M48 64 L36 84 L48 80 Z" fill="#f97316" stroke="#475569" stroke-width="2" stroke-linejoin="round" />
+    <path d="M72 64 L84 84 L72 80 Z" fill="#f97316" stroke="#475569" stroke-width="2" stroke-linejoin="round" />
+    <path d="M60 18 C72 28 74 44 72 56 L72 84 L48 84 L48 56 C46 44 48 28 60 18 Z" fill="#e2e8f0" stroke="#475569" stroke-width="2" stroke-linejoin="round" />
+    <circle cx="60" cy="52" r="7" fill="#38bdf8" stroke="#475569" stroke-width="2" />
+  </g>
+</svg>

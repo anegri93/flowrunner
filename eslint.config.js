@@ -3,7 +3,17 @@ import { defineConfig } from "eslint/config";
 import tseslint from "typescript-eslint";
 
 export default defineConfig(
-  { ignores: ["node_modules/**", "docs/**", "test/fixtures/**", "test/toy-repo/**", "orca/**"] },
+  {
+    // scripts/*.mjs: generadores que se corren a mano con un Playwright ajeno, sin tipos.
+    ignores: [
+      "node_modules/**",
+      "docs/**",
+      "test/fixtures/**",
+      "test/toy-repo/**",
+      "orca/**",
+      "scripts/*.mjs",
+    ],
+  },
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   { files: ["bin/*.js"], languageOptions: { globals: { process: "readonly" } } },

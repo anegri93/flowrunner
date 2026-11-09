@@ -771,6 +771,16 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. Precios en una tabla con su fuente y fecha; el cambio de prompt es texto.
 - **Desbloquea:** Gate final
 
+### T8.7 · El progreso en una pestaña de Orca
+- **Estado:** `[x] Hecho`
+- **Descripción:** la persona usa Orca y quiere ver el progreso en una pestaña de su barra derecha, no solo en una terminal. `flowrunner watch --json` devuelve el mismo árbol que dibuja `watch`, con la ruta del repo. `orca/` es un plugin de Orca: su worker corre `flowrunner watch --json` y `report --sesion` en un shell de login, y su panel muestra cada run con sus fases, sub-tasks y sesiones, el costo, el tiempo y lo que hace la sesión que corre. Tocar una sesión muestra sus pasos. Usa solo los componentes de Orca 1.4.246: `Tree` y la barra de estado piden 1.4.247 y 1.4.248.
+- **Lint:** `pnpm lint`, que deja afuera `orca/`; el plugin con `orca plugin validate`.
+- **Test:** `test/watch.int.test.ts` › «--json devuelve el árbol de los runs activos»: sin runs, vacío; con un run entregado, su clave, su repo y revisar en ok. `pnpm orca:test`: `src/runs.test.ts`, el orden de fases, sub-tasks y sesiones, y la sesión que corre con su herramienta, contexto y costo mínimo; `src/worker.test.ts`, con un flowrunner falso, los runs y los pasos, y un flowrunner que no existe devuelve el error; `src/panel.test.tsx`, el run, los pasos al tocar una sesión, el estado vacío y el error.
+- **Canario:** sin el campo `repo`, el de integración; sin `onPress` en las sesiones, sin runs en el worker, sin las sesiones de las sub-tasks, sin el `≥` del costo en vivo y sin el texto del error, sus tests del plugin. Un test del panel que fallaba antes de desmontarlo quedaba colgado por el refresco: ahora siempre desmonta.
+- **Criterio de aprobación:** con el plugin cargado en Orca, la pestaña muestra los runs activos y se refresca sola. `orca plugin check` lo dibujó con VF-2 y VF-3 reales.
+- **Revisión ponytail:** a mano. El worker no guarda estado y el panel refresca solo mientras se ve. Sin tipos de Orca para `tsc`: la 1.4.246 no los trae, y los tests corren el código como Orca lo carga.
+- **Desbloquea:** Gate Fase 8
+
 ### Gate Fase 8
 - **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.

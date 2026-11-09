@@ -63,6 +63,8 @@ export interface RunTree {
   readonly clave: string;
   readonly titulo: string;
   readonly proyecto: string;
+  /** La ruta del repo, para que una vista lo cruce con la carpeta que tiene abierta. */
+  readonly repo: string;
   readonly status: RunStatus;
   readonly costoUsd: number;
   readonly segundos: number;
@@ -352,6 +354,7 @@ export function runTree(input: TreeInput): RunTree {
     clave: state.clave,
     titulo: input.titulo,
     proyecto: state.proyecto,
+    repo: state.repo,
     status: state.status,
     costoUsd: state.costoUsd,
     segundos: created === undefined ? 0 : Math.round((end - Date.parse(created.at)) / 1000),

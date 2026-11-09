@@ -16,7 +16,8 @@
     "test": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "smoke": "vitest run --project smoke",
-    "verify": "pnpm lint && pnpm test && pnpm test:integration"
+    "verify": "pnpm lint && pnpm test && pnpm test:integration",
+    "orca:test": "${ORCA:-/Applications/Orca.app/Contents/Resources/bin/orca} plugin validate orca && ${ORCA:-/Applications/Orca.app/Contents/Resources/bin/orca} plugin test orca"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",

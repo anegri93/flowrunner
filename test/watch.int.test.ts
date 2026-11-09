@@ -23,6 +23,28 @@ describe("watch --once", () => {
     expect(runCli(["watch", "--once"], w.env).stdout).toContain("Exportar pedidos a CSV");
   }, 120_000);
 
+  // Si regresiona, el panel de Orca, que lee esta salida, se queda sin runs o no los cruza con su repo.
+  test("--json devuelve el árbol de los runs activos, con el repo, y nada si no hay", async () => {
+    const w = world();
+    const empty = JSON.parse(runCli(["watch", "--json"], w.env).stdout) as { runs: unknown[] };
+    expect(empty).toEqual({ ok: true, runs: [] });
+    const id = launch(w);
+    await waitFor("entregado", () => stateNow(w, id).status === "entregado");
+    const out = runCli(["watch", "--json"], w.env);
+    expect(out.status).toBe(0);
+    const { runs } = JSON.parse(out.stdout) as {
+      runs: {
+        id: string;
+        clave: string;
+        repo: string;
+        fases: { fase: string; estado: string }[];
+      }[];
+    };
+    expect(runs.map((r) => [r.id, r.clave])).toEqual([[id, "SHOP-214"]]);
+    expect(runs[0]?.repo).toMatch(/\//);
+    expect(runs[0]?.fases.find((f) => f.fase === "revisar")?.estado).toBe("ok");
+  }, 120_000);
+
   test("un run que no existe sale 1 y dice cómo verlos", () => {
     const out = runCli(["watch", "NOPE-1", "--once"], world().env);
     expect(out.status).toBe(1);

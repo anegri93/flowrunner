@@ -1,0 +1,94 @@
+{
+  "ok": true,
+  "runs": [
+    {
+      "id": "VF-2-20261109-001527",
+      "clave": "VF-2",
+      "titulo": "Precios en la base",
+      "proyecto": "videofactory",
+      "repo": "/r/videoFactory",
+      "status": "en_curso",
+      "costoUsd": 2.7,
+      "segundos": 1200,
+      "fases": [
+        {
+          "fase": "preparar",
+          "estado": "ok",
+          "segundos": 16,
+          "costoUsd": 0,
+          "sesiones": [],
+          "unidades": []
+        },
+        {
+          "fase": "planificar",
+          "estado": "ok",
+          "segundos": 372,
+          "costoUsd": 1.7,
+          "sesiones": [
+            {
+              "nombre": "planificar-1",
+              "modelo": "claude-opus-5-5",
+              "corriendo": false,
+              "costoUsd": 1.7,
+              "tokens": 310000,
+              "contexto": 120000,
+              "segundos": 372
+            }
+          ],
+          "unidades": []
+        },
+        {
+          "fase": "implementar",
+          "estado": "corriendo",
+          "segundos": 200,
+          "costoUsd": 1,
+          "sesiones": [],
+          "unidades": [
+            {
+              "id": "ST-1",
+              "titulo": "Tabla de precios",
+              "estado": "integrada",
+              "dependeDe": [],
+              "sesiones": [
+                {
+                  "nombre": "implementar-ST-1-1",
+                  "modelo": "claude-sonnet-5-5",
+                  "corriendo": false,
+                  "costoUsd": 1,
+                  "tokens": 200000,
+                  "contexto": 90000,
+                  "segundos": 150
+                }
+              ]
+            },
+            {
+              "id": "ST-2",
+              "titulo": "Comando /precio",
+              "estado": "corriendo",
+              "dependeDe": ["ST-1"],
+              "sesiones": [
+                {
+                  "nombre": "implementar-ST-2-1",
+                  "modelo": "claude-sonnet-5-5",
+                  "corriendo": true,
+                  "costoEstimado": 0.25,
+                  "tokens": 40000,
+                  "contexto": 52000,
+                  "segundos": 50,
+                  "ultimo": "Edit src/precio.ts"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "fase": "verificar",
+          "estado": "pendiente",
+          "costoUsd": 0,
+          "sesiones": [],
+          "unidades": []
+        }
+      ]
+    }
+  ]
+}

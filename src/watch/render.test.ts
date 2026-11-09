@@ -34,6 +34,7 @@ const tree: RunTree = {
   clave: "PIZ-1",
   titulo: "Cambios de un toque",
   proyecto: "pizarra-en-vivo",
+  repo: "/r/pizarra-en-vivo",
   status: "en_curso",
   costoUsd: 1.24,
   segundos: 540,

@@ -136,6 +136,8 @@ que corre muestra en gris la herramienta que está usando y cuánto contexto arr
 segundos; con las flechas elegís una fila, con Enter ves sus pasos y con `q` salís. Con `--once` la
 dibuja una vez.
 
+Si usás [Orca](https://www.onorca.dev), el plugin de [`orca/`](orca/README.md) muestra lo mismo en una pestaña de la barra derecha.
+
 Los tokens nuevos son lo que cada fase leyó o escribió por primera vez, sin las relecturas de caché. El
 costo de lo que corre es un mínimo, `≥ 2.97`, porque la salida se conoce al terminar. Los USD son el
 equivalente de API: con la suscripción no se cobran, y lo que limita es su cupo.
@@ -145,7 +147,7 @@ equivalente de API: con la suscripción no se cobran, y lo que limita es su cupo
 | Comando                                 | Para qué                                      |
 | --------------------------------------- | --------------------------------------------- |
 | `flowrunner init <ruta> [--aplicar]`    | revisar y dejar listo un repo                 |
-| `flowrunner watch [run]`                | ver un run, o todos los activos, en vivo      |
+| `flowrunner watch [run] [--json]`       | ver un run, o todos los activos, en vivo      |
 | `flowrunner status [run]`               | el estado de los runs, o de uno fase por fase |
 | `flowrunner plan <run>`                 | el plan que espera aprobación                 |
 | `flowrunner approve <run>`              | aprobar el plan                               |

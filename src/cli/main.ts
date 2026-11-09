@@ -51,7 +51,8 @@ const USAGE = `uso: flowrunner <comando> [--json]
   hook session-start             el hook de Claude Code: avisa a la sesión si el repo usa flowrunner
   stats [proyecto]               qué fase reintenta más, motivos, costo y lecciones
   project add <ruta>             registra un repo [--nombre n] [--github-user u]
-  brain init <ruta>              escribe las plantillas de .flowrunner/ sin pisar nada
+  brain init <ruta>              escribe las plantillas de .flowrunner/ sin pisar nada; una
+                                 plantilla vieja que nadie editó pasa a la de hoy
   brain draft <ruta> [--reemplazar]
                                  propone en una PR un borrador del cerebro leído del repo;
                                  con --reemplazar, cambia el borrador anterior por uno nuevo`;
@@ -302,7 +303,12 @@ export async function main(
         const init = await initRepoBrain(need(rest[0], "la ruta del repo"), env);
         print(
           init,
-          `creados en ${init.repo}:\n  ${init.creados.join("\n  ") || "(nada: ya existía todo)"}`,
+          [
+            `creados en ${init.repo}:\n  ${init.creados.join("\n  ") || "(nada: ya existía todo)"}`,
+            ...(init.actualizados.length === 0
+              ? []
+              : [`con la plantilla de hoy:\n  ${init.actualizados.join("\n  ")}`]),
+          ].join("\n"),
         );
         return 0;
       }

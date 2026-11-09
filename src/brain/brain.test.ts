@@ -3,7 +3,13 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { repoWith } from "../../test/helpers/git.ts";
 import { ConfigError } from "../config/schemas.ts";
-import { initBrain, loadBrain } from "./brain.ts";
+import {
+  DRAFT_HEADING,
+  initBrain,
+  loadBrain,
+  refreshTemplates,
+  withCurrentTemplate,
+} from "./brain.ts";
 
 function readyRepo(): string {
   const repo = repoWith({ "a.txt": "x\n" });
@@ -81,5 +87,49 @@ describe("initBrain", () => {
     );
     expect(statSync(join(repo, ".flowrunner", "verify.sh")).mode & 0o111).not.toBe(0);
     expect(() => loadBrain(repo)).not.toThrow();
+  });
+});
+
+const OLD_CONVENCIONES =
+  "# Convenciones del repo\n\nReglas que planificar, implementar y revisar aplican. Una violación es un bloqueante en la revisión.\nEscribí reglas concretas y verificables, con un ejemplo cuando ayude.\n\n-\n";
+const TEMPLATE = (file: string) =>
+  readFileSync(join(import.meta.dirname, "..", "..", "templates", "brain", file), "utf8");
+const DRAFT = `${DRAFT_HEADING}\n\n> Lo dedujo init.\n\n- [aviso] regla del borrador\n`;
+
+describe("withCurrentTemplate", () => {
+  // Regresión: en mango-portal-colaborador, rehacer el borrador dejó arriba la plantilla vieja, que
+  // dice que toda convención bloquea, contradiciendo las marcas de severidad del borrador nuevo.
+  test("cambia una plantilla vieja sin editar por la de hoy y deja el borrador intacto", () => {
+    const fresh = withCurrentTemplate("convenciones.md", `${OLD_CONVENCIONES}\n${DRAFT}`);
+    expect(fresh).toBe(`${TEMPLATE("convenciones.md").trimEnd()}\n\n${DRAFT}`);
+    expect(fresh).not.toContain("Una violación es un bloqueante");
+    expect(withCurrentTemplate("convenciones.md", OLD_CONVENCIONES)).toBe(
+      TEMPLATE("convenciones.md"),
+    );
+  });
+
+  // Si regresiona, flowrunner pisa reglas que escribió la persona arriba del borrador.
+  test("no toca lo que la persona editó", () => {
+    const edited = `${OLD_CONVENCIONES}- regla mía\n\n${DRAFT}`;
+    expect(withCurrentTemplate("convenciones.md", edited)).toBe(edited);
+    expect(withCurrentTemplate("lecciones.md", OLD_CONVENCIONES)).toBe(OLD_CONVENCIONES);
+  });
+});
+
+describe("refreshTemplates", () => {
+  // Si regresiona, brain init deja la plantilla vieja y la persona tiene que corregirla a mano.
+  test("reescribe solo los archivos con una plantilla vieja y dice cuáles", () => {
+    const repo = repoWith({
+      ".flowrunner/convenciones.md": `${OLD_CONVENCIONES}\n${DRAFT}`,
+      ".flowrunner/contexto.md": "# Contexto\n\n- mío\n",
+    });
+    expect(refreshTemplates(repo)).toEqual([".flowrunner/convenciones.md"]);
+    expect(readFileSync(join(repo, ".flowrunner", "convenciones.md"), "utf8")).toContain(
+      "[bloqueante]",
+    );
+    expect(readFileSync(join(repo, ".flowrunner", "contexto.md"), "utf8")).toBe(
+      "# Contexto\n\n- mío\n",
+    );
+    expect(refreshTemplates(repo)).toEqual([]);
   });
 });

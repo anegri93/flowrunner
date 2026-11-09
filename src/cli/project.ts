@@ -2,7 +2,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { parse, stringify } from "yaml";
-import { initBrain, loadBrain } from "../brain/brain.ts";
+import { initBrain, loadBrain, refreshTemplates } from "../brain/brain.ts";
 import { flowrunnerHome, loadRepoConfig } from "../config/load.ts";
 import { ConfigError, globalConfigSchema } from "../config/schemas.ts";
 import { runProc } from "../proc/proc.ts";
@@ -81,5 +81,7 @@ export async function addProject(
 
 export async function initRepoBrain(path: string, env: NodeJS.ProcessEnv) {
   const repo = await gitRoot(resolve(path), env);
-  return { ok: true as const, repo, creados: initBrain(repo), faltan: missingForRuns(repo) };
+  const creados = initBrain(repo);
+  const actualizados = refreshTemplates(repo);
+  return { ok: true as const, repo, creados, actualizados, faltan: missingForRuns(repo) };
 }

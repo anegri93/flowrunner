@@ -13,6 +13,7 @@ import type { RunEvent } from "../store/events.ts";
 import { git } from "../git/git.ts";
 import { diagnose, environmentHint, type Failing } from "./diagnosticar.ts";
 import { runFixers } from "./fixers.ts";
+import { repairTest } from "./reparar.ts";
 import { featureWorktree, prepared } from "./inputs.ts";
 import { SETUP_TIMEOUT_MS } from "./preparar.ts";
 import { readPlan } from "./planificar.ts";
@@ -164,6 +165,7 @@ export const verificar: PhaseFn = async (ctx) => {
         worktree,
         config,
         plan,
+        locked: Object.keys(plan.locked),
         failing,
         historia: [
           ...(returned.length > 0
@@ -174,13 +176,26 @@ export const verificar: PhaseFn = async (ctx) => {
             : []),
         ].join("\n\n"),
       });
-      if (diagnosed !== undefined) return diagnosed;
+      if (diagnosed?.tipo === "reparar") {
+        const locked = readPlan(run).locked;
+        const repaired = await repairTest(ctx, { worktree, config, plan, locked, ...diagnosed });
+        if (!repaired) {
+          return {
+            tipo: "falla",
+            clase: "entorno",
+            motivo: `el test bloqueado ${diagnosed.archivo} tiene que cambiar y flowrunner no pudo repararlo: ${diagnosed.explicacion}. Para replanificar: flowrunner rerun ${run.id} --desde planificar`,
+          };
+        }
+        failing = await runCriteria(plan.criterios);
+      } else if (diagnosed !== undefined) return diagnosed;
     }
-    return {
-      tipo: "vuelve",
-      unidades: [...new Set(failing.map((f) => f.subtarea))],
-      motivo: failing.map((f) => f.detalle).join("\n\n"),
-    };
+    if (failing.length > 0) {
+      return {
+        tipo: "vuelve",
+        unidades: [...new Set(failing.map((f) => f.subtarea))],
+        motivo: failing.map((f) => f.detalle).join("\n\n"),
+      };
+    }
   }
 
   const verify = await runVerify(worktree, config, deps.env);

@@ -157,6 +157,19 @@ function proposed(run: RunPaths): string[] {
   return ["", "## Lo que aprendió este run", "", plain(readFileSync(file, "utf8").trim())];
 }
 
+/**
+ * Lo que flowrunner cambió en los tests bloqueados, para que la persona lo revise: el lint y el
+ * formato que les pasó, y las reparaciones. Son los avisos que escribe flowrunner mismo.
+ */
+function testChanges(events: readonly RunEvent[]): string[] {
+  const changes = events.flatMap((e) =>
+    e.tipo === "aviso" && e.texto.startsWith("flowrunner ") ? [`- ${plain(e.texto)}`] : [],
+  );
+  return changes.length === 0
+    ? []
+    : ["", "## Cambios de flowrunner en los tests de criterios", "", ...changes];
+}
+
 /** El cuerpo de la PR: el plan, los criterios y las decisiones, sin el detalle de costos. */
 export function prBody(events: readonly RunEvent[], run: RunPaths): string {
   const planFile = join(run.dir, "plan.md");
@@ -176,6 +189,7 @@ export function prBody(events: readonly RunEvent[], run: RunPaths): string {
     "",
     plain(plan),
     ...decisions(events),
+    ...testChanges(events),
     ...proposed(run),
     "",
     "---",

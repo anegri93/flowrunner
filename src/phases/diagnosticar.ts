@@ -2,7 +2,8 @@
 // una señal de entorno en la salida se resuelve reinstalando y repitiendo. Si el ciclo no converge,
 // porque la sub-task devuelta no encontró nada que cambiar o el mismo criterio falló dos vueltas
 // seguidas, una sesión de solo lectura dice de qué lado está el problema: el código de alguna sub-task,
-// el entorno o el plan. Todo con tope: verificar sigue contando sus vueltas.
+// el entorno, un test bloqueado que hay que reparar, o el plan. Todo con tope: verificar sigue contando
+// sus vueltas.
 import { realpathSync } from "node:fs";
 import { z } from "zod";
 import { runSession } from "../agent/session.ts";
@@ -34,8 +35,10 @@ export function environmentHint(output: string): string | undefined {
 }
 
 export const diagnosisSchema = z.object({
-  causa: z.enum(["codigo", "entorno", "plan"]),
+  causa: z.enum(["codigo", "entorno", "test", "plan"]),
   subtarea: z.string(),
+  /** Con `test`, la ruta del test bloqueado que hay que reparar. */
+  archivo: z.string().default(""),
   instruccion: z.string(),
   explicacion: z.string().min(1),
 });
@@ -51,6 +54,14 @@ export interface Failing {
   readonly detalle: string;
 }
 
+/** Un test bloqueado que hay que reparar: lo hace verificar, con sus controles. */
+export interface RepairRequest {
+  readonly tipo: "reparar";
+  readonly archivo: string;
+  readonly instruccion: string;
+  readonly explicacion: string;
+}
+
 /**
  * Qué hacer con lo que sigue en rojo, según el diagnóstico. Si la sesión no responde algo usable,
  * undefined: verificar devuelve el trabajo como siempre, que el tope de vueltas acota.
@@ -61,10 +72,12 @@ export async function diagnose(
     worktree: string;
     config: RepoConfig;
     plan: Pick<Plan, "plan" | "subtareas">;
+    /** Los tests bloqueados del plan: los únicos que el diagnóstico puede mandar a reparar. */
+    locked: readonly string[];
     failing: readonly Failing[];
     historia: string;
   },
-): Promise<Outcome | undefined> {
+): Promise<Outcome | RepairRequest | undefined> {
   const { run, deps, emit } = ctx;
   const { worktree, config, plan, failing } = input;
   const ids = plan.subtareas.map((t) => t.id);
@@ -92,6 +105,7 @@ export async function diagnose(
           .map((f) => `## ${f.id} · cubierto por ${f.subtarea}\n\n${f.detalle}`)
           .join("\n\n"),
         historia: input.historia,
+        bloqueados: input.locked.length === 0 ? "(ninguno)" : input.locked.join(", "),
       }),
       cwd: worktree,
       model: config.models.revisar,
@@ -131,7 +145,8 @@ export async function diagnose(
     return undefined;
   }
   const d = result.output;
-  const target = d.causa === "codigo" ? ` en ${d.subtarea}` : "";
+  const target =
+    d.causa === "codigo" ? ` en ${d.subtarea}` : d.causa === "test" ? ` en ${d.archivo}` : "";
   emit({
     tipo: "decision",
     fase: "verificar",
@@ -151,6 +166,22 @@ export async function diagnose(
       tipo: "vuelve",
       unidades: [d.subtarea],
       motivo: `Diagnóstico: ${d.explicacion}\n\n${d.instruccion}`,
+    };
+  }
+  if (d.causa === "test") {
+    if (!input.locked.includes(d.archivo)) {
+      emit({
+        tipo: "aviso",
+        fase: "verificar",
+        texto: `el diagnóstico pidió reparar un archivo que no es un test bloqueado: ${d.archivo}`,
+      });
+      return undefined;
+    }
+    return {
+      tipo: "reparar",
+      archivo: d.archivo,
+      instruccion: d.instruccion,
+      explicacion: d.explicacion,
     };
   }
   if (d.causa === "entorno") {

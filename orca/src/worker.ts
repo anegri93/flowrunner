@@ -2,6 +2,7 @@
 // cargarlo, sin paso de build. No guarda estado: cada pedido lee los runs de nuevo.
 import { execFile } from "node:child_process";
 import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { userInfo } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import type { OrcaWorkerApi } from "orca/worker";
 import type { Openable, Outcome, Snapshot } from "./protocol";
@@ -32,6 +33,27 @@ async function command(orca: OrcaWorkerApi): Promise<string> {
 
 const quote = (text: string) => `'${text.replaceAll("'", `'\\''`)}'`;
 
+/** Variables que Orca le pone a su host de plugins y que no tienen que llegar a flowrunner. */
+const ORCA_ONLY = ["ELECTRON_RUN_AS_NODE", "NODE_CHANNEL_FD", "NODE_CHANNEL_SERIALIZATION_MODE"];
+
+/**
+ * El entorno de los comandos que corre el worker. Orca lanza su host de plugins solo con HOME, PATH y
+ * TMPDIR: sin USER, Claude Code no encuentra la sesión del Keychain, y un run aprobado desde el panel
+ * fallaba con «Claude rechazó la credencial de la sesión». Se completa con el usuario y su shell, y
+ * se sacan las variables propias de Orca.
+ */
+export function childEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const user = userInfo();
+  const out: NodeJS.ProcessEnv = {
+    ...env,
+    USER: env.USER ?? user.username,
+    LOGNAME: env.LOGNAME ?? user.username,
+    SHELL: env.SHELL ?? user.shell ?? "/bin/zsh",
+  };
+  for (const name of ORCA_ONLY) Reflect.deleteProperty(out, name);
+  return out;
+}
+
 interface Proc {
   readonly code: number;
   readonly stdout: string;
@@ -39,12 +61,12 @@ interface Proc {
 }
 
 function run(script: string): Promise<Proc> {
-  const shell = process.env.SHELL ?? "/bin/zsh";
+  const env = childEnv(process.env);
   return new Promise((resolve) => {
     execFile(
-      shell,
+      env.SHELL ?? "/bin/zsh",
       ["-lc", script],
-      { timeout: TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 },
+      { timeout: TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024, env },
       (error, stdout, stderr) => {
         const code = error === null ? 0 : typeof error.code === "number" ? error.code : 1;
         resolve({ code, stdout, stderr: stderr || (error?.message ?? "") });
@@ -111,10 +133,15 @@ function outcomeOf(proc: Proc): Outcome {
 
 function exec(file: string, args: readonly string[]): Promise<Proc> {
   return new Promise((resolve) => {
-    execFile(file, args, { timeout: TIMEOUT_MS }, (error, stdout, stderr) => {
-      const code = error === null ? 0 : typeof error.code === "number" ? error.code : 1;
-      resolve({ code, stdout, stderr: stderr || (error?.message ?? "") });
-    });
+    execFile(
+      file,
+      args,
+      { timeout: TIMEOUT_MS, env: childEnv(process.env) },
+      (error, stdout, stderr) => {
+        const code = error === null ? 0 : typeof error.code === "number" ? error.code : 1;
+        resolve({ code, stdout, stderr: stderr || (error?.message ?? "") });
+      },
+    );
   });
 }
 

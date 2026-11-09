@@ -3,6 +3,8 @@
 # watch, y anota cada llamada en $FAKE_LOG, si está definido.
 dir=$(dirname "$0")
 [ -n "$FAKE_LOG" ] && printf '%s\n' "$*" >> "$FAKE_LOG"
+# El entorno con que llegó, para comprobar que el worker no pasa el de Orca tal cual.
+[ -n "$FAKE_ENV_LOG" ] && printf 'USER=%s LOGNAME=%s ELECTRON_RUN_AS_NODE=%s NODE_CHANNEL_FD=%s\n' "$USER" "$LOGNAME" "$ELECTRON_RUN_AS_NODE" "$NODE_CHANNEL_FD" >> "$FAKE_ENV_LOG"
 case "$1" in
   watch) cat "${FAKE_WATCH:-$dir/watch.json}" ;;
   report) printf '{"ok":true,"sesion":"%s","texto":"Edit src/precio.ts\\nlisto"}\n' "$4" ;;

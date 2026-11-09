@@ -366,11 +366,15 @@ export default function Panel() {
   const snap = read(snapshot);
   if (snap === null)
     return (
+      // ponytail: la nave queda fija y el movimiento lo da el Spinner: Orca rechaza imágenes animadas.
       <Stack gap="sm" align="center">
-        <Image src="assets/nave.webp" alt="" size="md" />
-        <Text size="sm" muted>
-          Leyendo los runs…
-        </Text>
+        <Image src="assets/nave.png" alt="" size="md" />
+        <Row gap="sm" align="center">
+          <Spinner label="Leyendo los runs" labelHidden />
+          <Text size="sm" muted>
+            Leyendo los runs…
+          </Text>
+        </Row>
       </Stack>
     );
   const runs = sortRuns(snap.runs);

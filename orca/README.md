@@ -36,7 +36,7 @@ la nave en camino en vez de los runs del anterior. Para saber cuál está enfoca
 - `src/worker.ts` corre el CLI de flowrunner en un shell de login, para tener tu PATH: `watch`,
   `report --sesion`, `plan`, y cada decisión como un comando fijo (`approve`, `changes`, `resume`,
   `rerun --desde`, `learn`, `abort`). Valida el id del run, la fase y el motivo antes de llegar al shell.
-- `src/panel.tsx` dibuja la pestaña con los componentes de Orca 1.4.247; mientras lee los runs por primera vez, por ejemplo al cambiar de proyecto, muestra la nave en camino de `assets/nave.webp`, que sale de `scripts/nave.svg` con `scripts/nave-webp.mjs`.
+- `src/panel.tsx` dibuja la pestaña con los componentes de Orca 1.4.247; mientras lee los runs por primera vez, por ejemplo al cambiar de proyecto, muestra la nave de `assets/nave.png`, que sale de `scripts/nave.svg` con `scripts/nave-png.mjs`. Es fija: Orca rechaza las imágenes animadas de un plugin, así que lo que se mueve es el spinner.
 - `src/runs.ts` ordena los runs, agrupa las fases y decide qué decisiones ofrecer, sin depender de
   Orca.
 

@@ -7,6 +7,7 @@ import {
   Card,
   Code,
   EmptyState,
+  Link,
   List,
   ListItem,
   plugin,
@@ -58,7 +59,13 @@ function RunCard({ run }: { run: Run }) {
     <Card title={`${run.clave} · ${run.titulo}`} description={runSummary(run)}>
       <Stack gap="sm">
         {run.motivo === undefined ? null : <Text tone="danger">{run.motivo}</Text>}
-        {run.siguiente === undefined ? null : <Code>{run.siguiente}</Code>}
+        {run.siguiente === undefined ? null : run.siguiente.startsWith("https://") ? (
+          <Row>
+            <Link href={run.siguiente}>Abrir la PR</Link>
+          </Row>
+        ) : (
+          <Code>{run.siguiente}</Code>
+        )}
         <List label={`Fases de ${run.clave}`}>
           {runRows(run).map((row) => (
             <ListItem

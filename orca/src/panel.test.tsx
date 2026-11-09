@@ -31,12 +31,28 @@ test("muestra el run con sus fases, y al tocar una sesión sus pasos", async () 
   await withPanel(host, async (view) => {
     assert.ok(view.find({ label: "VF-2 · Precios en la base" }));
     assert.ok(view.find({ label: "└ ST-2 Comando /precio" }));
+    // Un run entregado lleva a su PR con un link, no con la URL cortada.
+    assert.equal(view.find({ text: "Abrir la PR" }), null);
     await view.press({ label: "  └ implementar-ST-2-1" });
     assert.ok(view.find({ label: "Pasos de implementar-ST-2-1" }));
     assert.ok(view.find({ text: "Edit src/precio.ts" }));
     await view.press({ text: "Cerrar" });
     assert.equal(view.find({ label: "Pasos de implementar-ST-2-1" }), null);
   });
+});
+
+test("un run entregado muestra el link a su PR", async () => {
+  const delivered = {
+    ...runs[0]!,
+    status: "entregado" as const,
+    siguiente: "https://github.com/o/r/pull/4",
+  };
+  await withPanel(
+    mockHost({ requests: { "flowrunner.runs": () => ({ runs: [delivered], at: 0 }) } }),
+    async (view) => {
+      assert.ok(view.find({ type: "Link", text: "Abrir la PR" }));
+    },
+  );
 });
 
 // Si regresiona, un flowrunner roto o sin runs deja el panel vacío sin decir por qué.

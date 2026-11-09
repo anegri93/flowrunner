@@ -176,11 +176,11 @@ El botón de pasos de una sesión y «Plan» abren el archivo como pestaña de O
 Para instalarlo, con Orca abierto:
 
 ```bash
-/Applications/Orca.app/Contents/Resources/bin/orca plugin dev load ~/Documents/PersonalProjects/flowrunner/orca
+flowrunner orca install
 ```
 
 Orca pide aprobarlo porque corre comandos en tu máquina: repetí el comando con el `--approve` que
-imprime.
+imprime. Si mudás la carpeta de flowrunner, volvé a correrlo para que Orca la encuentre.
 
 Los tokens nuevos son lo que cada fase leyó o escribió por primera vez, sin las relecturas de caché. El
 costo de lo que corre es un mínimo, `≥ 2.97`, porque la salida se conoce al terminar. Los USD son el

@@ -12,6 +12,7 @@ import { learnOne, tick } from "./tick.ts";
 import { describeDoctor, doctor } from "./doctor.ts";
 import { installLaunchd, uninstallLaunchd } from "./launchd.ts";
 import { installSkill } from "./skill.ts";
+import { installOrcaPlugin } from "./orca.ts";
 import { hookOutput, sessionStartContext } from "./hook.ts";
 import { readFileSync } from "node:fs";
 import { loadTree, resolveRun } from "../watch/load.ts";
@@ -48,6 +49,7 @@ const USAGE = `uso: flowrunner <comando> [--json]
   doctor                         qué le falta a esta máquina para correr runs
   launchd install|uninstall      instala o quita el job que corre tick
   skill install [--confirmar]    instala la skill de Claude Code; con --confirmar, las reglas ask y el hook
+  orca install [--approve fp]    carga en Orca el plugin de este flowrunner, esté donde esté clonado
   hook session-start             el hook de Claude Code: avisa a la sesión si el repo usa flowrunner
   stats [proyecto]               qué fase reintenta más, motivos, costo y lecciones
   project add <ruta>             registra un repo [--nombre n] [--github-user u]
@@ -107,6 +109,7 @@ export async function main(
       reemplazar: { type: "boolean", default: false },
       once: { type: "boolean", default: false },
       "github-user": { type: "string" },
+      approve: { type: "string" },
     },
   });
   const json = values.json === true;
@@ -266,6 +269,15 @@ export async function main(
               : "\nLas reglas ask y el hook ya estaban.";
         print(done, `skill instalada en ${done.skill}${rules}`);
         return 0;
+      }
+      case "orca": {
+        if (first !== "install") break;
+        const done = await installOrcaPlugin(
+          env,
+          typeof values.approve === "string" ? values.approve : undefined,
+        );
+        print(done, done.salida);
+        return done.ok ? 0 : 1;
       }
       case "stats": {
         const result = stats(home, first);

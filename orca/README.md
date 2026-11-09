@@ -13,6 +13,10 @@ como `flowrunner watch`, pensada para el ancho angosto de la barra:
   pestaña de Orca, si el panel está abierto.
 - El botón de pasos de una sesión, «Plan» y tocar la etapa «Aprobar», también con el plan ya
   aprobado, abren el archivo como pestaña de Orca, en el proyecto del run. El plugin lo escribe en `.git/flowrunner/<run>/` del repo, que git no versiona.
+- Tocar una etapa que ya arrancó abre su detalle como pestaña: los intentos y cómo terminó cada uno,
+  lo propio de la etapa (la rama, las sub-tasks y criterios, la aprobación, los hallazgos de la
+  revisión, la PR), y sus decisiones, rechazos, avisos y sesiones. Tocar una sub-task abre lo que
+  tenía que hacer, lo último que dijo su sesión y el diff de sus commits.
 - Las decisiones que el run espera, en una fila: aprobar o pedir cambios al plan, reanudar un run
   detenido o rehacerlo desde la fase que sugiere el motivo, y «Aprender ahora» en un run con la PR
   abierta, para no esperar el chequeo de cada 10 minutos después de mergear. Aprobar, reanudar y

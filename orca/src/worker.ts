@@ -191,6 +191,9 @@ export default function activate(orca: OrcaWorkerApi): void {
       if (what.tipo === "unidad" && !UNIT_ID.test(what.unidad)) {
         throw new Error(`sub-task inválida: ${String(what.unidad)}`);
       }
+      if (what.tipo === "etapa" && !PHASES.some((p) => p === what.fase)) {
+        throw new Error(`etapa inválida: ${String(what.fase)}`);
+      }
       const flowrunner = await command(orca);
       // `status` sirve también para un run ya cerrado, que `watch` no lista.
       const status = JSON.parse(await ok(`${flowrunner} status ${quote(runIdOk)} --json`)) as {
@@ -219,6 +222,12 @@ export default function activate(orca: OrcaWorkerApi): void {
           await ok(`${flowrunner} report ${quote(run.id)} --unidad ${quote(what.unidad)} --json`),
         ) as { texto?: unknown };
         file = join(dir, `${what.unidad}.md`);
+        writeFileSync(file, typeof data.texto === "string" ? data.texto : "");
+      } else if (what.tipo === "etapa") {
+        const data = JSON.parse(
+          await ok(`${flowrunner} report ${quote(run.id)} --fase ${what.fase} --json`),
+        ) as { texto?: unknown };
+        file = join(dir, `etapa-${what.fase}.md`);
         writeFileSync(file, typeof data.texto === "string" ? data.texto : "");
       } else if (what.tipo === "informe") {
         const data = JSON.parse(await ok(`${flowrunner} report ${quote(run.id)} --json`)) as {

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { git, GitError } from "../git/git.ts";
 import { readPlan } from "../phases/planificar.ts";
 import { MAX_DIFF_CHARS } from "../phases/revisar.ts";
-import { phaseSummaries, writeReport } from "../report/report.ts";
+import { phaseSummaries, plain, writeReport } from "../report/report.ts";
 import { describeSteps, transcriptSteps } from "../report/transcript.ts";
 import type { RunEvent } from "../store/events.ts";
 import { readLog } from "../store/run-log.ts";
@@ -65,7 +65,23 @@ function lastSaid(dir: string, unidad: string): string | undefined {
   return steps.findLast((s) => s.tipo === "texto")?.texto;
 }
 
-const ESTADO: Record<UnitEvent["estado"] | "pendiente", string> = {
+/** Cómo le fue a una sub-task desde el último plan: su estado, sus intentos y sus commits integrados. */
+export function unitHistory(events: readonly RunEvent[], unidad: string) {
+  // Planificar rehace la rama desde la base: lo integrado antes del último plan ya no está en ella.
+  const since = events.findLastIndex(
+    (e) => e.tipo === "accion_iniciada" && e.fase === "planificar",
+  );
+  const own = events
+    .slice(since + 1)
+    .filter((e): e is UnitEvent => e.tipo === "unidad" && e.unidad === unidad);
+  return {
+    estado: own.at(-1)?.estado ?? ("pendiente" as const),
+    intentos: own.filter((e) => e.estado === "iniciada").length,
+    shas: own.flatMap((e) => (e.estado === "integrada" && e.sha !== undefined ? [e.sha] : [])),
+  };
+}
+
+export const ESTADO: Record<UnitEvent["estado"] | "pendiente", string> = {
   pendiente: "pendiente",
   iniciada: "en curso",
   commiteada: "commiteada, sin integrar",
@@ -88,17 +104,7 @@ export async function showUnit(home: string, id: string, unidad: string, env: No
   if (task === undefined)
     throw new UserError(`el plan de ${id} no tiene ${unidad}`, `flowrunner plan ${id}`);
   const state = loadState(home, id);
-  const { events } = readLog(run.dir);
-  // Planificar rehace la rama desde la base: lo integrado antes del último plan ya no está en ella.
-  const since = events.findLastIndex(
-    (e) => e.tipo === "accion_iniciada" && e.fase === "planificar",
-  );
-  const own = events
-    .slice(since + 1)
-    .filter((e): e is UnitEvent => e.tipo === "unidad" && e.unidad === unidad);
-  const estado = own.at(-1)?.estado ?? "pendiente";
-  const intentos = own.filter((e) => e.estado === "iniciada").length;
-  const shas = own.flatMap((e) => (e.estado === "integrada" && e.sha !== undefined ? [e.sha] : []));
+  const { estado, intentos, shas } = unitHistory(readLog(run.dir).events, unidad);
   // Los worktrees del run comparten los objetos del repo: el commit se lee de ahí aunque ya no estén.
   const commits = await Promise.all(
     shas.map(async (sha) => {
@@ -135,7 +141,7 @@ export async function showUnit(home: string, id: string, unidad: string, env: No
     "",
     "## Qué tenía que hacer",
     "",
-    task.descripcion,
+    plain(task.descripcion),
     "",
     `- **Alcance:** ${task.alcance.map((a) => `\`${a}\``).join(", ")}`,
     ...(criterios.length > 0

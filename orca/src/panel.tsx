@@ -166,8 +166,8 @@ function Current({ run, row }: { run: Run; row: StageRow }) {
 /** El run ya tiene plan: planificar terminó, aunque después se haya aprobado o corregido. */
 const hasPlan = (run: Run) => run.fases.some((p) => p.fase === "planificar" && p.estado === "ok");
 
-/** Una etapa: su estado, su nombre, sus intentos y su tiempo. La que trabaja gira. Tocar «Aprobar»
- * abre el plan, el que espera o el que se aprobó. */
+/** Una etapa: su estado, su nombre, sus intentos y su tiempo. La que trabaja gira. Tocar una etapa
+ * que ya arrancó abre su detalle; tocar «Aprobar» abre el plan, el que espera o el que se aprobó. */
 function Stage({ run, row }: { run: Run; row: StageRow }) {
   const pending = row.estado === "pendiente";
   return (
@@ -183,9 +183,13 @@ function Stage({ run, row }: { run: Run; row: StageRow }) {
           )}
           {row.fase === "aprobar" && hasPlan(run) ? (
             <Link onPress={() => open(run.id, { tipo: "plan" })}>{row.nombre}</Link>
+          ) : pending ? (
+            <Text muted>{row.nombre}</Text>
           ) : (
-            <Text weight={row.actual ? "semibold" : "regular"} muted={pending}>
-              {row.nombre}
+            <Text weight={row.actual ? "semibold" : "regular"}>
+              <Link onPress={() => open(run.id, { tipo: "etapa", fase: row.fase })}>
+                {row.nombre}
+              </Link>
             </Text>
           )}
           {row.actual ? (

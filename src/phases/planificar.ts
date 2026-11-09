@@ -1,8 +1,16 @@
 // Planificar: una sesión de Opus que lee el código con graft y un explorador, escribe los tests de
 // aceptación dentro de los globs de tests, y devuelve el plan. El gate decide si sirve.
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 import { loadBrain, type Brain } from "../brain/brain.ts";
 import { loadRepoConfig } from "../config/load.ts";
 import type { RepoConfig } from "../config/schemas.ts";
@@ -14,6 +22,7 @@ import type { PhaseFn, RunPaths } from "../runner/types.ts";
 import { runSession } from "../agent/session.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
 import { graftIndex, prepared, runFeature } from "./inputs.ts";
+import { archivePlan, previousDir, replanOf, replanText } from "./plan-anterior.ts";
 
 export const PLANIFICAR_BUDGET_USD = 8;
 export const PLANIFICAR_TIMEOUT_MS = 30 * 60_000;
@@ -52,10 +61,12 @@ export function writePlanArtifacts(
   writeFileSync(join(run.dir, "locked.json"), `${JSON.stringify(locked, null, 2)}\n`);
 }
 
-export function readPlan(
-  run: RunPaths,
+export const readPlan = (run: RunPaths) => readPlanAt(run.dir);
+
+export function readPlanAt(
+  dir: string,
 ): Pick<Plan, "subtareas" | "criterios"> & { plan: string; locked: Record<string, string> } {
-  const read = (name: string) => readFileSync(join(run.dir, name), "utf8");
+  const read = (name: string) => readFileSync(join(dir, name), "utf8");
   return {
     plan: read("plan.md"),
     subtareas: JSON.parse(read("tasks.json")) as Plan["subtareas"],
@@ -68,8 +79,21 @@ export const planificar: PhaseFn = async (ctx) => {
   const { run, deps, emit, action } = ctx;
   const prep = prepared(ctx.events);
   const worktree = prep.worktree;
-  // Cada intento arranca de la base: los tests de un intento rechazado no se arrastran.
+  // Cada intento arranca de la base con los tests del plan anterior, si lo hay, tal como quedaron
+  // bloqueados: los de un intento rechazado no se arrastran, y una nueva vuelta no reescribe lo que ya
+  // estaba bien.
+  const previous = archivePlan(run) ? readPlanAt(previousDir(run)) : undefined;
+  const restored = Object.entries(previous?.locked ?? {}).flatMap(([path, hash]) => {
+    const file = join(worktree, path);
+    if (!existsSync(file)) return [];
+    const content = readFileSync(file, "utf8");
+    return sha256(content) === hash ? [[path, content] as const] : [];
+  });
   await resetHard(worktree, prep.base_sha, deps.env);
+  for (const [path, content] of restored) {
+    mkdirSync(dirname(join(worktree, path)), { recursive: true });
+    writeFileSync(join(worktree, path), content);
+  }
   const config: RepoConfig = loadRepoConfig(worktree);
   const brain = loadBrain(worktree);
   const feature = runFeature(run);
@@ -96,10 +120,7 @@ export const planificar: PhaseFn = async (ctx) => {
     },
     emit,
   );
-  const instruccion =
-    action.instruccion === undefined
-      ? ""
-      : `# Atención: este es un nuevo intento\n\n${action.instruccion}\n\nCorregilo en este plan.`;
+  const instruccion = replanText(previous, replanOf(ctx.events, action.instruccion));
   const result = await runSession(
     {
       fase: "planificar",
@@ -137,6 +158,9 @@ export const planificar: PhaseFn = async (ctx) => {
       ? result
       : { tipo: "falla", clase: result.clase, motivo: result.motivo };
   const plan = result.output;
+  for (const [path] of restored.filter(([path]) => !plan.tests.includes(path))) {
+    rmSync(join(worktree, path), { force: true });
+  }
   for (const d of plan.decisiones)
     emit({ tipo: "decision", fase: "planificar", que: d.que, por_que: d.por_que });
 

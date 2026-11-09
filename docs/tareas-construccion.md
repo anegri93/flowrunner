@@ -406,6 +406,17 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano; sin hallazgos. Los guiones del SDK simulado se reparten entre procesos con un contador en archivo, solo en los tests.
 - **Desbloquea:** Gate F4
 
+
+### T4.3b · Un pedido de cambios parte del plan anterior
+- **Estado:** `[x] Hecho`
+- **Regresión de:** T4.3
+- **Descripción:** en VF-1 se pidieron cambios dos veces, cada una con «corregir solo esto». Cada vuelta rehízo el diseño entero, y la tercera perdió lo que había pedido la primera. Cada intento arrancaba de la base y el prompt traía solo el último pedido. Ahora planificar archiva el plan vigente en `anterior/` y restaura sus tests bloqueados después del reset. Le pasa al planificador el plan anterior, todos los pedidos de cambios en orden y el motivo de este intento: el del gate, o en un `rerun --desde planificar`, el de la detención. Un test del plan anterior que el plan nuevo no declara se borra. `flowrunner plan` muestra qué cambió contra el plan anterior: sub-tasks, alcances y tests, agregados y quitados.
+- **Lint:** `pnpm lint`.
+- **Test:** `test/approval.int.test.ts` › «dos changes seguidos»: por el CLI real, la tercera vuelta recibe los dos pedidos en orden y el plan anterior, y `plan --json` trae la sub-task renombrada como agregada y quitada. `src/phases/planificar.test.ts`: los tests del plan anterior vuelven al worktree y una vuelta que no escribe nada pasa el gate; un test que el plan nuevo no declara se borra. `src/phases/plan-anterior.test.ts`: los pedidos en orden, el motivo de la detención en un rerun y solo en su primer intento, y el diff de sub-tasks, alcances y tests.
+- **Canario:** con `planificar.ts` y `approval.ts` de main, el de integración y el de los tests restaurados se pusieron en rojo. El de borrar pasa en main, que nunca restaura: sin el borrado se puso en rojo, «expected [ 'tests/ac1.mjs', 'tests/ac1b.mjs' ]».
+- **Criterio de aprobación:** en el próximo run con `changes`, la segunda planificación conserva lo que el pedido no menciona y cuesta mucho menos que la primera. Se mide con `flowrunner stats`.
+- **Revisión ponytail:** a mano. Sin cambios en el motor: la historia sale de los eventos, que ya la tenían.
+- **Desbloquea:** Gate F4
 ### Gate Fase 4
 - **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.

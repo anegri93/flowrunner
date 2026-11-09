@@ -185,11 +185,18 @@ export default function activate(orca: OrcaWorkerApi): void {
       if (what.tipo === "pasos" && !SESSION_NAME.test(what.sesion)) {
         throw new Error(`sesión inválida: ${String(what.sesion)}`);
       }
-      const run = (await watch()).find((r) => r.id === runIdOk);
-      if (run === undefined) throw new Error(`no encontré el run ${runIdOk} entre los activos`);
+      const flowrunner = await command(orca);
+      // `status` sirve también para un run ya cerrado, que `watch` no lista.
+      const status = JSON.parse(await ok(`${flowrunner} status ${quote(runIdOk)} --json`)) as {
+        run?: { id?: unknown; clave?: unknown; repo?: unknown };
+      };
+      const { id: foundId, clave, repo } = status.run ?? {};
+      if (typeof foundId !== "string" || typeof clave !== "string" || typeof repo !== "string") {
+        throw new Error(`flowrunner no devolvió el repo del run ${runIdOk}`);
+      }
+      const run = { id: foundId, clave, repo };
       const dir = await viewDir(run.repo, run.id);
       mkdirSync(dir, { recursive: true });
-      const flowrunner = await command(orca);
       let file: string;
       if (what.tipo === "pasos") {
         const data = JSON.parse(
@@ -200,6 +207,12 @@ export default function activate(orca: OrcaWorkerApi): void {
           file,
           stepsMarkdown(run.clave, what.sesion, typeof data.texto === "string" ? data.texto : ""),
         );
+      } else if (what.tipo === "informe") {
+        const data = JSON.parse(await ok(`${flowrunner} report ${quote(run.id)} --json`)) as {
+          informe?: unknown;
+        };
+        file = join(dir, "informe.md");
+        writeFileSync(file, typeof data.informe === "string" ? data.informe : "");
       } else {
         const data: unknown = JSON.parse(await ok(`${flowrunner} plan ${quote(run.id)} --json`));
         file = join(dir, "plan.md");

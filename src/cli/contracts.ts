@@ -7,6 +7,8 @@ export const runSummarySchema = z.strictObject({
   id: z.string(),
   clave: z.string(),
   proyecto: z.string(),
+  /** La ruta del repo del run: lo que una vista necesita para abrir sus archivos. */
+  repo: z.string(),
   status: z.enum([
     "en_curso",
     "esperando_aprobacion",
@@ -50,6 +52,7 @@ export function summarize(state: RunState): RunSummary {
     id: state.runId,
     clave: state.clave,
     proyecto: state.proyecto,
+    repo: state.repo,
     status: state.status,
     fase: state.fase,
     costo_usd: Math.round(state.costoUsd * 10_000) / 10_000,

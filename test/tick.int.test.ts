@@ -1,5 +1,5 @@
 // T7.1: flowrunner tick y learn: runs pausados y el estado de las PRs entregadas.
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { appendEvent, readLog } from "../src/store/run-log.ts";
@@ -51,6 +51,19 @@ describe("tick", () => {
     d.setPr(412, (pr) => (pr.state = "MERGED"));
     expect(runCli(["learn", d.id], d.env).stdout).toContain("quedó cerrado");
     expect(d.prompts()).toBe(promptsBefore);
+  }, 180_000);
+
+  // Regresión: el cierre después del merge lo hace el chequeo, que no escribía el informe, y VF-4 quedó
+  // con el de la entrega. Además, `learn` no aceptaba la clave del run: «no existe el run VF-4».
+  test("learn con la clave cierra el run y escribe el informe final", async () => {
+    const d = await delivered();
+    d.setPr(412, (pr) => (pr.state = "MERGED"));
+    const out = runCli(["learn", "SHOP-214"], d.env);
+    expect(out.status).toBe(0);
+    expect(out.stdout).toContain("quedó cerrado");
+    expect(readFileSync(join(runDir(d, d.id), "informe.md"), "utf8")).toContain(
+      "**Estado:** cerrado",
+    );
   }, 180_000);
 
   test("dos ticks a la vez: el segundo sale sin hacer nada; learn sobre un run ocupado no lo pisa", async () => {

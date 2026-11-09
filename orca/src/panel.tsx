@@ -46,6 +46,17 @@ const toggled = atom("abiertos", {} as Record<string, boolean>, { persist: "plug
 const notice = atom<{ run: string; texto: string } | null>(null);
 
 let reading = false;
+/**
+ * Los runs que se cerraron entre dos lecturas: estaban entregados, esperando el merge, y ya no están
+ * entre los activos. Al cerrarse, su informe se abre solo.
+ */
+function closedSince(prev: Snapshot | null, next: Snapshot): string[] {
+  // Una vez por run: en la lectura siguiente, el run ya no está en la anterior.
+  if (prev === null) return [];
+  return prev.runs
+    .filter((r) => r.status === "entregado" && !next.runs.some((n) => n.id === r.id))
+    .map((r) => r.id);
+}
 
 /**
  * Lee los runs sin borrar lo que se ve: una lectura que falla deja los runs anteriores con el
@@ -57,6 +68,8 @@ export async function refresh(): Promise<void> {
   try {
     const next = await plugin.request("flowrunner.runs");
     const prev = read(snapshot);
+    if (next.error === undefined)
+      for (const id of closedSince(prev, next)) void open(id, { tipo: "informe" });
     const shown = next.error !== undefined && prev !== null ? { ...prev, error: next.error } : next;
     const same =
       prev !== null && JSON.stringify({ ...prev, at: 0 }) === JSON.stringify({ ...shown, at: 0 });
@@ -73,7 +86,7 @@ export async function refresh(): Promise<void> {
   }
 }
 
-/** Abre los pasos de una sesión o el plan como pestaña de Orca; si no se puede, dice por qué. */
+/** Abre los pasos, el plan o el informe como pestaña de Orca; si no se puede, dice por qué. */
 async function open(run: string, que: Openable): Promise<void> {
   set(notice, null);
   try {

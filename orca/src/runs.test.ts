@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import { assert, test } from "orca/testing";
 import {
+  canAbort,
   decisionsFor,
   duration,
   headlineOf,
@@ -149,6 +150,15 @@ test("las decisiones dependen del estado del run", () => {
     rerunPhase({ ...stopped, siguiente: "flowrunner rerun X --desde `rm -rf`" }),
     undefined,
   );
+});
+
+// Si regresiona, un run vivo no se puede abortar desde el panel, o se ofrece abortar uno terminado.
+test("se puede abortar todo run vivo, en cualquier estado, y ninguno cerrado o abortado", () => {
+  for (const r of runs) assert.equal(canAbort(r), true, r.clave);
+  for (const status of ["detenido", "pausado_por_limite", "entregado"] as const)
+    assert.equal(canAbort({ ...byKey("VF-2"), status }), true, status);
+  for (const status of ["cerrado", "abortado"] as const)
+    assert.equal(canAbort({ ...byKey("VF-2"), status }), false, status);
 });
 
 // Si regresiona, la pestaña del plan no trae lo que hace falta para decidir: las sub-tasks con su

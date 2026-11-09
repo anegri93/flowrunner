@@ -22,9 +22,10 @@ import {
   update,
   type PanelContext,
 } from "orca";
-import { Decisions } from "./decisiones";
+import { Abort, Decisions } from "./decisiones";
 import type { Openable, Snapshot } from "./protocol";
 import {
+  canAbort,
   clock,
   decisionsFor,
   isFinished,
@@ -247,6 +248,8 @@ function RunCard({ run }: { run: Run }) {
             {footer}
           </Text>
         </Row>
+        {canAbort(run) ? <Separator /> : null}
+        <Abort run={run} after={refresh} />
       </Stack>
     </Card>
   );

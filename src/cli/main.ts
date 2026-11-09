@@ -16,7 +16,7 @@ import { hookOutput, sessionStartContext } from "./hook.ts";
 import { readFileSync } from "node:fs";
 import { loadTree } from "../watch/load.ts";
 import { renderRuns, watchLive, watchTargets } from "./watch.ts";
-import { describeInit, init } from "../setup/init.ts";
+import { describeInit, draftExistingBrain, init } from "../setup/init.ts";
 import { productionRuntime } from "../runner/production.ts";
 import { describeStats, stats } from "../report/stats.ts";
 import {
@@ -51,7 +51,8 @@ const USAGE = `uso: flowrunner <comando> [--json]
   hook session-start             el hook de Claude Code: avisa a la sesión si el repo usa flowrunner
   stats [proyecto]               qué fase reintenta más, motivos, costo y lecciones
   project add <ruta>             registra un repo [--nombre n] [--github-user u]
-  brain init <ruta>              escribe las plantillas de .flowrunner/ sin pisar nada`;
+  brain init <ruta>              escribe las plantillas de .flowrunner/ sin pisar nada
+  brain draft <ruta>             propone en una PR un borrador del cerebro leído del código`;
 
 function describeList(list: z.infer<typeof statusListSchema>): string {
   if (list.runs.length === 0) return "no hay runs";
@@ -272,6 +273,12 @@ export async function main(
         return 0;
       }
       case "brain": {
+        if (first === "draft") {
+          const { deps } = await productionRuntime(env, () => undefined);
+          const drafted = await draftExistingBrain(need(rest[0], "la ruta del repo"), deps);
+          print(drafted, `${drafted.paso.que}: ${drafted.paso.detalle}`);
+          return drafted.ok ? 0 : 1;
+        }
         if (first !== "init") break;
         const init = await initRepoBrain(need(rest[0], "la ruta del repo"), env);
         print(

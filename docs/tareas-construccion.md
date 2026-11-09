@@ -899,6 +899,16 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. Reusa `runSession`, `tripwireHook`, `render` y el SDK simulado de los runs; `init` recibe las `Deps` de `productionRuntime` en lugar de armar las suyas.
 - **Desbloquea:** Gate final
 
+### T9.6 · `brain draft`: el borrador para un repo que ya usa flowrunner
+- **Estado:** `[x] Hecho`
+- **Descripción:** T9.5 solo redacta el borrador cuando `init` arma el cerebro; en un repo que ya lo tenía, `init` da el cerebro por hecho y no lo toca. Ahora `flowrunner brain draft <ruta>` lo pide aparte. Comprueba que la base tenga cerebro, abre un worktree limpio de `origin/<base>` y corre la misma sesión de `src/setup/draft.ts`. El prompt también recibe lo que el cerebro ya dice, para no repetirlo. El borrador va debajo de lo que escribió la persona, en la rama `chore/flowrunner-borrador`, con su PR. No pide otro si la PR sigue abierta o si la base ya tiene la sección del borrador. Si con el borrador algún archivo pasaría su tope de caracteres, no empuja nada. `init` sobre un repo con cerebro sugiere el comando. El commit, el push y la PR del cerebro quedaron en una función que usan los dos.
+- **Lint:** `pnpm lint`.
+- **Test:** `test/init.int.test.ts` › `brain draft`: en un repo con cerebro y una regla de la persona, la PR trae el borrador debajo de la regla, el prompt la incluye y un segundo pedido no abre otra PR ni corre otra sesión; con la sección del borrador ya en la base no corre ninguna sesión; con `convenciones.md` a 100 caracteres del tope sale 1 sin empujar; sin cerebro pide `init --aplicar`. `init` con el cerebro en la base sugiere `brain draft`.
+- **Canario:** con `init.ts`, `draft.ts`, `main.ts`, `git.ts` y el prompt de la base, los 5 tests fallaron; sin la comprobación del tope falló el del tope, y sin la del borrador repetido, el suyo. Restaurado.
+- **Criterio de aprobación:** `flowrunner brain draft` sobre un repo que ya usa flowrunner abre una PR con el borrador debajo de lo que había.
+- **Revisión ponytail:** a mano. Reusa `draftBrain`, `loadBrain`, `loadRepoConfig` y el worktree de init; la única rama nueva que puede empujar flowrunner es `chore/flowrunner-borrador`.
+- **Desbloquea:** Gate final
+
 ### Gate Fase 9
 - **Estado:** `[~] En progreso` — falta correrlo sobre un repo real
 - **Validación de lint:** `pnpm lint` verde.

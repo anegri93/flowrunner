@@ -6,14 +6,13 @@ import {
   duration,
   headlineOf,
   isFinished,
-  MAX_TEXT_CHARS,
   nowOf,
   parseWatch,
   planView,
   progressOf,
   rerunPhase,
   sortRuns,
-  stepsOf,
+  stationsOf,
   tokenCount,
   type Run,
 } from "./runs";
@@ -24,7 +23,7 @@ const byKey = (clave: string): Run => {
   assert.ok(run !== undefined);
   return run;
 };
-const marks = (run: Run) => stepsOf(run).map((s) => `${s.label}:${s.estado}`);
+const states = (run: Run) => stationsOf(run).map((s) => `${s.nombre}:${s.estado}`);
 
 // Si regresiona, un run viejo y entregado queda arriba y tapa al que está trabajando.
 test("los runs más recientes van arriba, y un run con la PR abierta cuenta como terminado", () => {
@@ -36,35 +35,38 @@ test("los runs más recientes van arriba, y un run con la PR abierta cuenta como
   assert.equal(isFinished(byKey("VF-2")), false);
 });
 
-// Si regresiona, los cinco pasos no dicen de un vistazo dónde está el run ni qué espera de vos.
-test("los cinco pasos: listos, el actual, el que te espera y los pendientes", () => {
-  assert.deepEqual(marks(byKey("VF-2")), [
-    "Plan:listo",
-    "Tu OK:pendiente",
-    "Código:ahora",
-    "Control:pendiente",
-    "PR:pendiente",
+// Si regresiona, el panel inventa pasos que no son los del flujo.
+test("las ocho etapas del flujo, con su nombre y el estado de su fase en flowrunner", () => {
+  assert.deepEqual(states(byKey("PIZ-3")), [
+    "Preparar:ok",
+    "Planificar:ok",
+    "Aprobar:espera",
+    "Implementar:pendiente",
+    "Verificar:pendiente",
+    "Revisar:pendiente",
+    "Entregar:pendiente",
+    "Aprender:pendiente",
   ]);
-  assert.deepEqual(marks(byKey("PIZ-3")), [
-    "Plan:listo",
-    "Tu OK:espera",
-    "Código:pendiente",
-    "Control:pendiente",
-    "PR:pendiente",
+  assert.deepEqual(states(byKey("VF-2")).slice(0, 5), [
+    "Preparar:ok",
+    "Planificar:ok",
+    "Aprobar:pendiente",
+    "Implementar:corriendo",
+    "Verificar:pendiente",
   ]);
-  assert.deepEqual(marks(byKey("VF-1")), [
-    "Plan:listo",
-    "Tu OK:listo",
-    "Código:listo",
-    "Control:listo",
-    "PR:espera",
-  ]);
-  assert.equal(progressOf(byKey("PIZ-3")), 30);
-  assert.equal(progressOf(byKey("VF-1")), 90);
+  assert.equal(progressOf(byKey("PIZ-3")), 25);
+  assert.equal(progressOf(byKey("VF-1")), 88);
 });
 
-// Si regresiona, un run detenido se ve como si siguiera trabajando.
-test("un run detenido marca en rojo el paso donde se detuvo", () => {
+// Si regresiona, la frase no dice en qué etapa está ni con las palabras de `flowrunner watch`.
+test("la frase nombra la etapa actual y su estado, como el diagrama y watch", () => {
+  assert.deepEqual(headlineOf(byKey("PIZ-3")), {
+    emoji: "🟡",
+    texto: "Aprobar — te espera",
+    tone: "warning",
+  });
+  assert.equal(headlineOf(byKey("VF-2")).texto, "Implementar — trabajando · 1 de 2 integradas");
+  assert.equal(headlineOf(byKey("VF-1")).texto, "Aprender — espera merge");
   const stopped: Run = {
     ...byKey("VF-2"),
     status: "detenido",
@@ -72,41 +74,31 @@ test("un run detenido marca en rojo el paso donde se detuvo", () => {
       p.fase === "implementar" ? { ...p, estado: "falla", detalle: "ST-2 falló" } : p,
     ),
   };
-  assert.equal(stepsOf(stopped)[2]?.estado, "falla");
   assert.deepEqual(headlineOf(stopped), {
     emoji: "🔴",
-    texto: "Se detuvo en implementar",
+    texto: "Implementar — falló · 1 de 2 integradas",
     tone: "danger",
   });
   assert.equal(nowOf(stopped).detalle, "ST-2 falló");
 });
 
-// Si regresiona, la frase del estado no dice qué pasa ni cuánto falta.
-test("la frase dice qué pasa, y en implementar, cuántas sub-tasks van", () => {
-  assert.deepEqual(headlineOf(byKey("VF-2")), {
-    emoji: "🔵",
-    texto: "Implementando · 1 de 2 sub-tasks",
-    tone: "accent",
-  });
-  assert.equal(headlineOf(byKey("PIZ-3")).texto, "El plan te espera");
-  assert.equal(headlineOf(byKey("VF-1")).texto, "PR abierta: falta tu merge");
-});
-
-// Si regresiona, el detalle no muestra qué sub-tasks faltan ni qué hace la sesión que corre.
-test("el detalle: las sub-tasks como lista de tareas y la sesión que corre primero", () => {
+// Si regresiona, el detalle no muestra las sub-tasks, ni el tiempo y el costo de cada etapa.
+test("el detalle: las sub-tasks con su estado, la sesión que corre y cada etapa con su tiempo", () => {
   const now = nowOf(byKey("VF-2"));
   assert.deepEqual(
-    now.tareas.map((t) => [t.mark, t.texto, t.nota]),
-    [
-      ["✓", "ST-1 Tabla de precios", "lista"],
-      ["●", "ST-2 Comando /precio", "trabajando"],
-    ],
+    now.tareas.map((t) => `${t.mark} ${t.texto}`),
+    ["✓ ST-1 Tabla de precios · integrada", "● ST-2 Comando /precio · trabajando"],
   );
   assert.deepEqual(now.actividad[0], {
     sesion: "implementar-ST-2-1",
     texto: "implementar-ST-2-1 · sonnet-5-5 · 40k · ≥ $0.25",
     ahora: "▸ Edit src/precio.ts · ctx 52k",
   });
+  assert.deepEqual(now.porPaso, [
+    { label: "Preparar", meta: "16s" },
+    { label: "Planificar", meta: "6m12s · $1.70" },
+    { label: "Implementar", meta: "3m20s · ≥ $1.25" },
+  ]);
   assert.equal(now.meta, "≥ $2.95 · 20m00s");
 });
 
@@ -128,16 +120,16 @@ test("las decisiones dependen del estado del run", () => {
 });
 
 // Regresión: el plan de VF-3 pasaba los 16 KiB que Orca dibuja por texto, y el panel se trababa.
-test("el plan se recorta a lo que Orca dibuja y trae lo que cambió contra el anterior", () => {
+test("el plan se muestra entero, línea por línea, ninguna sobre el límite de Orca", () => {
   const view = planView({
-    plan: "x".repeat(30_000),
+    plan: `# Plan\n\n${"una línea larga del plan. ".repeat(1_500)}\n- otra`,
     subtareas: [{ id: "ST-1", titulo: "Variables", alcance: ["src/"] }],
     criterios: [{ id: "AC-1" }, { id: "AC-2" }],
     cambios: { subtareas_agregadas: ["ST-1 Variables"], tests_quitados: [] },
   });
-  assert.equal(view.recortado, true);
-  assert.ok(Buffer.byteLength(view.texto) < 16 * 1024);
-  assert.equal(view.texto.length, MAX_TEXT_CHARS + 1);
+  assert.equal(view.lineas.length, 3);
+  assert.equal(view.lineas[0], "# Plan");
+  assert.ok(view.lineas.every((l) => Buffer.byteLength(l) < 16 * 1024));
   assert.deepEqual(view.subtareas, [{ id: "ST-1", titulo: "Variables" }]);
   assert.equal(view.criterios, 2);
   assert.deepEqual(view.cambios, ["sub-tasks nuevas: ST-1 Variables"]);

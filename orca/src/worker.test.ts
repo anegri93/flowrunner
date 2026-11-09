@@ -25,7 +25,7 @@ async function fakeWorker() {
 }
 
 // Si regresiona, el panel no recibe los runs de flowrunner.
-test("lee los runs con el comando de la config, los pasos de una sesión y el plan", async () => {
+test("lee los runs con el comando de la config, los pasos de una sesión y el plan que espera", async () => {
   const { worker } = await fakeWorker();
   try {
     const snap = await worker.request("flowrunner.runs");
@@ -39,13 +39,13 @@ test("lee los runs con el comando de la config, los pasos de una sesión y el pl
       sesion: "implementar-ST-2-1",
     });
     assert.deepEqual(steps, { sesion: "implementar-ST-2-1", texto: "Edit src/precio.ts\nlisto" });
-    const plan = await worker.request("flowrunner.plan", { run: "PIZ-3-20261109-010000" });
-    assert.deepEqual(plan, {
+    const current = await worker.request("flowrunner.planActual");
+    assert.equal(current.run?.clave, "PIZ-3");
+    assert.deepEqual(current.plan, {
       subtareas: [{ id: "ST-1", titulo: "Variables de color" }],
       criterios: 1,
       cambios: ["sub-tasks nuevas: ST-1 Variables de color"],
-      texto: "# Plan\nModo oscuro con variables.",
-      recortado: false,
+      lineas: ["# Plan", "Modo oscuro con variables."],
     });
     assert.deepEqual(worker.refusals, []);
   } finally {
@@ -85,6 +85,22 @@ test("cada decisión corre su comando fijo, con el motivo tal cual, y devuelve l
       `resume ${id} --json`,
     ]);
   } finally {
+    await worker.deactivate();
+  }
+});
+
+// Si regresiona, «Plan» no abre la pestaña del plan, o la abre con otro run.
+test("ver un plan abre su pestaña con el CLI de Orca y la pestaña muestra ese run", async () => {
+  const { worker, calls } = await fakeWorker();
+  process.env.ORCA_CLI = fileURLToPath(new URL("../test/fake-orca.sh", import.meta.url));
+  try {
+    const opened = await worker.request("flowrunner.verPlan", { run: "VF-2-20261109-001527" });
+    assert.equal(opened.ok, true);
+    assert.ok(calls().includes("orca plugin open local.flowrunner --panel plan"));
+    const current = await worker.request("flowrunner.planActual");
+    assert.equal(current.run?.clave, "VF-2");
+  } finally {
+    delete process.env.ORCA_CLI;
     await worker.deactivate();
   }
 });

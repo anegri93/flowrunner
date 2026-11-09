@@ -802,6 +802,17 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. Los cinco pasos agrupan las ocho fases como las ve la persona; no hay estado nuevo en flowrunner.
 - **Desbloquea:** Gate Fase 8
 
+### T8.7d · Las etapas del flujo, el plan en su pestaña y un refresco que no borra
+- **Estado:** `[x] Hecho`
+- **Regresión de:** T8.7c
+- **Descripción:** pedido de la persona al usarlo: las etapas tienen que ser las del flujo, con sus nombres y sus estados, sin pasos ni estados inventados. Los botones van en una fila horizontal. «Plan» abre una pestaña aparte. El refresco no tiene que borrar nada. Ahora las ocho etapas se ven por nombre, cada una como etiqueta del color de su estado, con los mismos textos que `flowrunner watch`. La frase dice la etapa actual, por ejemplo `Aprobar — te espera`. La pestaña «Plan de flowrunner» muestra el plan entero línea por línea, con las decisiones arriba. El worker la abre con `orca plugin open`, porque ningún método del host abre un panel. Una lectura que falla deja los runs que se veían con el error arriba. Una que no cambió nada no vuelve a dibujar, y nunca hay dos lecturas a la vez. Las decisiones viven en `src/decisiones.tsx`, que comparten las dos pestañas.
+- **Lint:** `pnpm lint` y `orca plugin validate`.
+- **Test:** `pnpm orca:test`, 20 tests. Regresión: `panel.test.tsx` › «si una lectura falla, los runs que se veían quedan». También: las etapas por nombre y estado, «Plan» abre su pestaña con el CLI de Orca, la pestaña del plan con el plan entero y las decisiones, y la frase de la etapa actual.
+- **Canario:** el refresco que reemplaza los runs por los de una lectura fallida, «Plan» sin abrir la pestaña y las etapas abreviadas pusieron en rojo sus tests.
+- **Criterio de aprobación:** `orca plugin shot` a 300 px muestra VF-3 con las ocho etapas por nombre y «Implementar — trabajando · 3 de 4 integradas»; la pestaña del plan, vacía mientras ningún plan espera.
+- **Revisión ponytail:** a mano. El estado sale de las fases de flowrunner; el panel no agrega ninguno.
+- **Desbloquea:** Gate Fase 8
+
 ### Gate Fase 8
 - **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.

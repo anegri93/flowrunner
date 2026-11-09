@@ -1,9 +1,9 @@
-// El panel con un worker simulado: cada run como el seguimiento de un pedido, los pasos de una
-// sesión, el plan y las decisiones.
+// La pestaña de los runs con un worker simulado: las tarjetas, las etapas, el detalle, las
+// decisiones y un refresco que no borra lo que se ve.
 import { readFileSync } from "node:fs";
 import { assert, mockHost, mount, test } from "orca/testing";
 import * as panel from "./panel";
-import type { Decision } from "./runs";
+import type { Decision, Run } from "./runs";
 import { parseWatch } from "./runs";
 
 const runs = parseWatch(readFileSync(new URL("../test/watch.json", import.meta.url), "utf8"));
@@ -26,36 +26,35 @@ async function withPanel(host: ReturnType<typeof mockHost>, body: (view: View) =
 const withRuns = (extra: Record<string, (input: never) => unknown> = {}) =>
   mockHost({ requests: { "flowrunner.runs": () => ({ runs, at: 0 }), ...extra } });
 
-// Si regresiona, el panel deja de leerse de un vistazo: sin la frase del estado, el avance y los pasos.
-test("cada run muestra su estado en una frase, el avance y los cinco pasos; los más recientes arriba", async () => {
+// Si regresiona, el panel deja de leerse de un vistazo, o muestra etapas que no son las del flujo.
+test("cada run: la etapa actual con su estado, el avance y las ocho etapas por nombre", async () => {
   await withPanel(withRuns(), async (view) => {
-    const cards = view.findAll({ type: "Card" }).map((c) => c.label);
-    assert.deepEqual(cards, [
-      "PIZ-3 · Modo oscuro",
-      "VF-2 · Precios en la base",
-      "VF-1 · Registro de costos",
-    ]);
-    assert.ok(view.find({ text: "🟡 El plan te espera" }));
-    assert.ok(view.find({ text: "🔵 Implementando · 1 de 2 sub-tasks" }));
-    assert.ok(view.find({ text: "🟢 PR abierta: falta tu merge" }));
-    assert.equal(view.findAll({ text: "Tu OK" }).length, 3);
+    assert.deepEqual(
+      view.findAll({ type: "Card" }).map((c) => c.label),
+      ["PIZ-3 · Modo oscuro", "VF-2 · Precios en la base", "VF-1 · Registro de costos"],
+    );
+    assert.ok(view.find({ text: "🟡 Aprobar — te espera" }));
+    assert.ok(view.find({ text: "🔵 Implementar — trabajando · 1 de 2 integradas" }));
+    assert.ok(view.find({ text: "🟡 Aprender — espera merge" }));
+    assert.equal(view.findAll({ text: "● Aprobar" }).length, 1);
+    assert.equal(view.findAll({ text: "✓ Preparar" }).length, 3);
     assert.equal(view.findAll({ type: "Progress" }).length, 3);
   });
 });
 
 // Si regresiona, un run terminado vuelve a ocupar el panel con todo su detalle.
-test("el detalle de un run terminado se abre a pedido", async () => {
+test("el detalle de un run terminado se abre a pedido, con el tiempo de cada etapa", async () => {
   await withPanel(withRuns(), async (view) => {
     assert.equal(view.find({ text: "Abrir la PR" }), null);
     await view.press({ label: "Ver el detalle de VF-1" });
     assert.ok(view.find({ text: "Abrir la PR" }));
     await view.press({ label: "Ocultar el detalle de VF-2" });
-    assert.equal(view.find({ text: "● ST-2 Comando /precio" }), null);
+    assert.equal(view.find({ text: "● ST-2 Comando /precio · trabajando" }), null);
   });
 });
 
 // Si regresiona, no se ve qué sub-tasks faltan ni qué hace la sesión que corre.
-test("las sub-tasks como lista de tareas, y los pasos de la sesión que corre", async () => {
+test("las sub-tasks con su estado, y los pasos de la sesión que corre", async () => {
   await withPanel(
     withRuns({
       "flowrunner.pasos": ({ sesion }: { sesion: string }) => ({
@@ -64,8 +63,8 @@ test("las sub-tasks como lista de tareas, y los pasos de la sesión que corre", 
       }),
     }),
     async (view) => {
-      assert.ok(view.find({ text: "✓ ST-1 Tabla de precios" }));
-      assert.ok(view.find({ text: "● ST-2 Comando /precio" }));
+      assert.ok(view.find({ text: "✓ ST-1 Tabla de precios · integrada" }));
+      assert.ok(view.find({ text: "● ST-2 Comando /precio · trabajando" }));
       assert.ok(view.find({ text: "▸ Edit src/precio.ts · ctx 52k" }));
       await view.press({ label: "Pasos de implementar-ST-2-1" });
       assert.ok(view.find({ text: "Edit src/precio.ts" }));
@@ -73,48 +72,29 @@ test("las sub-tasks como lista de tareas, y los pasos de la sesión que corre", 
   );
 });
 
-// Regresión: en VF-3, el plan pasaba los 16 KiB que Orca dibuja por texto. Orca rechazaba ese dibujo
-// y todos los que seguían, y ni «Ver plan» ni «Pedir cambios» hacían nada.
-test("un plan largo se ve, y después se puede pedir cambios", async () => {
-  const long = `# Plan\n${"una línea larga del plan. ".repeat(1_500)}`;
-  await withPanel(
-    withRuns({
-      "flowrunner.plan": () => ({
-        subtareas: [{ id: "ST-1", titulo: "Variables de color" }],
-        criterios: 1,
-        cambios: [],
-        texto: long.slice(0, 4_000),
-        recortado: true,
-      }),
-    }),
-    async (view) => {
-      await view.press({ text: "Ver plan" });
-      assert.deepEqual(view.errors, []);
-      assert.ok(view.find({ text: "Plan: 1 sub-tasks · 1 criterios" }));
-      assert.ok(view.find({ text: /una línea larga del plan/ }));
-      await view.press({ text: "Pedir cambios" });
-      assert.ok(view.find({ label: "Qué cambiar del plan" }));
-    },
-  );
-});
-
-// Si regresiona, aprobar desde el panel no llega a flowrunner, o aprueba sin confirmar.
-test("aprobar pide confirmación y manda la decisión; pedir cambios manda el motivo escrito", async () => {
+// Si regresiona, «Plan» no abre la pestaña del plan, o aprobar llega sin confirmar.
+test("Plan abre su pestaña; aprobar pide confirmación; Cambios manda el motivo escrito", async () => {
   const sent: { run: string; decision: Decision }[] = [];
+  const opened: string[] = [];
   await withPanel(
     withRuns({
+      "flowrunner.verPlan": ({ run }: { run: string }) => {
+        opened.push(run);
+        return { ok: true, mensaje: "plan abierto" };
+      },
       "flowrunner.decidir": (input: { run: string; decision: Decision }) => {
         sent.push(input);
         return { ok: true, mensaje: "hecho" };
       },
     }),
     async (view) => {
+      await view.press({ text: "Plan" });
+      assert.deepEqual(opened, [PIZ3]);
       await view.press({ text: "Aprobar" });
       assert.deepEqual(sent, []);
-      assert.ok(view.find({ text: "¿Aprobar el plan? Arranca la implementación." }));
       await view.press({ text: "Sí, confirmar" });
       assert.deepEqual(sent, [{ run: PIZ3, decision: { accion: "aprobar" } }]);
-      await view.press({ text: "Pedir cambios" });
+      await view.press({ text: "Cambios" });
       await view.type({ label: "Qué cambiar del plan" }, "separá la validación", { submit: true });
       assert.deepEqual(sent[1], {
         run: PIZ3,
@@ -124,22 +104,35 @@ test("aprobar pide confirmación y manda la decisión; pedir cambios manda el mo
   );
 });
 
+// Regresión: una lectura que fallaba dejaba el panel sin runs hasta la siguiente, y todo parpadeaba.
+test("si una lectura falla, los runs que se veían quedan, con el error arriba", async () => {
+  let fail = false;
+  await withPanel(
+    mockHost({
+      requests: {
+        "flowrunner.runs": () =>
+          fail ? { runs: [] as Run[], error: "timeout", at: 1 } : { runs, at: 0 },
+      },
+    }),
+    async (view) => {
+      assert.ok(view.find({ text: "🟡 Aprobar — te espera" }));
+      fail = true;
+      await panel.refresh();
+      await view.settled();
+      assert.ok(view.find({ text: "🟡 Aprobar — te espera" }));
+      assert.ok(view.find({ text: /No se pudo leer flowrunner: timeout/ }));
+    },
+  );
+});
+
 // Si regresiona, un flowrunner roto o sin runs deja el panel vacío sin decir por qué.
-test("sin runs lo dice; con un error de flowrunner, lo muestra", async () => {
+test("sin runs lo dice", async () => {
   await withPanel(
     mockHost({ requests: { "flowrunner.runs": () => ({ runs: [], at: 0 }) } }),
     async (view) => {
       assert.ok(
         view.find({ label: "No hay runs activos" }) ?? view.find({ text: "No hay runs activos" }),
       );
-    },
-  );
-  await withPanel(
-    mockHost({
-      requests: { "flowrunner.runs": () => ({ runs: [], error: "command not found", at: 0 }) },
-    }),
-    async (view) => {
-      assert.ok(view.find({ text: /No se pudo leer flowrunner: command not found/ }));
     },
   );
 });

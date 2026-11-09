@@ -18,6 +18,13 @@
         "icon": "rocket",
         "entry": "src/panel.tsx",
         "ui": "components"
+      },
+      {
+        "id": "plan",
+        "title": "Plan de flowrunner",
+        "icon": "file-text",
+        "entry": "src/plan.tsx",
+        "ui": "components"
       }
     ],
     "settings": [

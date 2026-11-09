@@ -1,16 +1,16 @@
-// El panel de flowrunner en la barra derecha de Orca. Cada run se lee como el seguimiento de un
-// pedido: una frase con su estado, una barra de avance, cinco pasos (Plan, Tu OK, Código, Control,
-// PR) y el detalle de lo que pasa ahora, con las decisiones que espera. Los más recientes arriba;
-// los terminados muestran solo el resumen hasta que se abren.
+// La pestaña de los runs en la barra derecha de Orca. Cada run es una tarjeta: la etapa en que
+// está con su estado, una barra de avance y las ocho etapas del flujo, como en el diagrama, y abajo
+// el detalle y las decisiones que espera. Los más recientes arriba; los terminados muestran solo el
+// resumen hasta que se abren. El refresco no borra nada: si una lectura falla, queda la anterior.
 // Sin paso de build: Orca quita los tipos y compila el JSX al cargarlo.
 import {
   atom,
+  Badge,
   Button,
   Card,
   Code,
   EmptyState,
   IconButton,
-  Input,
   Link,
   plugin,
   Progress,
@@ -23,21 +23,18 @@ import {
   update,
   type PanelContext,
 } from "orca";
-import type { Outcome, Snapshot, Steps } from "./protocol";
+import { Decisions } from "./decisiones";
+import type { Snapshot, Steps } from "./protocol";
 import {
-  decisionsFor,
   headlineOf,
   isFinished,
   needsYou,
   nowOf,
+  phaseLabel,
   progressOf,
-  rerunPhase,
   sortRuns,
-  STEP_MARK,
-  stepsOf,
+  stationsOf,
   tail,
-  type Decision,
-  type PlanView,
   type Run,
 } from "./runs";
 
@@ -47,64 +44,51 @@ const snapshot = atom<Snapshot | null>(null);
 /** Runs que la persona abrió o cerró a mano; el resto sigue el default. */
 const toggled = atom("abiertos", {} as Record<string, boolean>, { persist: "plugin" });
 const steps = atom<(Steps & { run: string }) | null>(null);
-const plan = atom<(PlanView & { run: string }) | null>(null);
-/** La decisión que espera confirmación, o el pedido de cambios que se está escribiendo. */
-const pending = atom<{ run: string; decision: Decision } | null>(null);
-const draft = atom("");
-const outcome = atom<(Outcome & { run: string }) | null>(null);
-const busy = atom<{ run: string; texto: string } | null>(null);
+const notice = atom<{ run: string; texto: string } | null>(null);
 
-async function refresh(): Promise<void> {
-  set(snapshot, await plugin.request("flowrunner.runs"));
-}
+let reading = false;
 
-/** Corre un pedido al worker mostrando qué espera; un error queda escrito en el run. */
-async function withBusy<T>(
-  run: string,
-  texto: string,
-  task: () => Promise<T>,
-): Promise<T | undefined> {
-  set(busy, { run, texto });
+/**
+ * Lee los runs sin borrar lo que se ve: una lectura que falla deja los runs anteriores con el
+ * error arriba, y una que no cambió nada no vuelve a dibujar. Nunca dos lecturas a la vez.
+ */
+export async function refresh(): Promise<void> {
+  if (reading) return;
+  reading = true;
   try {
-    return await task();
+    const next = await plugin.request("flowrunner.runs");
+    const prev = read(snapshot);
+    const shown = next.error !== undefined && prev !== null ? { ...prev, error: next.error } : next;
+    const same =
+      prev !== null && JSON.stringify({ ...prev, at: 0 }) === JSON.stringify({ ...shown, at: 0 });
+    if (!same) set(snapshot, shown);
   } catch (error) {
-    set(outcome, {
-      run,
-      ok: false,
-      mensaje: error instanceof Error ? error.message : String(error),
+    const prev = read(snapshot);
+    set(snapshot, {
+      runs: prev?.runs ?? [],
+      error: error instanceof Error ? error.message : String(error),
+      at: Date.now(),
     });
-    return undefined;
   } finally {
-    set(busy, null);
+    reading = false;
   }
 }
 
 async function showSteps(run: string, sesion: string): Promise<void> {
-  const answer = await withBusy(run, `Leyendo los pasos de ${sesion}`, () =>
-    plugin.request("flowrunner.pasos", { run, sesion }),
-  );
-  if (answer !== undefined) set(steps, { run, ...answer });
-}
-
-async function showPlan(run: string): Promise<void> {
-  const answer = await withBusy(run, "Leyendo el plan", () =>
-    plugin.request("flowrunner.plan", { run }),
-  );
-  if (answer !== undefined) set(plan, { run, ...answer });
-}
-
-async function decide(run: string, decision: Decision): Promise<void> {
-  set(pending, null);
-  const answer = await withBusy(run, "Enviando tu decisión", () =>
-    plugin.request("flowrunner.decidir", { run, decision }),
-  );
-  if (answer === undefined) return;
-  set(outcome, { run, ...answer });
-  if (answer.ok) {
-    set(draft, "");
-    set(plan, null);
+  try {
+    set(steps, { run, ...(await plugin.request("flowrunner.pasos", { run, sesion })) });
+  } catch (error) {
+    set(notice, { run, texto: `No se pudieron leer los pasos: ${String(error)}` });
   }
-  await refresh();
+}
+
+async function openPlan(run: string): Promise<void> {
+  try {
+    const answer = await plugin.request("flowrunner.verPlan", { run });
+    if (!answer.ok) set(notice, { run, texto: answer.mensaje });
+  } catch (error) {
+    set(notice, { run, texto: `No se pudo abrir el plan: ${String(error)}` });
+  }
 }
 
 /** Lee los runs al abrir y cada 3 segundos mientras el panel se ve. */
@@ -118,170 +102,26 @@ export function setup(ctx: PanelContext): void {
 
 const isOpen = (run: Run) => read(toggled)[run.id] ?? (needsYou(run) || !isFinished(run));
 
-/** Los cinco pasos, como en el seguimiento de un pedido. */
-function Tracker({ run }: { run: Run }) {
+/** Las ocho etapas del flujo, con su nombre y su estado, en filas que se acomodan al ancho. */
+function Stations({ run }: { run: Run }) {
   return (
-    <Row justify="between">
-      {stepsOf(run).map((step) => {
-        const { mark, tone } = STEP_MARK[step.estado];
-        const now = step.estado === "ahora" || step.estado === "espera" || step.estado === "falla";
+    <Row gap="xs" wrap>
+      {stationsOf(run).map((station) => {
+        const label = phaseLabel(station.fase, station.estado);
         return (
-          <Stack key={step.label} gap="none" align="center">
-            <Text tone={tone} muted={step.estado === "pendiente"} weight="semibold">
-              {mark}
-            </Text>
-            <Text
-              size="xs"
-              tone={now ? tone : "neutral"}
-              muted={!now}
-              weight={now ? "semibold" : "regular"}
-            >
-              {step.label}
-            </Text>
-          </Stack>
+          <Badge key={station.fase} tone={label.tone}>
+            {`${label.mark} ${station.nombre}`}
+          </Badge>
         );
       })}
     </Row>
   );
 }
 
-function Decisions({ run }: { run: Run }) {
-  const offered = decisionsFor(run);
-  const waiting = read(pending);
-  const mine = waiting?.run === run.id ? waiting.decision : undefined;
-  if (offered.length === 0) return null;
-  if (mine?.accion === "cambios") {
-    const send = () => decide(run.id, { accion: "cambios", motivo: read(draft) });
-    return (
-      <Stack gap="xs">
-        <Input
-          label="Qué cambiar del plan"
-          placeholder="Qué corregir y qué mantener"
-          value={read(draft)}
-          onChange={(v) => set(draft, v)}
-          onSubmit={send}
-        />
-        <Row gap="xs">
-          <Button size="sm" disabled={read(draft).trim() === ""} onPress={send}>
-            Enviar cambios
-          </Button>
-          <Button size="sm" variant="ghost" onPress={() => set(pending, null)}>
-            Cancelar
-          </Button>
-        </Row>
-      </Stack>
-    );
-  }
-  if (mine !== undefined) {
-    const question =
-      mine.accion === "aprobar"
-        ? "¿Aprobar el plan? Arranca la implementación."
-        : mine.accion === "reanudar"
-          ? `¿Reanudar ${run.clave}?`
-          : `¿Rehacer ${run.clave} desde ${mine.accion === "rehacer" ? mine.desde : ""}?`;
-    return (
-      <Stack gap="xs">
-        <Text size="sm" weight="semibold">
-          {question}
-        </Text>
-        <Row gap="xs">
-          <Button size="sm" tone="success" onPress={() => decide(run.id, mine)}>
-            Sí, confirmar
-          </Button>
-          <Button size="sm" variant="ghost" onPress={() => set(pending, null)}>
-            Cancelar
-          </Button>
-        </Row>
-      </Stack>
-    );
-  }
-  const ask = (decision: Decision) => set(pending, { run: run.id, decision });
-  const desde = rerunPhase(run);
-  return (
-    <Row gap="xs" wrap>
-      {offered.includes("aprobar") ? (
-        <Button size="sm" tone="success" icon="check" onPress={() => ask({ accion: "aprobar" })}>
-          Aprobar
-        </Button>
-      ) : null}
-      {offered.includes("cambios") ? (
-        <Button
-          size="sm"
-          variant="outline"
-          icon="edit"
-          onPress={() => ask({ accion: "cambios", motivo: "" })}
-        >
-          Pedir cambios
-        </Button>
-      ) : null}
-      {run.status === "esperando_aprobacion" ? (
-        <Button size="sm" variant="ghost" icon="file-text" onPress={() => showPlan(run.id)}>
-          Ver plan
-        </Button>
-      ) : null}
-      {offered.includes("reanudar") ? (
-        <Button size="sm" icon="play" onPress={() => ask({ accion: "reanudar" })}>
-          Reanudar
-        </Button>
-      ) : null}
-      {offered.includes("rehacer") && desde !== undefined ? (
-        <Button
-          size="sm"
-          variant="outline"
-          icon="refresh"
-          onPress={() => ask({ accion: "rehacer", desde })}
-        >
-          {`Rehacer desde ${desde}`}
-        </Button>
-      ) : null}
-    </Row>
-  );
-}
-
-function PlanPanel({ p }: { p: PlanView }) {
-  return (
-    <Stack gap="xs">
-      <Text size="sm" weight="semibold">
-        {`Plan: ${String(p.subtareas.length)} sub-tasks · ${String(p.criterios)} criterios`}
-      </Text>
-      {p.subtareas.map((t) => (
-        <Text key={t.id} size="xs" truncate>
-          {`${t.id}  ${t.titulo}`}
-        </Text>
-      ))}
-      {p.cambios.length === 0 ? null : (
-        <Stack gap="none">
-          <Text size="xs" weight="semibold" tone="warning">
-            Contra el plan anterior
-          </Text>
-          {p.cambios.map((c) => (
-            <Text key={c} size="xs" tone="warning">
-              {c}
-            </Text>
-          ))}
-        </Stack>
-      )}
-      <Code block>{p.texto}</Code>
-      {p.recortado ? (
-        <Text size="xs" muted>
-          Es el comienzo del plan; completo con flowrunner plan.
-        </Text>
-      ) : null}
-      <Row>
-        <Button size="sm" variant="ghost" onPress={() => set(plan, null)}>
-          Cerrar el plan
-        </Button>
-      </Row>
-    </Stack>
-  );
-}
-
 function Detail({ run }: { run: Run }) {
   const now = nowOf(run);
-  const said = read(outcome);
-  const working = read(busy);
   const shownSteps = read(steps);
-  const shownPlan = read(plan);
+  const said = read(notice);
   return (
     <Stack gap="sm">
       {run.motivo === undefined ? null : (
@@ -291,28 +131,21 @@ function Detail({ run }: { run: Run }) {
       )}
       {now.detalle === undefined || run.motivo !== undefined ? null : (
         <Text size="xs" tone="warning">
-          {tail(now.detalle, 1_500)}
+          {now.detalle.length > 280 ? `${now.detalle.slice(0, 280)}…` : now.detalle}
         </Text>
       )}
-      <Decisions run={run} />
-      {working?.run === run.id ? <Spinner label={working.texto} /> : null}
+      <Decisions run={run} after={refresh} onPlan={() => void openPlan(run.id)} />
       {said?.run === run.id ? (
-        <Text size="sm" tone={said.ok ? "success" : "danger"}>
-          {said.mensaje}
+        <Text size="sm" tone="danger">
+          {said.texto}
         </Text>
       ) : null}
-      {shownPlan?.run === run.id ? <PlanPanel p={shownPlan} /> : null}
       {now.tareas.length === 0 ? null : (
         <Stack gap="none">
           {now.tareas.map((t) => (
-            <Row key={t.key} justify="between" align="center">
-              <Text size="sm" tone={t.tone} muted={t.tone === "neutral"} truncate>
-                {`${t.mark} ${t.texto}`}
-              </Text>
-              <Text size="xs" muted>
-                {t.nota ?? ""}
-              </Text>
-            </Row>
+            <Text key={t.key} size="sm" tone={t.tone} muted={t.tone === "neutral"} truncate>
+              {`${t.mark} ${t.texto}`}
+            </Text>
           ))}
         </Stack>
       )}
@@ -347,14 +180,30 @@ function Detail({ run }: { run: Run }) {
           </Row>
         </Stack>
       ) : null}
-      {run.siguiente?.startsWith("https://") === true ? (
-        <Row>
+      {now.porPaso.length === 0 ? null : (
+        <Stack gap="none">
+          {now.porPaso.map((p) => (
+            <Row key={p.label} justify="between">
+              <Text size="xs" muted>
+                {p.label}
+              </Text>
+              <Text size="xs" muted>
+                {p.meta}
+              </Text>
+            </Row>
+          ))}
+        </Stack>
+      )}
+      <Row justify="between">
+        {run.siguiente?.startsWith("https://") === true ? (
           <Link href={run.siguiente}>Abrir la PR</Link>
-        </Row>
-      ) : null}
-      <Text size="xs" muted>
-        {now.meta}
-      </Text>
+        ) : (
+          <Text size="xs"> </Text>
+        )}
+        <Text size="xs" weight="semibold">
+          {now.meta}
+        </Text>
+      </Row>
     </Stack>
   );
 }
@@ -378,7 +227,7 @@ function RunCard({ run }: { run: Run }) {
           />
         </Row>
         <Progress label={`Avance de ${run.clave}`} labelHidden value={progressOf(run)} />
-        <Tracker run={run} />
+        <Stations run={run} />
         {open ? <Detail run={run} /> : null}
       </Stack>
     </Card>
@@ -392,7 +241,7 @@ export default function Panel() {
   return (
     <Stack gap="md">
       {snap.error === undefined ? null : (
-        <Text size="sm" tone="danger">
+        <Text size="xs" tone="danger">
           No se pudo leer flowrunner: {snap.error}
         </Text>
       )}

@@ -118,65 +118,73 @@ function cost(ss: readonly Session[], real: number): string | undefined {
   return `${live > 0 ? "≥ " : ""}$${total.toFixed(2)}`;
 }
 
-// --- Los cinco pasos -------------------------------------------------------------------------
+// --- Las ocho etapas ------------------------------------------------------------------------
 
-export type StepState = "listo" | "ahora" | "espera" | "falla" | "pendiente";
+/** Las etapas del flujo, en orden, como en el diagrama. */
+export const STATIONS = [
+  "preparar",
+  "planificar",
+  "aprobar",
+  "implementar",
+  "verificar",
+  "revisar",
+  "entregar",
+  "aprender",
+] as const;
 
-export interface Step {
-  readonly label: string;
-  readonly estado: StepState;
+export interface Station {
+  /** El nombre de la etapa, como en el diagrama: `Implementar`. */
+  readonly nombre: string;
+  readonly fase: string;
+  /** El estado de la fase en flowrunner: pendiente, corriendo, ok, espera, vuelve, falla, pausa. */
+  readonly estado: string;
 }
 
-/** Las fases de flowrunner agrupadas como las ve la persona. */
-const STEPS: readonly { label: string; fases: readonly string[] }[] = [
-  { label: "Plan", fases: ["preparar", "planificar"] },
-  { label: "Tu OK", fases: ["aprobar"] },
-  { label: "Código", fases: ["implementar"] },
-  { label: "Control", fases: ["verificar", "revisar"] },
-  { label: "PR", fases: ["entregar", "aprender"] },
-];
-
-export const STEP_MARK: Record<StepState, { mark: string; tone: Tone }> = {
-  listo: { mark: "✓", tone: "success" },
-  ahora: { mark: "●", tone: "accent" },
-  espera: { mark: "●", tone: "warning" },
-  falla: { mark: "✕", tone: "danger" },
-  pendiente: { mark: "○", tone: "neutral" },
-};
-
-function stepState(run: Run, phases: readonly Phase[]): StepState {
-  const states = phases.map((p) => p.estado);
-  if (states.includes("falla")) return "falla";
-  if (states.length > 0 && states.every((s) => s === "ok")) return "listo";
-  if (states.some((s) => s === "espera" || s === "pausa")) return "espera";
-  if (states.some((s) => s === "corriendo" || s === "vuelve")) {
-    return run.status === "detenido" ? "falla" : "ahora";
+/** Cómo se muestra cada estado de una fase: el mismo texto que `flowrunner watch`. */
+export function phaseLabel(
+  fase: string,
+  estado: string,
+): { mark: string; texto: string; tone: Tone } {
+  switch (estado) {
+    case "ok":
+      return {
+        mark: "✓",
+        texto: fase === "aprobar" ? "aprobado" : fase === "entregar" ? "PR creada" : "listo",
+        tone: "success",
+      };
+    case "corriendo":
+      return { mark: "●", texto: "trabajando", tone: "accent" };
+    case "espera":
+      return fase === "aprobar"
+        ? { mark: "●", texto: "te espera", tone: "warning" }
+        : { mark: "●", texto: "espera merge", tone: "warning" };
+    case "vuelve":
+      return { mark: "↺", texto: "volvió", tone: "warning" };
+    case "falla":
+      return { mark: "✕", texto: "falló", tone: "danger" };
+    case "pausa":
+      return { mark: "●", texto: "en pausa", tone: "warning" };
+    default:
+      return { mark: "○", texto: "pendiente", tone: "neutral" };
   }
-  return states.some((s) => s === "ok") && run.status === "detenido" ? "falla" : "pendiente";
 }
 
-/** Los cinco pasos del run, cada uno con su estado. */
-export function stepsOf(run: Run): Step[] {
-  const steps = STEPS.map((step) => ({
-    label: step.label,
-    estado: stepState(
-      run,
-      run.fases.filter((p) => step.fases.includes(p.fase)),
-    ),
+/** Las ocho etapas del run, con el estado de cada uno. */
+export function stationsOf(run: Run): Station[] {
+  return STATIONS.map((fase) => ({
+    nombre: capitalize(fase),
+    fase,
+    estado: run.fases.find((p) => p.fase === fase)?.estado ?? "pendiente",
   }));
-  if (run.status === "cerrado") return steps.map((s) => ({ ...s, estado: "listo" as const }));
-  return steps;
 }
 
-/** Cuánto avanzó, de 0 a 100: cada paso listo suma entero y el actual, medio. */
+/** Cuánto avanzó, de 0 a 100: las etapas listas sobre ocho. */
 export function progressOf(run: Run): number {
-  const steps = stepsOf(run);
-  const points = steps.reduce(
-    (a, s) => a + (s.estado === "listo" ? 1 : s.estado === "pendiente" ? 0 : 0.5),
-    0,
-  );
-  return Math.round((points / steps.length) * 100);
+  const done = stationsOf(run).filter((s) => s.estado === "ok").length;
+  return Math.round((done / STATIONS.length) * 100);
 }
+
+const capitalize = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 
 // --- La frase del estado --------------------------------------------------------------------
 
@@ -186,53 +194,36 @@ export interface Headline {
   readonly tone: Tone;
 }
 
-const DOING: Record<string, string> = {
-  preparar: "Preparando el repo",
-  planificar: "Planificando",
-  implementar: "Implementando",
-  verificar: "Verificando los criterios",
-  revisar: "Revisando el cambio",
-  entregar: "Abriendo la PR",
-  aprender: "Aprendiendo de tu merge",
-};
-
+/** La fase en la que está el run: la primera que no está lista ni pendiente, o la próxima. */
 const activePhase = (run: Run) =>
   run.fases.find((p) => !["ok", "pendiente"].includes(p.estado)) ??
   run.fases.find((p) => p.estado === "pendiente");
 
-function unitsDone(p: Phase): string | undefined {
-  if (p.unidades.length === 0) return undefined;
-  const done = p.unidades.filter((u) => u.estado === "integrada" || u.estado === "commiteada");
-  return `${String(done.length)} de ${String(p.unidades.length)} sub-tasks`;
-}
+const EMOJI: Record<Tone, string> = {
+  accent: "🔵",
+  warning: "🟡",
+  danger: "🔴",
+  success: "🟢",
+  neutral: "⚪",
+};
 
-/** Lo que pasa con el run, en una frase que se entiende de un vistazo. */
+/** La etapa en la que está el run y su estado, como en el diagrama: `Aprobar — te espera`. */
 export function headlineOf(run: Run): Headline {
+  if (run.status === "cerrado") return { emoji: EMOJI.success, texto: "cerrado", tone: "success" };
+  if (run.status === "abortado")
+    return { emoji: EMOJI.neutral, texto: "abortado", tone: "neutral" };
   const phase = activePhase(run);
-  switch (run.status) {
-    case "esperando_aprobacion":
-      return { emoji: "🟡", texto: "El plan te espera", tone: "warning" };
-    case "detenido":
-      return {
-        emoji: "🔴",
-        texto: `Se detuvo en ${phase?.fase ?? "una fase"}`,
-        tone: "danger",
-      };
-    case "pausado_por_limite":
-      return { emoji: "🟡", texto: "En pausa por el límite de uso", tone: "warning" };
-    case "entregado":
-      return { emoji: "🟢", texto: "PR abierta: falta tu merge", tone: "success" };
-    case "cerrado":
-      return { emoji: "🟢", texto: "Listo y mergeado", tone: "success" };
-    case "abortado":
-      return { emoji: "⚪", texto: "Cancelado", tone: "neutral" };
-    case "en_curso": {
-      const doing = phase === undefined ? "Trabajando" : (DOING[phase.fase] ?? phase.fase);
-      const units = phase === undefined ? undefined : unitsDone(phase);
-      const back = phase?.estado === "vuelve" ? "corrigiendo" : undefined;
-      return { emoji: "🔵", texto: join([doing, units, back]), tone: "accent" };
-    }
-  }
+  if (phase === undefined) return { emoji: EMOJI.neutral, texto: run.status, tone: "neutral" };
+  const label = phaseLabel(phase.fase, phase.estado);
+  const integradas =
+    phase.unidades.length === 0
+      ? undefined
+      : `${String(phase.unidades.filter((u) => u.estado === "integrada").length)} de ${String(phase.unidades.length)} integradas`;
+  return {
+    emoji: EMOJI[label.tone],
+    texto: `${capitalize(phase.fase)} — ${join([label.texto, integradas])}`,
+    tone: label.tone,
+  };
 }
 
 // --- El detalle de ahora --------------------------------------------------------------------
@@ -241,8 +232,14 @@ export interface TaskLine {
   readonly key: string;
   readonly mark: string;
   readonly tone: Tone;
+  /** `ST-4 Pantallas · espera ST-1`: una línea que se recorta en el ancho angosto. */
   readonly texto: string;
-  readonly nota?: string;
+}
+
+export interface StepStat {
+  readonly label: string;
+  /** Tiempo y costo del paso: `6m12s · $1.70`. */
+  readonly meta: string;
 }
 
 export interface Activity {
@@ -260,17 +257,20 @@ export interface Now {
   readonly actividad: Activity[];
   /** El costo total y el tiempo del run. */
   readonly meta: string;
+  /** El tiempo y el costo de cada paso que ya corrió. */
+  readonly porPaso: StepStat[];
   /** Lo que dijo la última fase que falló o volvió, si hay. */
   readonly detalle?: string;
 }
 
+/** Cómo se muestra cada estado de una sub-task: el mismo texto que `flowrunner watch`. */
 const TASK: Record<string, { mark: string; tone: Tone; texto: string }> = {
   pendiente: { mark: "○", tone: "neutral", texto: "pendiente" },
   corriendo: { mark: "●", tone: "accent", texto: "trabajando" },
-  commiteada: { mark: "✓", tone: "success", texto: "lista" },
-  integrada: { mark: "✓", tone: "success", texto: "lista" },
+  commiteada: { mark: "✓", tone: "success", texto: "commiteada" },
+  integrada: { mark: "✓", tone: "success", texto: "integrada" },
   fallida: { mark: "✕", tone: "danger", texto: "falló" },
-  sin_cambios: { mark: "!", tone: "warning", texto: "sin cambios" },
+  sin_cambios: { mark: "✓", tone: "success", texto: "sin cambios" },
 };
 
 function activity(s: Session): Activity {
@@ -292,19 +292,37 @@ function activity(s: Session): Activity {
   };
 }
 
+/** El tiempo y el costo de cada etapa que ya corrió. */
+function stepStats(run: Run): StepStat[] {
+  return stationsOf(run).flatMap((station) => {
+    const p = run.fases.find((x) => x.fase === station.fase);
+    if (p === undefined) return [];
+    const meta = join([
+      p.segundos !== undefined && p.segundos > 0 ? duration(p.segundos) : undefined,
+      cost(sessionsOf(p), p.costoUsd),
+    ]);
+    return meta === "" ? [] : [{ label: station.nombre, meta }];
+  });
+}
+
 /** El detalle del paso en que está el run. */
 export function nowOf(run: Run): Now {
   const phase = activePhase(run);
   const all = run.fases.flatMap(sessionsOf);
   const meta = join([cost(all, run.costoUsd), duration(run.segundos)]);
-  const tareas = (phase?.unidades ?? []).map((u): TaskLine => {
+  // Las sub-tasks son lo que más dice de un run: las del paso actual, o las de implementar.
+  const withUnits =
+    phase !== undefined && phase.unidades.length > 0
+      ? phase
+      : run.fases.find((p) => p.unidades.length > 0);
+  const tareas = (withUnits?.unidades ?? []).map((u): TaskLine => {
     const t = TASK[u.estado] ?? { mark: "○", tone: "neutral" as const, texto: u.estado };
     const waiting = u.dependeDe.filter(
-      (d) => phase?.unidades.find((x) => x.id === d)?.estado !== "integrada",
+      (d) => withUnits?.unidades.find((x) => x.id === d)?.estado !== "integrada",
     );
     const nota =
       u.estado === "pendiente" && waiting.length > 0 ? `espera ${waiting.join(", ")}` : t.texto;
-    return { key: u.id, mark: t.mark, tone: t.tone, texto: `${u.id} ${u.titulo}`, nota };
+    return { key: u.id, mark: t.mark, tone: t.tone, texto: join([`${u.id} ${u.titulo}`, nota]) };
   });
   const sessions = phase === undefined ? [] : sessionsOf(phase);
   const actividad = [
@@ -315,22 +333,19 @@ export function nowOf(run: Run): Now {
     .map(activity);
   const failed = run.fases.findLast((p) => p.estado === "falla" || p.estado === "vuelve");
   const detalle = failed?.detalle;
-  return { tareas, actividad, meta, ...(detalle === undefined ? {} : { detalle }) };
+  return {
+    tareas,
+    actividad,
+    meta,
+    porPaso: stepStats(run),
+    ...(detalle === undefined ? {} : { detalle }),
+  };
 }
 
 // --- Las decisiones -------------------------------------------------------------------------
 
-export const PHASES = [
-  "preparar",
-  "planificar",
-  "aprobar",
-  "implementar",
-  "verificar",
-  "revisar",
-  "entregar",
-  "aprender",
-] as const;
-export type PhaseName = (typeof PHASES)[number];
+export const PHASES = STATIONS;
+export type PhaseName = (typeof STATIONS)[number];
 
 /** Una decisión que la persona toma desde el panel. El worker la traduce a un comando fijo. */
 export type Decision =
@@ -367,9 +382,8 @@ export interface PlanView {
   readonly criterios: number;
   /** Qué cambió contra el plan anterior, en líneas cortas; vacío en el primer plan. */
   readonly cambios: string[];
-  /** El plan en Markdown, recortado: Orca no dibuja textos de más de 16 KiB. */
-  readonly texto: string;
-  readonly recortado: boolean;
+  /** El plan entero, línea por línea: Orca no dibuja textos de más de 16 KiB. */
+  readonly lineas: string[];
 }
 
 /** Orca rechaza un dibujo con un texto de más de 16 KiB, en bytes: 4000 caracteres entran aun en UTF-8 ancho. */
@@ -398,12 +412,13 @@ export function planView(data: unknown): PlanView {
   const cambios = Object.entries(d.cambios ?? {})
     .filter(([, items]) => items.length > 0)
     .map(([key, items]) => `${LABELS[key] ?? key}: ${items.join(", ")}`);
-  const plan = d.plan ?? "";
   return {
     subtareas: (d.subtareas ?? []).map((t) => ({ id: t.id, titulo: t.titulo })),
     criterios: d.criterios?.length ?? 0,
     cambios,
-    texto: plan.length > MAX_TEXT_CHARS ? `${plan.slice(0, MAX_TEXT_CHARS)}…` : plan,
-    recortado: plan.length > MAX_TEXT_CHARS,
+    lineas: (d.plan ?? "")
+      .split("\n")
+      .filter((line) => line.trim() !== "")
+      .map((line) => tail(line, MAX_TEXT_CHARS)),
   };
 }

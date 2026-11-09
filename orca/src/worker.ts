@@ -3,9 +3,13 @@
 import { execFile } from "node:child_process";
 import type { OrcaWorkerApi } from "orca/worker";
 import type { Outcome, Snapshot } from "./protocol";
-import { parseWatch, PHASES, planView, type Decision } from "./runs";
+import { parseWatch, PHASES, planView, sortRuns, type Decision } from "./runs";
 
 const TIMEOUT_MS = 20_000;
+/** El CLI de Orca, que abre la pestaña del plan: ningún método del host abre un panel. */
+const orcaCli = () => process.env.ORCA_CLI ?? "/Applications/Orca.app/Contents/Resources/bin/orca";
+/** La clave con que Orca carga este plugin desde la carpeta de flowrunner. */
+const PLUGIN_KEY = "local.flowrunner";
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const MAX_MOTIVO = 2_000;
 
@@ -98,7 +102,30 @@ function outcomeOf(proc: Proc): Outcome {
   }
 }
 
+function openPlanTab(): Promise<Outcome> {
+  return new Promise((resolve) => {
+    execFile(
+      orcaCli(),
+      ["plugin", "open", PLUGIN_KEY, "--panel", "plan"],
+      { timeout: TIMEOUT_MS },
+      (error, _stdout, stderr) => {
+        resolve(
+          error === null
+            ? { ok: true, mensaje: "plan abierto" }
+            : {
+                ok: false,
+                mensaje: `No se pudo abrir la pestaña del plan: ${lastLines(stderr || error.message)}`,
+              },
+        );
+      },
+    );
+  });
+}
+
 export default function activate(orca: OrcaWorkerApi): void {
+  /** El run cuyo plan pidió ver la persona; se pierde si el worker se reinicia. */
+  let selected: string | undefined;
+
   orca.panels.handle("flowrunner.runs", async (): Promise<Snapshot> => {
     const at = Date.now();
     try {
@@ -119,6 +146,27 @@ export default function activate(orca: OrcaWorkerApi): void {
   orca.panels.handle("flowrunner.plan", async ({ run: id }) =>
     planView(JSON.parse(await ok(`${await command(orca)} plan ${quote(runId(id))} --json`))),
   );
+
+  orca.panels.handle("flowrunner.verPlan", async ({ run: id }) => {
+    selected = runId(id);
+    return openPlanTab();
+  });
+
+  orca.panels.handle("flowrunner.planActual", async () => {
+    try {
+      const runs = sortRuns(parseWatch(await ok(`${await command(orca)} watch --json`)));
+      const run =
+        runs.find((r) => r.id === selected) ??
+        runs.find((r) => r.status === "esperando_aprobacion");
+      if (run === undefined) return {};
+      const plan = planView(
+        JSON.parse(await ok(`${await command(orca)} plan ${quote(run.id)} --json`)),
+      );
+      return { run, plan };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  });
 
   orca.panels.handle("flowrunner.decidir", async ({ run: id, decision }) => {
     let args: string;

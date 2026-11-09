@@ -14,7 +14,7 @@ import { installLaunchd, uninstallLaunchd } from "./launchd.ts";
 import { installSkill } from "./skill.ts";
 import { hookOutput, sessionStartContext } from "./hook.ts";
 import { readFileSync } from "node:fs";
-import { loadTree } from "../watch/load.ts";
+import { loadTree, resolveRun } from "../watch/load.ts";
 import { renderRuns, watchLive, watchTargets } from "./watch.ts";
 import { describeInit, draftExistingBrain, init } from "../setup/init.ts";
 import { productionRuntime } from "../runner/production.ts";
@@ -77,6 +77,12 @@ function describeRun(status: z.infer<typeof statusRunSchema>): string {
 function need(value: string | undefined, what: string): string {
   if (value === undefined) throw new UserError(`falta ${what}`, USAGE);
   return value;
+}
+
+/** El run que nombra la persona: el id completo o la clave, como `VF-4`, que elige el más reciente. */
+function runArg(home: string, value: string | undefined): string {
+  const arg = need(value, "el id del run");
+  return resolveRun(home, arg) ?? arg;
 }
 
 export async function main(
@@ -167,44 +173,44 @@ export async function main(
           const list = statusAll(home);
           print(list, describeList(list));
         } else {
-          const one = statusOne(home, first);
+          const one = statusOne(home, runArg(home, first));
           print(one, describeRun(one));
         }
         return 0;
       }
       case "resume": {
-        const resumed = resumeRun(home, need(first, "el id del run"), env);
+        const resumed = resumeRun(home, runArg(home, first), env);
         print(resumed, `run ${resumed.id} ${resumed.accion}`);
         return 0;
       }
       case "rerun": {
         const desde = typeof values.desde === "string" ? values.desde : undefined;
-        const rerun = rerunRun(home, need(first, "el id del run"), desde, env);
+        const rerun = rerunRun(home, runArg(home, first), desde, env);
         print(rerun, `run ${rerun.id} ${rerun.accion}`);
         return 0;
       }
       case "abort": {
-        const aborted = abortRun(home, need(first, "el id del run"));
+        const aborted = abortRun(home, runArg(home, first));
         print(aborted, `run ${aborted.id} ${aborted.accion}`);
         return 0;
       }
       case "plan": {
-        const view = await showPlan(home, need(first, "el id del run"), env);
+        const view = await showPlan(home, runArg(home, first), env);
         print(view, describePlan(view));
         return 0;
       }
       case "approve": {
-        const approved = approveRun(home, need(first, "el id del run"), env);
+        const approved = approveRun(home, runArg(home, first), env);
         print(approved, `run ${approved.id} ${approved.accion}`);
         return 0;
       }
       case "changes": {
-        const changed = requestChanges(home, need(first, "el id del run"), rest.join(" "), env);
+        const changed = requestChanges(home, runArg(home, first), rest.join(" "), env);
         print(changed, `run ${changed.id} ${changed.accion}`);
         return 0;
       }
       case "report": {
-        const id = need(first, "el id del run");
+        const id = runArg(home, first);
         if (typeof values.sesion === "string") {
           const session = showSession(home, id, values.sesion);
           print(session, session.texto);
@@ -223,7 +229,7 @@ export async function main(
         return 0;
       }
       case "learn": {
-        const learned = await learnOne(home, need(first, "el id del run"), env);
+        const learned = await learnOne(home, runArg(home, first), env);
         print(learned, `${learned.id}: ${learned.resultado}`);
         return 0;
       }
@@ -297,7 +303,7 @@ export async function main(
         return 0;
       }
       case "_run": {
-        const final = await runProcess(home, need(first, "el id del run"), env);
+        const final = await runProcess(home, runArg(home, first), env);
         io.out(`run ${final.runId} quedó ${final.status}`);
         return 0;
       }

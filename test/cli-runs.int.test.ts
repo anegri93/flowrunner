@@ -98,6 +98,13 @@ describe("CLI de runs", () => {
     await waitFor("el run entregado", () => stateNow(w, id).status === "entregado");
     const status = runCli(["status", id, "--json"], w.env);
     expect(statusRunSchema.safeParse(JSON.parse(status.stdout)).success).toBe(true);
+    // Si regresiona, el panel de Orca no sabe en qué repo abrir los archivos de un run ya cerrado, y
+    // los comandos no aceptan la clave que muestra el panel: «no existe el run VF-4».
+    const byKey = JSON.parse(runCli(["status", "SHOP-214", "--json"], w.env).stdout) as {
+      run: { id: string; repo: string };
+    };
+    expect(byKey.run).toMatchObject({ id, repo: w.repo });
+    expect(runCli(["report", "SHOP-214", "--json"], w.env).status).toBe(0);
     const missing = runCli(["status", "NO-1", "--json"], w.env);
     expect(missing.status).toBe(1);
     expect(JSON.parse(missing.stdout)).toMatchObject({

@@ -6,6 +6,7 @@ import { productionRuntime } from "../runner/production.ts";
 import { runUntilStop } from "../runner/runner.ts";
 import { isAlive } from "../store/lock.ts";
 import type { RunEvent } from "../store/events.ts";
+import { writeReport } from "../report/report.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
 import { listRunIds, loadState, runPaths } from "../store/runs.ts";
 import { UserError } from "./output.ts";
@@ -44,6 +45,8 @@ export async function learnRun(home: string, id: string, env: NodeJS.ProcessEnv)
       notifyMac(t, b, env);
     });
     const final = await runUntilStop(run, phases, deps, { tick: true });
+    // Al cerrarse, el informe final suma lo que pasó después de la entrega: el merge y lo aprendido.
+    if (final.status !== "entregado") writeReport(run, readLog(run.dir).events);
     return final.status === "entregado"
       ? waitingReason(readLog(run.dir).events)
       : `quedó ${final.status}`;

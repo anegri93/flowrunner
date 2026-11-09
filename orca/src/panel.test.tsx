@@ -174,6 +174,32 @@ test("Aprender ahora, en un run con la PR abierta, aprende sin esperar y muestra
   );
 });
 
+// Si regresiona, el run desaparece del panel al cerrarse y la persona no ve cómo terminó.
+test("cuando un run con la PR abierta se cierra, su informe se abre solo, una vez", async () => {
+  let current = runs;
+  const opened: unknown[] = [];
+  await withPanel(
+    mockHost({
+      requests: {
+        "flowrunner.runs": () => ({ runs: current, at: 0 }),
+        "flowrunner.abrir": (input: unknown) => {
+          opened.push(input);
+          return { ok: true, mensaje: "abierto" };
+        },
+      },
+    }),
+    async (view) => {
+      // VF-1 estaba entregado; el chequeo vio el merge y lo cerró: ya no está entre los activos.
+      current = runs.filter((r) => r.clave !== "VF-1");
+      await panel.refresh();
+      await view.settled();
+      await panel.refresh();
+      await view.settled();
+      assert.deepEqual(opened, [{ run: "VF-1-20261108-211454", que: { tipo: "informe" } }]);
+    },
+  );
+});
+
 // Si regresiona, un flowrunner roto o sin runs deja el panel vacío sin decir por qué.
 test("sin runs lo dice", async () => {
   await withPanel(

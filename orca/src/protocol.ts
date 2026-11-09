@@ -15,9 +15,11 @@ export interface Outcome {
   readonly mensaje: string;
 }
 
-/** Lo que se abre en una pestaña de Orca: los pasos de una sesión o el plan del run. */
+/** Lo que se abre en una pestaña de Orca: los pasos de una sesión, el plan o el informe del run. */
 export type Openable =
-  { readonly tipo: "pasos"; readonly sesion: string } | { readonly tipo: "plan" };
+  | { readonly tipo: "pasos"; readonly sesion: string }
+  | { readonly tipo: "plan" }
+  | { readonly tipo: "informe" };
 
 declare module "orca" {
   interface PluginRequests {

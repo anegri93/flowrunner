@@ -898,6 +898,20 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. Una función de entorno que usan los dos lugares donde el worker lanza procesos.
 - **Desbloquea:** Gate Fase 8
 
+### T8.10 · Al cerrarse un run, su informe final se abre solo
+- **Estado:** `[x] Hecho`
+- **Descripción:** VF-4 desapareció del panel al cerrarse y la persona no veía cómo había terminado. Además, el chequeo que lo cerró no escribía el informe final, y `flowrunner report VF-4` fallaba con «no existe el run VF-4» porque los comandos no aceptaban la clave, aunque el README decía que sí. Ahora:
+  - todos los comandos que reciben un run aceptan la clave y eligen el más reciente;
+  - el resumen JSON de un run trae su `repo`;
+  - el chequeo, al cerrar un run, escribe el informe final;
+  - en el panel de Orca, cuando un run con la PR abierta desaparece de los activos porque se cerró, su informe se abre como pestaña de Orca. El worker encuentra el run con `status`, que también sirve para los cerrados.
+- **Lint:** `pnpm lint` y `orca plugin validate`.
+- **Test:** `test/cli-runs.int.test.ts` › «status --json valida contra su schema…»: `status SHOP-214` trae el id y el repo, y `report SHOP-214` sale 0. `test/tick.int.test.ts` › «learn con la clave cierra el run y escribe el informe final». `orca/src/worker.test.ts` › «abrir el informe de un run cerrado…». `orca/src/panel.test.tsx` › «cuando un run con la PR abierta se cierra, su informe se abre solo, una vez».
+- **Canario:** los dos de flowrunner fallaron con el código de main; los dos del plugin, con el plugin de main. Sacar el registro de informes ya abiertos no puso en rojo nada: sobraba, porque la lectura siguiente ya no tiene al run, y se sacó.
+- **Criterio de aprobación:** desde el worker real de Orca, el informe final de VF-4 se abrió como pestaña en el proyecto de videoFactory.
+- **Revisión ponytail:** a mano. La detección del cierre compara dos lecturas que el panel ya tenía.
+- **Desbloquea:** Gate Fase 8
+
 ### Gate Fase 8
 - **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.

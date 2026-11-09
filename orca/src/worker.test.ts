@@ -26,6 +26,7 @@ async function fakeWorker() {
   process.env.FAKE_LOG = log;
   process.env.FAKE_WATCH = watch;
   process.env.ORCA_CLI = FAKE_ORCA;
+  process.env.FAKE_REPO = repo;
   const worker = await mountWorker(main, { host: mockHost({ settings: { comando: FAKE } }) });
   const calls = () => {
     try {
@@ -86,6 +87,23 @@ test("abrir escribe los pasos o el plan en el .git del repo y los abre como pest
       execFileSync("git", ["-C", repo, "status", "--porcelain"], { encoding: "utf8" }),
       "",
     );
+  } finally {
+    await worker.deactivate();
+  }
+});
+
+// Si regresiona, el informe de un run que se cerró no se puede abrir: ya no está entre los activos.
+test("abrir el informe de un run cerrado lo escribe en el .git de su repo y lo abre", async () => {
+  const { worker, calls, repo } = await fakeWorker();
+  try {
+    const id = "VF-9-20261109-000000";
+    assert.deepEqual(
+      await worker.request("flowrunner.abrir", { run: id, que: { tipo: "informe" } }),
+      { ok: true, mensaje: "abierto" },
+    );
+    const file = join(repo, ".git", "flowrunner", id, "informe.md");
+    assert.match(readFileSync(file, "utf8"), /- \*\*Estado:\*\* cerrado/);
+    assert.ok(calls().includes(`orca file open ${file} --worktree path:${repo} --focus`));
   } finally {
     await worker.deactivate();
   }

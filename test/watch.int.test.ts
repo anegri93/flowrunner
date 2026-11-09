@@ -28,7 +28,7 @@ describe("watch --once", () => {
   }, 120_000);
 
   // Si regresiona, el panel de Orca, que lee esta salida, se queda sin runs o no los cruza con su repo.
-  test("--json devuelve el árbol de los runs activos, con el repo, y nada si no hay", async () => {
+  test("--json devuelve el árbol de los runs activos, con el repo; --cerrados suma los cerrados", async () => {
     const w = world();
     const empty = JSON.parse(runCli(["watch", "--json"], w.env).stdout) as { runs: unknown[] };
     expect(empty).toEqual({ ok: true, runs: [] });
@@ -47,6 +47,15 @@ describe("watch --once", () => {
     expect(runs.map((r) => [r.id, r.clave])).toEqual([[id, "SHOP-214"]]);
     expect(runs[0]?.repo).toMatch(/\//);
     expect(runs[0]?.fases.find((f) => f.fase === "revisar")?.estado).toBe("ok");
+
+    // Abortado deja de estar entre los activos; con --cerrados vuelve, para el panel de Orca.
+    expect(runCli(["abort", id], w.env).status).toBe(0);
+    const active = JSON.parse(runCli(["watch", "--json"], w.env).stdout) as { runs: unknown[] };
+    expect(active.runs).toEqual([]);
+    const all = JSON.parse(runCli(["watch", "--json", "--cerrados"], w.env).stdout) as {
+      runs: { id: string; status: string }[];
+    };
+    expect(all.runs.map((r) => [r.id, r.status])).toEqual([[id, "abortado"]]);
   }, 120_000);
 
   test("un run que no existe sale 1 y dice cómo verlos", () => {

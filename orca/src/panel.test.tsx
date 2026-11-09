@@ -321,6 +321,52 @@ test("al cambiar de proyecto, los runs del anterior se dejan de ver sin abrir su
   );
 });
 
+// Si regresiona, los runs cerrados desaparecen del panel, lo llenan con tarjetas enteras, o uno
+// abortado aparece trabajando.
+test("los cerrados van aparte y compactos; el título abre el informe y la flecha sus etapas", async () => {
+  const base = runs[2] as Run;
+  const closed = {
+    ...base,
+    id: "VF-0-20261101-102507",
+    clave: "VF-0",
+    status: "abortado",
+    costoUsd: 5.22,
+    segundos: 527,
+    // El árbol dice que aprobar seguía corriendo cuando se abortó.
+    fases: base.fases.map((f) => (f.fase === "aprobar" ? { ...f, estado: "corriendo" } : f)),
+  } as Run;
+  const opened: unknown[] = [];
+  await withPanel(
+    mockHost({
+      requests: {
+        "flowrunner.runs": () => ({ runs: [], cerrados: [closed], at: 0 }),
+        "flowrunner.abrir": (input: unknown) => {
+          opened.push(input);
+          return { ok: true, mensaje: "" };
+        },
+      },
+    }),
+    async (view) => {
+      assert.ok(view.find({ text: "CERRADOS · 1" }));
+      assert.equal(view.find({ text: `VF-0 · ${closed.titulo}` }), null);
+      await view.press({ label: "Ver los runs cerrados" });
+      assert.ok(view.find({ text: `VF-0 · ${closed.titulo}` }));
+      assert.ok(view.find({ text: "abortado · 01/11 10:25 · 8:47 · $5.22" }));
+      assert.equal(view.findAll({ type: "Card" }).length, 0);
+      await view.press({ text: `VF-0 · ${closed.titulo}` });
+      assert.deepEqual(opened, [{ run: closed.id, que: { tipo: "informe" } }]);
+      // Desplegado: solo las etapas que corrieron, ninguna trabajando, y sin abortar.
+      await view.press({ label: "Ver las etapas de VF-0" });
+      assert.ok(view.find({ text: "Preparar" }));
+      assert.equal(view.find({ text: "Implementar" }), null);
+      assert.equal(view.find({ text: "trabajando" }), null);
+      assert.equal(view.find({ label: "Aprobar: trabajando" }), null);
+      assert.ok(view.find({ text: "cortada" }));
+      assert.equal(view.find({ text: "Abortar el run" }), null);
+    },
+  );
+});
+
 // Si regresiona, un flowrunner roto o sin runs deja el panel vacío sin decir por qué.
 test("sin runs lo dice", async () => {
   await withPanel(

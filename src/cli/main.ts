@@ -16,7 +16,8 @@ import { installSkill } from "./skill.ts";
 import { installOrcaPlugin } from "./orca.ts";
 import { hookOutput, sessionStartContext } from "./hook.ts";
 import { readFileSync } from "node:fs";
-import { loadTree, resolveRun } from "../watch/load.ts";
+import { closedRuns, loadTree, resolveRun } from "../watch/load.ts";
+
 import { renderRuns, watchLive, watchTargets } from "./watch.ts";
 import { describeInit, draftExistingBrain, init } from "../setup/init.ts";
 import { productionRuntime } from "../runner/production.ts";
@@ -31,6 +32,9 @@ import {
   statusOne,
 } from "./runs.ts";
 
+/** Cuántos runs cerrados devuelve `watch --json --cerrados`. */
+const MAX_CLOSED = 20;
+
 const USAGE = `uso: flowrunner <comando> [--json]
 
   init <ruta> [--aplicar]        revisa e infiere el setup de un repo; con --aplicar lo deja listo
@@ -38,6 +42,7 @@ const USAGE = `uso: flowrunner <comando> [--json]
   run <archivo>                  lanza un run en segundo plano y devuelve su id
   status [run]                   lista los runs, o un run fase por fase
   watch [run] [--once|--json]    el árbol de un run, o de los activos, en vivo; run puede ser la clave
+                                 --json --cerrados suma los últimos cerrados y abortados
   resume <run>                   retoma un run detenido o interrumpido
   rerun <run> --desde <fase>     rehace un run desde una fase
   abort <run>                    cancela un run y borra sus worktrees; las ramas quedan
@@ -115,6 +120,7 @@ export async function main(
       aplicar: { type: "boolean", default: false },
       reemplazar: { type: "boolean", default: false },
       once: { type: "boolean", default: false },
+      cerrados: { type: "boolean", default: false },
       "github-user": { type: "string" },
       approve: { type: "string" },
       "acepto-cambios": { type: "boolean", default: false },
@@ -132,8 +138,15 @@ export async function main(
         const targets = watchTargets(home, first);
         if (json) {
           // Lo que lee una vista de afuera, como el panel de Orca: el mismo árbol que dibuja watch.
+          // Con --cerrados, también los últimos cerrados y abortados, que el panel muestra colapsados.
           const now = Date.now();
-          print({ ok: true, runs: targets().map((id) => loadTree(home, id, now)) }, "");
+          const ids = [
+            ...targets(),
+            ...(values.cerrados === true && first === undefined
+              ? closedRuns(home, MAX_CLOSED)
+              : []),
+          ];
+          print({ ok: true, runs: ids.map((id) => loadTree(home, id, now)) }, "");
           return 0;
         }
         const tty = process.stdout.isTTY && process.stdin.isTTY;

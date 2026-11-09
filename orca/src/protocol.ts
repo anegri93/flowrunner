@@ -2,8 +2,10 @@
 import type { Decision, Run } from "./runs";
 
 export interface Snapshot {
-  /** Los runs del proyecto activo de Orca; todos si no hay uno activo. */
+  /** Los runs activos del proyecto activo de Orca; todos si no hay uno activo. */
   readonly runs: Run[];
+  /** Los últimos cerrados y abortados, con el mismo filtro de proyecto. */
+  readonly cerrados?: Run[];
   /** El proyecto activo, si lo hay: los runs se filtran por él. */
   readonly proyecto?: string;
   /** Cuántos runs activos hay en otros proyectos. */
@@ -33,7 +35,7 @@ export type Openable =
 
 declare module "orca" {
   interface PluginRequests {
-    /** Los runs activos, leídos ahora. */
+    /** Los runs activos y los últimos cerrados, leídos ahora. */
     "flowrunner.runs": { output: Snapshot };
     /** Abre los pasos de una sesión o el plan en una pestaña de Orca, en el proyecto del run. */
     "flowrunner.abrir": { input: { run: string; que: Openable }; output: Outcome };

@@ -88,6 +88,9 @@ export function parseWatch(stdout: string): Run[] {
   return runs as Run[];
 }
 
+/** Cerrado del todo: no avanza más. Los muestra el panel aparte, colapsados. */
+export const isClosed = (run: Run) => run.status === "cerrado" || run.status === "abortado";
+
 /** Terminado para la persona: ya no hay nada que mirar mientras trabaja. */
 export const isFinished = (run: Run) =>
   run.status === "entregado" || run.status === "cerrado" || run.status === "abortado";
@@ -217,13 +220,33 @@ export function phaseLabel(
   }
 }
 
-/** Las nueve etapas del run, con el estado de cada uno. */
+/**
+ * Las nueve etapas del run, con el estado de cada uno. En un run cerrado nada trabaja: una etapa que
+ * quedó corriendo se muestra cortada, aunque el árbol que llegó diga otra cosa.
+ */
 export function stationsOf(run: Run): Station[] {
-  return STATIONS.map((fase) => ({
-    nombre: capitalize(fase),
-    fase,
-    estado: run.fases.find((p) => p.fase === fase)?.estado ?? "pendiente",
-  }));
+  return STATIONS.map((fase) => {
+    const estado = run.fases.find((p) => p.fase === fase)?.estado ?? "pendiente";
+    return {
+      nombre: capitalize(fase),
+      fase,
+      estado: isClosed(run) && estado === "corriendo" ? "cortada" : estado,
+    };
+  });
+}
+
+/**
+ * Un run cerrado en un renglón: cómo terminó, cuándo arrancó, cuánto tardó y cuánto costó, como
+ * `abortado · 09/11 10:25 · 2:16:07 · $5.22`.
+ */
+export function closedSummary(run: Run): string {
+  const at = /^\d{4}(\d{2})(\d{2})-(\d{2})(\d{2})/.exec(startedAt(run));
+  return join([
+    run.status,
+    at === null ? undefined : `${at[2] ?? ""}/${at[1] ?? ""} ${at[3] ?? ""}:${at[4] ?? ""}`,
+    clock(run.segundos),
+    `$${run.costoUsd.toFixed(2)}`,
+  ]);
 }
 
 export interface StageRow {

@@ -2,7 +2,7 @@
 // tarjeta: su estado, el título, el tiempo, y las nueve etapas del flujo en una lista con sus
 // intentos y su tiempo. La etapa que trabaja gira, y debajo dice qué está haciendo, con las
 // decisiones que espera. Los más recientes arriba; los terminados muestran solo la etapa actual
-// hasta que se abren. El refresco no borra nada: si una lectura falla, queda la anterior.
+// hasta que se abren. Debajo, los últimos cerrados, en una sección colapsada al abrir el panel. El refresco no borra nada: si una lectura falla, queda la anterior.
 // Sin paso de build: Orca quita los tipos y compila el JSX al cargarlo.
 import {
   atom,
@@ -27,6 +27,7 @@ import type { Openable, Snapshot } from "./protocol";
 import {
   canAbort,
   clock,
+  closedSummary,
   decisionsFor,
   isFinished,
   needsYou,
@@ -45,6 +46,9 @@ const snapshot = atom<Snapshot | null>(null);
 /** Runs que la persona abrió o cerró a mano; el resto sigue el default. */
 const toggled = atom("abiertos", {} as Record<string, boolean>, { persist: "plugin" });
 const notice = atom<{ run: string; texto: string } | null>(null);
+/** La sección de los cerrados y sus filas desplegadas: colapsadas cada vez que se abre el panel. */
+const closedOpen = atom(false);
+const closedToggled = atom({} as Record<string, boolean>);
 
 let reading = false;
 /**
@@ -81,6 +85,7 @@ export async function refresh(): Promise<void> {
     const prev = read(snapshot);
     set(snapshot, {
       runs: prev?.runs ?? [],
+      ...(prev?.cerrados === undefined ? {} : { cerrados: prev.cerrados }),
       error: error instanceof Error ? error.message : String(error),
       at: Date.now(),
     });
@@ -261,6 +266,76 @@ function RunCard({ run }: { run: Run }) {
   );
 }
 
+/**
+ * Un run cerrado, compacto: la marca de cómo terminó, `CLAVE · título`, que abre su informe, y debajo
+ * en gris cómo terminó, cuándo arrancó, cuánto tardó y cuánto costó. La flecha despliega las etapas
+ * que corrieron.
+ */
+function ClosedRow({ run }: { run: Run }) {
+  const expanded = read(closedToggled)[run.id] === true;
+  const aborted = run.status === "abortado";
+  const ran = stageRows(run).filter((r) => r.estado !== "pendiente");
+  return (
+    <Stack gap="xs">
+      <Row justify="between" align="center" gap="sm">
+        <Row gap="sm" align="center">
+          <Text tone={aborted ? "neutral" : "success"} muted={aborted}>
+            {aborted ? "✕" : "✓"}
+          </Text>
+          <Stack gap="none">
+            <Text size="sm" truncate>
+              <Link onPress={() => open(run.id, { tipo: "informe" })}>
+                {`${run.clave} · ${run.titulo}`}
+              </Link>
+            </Text>
+            <Text size="xs" muted truncate>
+              {closedSummary(run)}
+            </Text>
+          </Stack>
+        </Row>
+        <IconButton
+          icon={expanded ? "collapse" : "expand"}
+          label={expanded ? `Ocultar las etapas de ${run.clave}` : `Ver las etapas de ${run.clave}`}
+          variant="ghost"
+          size="sm"
+          onPress={() => update(closedToggled, (m) => ({ ...m, [run.id]: !expanded }))}
+        />
+      </Row>
+      {expanded ? (
+        <Stack gap="xs">
+          {ran.map((row) => (
+            <Stage key={row.fase} run={run} row={row} />
+          ))}
+        </Stack>
+      ) : null}
+    </Stack>
+  );
+}
+
+/** Los últimos runs cerrados y abortados, debajo de los activos: colapsados hasta que se abren. */
+function Closed({ runs }: { runs: Run[] }) {
+  if (runs.length === 0) return null;
+  const open = read(closedOpen);
+  return (
+    <Stack gap="sm">
+      <Separator />
+      <Row justify="between" align="center">
+        <Text size="xs" muted>
+          {`CERRADOS · ${String(runs.length)}`}
+        </Text>
+        <IconButton
+          icon={open ? "collapse" : "expand"}
+          label={open ? "Ocultar los runs cerrados" : "Ver los runs cerrados"}
+          variant="ghost"
+          size="sm"
+          onPress={() => set(closedOpen, !open)}
+        />
+      </Row>
+      {open ? runs.map((run) => <ClosedRow key={run.id} run={run} />) : null}
+    </Stack>
+  );
+}
+
 export default function Panel() {
   const snap = read(snapshot);
   if (snap === null) return <Spinner label="Leyendo los runs de flowrunner" />;
@@ -301,6 +376,7 @@ export default function Panel() {
           {elsewhere}
         </Text>
       ) : null}
+      <Closed runs={snap.cerrados ?? []} />
     </Stack>
   );
 }

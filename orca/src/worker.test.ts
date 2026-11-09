@@ -39,8 +39,10 @@ async function fakeWorker() {
 }
 
 // Si regresiona, el panel no recibe los runs de flowrunner.
-test("lee los runs con el comando de la config", async () => {
+test("lee los runs con el comando de la config, también los cerrados", async () => {
   const { worker } = await fakeWorker();
+  const log = join(mkdtempSync(join(tmpdir(), "flowrunner-log-")), "llamadas.log");
+  process.env.FAKE_LOG = log;
   try {
     const snap = await worker.request("flowrunner.runs");
     assert.equal(snap.error, undefined);
@@ -48,8 +50,10 @@ test("lee los runs con el comando de la config", async () => {
       snap.runs.map((r) => r.clave),
       ["VF-1", "VF-2", "PIZ-3"],
     );
+    assert.match(readFileSync(log, "utf8"), /^watch --json --cerrados$/m);
     assert.deepEqual(worker.refusals, []);
   } finally {
+    delete process.env.FAKE_LOG;
     await worker.deactivate();
   }
 });
@@ -76,8 +80,12 @@ test("lee solo los runs del proyecto enfocado en Orca y cuenta los demás; sin p
   execFileSync("git", ["-C", repoA, "worktree", "add", "-q", "-b", "otra", linked]);
   const watch = join(tmp, "watch.json");
   const data = JSON.parse(readFileSync(WATCH, "utf8")) as {
-    runs: { clave: string; repo: string }[];
+    runs: { id: string; clave: string; repo: string; status: string }[];
   };
+  // Un run cerrado del proyecto A: va aparte y no cuenta entre los activos de otros proyectos.
+  const first = data.runs[0];
+  if (first === undefined) throw new Error("watch.json sin runs");
+  data.runs.push({ ...first, id: "VF-0-20261101-000000", clave: "VF-0", status: "cerrado" });
   for (const r of data.runs) r.repo = r.clave.startsWith("VF-") ? repoA : repoB;
   writeFileSync(watch, JSON.stringify(data));
   process.env.FAKE_WATCH = watch;
@@ -130,6 +138,10 @@ test("lee solo los runs del proyecto enfocado en Orca y cuenta los demás; sin p
       ["VF-1", "VF-2"],
     );
     assert.deepEqual([a.proyecto, a.otros], ["videoFactory", 1]);
+    assert.deepEqual(
+      a.cerrados?.map((r) => r.clave),
+      ["VF-0"],
+    );
     // Sin terminales, por nombre y rama.
     const byName = await mount({ branch: "main", displayName: "main", terminals: [] });
     const b = await byName.request("flowrunner.runs");
@@ -139,6 +151,7 @@ test("lee solo los runs del proyecto enfocado en Orca y cuenta los demás; sin p
       ["PIZ-3"],
     );
     assert.deepEqual([b.proyecto, b.otros], ["pizarra-en-vivo", 2]);
+    assert.deepEqual(b.cerrados, []);
     // Sin el permiso `workspace:read`, aprobado todavía no: todos, como antes.
     const denied = await mount({ branch: "main", displayName: "main", terminals: [] }, [
       "settings:own",
@@ -146,6 +159,7 @@ test("lee solo los runs del proyecto enfocado en Orca y cuenta los demás; sin p
     const c = await denied.request("flowrunner.runs");
     await denied.deactivate();
     assert.equal(c.runs.length, 3);
+    assert.equal(c.cerrados?.length, 1);
     assert.equal(c.proyecto, undefined);
   } finally {
     delete process.env.FAKE_TERMINAL;

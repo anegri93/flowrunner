@@ -7,9 +7,7 @@
 import {
   atom,
   Badge,
-  Button,
   Card,
-  Code,
   EmptyState,
   IconButton,
   Link,
@@ -25,7 +23,7 @@ import {
   type PanelContext,
 } from "orca";
 import { Decisions } from "./decisiones";
-import type { Snapshot, Steps } from "./protocol";
+import type { Openable, Snapshot } from "./protocol";
 import {
   clock,
   isFinished,
@@ -44,7 +42,6 @@ const REFRESH_MS = 3_000;
 const snapshot = atom<Snapshot | null>(null);
 /** Runs que la persona abrió o cerró a mano; el resto sigue el default. */
 const toggled = atom("abiertos", {} as Record<string, boolean>, { persist: "plugin" });
-const steps = atom<(Steps & { run: string }) | null>(null);
 const notice = atom<{ run: string; texto: string } | null>(null);
 
 let reading = false;
@@ -75,20 +72,14 @@ export async function refresh(): Promise<void> {
   }
 }
 
-async function showSteps(run: string, sesion: string): Promise<void> {
+/** Abre los pasos de una sesión o el plan como pestaña de Orca; si no se puede, dice por qué. */
+async function open(run: string, que: Openable): Promise<void> {
+  set(notice, null);
   try {
-    set(steps, { run, ...(await plugin.request("flowrunner.pasos", { run, sesion })) });
-  } catch (error) {
-    set(notice, { run, texto: `No se pudieron leer los pasos: ${String(error)}` });
-  }
-}
-
-async function openPlan(run: string): Promise<void> {
-  try {
-    const answer = await plugin.request("flowrunner.verPlan", { run });
+    const answer = await plugin.request("flowrunner.abrir", { run, que });
     if (!answer.ok) set(notice, { run, texto: answer.mensaje });
   } catch (error) {
-    set(notice, { run, texto: `No se pudo abrir el plan: ${String(error)}` });
+    set(notice, { run, texto: `No se pudo abrir: ${String(error)}` });
   }
 }
 
@@ -106,7 +97,6 @@ const isOpen = (run: Run) => read(toggled)[run.id] ?? (needsYou(run) || !isFinis
 /** Lo que pasa en la etapa actual: su estado, las sub-tasks, qué hace la sesión y las decisiones. */
 function Current({ run, row }: { run: Run; row: StageRow }) {
   const now = nowOf(run);
-  const shownSteps = read(steps);
   const said = read(notice);
   return (
     <Stack gap="xs">
@@ -140,24 +130,14 @@ function Current({ run, row }: { run: Run; row: StageRow }) {
             label={`Pasos de ${a.sesion}`}
             variant="ghost"
             size="sm"
-            onPress={() => showSteps(run.id, a.sesion)}
+            onPress={() => open(run.id, { tipo: "pasos", sesion: a.sesion })}
           />
         </Row>
       ))}
-      {shownSteps?.run === run.id ? (
-        <Stack gap="xs">
-          <Code block>{tail(shownSteps.texto) || "(sin pasos todavía)"}</Code>
-          <Row>
-            <Button size="sm" variant="ghost" onPress={() => set(steps, null)}>
-              Cerrar los pasos
-            </Button>
-          </Row>
-        </Stack>
-      ) : null}
       {row.fase === "aprobar" ||
       run.status === "detenido" ||
       run.status === "pausado_por_limite" ? (
-        <Decisions run={run} after={refresh} onPlan={() => void openPlan(run.id)} />
+        <Decisions run={run} after={refresh} onPlan={() => void open(run.id, { tipo: "plan" })} />
       ) : null}
       {said?.run === run.id ? (
         <Text size="xs" tone="danger">

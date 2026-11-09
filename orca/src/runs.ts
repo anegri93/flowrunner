@@ -415,17 +415,7 @@ export function rerunPhase(run: Run): PhaseName | undefined {
   return PHASES.find((p) => p === desde);
 }
 
-// --- El plan --------------------------------------------------------------------------------
-
-/** Lo que el panel muestra del plan: lo que hace falta para decidir, en textos que Orca dibuja. */
-export interface PlanView {
-  readonly subtareas: { readonly id: string; readonly titulo: string }[];
-  readonly criterios: number;
-  /** Qué cambió contra el plan anterior, en líneas cortas; vacío en el primer plan. */
-  readonly cambios: string[];
-  /** El plan entero, línea por línea: Orca no dibuja textos de más de 16 KiB. */
-  readonly lineas: string[];
-}
+// --- Lo que se abre en una pestaña ---------------------------------------------------------
 
 /** Orca rechaza un dibujo con un texto de más de 16 KiB, en bytes: 4000 caracteres entran aun en UTF-8 ancho. */
 export const MAX_TEXT_CHARS = 4_000;
@@ -434,32 +424,56 @@ export const MAX_TEXT_CHARS = 4_000;
 export const tail = (text: string, max = MAX_TEXT_CHARS) =>
   text.length > max ? `…${text.slice(-max)}` : text;
 
-/** La salida de `flowrunner plan --json`, reducida a lo que el panel muestra. */
-export function planView(data: unknown): PlanView {
+/** Un nombre de sesión de flowrunner: `planificar-1`, `implementar-ST-2-1`. */
+export const SESSION_NAME = /^[A-Za-z0-9][A-Za-z0-9-]*$/;
+
+/** Los pasos de una sesión como Markdown, para abrirlos en una pestaña. */
+export function stepsMarkdown(clave: string, sesion: string, texto: string): string {
+  return `# ${clave} · pasos de ${sesion}\n\n\`\`\`text\n${texto.trim() || "(sin pasos todavía)"}\n\`\`\`\n`;
+}
+
+const CHANGE_LABELS: Record<string, string> = {
+  subtareas_agregadas: "Sub-tasks nuevas",
+  subtareas_quitadas: "Sub-tasks que ya no están",
+  alcance_agregado: "Alcance nuevo",
+  alcance_quitado: "Alcance que ya no está",
+  tests_agregados: "Tests nuevos",
+  tests_quitados: "Tests que ya no están",
+};
+
+/** La salida de `flowrunner plan --json` como Markdown, para abrirla en una pestaña. */
+export function planMarkdown(clave: string, data: unknown): string {
   const d = data as {
     plan?: string;
-    subtareas?: { id: string; titulo: string }[];
-    criterios?: unknown[];
+    subtareas?: { id: string; titulo: string; alcance?: string[]; depende_de?: string[] }[];
+    criterios?: { id: string; comando: string; subtarea: string }[];
     cambios?: Record<string, string[]> | null;
   };
-  const LABELS: Record<string, string> = {
-    subtareas_agregadas: "sub-tasks nuevas",
-    subtareas_quitadas: "sub-tasks que ya no están",
-    alcance_agregado: "alcance nuevo",
-    alcance_quitado: "alcance que ya no está",
-    tests_agregados: "tests nuevos",
-    tests_quitados: "tests que ya no están",
-  };
-  const cambios = Object.entries(d.cambios ?? {})
+  const tasks = (d.subtareas ?? []).map(
+    (t) =>
+      `- **${t.id}** ${t.titulo}${t.alcance === undefined || t.alcance.length === 0 ? "" : ` — \`${t.alcance.join("`, `")}\``}${t.depende_de === undefined || t.depende_de.length === 0 ? "" : ` · depende de ${t.depende_de.join(", ")}`}`,
+  );
+  const criteria = (d.criterios ?? []).map(
+    (c) => `- **${c.id}** → ${c.subtarea}: \`${c.comando}\``,
+  );
+  const changes = Object.entries(d.cambios ?? {})
     .filter(([, items]) => items.length > 0)
-    .map(([key, items]) => `${LABELS[key] ?? key}: ${items.join(", ")}`);
-  return {
-    subtareas: (d.subtareas ?? []).map((t) => ({ id: t.id, titulo: t.titulo })),
-    criterios: d.criterios?.length ?? 0,
-    cambios,
-    lineas: (d.plan ?? "")
-      .split("\n")
-      .filter((line) => line.trim() !== "")
-      .map((line) => tail(line, MAX_TEXT_CHARS)),
-  };
+    .map(([key, items]) => `- ${CHANGE_LABELS[key] ?? key}: ${items.join(", ")}`);
+  return [
+    `# ${clave} · plan`,
+    "",
+    ...(changes.length === 0 ? [] : ["## Contra el plan anterior", "", ...changes, ""]),
+    "## Sub-tasks",
+    "",
+    ...tasks,
+    "",
+    "## Criterios",
+    "",
+    ...criteria,
+    "",
+    "---",
+    "",
+    (d.plan ?? "").trim(),
+    "",
+  ].join("\n");
 }

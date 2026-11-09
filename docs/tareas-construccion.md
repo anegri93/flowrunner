@@ -834,6 +834,16 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. Un campo derivado de un evento que ya existía; ningún estado nuevo en el motor.
 - **Desbloquea:** Gate Fase 8
 
+### T8.9 · Pasos y plan como pestañas de Orca
+- **Estado:** `[x] Hecho`
+- **Descripción:** la persona quería que los pasos de una sesión y el plan se abrieran como pestaña de Orca con el archivo, y no como una pestaña más en la barra derecha ni dentro del panel. Orca solo abre archivos de un proyecto suyo, así que el worker los escribe como Markdown en `.git/flowrunner/<run>/` del repo del run, que git no versiona, y los abre con `orca file open --focus` en ese proyecto. Se fueron la pestaña lateral del plan y los pasos dentro del panel. El worker valida el id del run y el nombre de la sesión antes de armar la ruta.
+- **Lint:** `pnpm lint` y `orca plugin validate`.
+- **Test:** `pnpm orca:test`, 21 tests. `worker.test.ts` › «abrir escribe los pasos o el plan en el .git del repo y los abre como pestaña en su proyecto», con un repo git de verdad y un CLI de Orca falso: los archivos, los comandos de Orca y el repo limpio. Una sesión con `../` se rechaza sin llamar a nada. `panel.test.tsx`: Pasos y Plan piden abrir su archivo, y si no se puede, el run lo dice. `runs.test.ts`: el plan y los pasos como Markdown.
+- **Canario:** el archivo fuera del `.git` dejó el repo sucio y puso en rojo el test del worker; los pasos sin abrir pusieron en rojo los del panel.
+- **Criterio de aprobación:** desde el plugin cargado en Orca, los pasos de `planificar-1` de VF-4 se abrieron como pestaña en el proyecto de videoFactory, con `git status` limpio.
+- **Revisión ponytail:** a mano. Una acción del worker reemplaza tres y la pestaña del plan.
+- **Desbloquea:** Gate Fase 8
+
 ### Gate Fase 8
 - **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.

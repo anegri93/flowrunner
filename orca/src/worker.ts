@@ -1,15 +1,22 @@
 // El worker del plugin: corre el CLI de flowrunner y le contesta al panel. Orca lo transpila al
 // cargarlo, sin paso de build. No guarda estado: cada pedido lee los runs de nuevo.
 import { execFile } from "node:child_process";
+import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { isAbsolute, join, relative } from "node:path";
 import type { OrcaWorkerApi } from "orca/worker";
-import type { Outcome, Snapshot } from "./protocol";
-import { parseWatch, PHASES, planView, sortRuns, type Decision } from "./runs";
+import type { Openable, Outcome, Snapshot } from "./protocol";
+import {
+  parseWatch,
+  PHASES,
+  planMarkdown,
+  SESSION_NAME,
+  stepsMarkdown,
+  type Decision,
+} from "./runs";
 
 const TIMEOUT_MS = 20_000;
-/** El CLI de Orca, que abre la pestaña del plan: ningún método del host abre un panel. */
+/** El CLI de Orca, que abre un archivo como pestaña: ningún método del host abre un archivo de afuera. */
 const orcaCli = () => process.env.ORCA_CLI ?? "/Applications/Orca.app/Contents/Resources/bin/orca";
-/** La clave con que Orca carga este plugin desde la carpeta de flowrunner. */
-const PLUGIN_KEY = "local.flowrunner";
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const MAX_MOTIVO = 2_000;
 
@@ -102,69 +109,84 @@ function outcomeOf(proc: Proc): Outcome {
   }
 }
 
-function openPlanTab(): Promise<Outcome> {
+function exec(file: string, args: readonly string[]): Promise<Proc> {
   return new Promise((resolve) => {
-    execFile(
-      orcaCli(),
-      ["plugin", "open", PLUGIN_KEY, "--panel", "plan"],
-      { timeout: TIMEOUT_MS },
-      (error, _stdout, stderr) => {
-        resolve(
-          error === null
-            ? { ok: true, mensaje: "plan abierto" }
-            : {
-                ok: false,
-                mensaje: `No se pudo abrir la pestaña del plan: ${lastLines(stderr || error.message)}`,
-              },
-        );
-      },
-    );
+    execFile(file, args, { timeout: TIMEOUT_MS }, (error, stdout, stderr) => {
+      const code = error === null ? 0 : typeof error.code === "number" ? error.code : 1;
+      resolve({ code, stdout, stderr: stderr || (error?.message ?? "") });
+    });
   });
 }
 
+/**
+ * Dónde guardar lo que se abre: en el `.git` del repo del run, que git no versiona, para que Orca lo
+ * abra como pestaña en el mismo proyecto sin ensuciar el repo. Orca solo abre archivos de un proyecto
+ * suyo.
+ */
+async function viewDir(repo: string, id: string): Promise<string> {
+  const proc = await exec("git", ["-C", repo, "rev-parse", "--absolute-git-dir"]);
+  const gitDir = proc.stdout.trim();
+  // git devuelve la ruta real (en macOS, /var es un link a /private/var); el archivo va con la ruta
+  // del repo como la conoce Orca, o no lo reconoce como parte del proyecto.
+  const inside = relative(realpathSync(repo), gitDir);
+  if (proc.code !== 0 || inside === "" || inside.startsWith("..") || isAbsolute(inside)) {
+    throw new Error(`no encontré el .git de ${repo} dentro del repo`);
+  }
+  return join(repo, inside, "flowrunner", id);
+}
+
 export default function activate(orca: OrcaWorkerApi): void {
-  /** El run cuyo plan pidió ver la persona; se pierde si el worker se reinicia. */
-  let selected: string | undefined;
+  const watch = async () => parseWatch(await ok(`${await command(orca)} watch --json`));
 
   orca.panels.handle("flowrunner.runs", async (): Promise<Snapshot> => {
     const at = Date.now();
     try {
-      return { runs: parseWatch(await ok(`${await command(orca)} watch --json`)), at };
+      return { runs: await watch(), at };
     } catch (error) {
       return { runs: [], error: error instanceof Error ? error.message : String(error), at };
     }
   });
 
-  orca.panels.handle("flowrunner.pasos", async ({ run: id, sesion }) => {
-    const out = await ok(
-      `${await command(orca)} report ${quote(runId(id))} --sesion ${quote(sesion)} --json`,
-    );
-    const data = JSON.parse(out) as { texto?: unknown };
-    return { sesion, texto: typeof data.texto === "string" ? data.texto : "" };
-  });
-
-  orca.panels.handle("flowrunner.plan", async ({ run: id }) =>
-    planView(JSON.parse(await ok(`${await command(orca)} plan ${quote(runId(id))} --json`))),
-  );
-
-  orca.panels.handle("flowrunner.verPlan", async ({ run: id }) => {
-    selected = runId(id);
-    return openPlanTab();
-  });
-
-  orca.panels.handle("flowrunner.planActual", async () => {
+  orca.panels.handle("flowrunner.abrir", async ({ run: id, que }): Promise<Outcome> => {
     try {
-      const runs = sortRuns(parseWatch(await ok(`${await command(orca)} watch --json`)));
-      const run =
-        runs.find((r) => r.id === selected) ??
-        runs.find((r) => r.status === "esperando_aprobacion");
-      if (run === undefined) return {};
-      const plan = planView(
-        JSON.parse(await ok(`${await command(orca)} plan ${quote(run.id)} --json`)),
-      );
-      return { run, plan };
+      const runIdOk = runId(id);
+      const what: Openable = que;
+      if (what.tipo === "pasos" && !SESSION_NAME.test(what.sesion)) {
+        throw new Error(`sesión inválida: ${String(what.sesion)}`);
+      }
+      const run = (await watch()).find((r) => r.id === runIdOk);
+      if (run === undefined) throw new Error(`no encontré el run ${runIdOk} entre los activos`);
+      const dir = await viewDir(run.repo, run.id);
+      mkdirSync(dir, { recursive: true });
+      const flowrunner = await command(orca);
+      let file: string;
+      if (what.tipo === "pasos") {
+        const data = JSON.parse(
+          await ok(`${flowrunner} report ${quote(run.id)} --sesion ${quote(what.sesion)} --json`),
+        ) as { texto?: unknown };
+        file = join(dir, `${what.sesion}.md`);
+        writeFileSync(
+          file,
+          stepsMarkdown(run.clave, what.sesion, typeof data.texto === "string" ? data.texto : ""),
+        );
+      } else {
+        const data: unknown = JSON.parse(await ok(`${flowrunner} plan ${quote(run.id)} --json`));
+        file = join(dir, "plan.md");
+        writeFileSync(file, planMarkdown(run.clave, data));
+      }
+      const opened = await exec(orcaCli(), [
+        "file",
+        "open",
+        file,
+        "--worktree",
+        `path:${run.repo}`,
+        "--focus",
+      ]);
+      if (opened.code !== 0)
+        throw new Error(`Orca no abrió el archivo: ${lastLines(opened.stderr)}`);
+      return { ok: true, mensaje: "abierto" };
     } catch (error) {
-      return { error: error instanceof Error ? error.message : String(error) };
+      return { ok: false, mensaje: error instanceof Error ? error.message : String(error) };
     }
   });
 

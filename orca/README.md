@@ -7,12 +7,13 @@ como `flowrunner watch`, pensada para el ancho angosto de la barra:
   ESPERA»), el título, el tiempo, y las ocho etapas del flujo en lista con sus intentos y su tiempo.
   La etapa que trabaja gira, y debajo de la actual se ve qué está haciendo.
 - Los más recientes arriba. Los terminados muestran solo su etapa actual hasta que los abrís.
-- Debajo de la etapa actual: las sub-tasks con su estado y lo que hace la sesión que corre, con sus
-  pasos a un toque. El costo queda chico al pie.
+- Debajo de la etapa actual: las sub-tasks con su estado y lo que hace la sesión que corre. El costo
+  queda chico al pie.
+- El botón de pasos de una sesión y «Plan» abren el archivo como pestaña de Orca, en el proyecto del
+  run. El plugin lo escribe en `.git/flowrunner/<run>/` del repo, que git no versiona.
 - Las decisiones que el run espera, en una fila: aprobar o pedir cambios al plan, reanudar un run
   detenido o rehacerlo desde la fase que sugiere el motivo. Aprobar, reanudar y rehacer piden
   confirmación.
-- «Plan» abre la pestaña «Plan de flowrunner», con el plan entero y las mismas decisiones.
 
 Se refresca cada 3 segundos mientras la pestaña se ve.
 

@@ -844,6 +844,16 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. Una acción del worker reemplaza tres y la pestaña del plan.
 - **Desbloquea:** Gate Fase 8
 
+### T8.9b · Tocar «Aprobar» abre el plan, también el ya aprobado
+- **Estado:** `[x] Hecho`
+- **Descripción:** con VF-4 aprobado e implementando, la persona quería volver a ver el plan aprobado tocando «Aprobar». Ahora, en todo run cuyo planificar terminó, el nombre de la etapa Aprobar es un link que abre el plan como pestaña de Orca, como el botón «Plan».
+- **Lint:** `pnpm lint` y `orca plugin validate`.
+- **Test:** `orca/src/panel.test.tsx` › «tocar Aprobar abre el plan, también el de un run que ya lo aprobó»: PIZ-3, que espera, y VF-2, que ya pasó de planificar, abren su plan.
+- **Canario:** con el panel de main, el test falló.
+- **Criterio de aprobación:** el plan aprobado de VF-4 se abrió como pestaña en el proyecto de videoFactory.
+- **Revisión ponytail:** a mano. Un link en una etapa, con la acción que ya existía.
+- **Desbloquea:** Gate Fase 8
+
 ### Gate Fase 8
 - **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.

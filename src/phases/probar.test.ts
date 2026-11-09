@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { plannedRun } from "../../test/helpers/planned.ts";
@@ -162,6 +163,26 @@ describe("probar", () => {
     expect(readFileSync(join(dir, "guion-del-video.js"), "utf8")).toContain(
       "window.flowrunner = {",
     );
+  });
+
+  // Si regresiona, el navegador no llega al Supabase o al Mailpit del repo: sin fotos, sin tiempo real
+  // y sin el código de ingreso, el agente no puede probar nada que pida entrar.
+  test("los servicios llegan al navegador y al prompt junto a las URLs", async () => {
+    const port = await freePort();
+    const correo = createServer((_, r) => r.end("mailpit")).listen(port, "127.0.0.1");
+    try {
+      const { sim, run } = await testWith({ pruebas: [prueba({})], decisiones: [] }, true, {
+        servicios: { correo: `http://127.0.0.1:${String(port)}/api/v1` },
+      });
+      const dir = lastTestDir(run) ?? "";
+      const navegador = JSON.parse(readFileSync(join(dir, "navegador.json"), "utf8")) as {
+        network: { allowedOrigins: string[] };
+      };
+      expect(navegador.network.allowedOrigins).toContain(`http://127.0.0.1:${String(port)}`);
+      expect(sim.records[0]?.prompt).toContain(`- correo: http://127.0.0.1:${String(port)}/api/v1`);
+    } finally {
+      correo.close();
+    }
   });
 
   // Si regresiona, un repo sin entorno configurado queda trabado en probar.

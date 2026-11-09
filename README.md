@@ -129,6 +129,8 @@ probar:
   urls: # lo único a lo que llegan el navegador y la API
     api: http://localhost:3000
     web: http://localhost:5173
+  servicios: # compartidos, como el Supabase local: pueden estar prendidos antes y quedar después
+    correo: http://127.0.0.1:54324
   env_files: [apps/api/.env, apps/web/.env] # se copian de tu checkout a la copia de la feature
   notas: Entrá con el usuario de prueba que crea el seed, admin@local.test.
   espera_segundos: 300
@@ -146,7 +148,9 @@ qué debería pasar; un cursor que marca cada clic; lo que se toca queda centrad
 final de cada criterio, el resultado marcado.
 
 El agente no puede leer ni buscar en los `env_files`, y al terminar se borran de la copia de la feature.
-Si algo ya responde en esas URLs antes de levantar, por ejemplo tu propio entorno, probar se detiene:
+Los `servicios` también los alcanzan el navegador y la API, pero no corren el código de la feature: un
+Supabase local que ya usan los e2e puede estar prendido, y probar solo espera a que respondan.
+Si algo ya responde en las `urls` antes de levantar, por ejemplo tu propio entorno, probar se detiene:
 probar contra eso no probaría la feature. Cada prueba queda en el informe y en la PR. El log de cada
 pedido a la API y el video de cada navegación quedan en `~/.flowrunner/runs/<id>/pruebas/`, y el
 informe y la etapa Probar del panel de Orca los enlazan para que los revises.

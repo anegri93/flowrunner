@@ -12,6 +12,7 @@ export interface InferredConfig {
   readonly base_branch: string;
   readonly setup: string;
   readonly tests_globs: string[];
+  readonly format?: string;
   readonly harness_files: string[];
   readonly lockfiles: string[];
   readonly manifests: string[];
@@ -33,10 +34,15 @@ export interface RepoFacts {
 }
 
 const MANAGERS = [
-  { lockfile: "pnpm-lock.yaml", setup: "pnpm install --frozen-lockfile", run: "pnpm" },
-  { lockfile: "package-lock.json", setup: "npm ci", run: "npm run" },
-  { lockfile: "yarn.lock", setup: "yarn install --frozen-lockfile", run: "yarn" },
-  { lockfile: "bun.lock", setup: "bun install --frozen-lockfile", run: "bun run" },
+  {
+    lockfile: "pnpm-lock.yaml",
+    setup: "pnpm install --frozen-lockfile",
+    run: "pnpm",
+    exec: "pnpm exec",
+  },
+  { lockfile: "package-lock.json", setup: "npm ci", run: "npm run", exec: "npx" },
+  { lockfile: "yarn.lock", setup: "yarn install --frozen-lockfile", run: "yarn", exec: "yarn" },
+  { lockfile: "bun.lock", setup: "bun install --frozen-lockfile", run: "bun run", exec: "bunx" },
 ] as const;
 
 /**
@@ -50,7 +56,11 @@ const HARNESS = /^(vitest|jest|playwright)\.(config|workspace)\.[cm]?[jt]s$/;
 const TEST_DIR = /^(tests?)\//;
 const TEST_FILE = /\.(test|spec)\.([cm]?[jt]sx?)$/;
 
-const packageSchema = z.object({ scripts: z.record(z.string(), z.string()).default({}) });
+const packageSchema = z.object({
+  scripts: z.record(z.string(), z.string()).default({}),
+  dependencies: z.record(z.string(), z.string()).default({}),
+  devDependencies: z.record(z.string(), z.string()).default({}),
+});
 
 function testGlobs(files: readonly string[]): string[] {
   const globs = new Set<string>();
@@ -152,6 +162,19 @@ export function inferRepo(facts: RepoFacts): Inferred {
         : "no encontré tests: planificar va a escribir los suyos en test/",
   });
 
+  const { dependencies, devDependencies } = parsed.data;
+  const format =
+    "prettier" in devDependencies || "prettier" in dependencies
+      ? `${manager?.exec ?? "npx"} prettier --write --ignore-unknown`
+      : undefined;
+  if (format !== undefined) {
+    hallazgos.push({
+      que: "format",
+      estado: "inferido",
+      detalle: `\`${format}\`: flowrunner formatea los tests que escribe planificar antes de bloquearlos`,
+    });
+  }
+
   const harness_files = facts.files.filter((f) => HARNESS.test(f)).sort();
   if (harness_files.length > 0) {
     hallazgos.push({ que: "harness_files", estado: "inferido", detalle: harness_files.join(", ") });
@@ -162,6 +185,7 @@ export function inferRepo(facts: RepoFacts): Inferred {
       base_branch: facts.baseBranch,
       setup,
       tests_globs,
+      ...(format === undefined ? {} : { format }),
       harness_files,
       lockfiles: manager === undefined ? [] : [manager.lockfile],
       manifests: ["package.json"],

@@ -392,6 +392,17 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano; sin hallazgos. Las plantillas de prompt viven en `prompts/` con un render de marcas `{{x}}` que falla si falta una variable.
 - **Desbloquea:** T4.3
 
+### T4.2b · Planificar formatea sus tests antes de bloquearlos
+- **Estado:** `[x] Hecho`
+- **Regresión de:** T4.2
+- **Descripción:** en VF-1 el planificador escribió tests con líneas de más de 150 caracteres, sin poder correr el formateador. Quedaron bloqueados por su hash, ninguna sub-task los podía tocar, y el run se trabó dos veces en `format:check`. Ahora `.flowrunner/config.yaml` acepta `format`, el formateador al que flowrunner le agrega las rutas, y planificar lo corre sobre los tests escritos antes del gate, del hash y del commit. Si sale distinto de 0, el plan no pasa el gate. `flowrunner init` lo infiere cuando `prettier` está en las dependencias, con el `exec` del gestor del repo. El prompt dice que los tests quedan bloqueados byte a byte y que el plan no da permisos a las sub-tasks.
+- **Lint:** `pnpm lint`.
+- **Test:** `src/phases/planificar.test.ts`: con prettier real, un test con una línea de 122 caracteres queda formateado, pasa `prettier --check`, y su hash en `locked.json` es el del archivo formateado; un formateador que falla rechaza el plan con el motivo. `src/setup/infer.test.ts`: prettier en las dependencias da `npx prettier --write --ignore-unknown` o su equivalente con `pnpm exec`, y sin prettier no hay `format`.
+- **Canario:** con planificar sin el paso de formato, los dos tests de planificar se pusieron en rojo, «expected 122 to be less than or equal to 80» y un plan aceptado con el formateador roto. Sin la inferencia, el de infer.
+- **Criterio de aprobación:** en el próximo run de un repo con `format`, ningún test de aceptación hace fallar el formato de verify.
+- **Revisión ponytail:** a mano. Sin formateador configurado no hay chequeo de formato en el gate: flowrunner no tiene con qué correrlo, y un repo con prettier ya lo infiere.
+- **Desbloquea:** T4.3
+
 ### T4.3 · Aprobar: espera sin proceso, approve, changes
 - **Estado:** `[x] Hecho`
 - **Descripción:** `src/notify/` con `osascript` y la fase aprobar: registra la espera, avisa con un texto que dice qué pedirle a Claude, como *"SHOP-214: el plan espera tu aprobación. Pedile a Claude que te lo muestre."*, y termina el proceso. `flowrunner plan <run>` muestra plan, sub-tasks con alcance y diff de los tests. `approve` relanza hacia implementar; `changes <run> "<motivo>"` relanza hacia planificar con la instrucción.

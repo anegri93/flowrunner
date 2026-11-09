@@ -139,7 +139,10 @@ const runningCost = (ss: readonly SessionNode[]) =>
   sum(ss.filter((s) => s.corriendo).map((s) => s.costoEstimado ?? 0));
 const times = (ss: readonly SessionNode[]) => (ss.length > 1 ? ` ×${String(ss.length)}` : "");
 
-function phaseRow(p: PhaseNode): { kind: Kind; status: string; note: string | undefined } {
+function phaseRow(
+  p: PhaseNode,
+  prMergeada: boolean,
+): { kind: Kind; status: string; note: string | undefined } {
   switch (p.estado) {
     case "pendiente":
       return { kind: "pending", status: "pendiente", note: undefined };
@@ -153,7 +156,9 @@ function phaseRow(p: PhaseNode): { kind: Kind; status: string; note: string | un
     case "espera":
       return p.fase === "aprobar"
         ? { kind: "blocked", status: "te espera", note: undefined }
-        : { kind: "waiting", status: "espera merge", note: undefined };
+        : prMergeada
+          ? { kind: "waiting", status: "aprende al próximo chequeo", note: undefined }
+          : { kind: "waiting", status: "espera merge", note: undefined };
     case "vuelve":
       return { kind: "back", status: "volvió", note: p.detalle };
     case "falla":
@@ -214,7 +219,7 @@ function runRows(tree: RunTree): Row[] {
         tree.haceSegundos === undefined
           ? duration(tree.segundos)
           : `hace ${duration(tree.haceSegundos)}`,
-      status: run.text,
+      status: tree.status === "entregado" && tree.prMergeada ? "PR mergeada" : run.text,
       note:
         tree.motivo ??
         (tree.siguiente === undefined ? undefined : `para seguir: ${tree.siguiente}`),
@@ -234,7 +239,7 @@ function runRows(tree: RunTree): Row[] {
       sessions: p.sesiones.map((s) => s.nombre),
       prefix: `   ${last ? "└─ " : "├─ "}`,
       stem: `   ${last ? "   " : "│  "}`,
-      ...phaseRow(p),
+      ...phaseRow(p, tree.prMergeada),
       label: `${p.fase}${progress}${times(p.sesiones)}`,
       id: "",
       model: tags(own),

@@ -302,6 +302,39 @@ describe("runTree", () => {
     expect(tree).toMatchObject({ status: "abortado", segundos: 600, haceSegundos: 8_400 });
   });
 
+  // Si regresiona, un run entregado sigue sumando el tiempo que tarda tu merge (VF-2 marcaba 1:02:02),
+  // o el panel no sabe que la PR ya se mergeó y sigue diciendo «espera merge».
+  test("un run entregado para el reloj en la entrega y sabe si su PR ya se mergeó", () => {
+    const delivered: RunEvent[] = [
+      ...base,
+      { tipo: "accion_terminada", at: at(200), fase: "aprobar", resultado: { tipo: "ok" } },
+      { tipo: "accion_iniciada", at: at(200), fase: "entregar" },
+      { tipo: "pr", at: at(290), url: "https://github.com/o/r/pull/4", numero: 4 },
+      { tipo: "accion_terminada", at: at(300), fase: "entregar", resultado: { tipo: "ok" } },
+    ];
+    const open = runTree({
+      events: delivered,
+      tasks,
+      titulo: "x",
+      sessions: new Map(),
+      now: T0 + 3_600_000,
+    });
+    expect(open).toMatchObject({
+      status: "entregado",
+      segundos: 300,
+      prMergeada: false,
+      haceSegundos: undefined,
+    });
+    const merged = runTree({
+      events: [...delivered, { tipo: "pr_cerrada", at: at(900), mergeada: true }],
+      tasks,
+      titulo: "x",
+      sessions: new Map(),
+      now: T0 + 3_600_000,
+    });
+    expect(merged).toMatchObject({ segundos: 300, prMergeada: true });
+  });
+
   // Si regresiona, watch muestra el modelo sin el esfuerzo con que corrió cada fase.
   test("cada sesión lleva el esfuerzo configurado para su fase", () => {
     const tree = runTree({

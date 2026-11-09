@@ -35,6 +35,7 @@ const tree: RunTree = {
   titulo: "Cambios de un toque",
   proyecto: "pizarra-en-vivo",
   repo: "/r/pizarra-en-vivo",
+  prMergeada: false,
   status: "en_curso",
   costoUsd: 1.24,
   segundos: 540,
@@ -308,4 +309,21 @@ test("duration, tokenCount y modelTag", () => {
     "opus-5-5 (high)",
     "–",
   ]);
+});
+
+// Si regresiona, watch dice «espera merge» de un run cuya PR ya se mergeó, y la persona no sabe qué
+// está esperando.
+test("un run entregado con la PR mergeada dice que aprende al próximo chequeo, no que espera merge", () => {
+  const delivered = (prMergeada: boolean): RunTree => ({
+    ...tree,
+    status: "entregado",
+    prMergeada,
+    fases: [phase("entregar", { estado: "ok" }), phase("aprender", { estado: "espera" })],
+  });
+  const text = (t: RunTree) => renderBoard([t], { width: 140, color: false }).lines.join("\n");
+  expect(text(delivered(false))).toContain("espera merge");
+  expect(text(delivered(false))).toContain("PR abierta");
+  expect(text(delivered(true))).toContain("aprende al próximo chequeo");
+  expect(text(delivered(true))).toContain("PR mergeada");
+  expect(text(delivered(true))).not.toContain("espera merge");
 });

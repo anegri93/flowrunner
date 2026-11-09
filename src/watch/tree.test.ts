@@ -80,6 +80,7 @@ describe("runTree", () => {
       ["implementar", "pendiente"],
       ["verificar", "pendiente"],
       ["revisar", "pendiente"],
+      ["probar", "pendiente"],
       ["entregar", "pendiente"],
       ["aprender", "pendiente"],
     ]);

@@ -34,6 +34,7 @@ describe("CLI de runs", () => {
       "implementar",
       "verificar",
       "revisar",
+      "probar",
       "entregar",
     ]);
   });

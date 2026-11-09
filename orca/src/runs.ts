@@ -160,7 +160,7 @@ function cost(ss: readonly Session[], real: number): string | undefined {
   return `${live > 0 ? "≥ " : ""}$${total.toFixed(2)}`;
 }
 
-// --- Las ocho etapas ------------------------------------------------------------------------
+// --- Las nueve etapas ------------------------------------------------------------------------
 
 /** Las etapas del flujo, en orden, como en el diagrama. */
 export const STATIONS = [
@@ -170,6 +170,7 @@ export const STATIONS = [
   "implementar",
   "verificar",
   "revisar",
+  "probar",
   "entregar",
   "aprender",
 ] as const;
@@ -214,7 +215,7 @@ export function phaseLabel(
   }
 }
 
-/** Las ocho etapas del run, con el estado de cada uno. */
+/** Las nueve etapas del run, con el estado de cada uno. */
 export function stationsOf(run: Run): Station[] {
   return STATIONS.map((fase) => ({
     nombre: capitalize(fase),
@@ -238,7 +239,7 @@ export interface StageRow {
   readonly actual: boolean;
 }
 
-/** Las ocho etapas como filas de una lista, con su tiempo y sus intentos. */
+/** Las nueve etapas como filas de una lista, con su tiempo y sus intentos. */
 export function stageRows(run: Run): StageRow[] {
   return stationsOf(run).map((station) => {
     const p = run.fases.find((x) => x.fase === station.fase);

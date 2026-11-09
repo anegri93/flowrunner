@@ -40,7 +40,7 @@ test("los runs más recientes van arriba, y un run con la PR abierta cuenta como
 });
 
 // Si regresiona, el panel inventa pasos que no son los del flujo.
-test("las ocho etapas del flujo, con su nombre y el estado de su fase en flowrunner", () => {
+test("las nueve etapas del flujo, con su nombre y el estado de su fase en flowrunner", () => {
   assert.deepEqual(states(byKey("PIZ-3")), [
     "Preparar:ok",
     "Planificar:ok",
@@ -48,6 +48,7 @@ test("las ocho etapas del flujo, con su nombre y el estado de su fase en flowrun
     "Implementar:pendiente",
     "Verificar:pendiente",
     "Revisar:pendiente",
+    "Probar:pendiente",
     "Entregar:pendiente",
     "Aprender:pendiente",
   ]);

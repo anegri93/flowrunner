@@ -65,6 +65,27 @@ describe("transiciones", () => {
     expect(three.halt?.motivo).toMatch(/revisar devolvió trabajo 3 veces/);
   });
 
+  // Si regresiona, la PR se abre sin que nadie haya usado la feature, o una falla en el entorno se pierde.
+  test("revisar sigue a probar; probar en verde entrega y en falla devuelve su sub-task", () => {
+    const reviewed = [
+      upTo("preparar", "planificar"),
+      ok("aprobar"),
+      upTo("implementar", "verificar", "revisar"),
+    ];
+    expect(nextAction(state(...reviewed))).toMatchObject({ fase: "probar" });
+    expect(nextAction(state(...reviewed, ok("probar")))).toMatchObject({ fase: "entregar" });
+    const back = state(
+      ...reviewed,
+      done("probar", { tipo: "vuelve", unidades: ["ST-3"], motivo: "POST /cuentas da 500" }),
+    );
+    expect(nextAction(back)).toMatchObject({
+      fase: "implementar",
+      unidades: ["ST-3"],
+      instruccion: "POST /cuentas da 500",
+    });
+    expect(back.vueltas.probar).toBe(1);
+  });
+
   test("verificar devuelve a implementar solo las sub-tasks que nombra, con el motivo", () => {
     const s = state(
       upTo("preparar", "planificar", "aprobar", "implementar"),

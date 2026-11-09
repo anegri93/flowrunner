@@ -8,6 +8,7 @@ export const PHASES = [
   "implementar",
   "verificar",
   "revisar",
+  "probar",
   "entregar",
   "aprender",
 ] as const;
@@ -23,7 +24,7 @@ export const outcomeSchema = z.discriminatedUnion("tipo", [
     clase: z.enum(["gate", "infra", "entorno", "invariante"]),
     motivo: z.string().min(1),
   }),
-  /** verificar o revisar devuelven trabajo a implementar. */
+  /** verificar, revisar o probar devuelven trabajo a implementar. */
   z.strictObject({
     tipo: z.literal("vuelve"),
     unidades: z.array(z.string().min(1)).min(1),

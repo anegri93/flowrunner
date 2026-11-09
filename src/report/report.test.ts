@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { STREAMS } from "../../test/helpers/fake-query.ts";
 import { tempDir } from "../../test/helpers/git.ts";
@@ -224,4 +224,39 @@ test("el informe y la PR traen el paso a paso de la revisión para probarlo", ()
     "## Cómo probarlo\n\n1. Levantá la API con `pnpm dev`\n2. curl localhost:3000/a &lt;b&gt;";
   expect(buildReport([created], paths)).toContain(expected);
   expect(prBody([], paths)).toContain(expected);
+});
+
+// Si regresiona, la persona no ve qué probó flowrunner en el entorno ni encuentra el video para validarlo.
+test("el informe trae las pruebas en el entorno con su evidencia; la PR, sin rutas locales", () => {
+  const dir = tempDir();
+  const tests = join(dir, "pruebas", "probar-1");
+  mkdirSync(join(tests, "video"), { recursive: true });
+  writeFileSync(join(tests, "http.md"), "## GET /\n");
+  writeFileSync(join(tests, "video", "page@1.webm"), "");
+  writeFileSync(
+    join(tests, "pruebas.json"),
+    JSON.stringify({
+      pruebas: [
+        {
+          criterio: "AC-1",
+          que: "crear una cuenta",
+          pasos: ["POST /cuentas"],
+          resultado: "falla",
+          evidencia: "500",
+          subtarea: "ST-1",
+        },
+      ],
+      decisiones: [],
+    }),
+  );
+  const paths = { id: "R", home: "/nada", dir, worktrees: "/nada" };
+  const results =
+    "## Pruebas en el entorno\n\n- ❌ **AC-1** crear una cuenta\n    1. POST /cuentas\n    - Evidencia: 500";
+  const report = buildReport([created], paths);
+  expect(report).toContain(results);
+  expect(report).toContain(`- [Video page@1.webm](file://${tests}/video/page@1.webm)`);
+  expect(report).toContain(`- [Log de la API](file://${tests}/http.md)`);
+  const body = prBody([], paths);
+  expect(body).toContain(results);
+  expect(body).not.toContain("file://");
 });

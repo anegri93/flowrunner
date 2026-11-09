@@ -75,7 +75,7 @@ describe("Fase 6 ensamblada", () => {
     const state = w.state(id);
     expect(state.halt?.motivo).toBeUndefined();
     expect(state.status).toBe("entregado");
-    expect(state.vueltas).toEqual({ verificar: 1, revisar: 1 });
+    expect(state.vueltas).toEqual({ verificar: 1, revisar: 1, probar: 0 });
 
     const gh = readFileSync(join(w.env.HOME ?? "", "gh.log"), "utf8");
     expect(gh.match(/"create"/g)).toHaveLength(1);

@@ -99,6 +99,30 @@ Homebrew; si no está instalada, verify no corre y el run se detiene diciendo c�
 6. Revisá la PR, corregí lo que haga falta y mergeala. En el próximo chequeo, que corre cada 10 minutos,
    flowrunner aprende de tus correcciones y cierra el run.
 
+### Probar la feature en el entorno
+
+Después de revisar, la fase probar usa la feature como lo harías vos: levanta el entorno de desarrollo
+desde la copia de la feature, llama a la API y navega la plataforma con Chrome sin ventana. Una prueba
+que falla vuelve a su sub-task con la evidencia. Para eso el repo dice cómo levantar el entorno en
+`.flowrunner/config.yaml`; sin esto, probar se saltea con un aviso:
+
+```yaml
+probar:
+  levantar: ./start.sh --local # siempre local: nunca contra datos reales
+  bajar: ./stop.sh # si levantar deja procesos desacoplados
+  urls: # lo único a lo que llegan el navegador y la API
+    api: http://localhost:3000
+    web: http://localhost:5173
+  env_files: [apps/api/.env, apps/web/.env] # se copian de tu checkout a la copia de la feature
+  notas: Entrá con el usuario de prueba que crea el seed, admin@local.test.
+  espera_segundos: 300
+```
+
+Si algo ya responde en esas URLs antes de levantar, por ejemplo tu propio entorno, probar se detiene:
+probar contra eso no probaría la feature. Cada prueba queda en el informe y en la PR. El log de cada
+pedido a la API y el video de cada navegación quedan en `~/.flowrunner/runs/<id>/pruebas/`, y el
+informe y la etapa Probar del panel de Orca los enlazan para que los revises.
+
 ## Cómo funciona
 
 ![El flujo de un run: de la feature a la PR, y de tus correcciones al cerebro del repo](docs/img/flujo.png)
@@ -115,11 +139,12 @@ naranjas, vos.
 | 4 · Implementar | Sonnet × N     | Cada sub-task en su propia copia, en paralelo si no se pisan            | un commit por sub-task |
 | 5 · Verificar   | código         | Corre los criterios y el `verify.sh` del repo                           | los criterios en verde |
 | 6 · Revisar     | Opus, solo lee | Compara el cambio con las convenciones del repo                         | la revisión            |
-| 7 · Entregar    | código         | Sube la rama y abre la PR, con lo que aprendió el run                   | la PR y el informe     |
-| 8 · Aprender    | agente         | Después del merge, convierte tus correcciones en lecciones              | una PR de lecciones    |
+| 7 · Probar      | Sonnet         | Levanta el entorno con la feature y la usa por la API y el navegador    | las pruebas y el video |
+| 8 · Entregar    | código         | Sube la rama y abre la PR, con lo que aprendió el run                   | la PR y el informe     |
+| 9 · Aprender    | agente         | Después del merge, convierte tus correcciones en lecciones              | una PR de lecciones    |
 
 Las líneas punteadas del diagrama son el trabajo que vuelve atrás: un criterio en rojo o un bloqueante de
-la revisión vuelven a implementar, y tus cambios al plan vuelven a planificar. Las lecciones llegan al
+la revisión o una prueba que falla en el entorno vuelven a implementar, y tus cambios al plan vuelven a planificar. Las lecciones llegan al
 cerebro del repo, y el próximo run las lee.
 
 Los tests de aceptación quedan bloqueados: ninguna sub-task los puede tocar. Por eso, antes de
@@ -131,7 +156,7 @@ alcance, y flowrunner lo controla en cada herramienta y otra vez sobre el diff.
 
 ## Qué pasa cuando algo falla
 
-Una sub-task que falla se reintenta con el motivo, y verificar y revisar pueden devolver trabajo hasta 2
+Una sub-task que falla se reintenta con el motivo, y verificar, revisar y probar pueden devolver trabajo hasta 2
 vueltas. Cuando reintentar no tiene sentido, flowrunner corta antes:
 
 - **Un problema del entorno**, como una dependencia sin instalar, no se le devuelve a una sub-task:

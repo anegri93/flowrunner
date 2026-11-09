@@ -36,6 +36,12 @@ describe("Fase 4 ensamblada", () => {
 
     expect(runCli(["approve", id], w.env).status).toBe(0);
     await waitFor("entregado", () => w.state(id).status === "entregado", 60_000);
-    expect(executions(w, id)).toEqual(["implementar", "verificar", "revisar", "entregar"]);
+    expect(executions(w, id)).toEqual([
+      "implementar",
+      "verificar",
+      "revisar",
+      "probar",
+      "entregar",
+    ]);
   }, 180_000);
 });

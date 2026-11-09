@@ -22,11 +22,12 @@ export const MAX_ATTEMPTS: Record<Phase, number> = {
   implementar: 1, // los reintentos por sub-task viven dentro de implementar
   verificar: 1,
   revisar: 2,
+  probar: 2,
   entregar: 1,
   aprender: 2,
 };
 export const MAX_INFRA_RETRIES = 2;
-/** Vueltas máximas a implementar desde verificar y desde revisar. */
+/** Vueltas máximas a implementar desde verificar, desde revisar y desde probar. */
 export const MAX_ROUNDS = 2;
 
 const NEXT: Partial<Record<Phase, Phase>> = {
@@ -35,9 +36,17 @@ const NEXT: Partial<Record<Phase, Phase>> = {
   aprobar: "implementar",
   implementar: "verificar",
   verificar: "revisar",
-  revisar: "entregar",
+  revisar: "probar",
+  probar: "entregar",
   entregar: "aprender",
 };
+
+/** Las fases que pueden devolver trabajo a implementar. */
+export const ROUND_PHASES = ["verificar", "revisar", "probar"] as const;
+export type RoundPhase = (typeof ROUND_PHASES)[number];
+const NO_ROUNDS: Record<RoundPhase, number> = { verificar: 0, revisar: 0, probar: 0 };
+const isRoundPhase = (fase: Phase): fase is RoundPhase =>
+  (ROUND_PHASES as readonly Phase[]).includes(fase);
 
 export interface Halt {
   readonly motivo: string;
@@ -56,10 +65,10 @@ export interface RunState {
   readonly intentos: number;
   readonly infra: number;
   readonly ultimoMotivo: string | undefined;
-  readonly vueltas: { readonly verificar: number; readonly revisar: number };
+  readonly vueltas: Record<RoundPhase, number>;
   /** Lo que la fase anterior o tu pedido le dicen a la próxima ejecución de esta fase. */
   readonly instruccion: string | undefined;
-  /** Las sub-tasks que verificar o revisar devolvieron a implementar. */
+  /** Las sub-tasks que verificar, revisar o probar devolvieron a implementar. */
   readonly unidades: readonly string[] | undefined;
   readonly costoUsd: number;
   readonly halt: Halt | undefined;
@@ -117,8 +126,11 @@ function onOutcome(state: RunState, fase: Phase, outcome: Outcome): RunState {
     case "limite":
       return { ...state, status: "pausado_por_limite", pausaHasta: outcome.hasta };
     case "vuelve": {
-      if (fase !== "verificar" && fase !== "revisar") {
-        return halt(state, `${fase} devolvió trabajo, y solo verificar y revisar pueden hacerlo`);
+      if (!isRoundPhase(fase)) {
+        return halt(
+          state,
+          `${fase} devolvió trabajo, y solo ${ROUND_PHASES.join(", ")} pueden hacerlo`,
+        );
       }
       const vueltas = { ...state.vueltas, [fase]: state.vueltas[fase] + 1 };
       if (vueltas[fase] > MAX_ROUNDS) {
@@ -178,7 +190,7 @@ export function initialState(): RunState {
     intentos: 0,
     infra: 0,
     ultimoMotivo: undefined,
-    vueltas: { verificar: 0, revisar: 0 },
+    vueltas: NO_ROUNDS,
     instruccion: undefined,
     unidades: undefined,
     costoUsd: 0,
@@ -241,7 +253,7 @@ export function reduce(state: RunState, event: RunEvent): RunState {
       }
       return state;
     case "rehacer":
-      return enter({ ...state, vueltas: { verificar: 0, revisar: 0 } }, event.desde);
+      return enter({ ...state, vueltas: NO_ROUNDS }, event.desde);
     case "abortado":
       return { ...state, status: "abortado" };
     case "pr_cerrada":

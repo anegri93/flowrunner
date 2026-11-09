@@ -53,43 +53,51 @@ test("un run terminado muestra solo su etapa actual hasta que se abre", async ()
   });
 });
 
-// Si regresiona, no se ve qué sub-tasks faltan ni qué hace la sesión que corre.
-test("las sub-tasks con su estado, y los pasos de la sesión que corre", async () => {
+// Si regresiona, no se ve qué hace la sesión que corre, o sus pasos no se abren en una pestaña.
+test("las sub-tasks con su estado; Pasos y Plan piden abrir su archivo en una pestaña", async () => {
+  const opened: unknown[] = [];
   await withPanel(
     withRuns({
-      "flowrunner.pasos": ({ sesion }: { sesion: string }) => ({
-        sesion,
-        texto: "Edit src/precio.ts",
-      }),
+      "flowrunner.abrir": (input: unknown) => {
+        opened.push(input);
+        return { ok: true, mensaje: "abierto" };
+      },
     }),
     async (view) => {
       assert.ok(view.find({ text: "✓ ST-1 Tabla de precios · integrada" }));
-      assert.ok(view.find({ text: "● ST-2 Comando /precio · trabajando" }));
       assert.ok(view.find({ text: "▸ Edit src/precio.ts · ctx 52k" }));
       await view.press({ label: "Pasos de implementar-ST-2-1" });
-      assert.ok(view.find({ text: "Edit src/precio.ts" }));
+      await view.press({ role: "button", text: "Plan" });
+      assert.deepEqual(opened, [
+        { run: "VF-2-20261109-001527", que: { tipo: "pasos", sesion: "implementar-ST-2-1" } },
+        { run: PIZ3, que: { tipo: "plan" } },
+      ]);
     },
   );
 });
 
-// Si regresiona, «Plan» no abre la pestaña del plan, o aprobar llega sin confirmar.
-test("Plan abre su pestaña; aprobar pide confirmación; Cambios manda el motivo escrito", async () => {
+// Si regresiona, un archivo que no se pudo abrir falla en silencio.
+test("si no se puede abrir, lo dice en el run", async () => {
+  await withPanel(
+    withRuns({ "flowrunner.abrir": () => ({ ok: false, mensaje: "Orca no abrió el archivo" }) }),
+    async (view) => {
+      await view.press({ label: "Pasos de implementar-ST-2-1" });
+      assert.ok(view.find({ text: "Orca no abrió el archivo" }));
+    },
+  );
+});
+
+// Si regresiona, aprobar desde el panel no llega a flowrunner, o aprueba sin confirmar.
+test("aprobar pide confirmación; Cambios manda el motivo escrito", async () => {
   const sent: { run: string; decision: Decision }[] = [];
-  const opened: string[] = [];
   await withPanel(
     withRuns({
-      "flowrunner.verPlan": ({ run }: { run: string }) => {
-        opened.push(run);
-        return { ok: true, mensaje: "plan abierto" };
-      },
       "flowrunner.decidir": (input: { run: string; decision: Decision }) => {
         sent.push(input);
         return { ok: true, mensaje: "hecho" };
       },
     }),
     async (view) => {
-      await view.press({ role: "button", text: "Plan" });
-      assert.deepEqual(opened, [PIZ3]);
       await view.press({ role: "button", text: "Aprobar" });
       assert.deepEqual(sent, []);
       await view.press({ text: "Sí, confirmar" });

@@ -8,7 +8,8 @@ import {
   isFinished,
   nowOf,
   parseWatch,
-  planView,
+  planMarkdown,
+  stepsMarkdown,
   rerunPhase,
   runChip,
   stageRows,
@@ -148,20 +149,24 @@ test("las decisiones dependen del estado del run", () => {
   );
 });
 
-// Regresión: el plan de VF-3 pasaba los 16 KiB que Orca dibuja por texto, y el panel se trababa.
-test("el plan se muestra entero, línea por línea, ninguna sobre el límite de Orca", () => {
-  const view = planView({
-    plan: `# Plan\n\n${"una línea larga del plan. ".repeat(1_500)}\n- otra`,
-    subtareas: [{ id: "ST-1", titulo: "Variables", alcance: ["src/"] }],
-    criterios: [{ id: "AC-1" }, { id: "AC-2" }],
-    cambios: { subtareas_agregadas: ["ST-1 Variables"], tests_quitados: [] },
+// Si regresiona, la pestaña del plan no trae lo que hace falta para decidir: las sub-tasks con su
+// alcance, los criterios, lo que cambió y el plan entero.
+test("el plan como Markdown para su pestaña, y los pasos de una sesión", () => {
+  const md = planMarkdown("PIZ-3", {
+    plan: "# Enfoque\nVariables de color.",
+    subtareas: [{ id: "ST-1", titulo: "Variables", alcance: ["src/theme.ts"], depende_de: [] }],
+    criterios: [{ id: "AC-1", comando: "npm test", subtarea: "ST-1" }],
+    cambios: { tests_quitados: ["test/a.test.ts"], subtareas_agregadas: [] },
   });
-  assert.equal(view.lineas.length, 3);
-  assert.equal(view.lineas[0], "# Plan");
-  assert.ok(view.lineas.every((l) => Buffer.byteLength(l) < 16 * 1024));
-  assert.deepEqual(view.subtareas, [{ id: "ST-1", titulo: "Variables" }]);
-  assert.equal(view.criterios, 2);
-  assert.deepEqual(view.cambios, ["sub-tasks nuevas: ST-1 Variables"]);
+  assert.match(md, /^# PIZ-3 · plan\n/);
+  assert.ok(md.includes("## Contra el plan anterior\n\n- Tests que ya no están: test/a.test.ts"));
+  assert.ok(md.includes("- **ST-1** Variables — `src/theme.ts`"));
+  assert.ok(md.includes("- **AC-1** → ST-1: `npm test`"));
+  assert.ok(md.includes("# Enfoque\nVariables de color."));
+  assert.equal(
+    stepsMarkdown("VF-4", "planificar-1", "Read a.ts\n"),
+    "# VF-4 · pasos de planificar-1\n\n```text\nRead a.ts\n```\n",
+  );
 });
 
 test("una salida que no es JSON da un error legible", () => {

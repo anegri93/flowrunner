@@ -37,6 +37,8 @@ export const repoConfigSchema = z
     setup: z.string().min(1),
     verify: relativePath.default(".flowrunner/verify.sh"),
     tests_globs: z.array(z.string().min(1)).min(1),
+    /** El formateador, al que flowrunner le agrega las rutas: `npx prettier --write`. */
+    format: z.string().min(1).optional(),
     harness_files: z.array(relativePath).default([]),
     lockfiles: z.array(relativePath).default([]),
     manifests: z.array(relativePath).default([]),

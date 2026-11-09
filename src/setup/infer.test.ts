@@ -43,6 +43,24 @@ describe("inferRepo", () => {
     expect(inferred.verify).toMatch(/\nset -e\npnpm lint\npnpm test\npnpm build\n$/);
   });
 
+  // Si regresiona, planificar escribe tests sin formato, los bloquea, y verify queda en rojo sin arreglo.
+  test("con prettier en las dependencias infiere el formateador según el gestor; sin prettier, ninguno", () => {
+    const withPrettier = (lockfile: string) =>
+      inferRepo({
+        baseBranch: "main",
+        files: ["package.json", lockfile],
+        packageJson: { scripts: { test: "vitest" }, devDependencies: { prettier: "^3.0.0" } },
+      }).config?.format;
+    expect(withPrettier("package-lock.json")).toBe("npx prettier --write --ignore-unknown");
+    expect(withPrettier("pnpm-lock.yaml")).toBe("pnpm exec prettier --write --ignore-unknown");
+    const without = inferRepo({
+      baseBranch: "main",
+      files: ["package.json", "package-lock.json"],
+      packageJson: pkg({ test: "vitest" }),
+    });
+    expect(without.config).not.toHaveProperty("format");
+  });
+
   // Si regresiona, un repo sin tests pasa por bueno y verify no prueba nada.
   test("sin script de test: falta, y lo dice", () => {
     const inferred = inferRepo({

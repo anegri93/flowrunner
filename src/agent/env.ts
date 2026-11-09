@@ -34,6 +34,9 @@ export function buildSessionEnv(
   // el host de plugins de Orca, dejaba cada sesión en modo login sin sesión.
   env.USER = base.USER ?? base.LOGNAME ?? userInfo().username;
   env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = "1";
+  // Un comando que pasa su timeout iba a segundo plano: la sesión no terminaba mientras viviera, y el
+  // agente no podía leer su salida, que queda fuera del worktree.
+  env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = "1";
   env.ENABLE_CLAUDEAI_MCP_SERVERS = "false";
   env.CLAUDE_AGENT_SDK_CLIENT_APP = "flowrunner/0";
   if (auth.kind === "token") {

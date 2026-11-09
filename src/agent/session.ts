@@ -1,5 +1,6 @@
 // Una sesión del SDK con las reglas de flowrunner: aislada, con salida validada, presupuesto, timeout,
 // su stream copiado al run y su costo en el log. Es el único lugar que arma opciones del SDK.
+import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type {
@@ -16,6 +17,7 @@ import type { Deps, RunPaths } from "../runner/types.ts";
 import type { NewEvent, Phase } from "../store/events.ts";
 import { AuthError, resolveAuth } from "./auth.ts";
 import { buildSessionEnv } from "./env.ts";
+import { descendants, killAll, type LiveProcess } from "./procesos.ts";
 
 export interface SessionSpec<T> {
   readonly fase: Phase;
@@ -92,6 +94,20 @@ export function buildOptions<T>(
   };
 }
 
+/** Cierra la query sin esperarla: `close()` del SDK si lo tiene, si no el `return` del iterador. */
+function closeQuery(stream: AsyncIterable<SDKMessage>, messages: AsyncIterator<SDKMessage>): void {
+  const close = (stream as { close?: unknown }).close;
+  if (typeof close === "function") {
+    try {
+      close.call(stream);
+    } catch {
+      // ya estaba cerrada
+    }
+    return;
+  }
+  void messages.return?.().catch(() => undefined);
+}
+
 const TOKEN_REJECTED =
   "Claude rechazó la credencial de la sesión: revisá el token del Keychain con `flowrunner doctor`";
 const LOGIN_MISSING =
@@ -116,21 +132,51 @@ export async function runSession<T>(
   const dir = join(rt.run.dir, "sesiones");
   mkdirSync(dir, { recursive: true });
   const streamFile = join(dir, `${spec.nombre}.jsonl`);
+  // El CLI se lanza acá para conocer su PID: al terminar, lo que dejó vivo se mata.
+  let cli: number | undefined;
+  options = {
+    ...options,
+    spawnClaudeCodeProcess: ({ command, args, cwd, env, signal }) => {
+      const child = spawn(command, args, { cwd, env, signal, stdio: ["pipe", "pipe", "pipe"] });
+      // Nadie lee el stderr del CLI por esta vía; sin vaciarlo, el CLI se traba al llenar el pipe.
+      child.stderr.on("data", (chunk: Buffer) => options.stderr?.(chunk.toString()));
+      cli = child.pid;
+      return child;
+    },
+  };
+  /** Lo que el CLI dejó corriendo. Se mira antes de cerrarlo: después, sus hijos ya no son suyos. */
+  let leftovers: LiveProcess[] = [];
+  const reap = () => {
+    if (cli !== undefined) leftovers = descendants(cli);
+  };
   const timer = setTimeout(() => {
+    reap();
     abort.abort();
   }, spec.timeoutMs);
   let result: Extract<SDKMessage, { type: "result" }> | undefined;
   let limitUntil: number | undefined;
   let authFailed = false;
   const started = Date.now();
+  const stream = rt.deps.query({ prompt: spec.prompt, options });
+  const messages = stream[Symbol.asyncIterator]();
   try {
-    for await (const message of rt.deps.query({ prompt: spec.prompt, options })) {
+    for (;;) {
+      const next = await messages.next();
+      if (next.done === true) break;
+      const message = next.value;
       appendFileSync(streamFile, `${JSON.stringify(message)}\n`);
       if (message.type === "rate_limit_event" && message.rate_limit_info.status === "rejected") {
         limitUntil = (message.rate_limit_info.resetsAt ?? Date.now() / 1000 + 3600) * 1000;
       }
-      if (message.type === "result") result = message;
       if ((message as { error?: unknown }).error === "authentication_failed") authFailed = true;
+      if (message.type === "result") {
+        // El resultado es lo último que importa. Esperar a que el stream cierre era esperar a cada
+        // proceso que la sesión dejó vivo, como un runner de tests que no sale: hasta el timeout.
+        result = message;
+        reap();
+        closeQuery(stream, messages);
+        break;
+      }
     }
   } catch (error) {
     if (limitUntil !== undefined) return { tipo: "limite", hasta: limitUntil };
@@ -141,6 +187,19 @@ export async function runSession<T>(
     return { tipo: "falla", clase: "infra", motivo };
   } finally {
     clearTimeout(timer);
+    killAll([...leftovers.map((p) => p.pid), ...(cli === undefined ? [] : [cli])]);
+    const servers = Object.values(spec.mcpServers ?? {}).flatMap((s) =>
+      "command" in s && typeof s.command === "string" ? [s.command] : [],
+    );
+    // Los servidores MCP de la sesión son hijos del CLI y terminan con ella: no son un problema.
+    const stuck = leftovers.filter((p) => !servers.some((s) => p.command.includes(s)));
+    if (stuck.length > 0) {
+      rt.emit({
+        tipo: "aviso",
+        fase: spec.fase,
+        texto: `la sesión ${spec.nombre} dejó ${String(stuck.length)} ${stuck.length === 1 ? "proceso" : "procesos"} sin terminar y flowrunner los cortó: ${stuck.map((p) => `\`${p.command.slice(0, 200)}\``).join(", ")}`,
+      });
+    }
   }
   if (limitUntil !== undefined) return { tipo: "limite", hasta: limitUntil };
   if (authFailed) return { tipo: "falla", clase: "entorno", motivo: authFailedMotivo };

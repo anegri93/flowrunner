@@ -19,6 +19,7 @@ const TIMEOUT_MS = 20_000;
 /** El CLI de Orca, que abre un archivo como pestaña: ningún método del host abre un archivo de afuera. */
 const orcaCli = () => process.env.ORCA_CLI ?? "/Applications/Orca.app/Contents/Resources/bin/orca";
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const UNIT_ID = /^ST-\d+$/;
 const MAX_MOTIVO = 2_000;
 
 /**
@@ -185,6 +186,9 @@ export default function activate(orca: OrcaWorkerApi): void {
       if (what.tipo === "pasos" && !SESSION_NAME.test(what.sesion)) {
         throw new Error(`sesión inválida: ${String(what.sesion)}`);
       }
+      if (what.tipo === "unidad" && !UNIT_ID.test(what.unidad)) {
+        throw new Error(`sub-task inválida: ${String(what.unidad)}`);
+      }
       const flowrunner = await command(orca);
       // `status` sirve también para un run ya cerrado, que `watch` no lista.
       const status = JSON.parse(await ok(`${flowrunner} status ${quote(runIdOk)} --json`)) as {
@@ -207,6 +211,13 @@ export default function activate(orca: OrcaWorkerApi): void {
           file,
           stepsMarkdown(run.clave, what.sesion, typeof data.texto === "string" ? data.texto : ""),
         );
+      } else if (what.tipo === "unidad") {
+        // flowrunner arma el markdown: qué tenía que hacer, qué dice que hizo y el diff.
+        const data = JSON.parse(
+          await ok(`${flowrunner} report ${quote(run.id)} --unidad ${quote(what.unidad)} --json`),
+        ) as { texto?: unknown };
+        file = join(dir, `${what.unidad}.md`);
+        writeFileSync(file, typeof data.texto === "string" ? data.texto : "");
       } else if (what.tipo === "informe") {
         const data = JSON.parse(await ok(`${flowrunner} report ${quote(run.id)} --json`)) as {
           informe?: unknown;

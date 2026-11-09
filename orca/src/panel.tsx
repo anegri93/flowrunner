@@ -86,7 +86,7 @@ export async function refresh(): Promise<void> {
   }
 }
 
-/** Abre los pasos, el plan o el informe como pestaña de Orca; si no se puede, dice por qué. */
+/** Abre los pasos, una sub-task, el plan o el informe como pestaña de Orca; si no, dice por qué. */
 async function open(run: string, que: Openable): Promise<void> {
   set(notice, null);
   try {
@@ -126,7 +126,9 @@ function Current({ run, row }: { run: Run; row: StageRow }) {
       )}
       {now.tareas.map((t) => (
         <Text key={t.key} size="xs" tone={t.tone} muted={t.tone === "neutral"} truncate>
-          {`${t.mark} ${t.texto}`}
+          <Link onPress={() => open(run.id, { tipo: "unidad", unidad: t.key })}>
+            {`${t.mark} ${t.texto}`}
+          </Link>
         </Text>
       ))}
       {now.actividad.map((a) => (

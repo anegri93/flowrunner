@@ -88,6 +88,9 @@ export function parseWatch(stdout: string): Run[] {
   return runs as Run[];
 }
 
+/** Cerrado del todo: no avanza más. Los muestra el panel aparte, colapsados. */
+export const isClosed = (run: Run) => run.status === "cerrado" || run.status === "abortado";
+
 /** Terminado para la persona: ya no hay nada que mirar mientras trabaja. */
 export const isFinished = (run: Run) =>
   run.status === "entregado" || run.status === "cerrado" || run.status === "abortado";

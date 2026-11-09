@@ -115,15 +115,31 @@ export function resolveRun(home: string, arg: string): string | undefined {
     .at(-1);
 }
 
+const isTerminal = (home: string, id: string): boolean | undefined => {
+  try {
+    return TERMINAL.has(stateOf(readLog(runPaths(home, id).dir).events).status);
+  } catch {
+    return undefined;
+  }
+};
+
 /** Los runs que todavía piden atención: los que no están cerrados ni abortados. */
 export function activeRuns(home: string): string[] {
   return listRunIds(home)
-    .filter((id) => {
-      try {
-        return !TERMINAL.has(stateOf(readLog(runPaths(home, id).dir).events).status);
-      } catch {
-        return false;
-      }
-    })
+    .filter((id) => isTerminal(home, id) === false)
     .sort();
+}
+
+/** Cuándo arrancó un run, de su id: `VF-3-20261109-004512`. */
+const startedAt = (id: string) => /(\d{8}-\d{6})$/.exec(id)?.[1] ?? "";
+
+/**
+ * Los runs cerrados o abortados, el más reciente primero. ponytail: los últimos `limit`, porque cada
+ * lectura arma su árbol entero; si hace falta ver más atrás, paginar.
+ */
+export function closedRuns(home: string, limit: number): string[] {
+  return listRunIds(home)
+    .filter((id) => isTerminal(home, id) === true)
+    .sort((a, b) => startedAt(b).localeCompare(startedAt(a)))
+    .slice(0, limit);
 }

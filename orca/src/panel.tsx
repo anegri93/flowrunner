@@ -2,7 +2,7 @@
 // tarjeta: su estado, el título, el tiempo, y las nueve etapas del flujo en una lista con sus
 // intentos y su tiempo. La etapa que trabaja gira, y debajo dice qué está haciendo, con las
 // decisiones que espera. Los más recientes arriba; los terminados muestran solo la etapa actual
-// hasta que se abren. El refresco no borra nada: si una lectura falla, queda la anterior.
+// hasta que se abren. Debajo, los últimos cerrados, en una sección colapsada al abrir el panel. El refresco no borra nada: si una lectura falla, queda la anterior.
 // Sin paso de build: Orca quita los tipos y compila el JSX al cargarlo.
 import {
   atom,
@@ -45,6 +45,10 @@ const snapshot = atom<Snapshot | null>(null);
 /** Runs que la persona abrió o cerró a mano; el resto sigue el default. */
 const toggled = atom("abiertos", {} as Record<string, boolean>, { persist: "plugin" });
 const notice = atom<{ run: string; texto: string } | null>(null);
+/** La sección de los cerrados y sus tarjetas: colapsadas cada vez que se abre el panel. */
+const closedOpen = atom(false);
+const closedToggled = atom({} as Record<string, boolean>);
+type Toggles = typeof toggled;
 
 let reading = false;
 /**
@@ -81,6 +85,7 @@ export async function refresh(): Promise<void> {
     const prev = read(snapshot);
     set(snapshot, {
       runs: prev?.runs ?? [],
+      ...(prev?.cerrados === undefined ? {} : { cerrados: prev.cerrados }),
       error: error instanceof Error ? error.message : String(error),
       at: Date.now(),
     });
@@ -109,7 +114,8 @@ export function setup(ctx: PanelContext): void {
   ctx.signal.addEventListener("abort", () => clearInterval(timer));
 }
 
-const isOpen = (run: Run) => read(toggled)[run.id] ?? (needsYou(run) || !isFinished(run));
+const isOpen = (run: Run, toggles: Toggles) =>
+  read(toggles)[run.id] ?? (needsYou(run) || !isFinished(run));
 
 /** Lo que pasa en la etapa actual: su estado, las sub-tasks, qué hace la sesión y las decisiones. */
 function Current({ run, row }: { run: Run; row: StageRow }) {
@@ -209,8 +215,9 @@ function Stage({ run, row }: { run: Run; row: StageRow }) {
   );
 }
 
-function RunCard({ run }: { run: Run }) {
-  const open = isOpen(run);
+/** Un run; `toggles` guarda qué tarjetas abrió o cerró la persona. */
+function RunCard({ run, toggles = toggled }: { run: Run; toggles?: Toggles }) {
+  const open = isOpen(run, toggles);
   const chip = runChip(run);
   const rows = stageRows(run);
   const shown = open ? rows : rows.filter((r) => r.actual);
@@ -225,7 +232,7 @@ function RunCard({ run }: { run: Run }) {
             label={open ? `Ocultar las etapas de ${run.clave}` : `Ver las etapas de ${run.clave}`}
             variant="ghost"
             size="sm"
-            onPress={() => update(toggled, (m) => ({ ...m, [run.id]: !open }))}
+            onPress={() => update(toggles, (m) => ({ ...m, [run.id]: !open }))}
           />
         </Row>
         <Stack gap="none">
@@ -258,6 +265,30 @@ function RunCard({ run }: { run: Run }) {
         <Abort run={run} after={refresh} />
       </Stack>
     </Card>
+  );
+}
+
+/** Los últimos runs cerrados y abortados, debajo de los activos: colapsados hasta que se abren. */
+function Closed({ runs }: { runs: Run[] }) {
+  if (runs.length === 0) return null;
+  const open = read(closedOpen);
+  return (
+    <Stack gap="sm">
+      <Separator />
+      <Row justify="between" align="center">
+        <Text size="xs" muted>
+          {`CERRADOS · ${String(runs.length)}`}
+        </Text>
+        <IconButton
+          icon={open ? "collapse" : "expand"}
+          label={open ? "Ocultar los runs cerrados" : "Ver los runs cerrados"}
+          variant="ghost"
+          size="sm"
+          onPress={() => set(closedOpen, !open)}
+        />
+      </Row>
+      {open ? runs.map((run) => <RunCard key={run.id} run={run} toggles={closedToggled} />) : null}
+    </Stack>
   );
 }
 
@@ -301,6 +332,7 @@ export default function Panel() {
           {elsewhere}
         </Text>
       ) : null}
+      <Closed runs={snap.cerrados ?? []} />
     </Stack>
   );
 }

@@ -7,6 +7,7 @@ import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import type { OrcaWorkerApi } from "orca/worker";
 import type { Openable, Outcome, Snapshot } from "./protocol";
 import {
+  isClosed,
   parseWatch,
   PHASES,
   planMarkdown,
@@ -248,17 +249,21 @@ async function viewDir(repo: string, id: string): Promise<string> {
 }
 
 export default function activate(orca: OrcaWorkerApi): void {
-  const watch = async () => parseWatch(await ok(`${await command(orca)} watch --json`));
+  const watch = async () => parseWatch(await ok(`${await command(orca)} watch --json --cerrados`));
 
   orca.panels.handle("flowrunner.runs", async (): Promise<Snapshot> => {
     const at = Date.now();
     try {
-      const runs = await watch();
+      const all = await watch();
       const active = await activeProject(orca);
-      if (active === undefined) return { runs, at };
-      const mine: typeof runs = [];
-      for (const r of runs) if ((await gitCommonDir(r.repo)) === active.commonDir) mine.push(r);
-      return { runs: mine, at, proyecto: active.nombre, otros: runs.length - mine.length };
+      const mine: typeof all = [];
+      if (active === undefined) mine.push(...all);
+      else for (const r of all) if ((await gitCommonDir(r.repo)) === active.commonDir) mine.push(r);
+      const runs = mine.filter((r) => !isClosed(r));
+      const cerrados = mine.filter(isClosed);
+      if (active === undefined) return { runs, cerrados, at };
+      const otros = all.filter((r) => !isClosed(r)).length - runs.length;
+      return { runs, cerrados, at, proyecto: active.nombre, otros };
     } catch (error) {
       return { runs: [], error: error instanceof Error ? error.message : String(error), at };
     }

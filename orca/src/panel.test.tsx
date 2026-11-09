@@ -321,6 +321,30 @@ test("al cambiar de proyecto, los runs del anterior se dejan de ver sin abrir su
   );
 });
 
+// Si regresiona, los runs cerrados desaparecen del panel, o lo llenan apenas se abre.
+test("los cerrados van aparte, colapsados: la sección y cada tarjeta se abren a mano", async () => {
+  const closed = {
+    ...runs[2],
+    id: "VF-0-20261101-000000",
+    clave: "VF-0",
+    status: "cerrado",
+  } as Run;
+  await withPanel(
+    mockHost({ requests: { "flowrunner.runs": () => ({ runs: [], cerrados: [closed], at: 0 }) } }),
+    async (view) => {
+      assert.ok(view.find({ text: "CERRADOS · 1" }));
+      assert.equal(view.find({ text: "VF-0 · VF-0-20261101-000000" }), null);
+      await view.press({ label: "Ver los runs cerrados" });
+      assert.ok(view.find({ text: "VF-0 · VF-0-20261101-000000" }));
+      // La tarjeta arranca colapsada: solo su etapa actual.
+      assert.equal(view.findAll({ text: "Preparar" }).length, 0);
+      await view.press({ label: "Ver las etapas de VF-0" });
+      assert.equal(view.findAll({ text: "Preparar" }).length, 1);
+      assert.equal(view.find({ text: "Abortar el run" }), null);
+    },
+  );
+});
+
 // Si regresiona, un flowrunner roto o sin runs deja el panel vacío sin decir por qué.
 test("sin runs lo dice", async () => {
   await withPanel(

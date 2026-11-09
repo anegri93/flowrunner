@@ -65,4 +65,49 @@ describe("aprobar", () => {
     );
     expect(w.state(id).intentos).toBe(0);
   });
+
+  // Si regresiona, la tercera vuelta del plan pierde lo que corrigió el primer pedido, y la persona no
+  // ve qué cambió: en VF-1, la tercera vuelta perdió la entrada en CAMBIOS.md.
+  test("dos changes seguidos: la tercera vuelta recibe los dos pedidos y el plan anterior, y plan --json trae el diff", async () => {
+    const renamed = {
+      ...PLAN,
+      subtareas: PLAN.subtareas.map((t) => ({ ...t, titulo: "Exportador" })),
+    };
+    const w = simWorld({
+      real: ["preparar", "planificar", "aprobar"],
+      scripts: [
+        { calls: [WRITE_TEST], output: PLAN },
+        { calls: [], output: PLAN },
+        { calls: [], output: renamed },
+      ],
+      feature: FEATURE,
+      project: { config: { setup: "true", tests_globs: ["tests/**"] } },
+    });
+    const id = w.launch();
+    const waiting = (n: number) =>
+      waitFor(
+        `esperando, vuelta ${String(n)}`,
+        () =>
+          w.state(id).status === "esperando_aprobacion" &&
+          w.prompts().split("Sos el planificador").length - 1 === n,
+        60_000,
+      );
+    await waiting(1);
+    expect(runCli(["changes", id, "agregá la entrada en CAMBIOS.md"], w.env).status).toBe(0);
+    await waiting(2);
+    expect(runCli(["changes", id, "la tabla se llama costos"], w.env).status).toBe(0);
+    await waiting(3);
+    const third = w.prompts().split("Sos el planificador").at(-1) ?? "";
+    expect(third).toContain("1. agregá la entrada en CAMBIOS.md\n2. la tabla se llama costos");
+    expect(third).toContain("Un serializador en src/export/.");
+    const view = planViewSchema.parse(JSON.parse(runCli(["plan", id, "--json"], w.env).stdout));
+    expect(view.cambios).toMatchObject({
+      subtareas_agregadas: ["ST-1 Exportador"],
+      subtareas_quitadas: ["ST-1 Serializador CSV"],
+      tests_quitados: [],
+    });
+    expect(runCli(["plan", id], w.env).stdout).toContain(
+      "sub-tasks que ya no están: ST-1 Serializador CSV",
+    );
+  });
 });

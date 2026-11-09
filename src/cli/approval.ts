@@ -5,7 +5,8 @@ import { z } from "zod";
 import { allDependencies, subtaskSchema } from "../gates/plan.ts";
 import { git } from "../git/git.ts";
 import { prepared } from "../phases/inputs.ts";
-import { readPlan } from "../phases/planificar.ts";
+import { planChanges, previousDir } from "../phases/plan-anterior.ts";
+import { readPlan, readPlanAt } from "../phases/planificar.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
 import { loadState, runPaths } from "../store/runs.ts";
 import { summarize, runSummarySchema } from "./contracts.ts";
@@ -20,6 +21,17 @@ export const planViewSchema = z.strictObject({
   criterios: z.array(z.object({ id: z.string(), comando: z.string(), subtarea: z.string() })),
   tests: z.array(z.string()),
   diff_tests: z.string(),
+  /** Qué cambió contra el plan anterior; null en el primer plan. */
+  cambios: z
+    .strictObject({
+      subtareas_agregadas: z.array(z.string()),
+      subtareas_quitadas: z.array(z.string()),
+      alcance_agregado: z.array(z.string()),
+      alcance_quitado: z.array(z.string()),
+      tests_agregados: z.array(z.string()),
+      tests_quitados: z.array(z.string()),
+    })
+    .nullable(),
 });
 
 export async function showPlan(home: string, id: string, env: NodeJS.ProcessEnv) {
@@ -43,6 +55,9 @@ export async function showPlan(home: string, id: string, env: NodeJS.ProcessEnv)
     criterios: plan.criterios,
     tests: Object.keys(plan.locked),
     diff_tests: diff,
+    cambios: existsSync(join(previousDir(run), "plan.md"))
+      ? planChanges(readPlanAt(previousDir(run)), plan)
+      : null,
   });
 }
 
@@ -60,11 +75,32 @@ export function describePlan(view: z.infer<typeof planViewSchema>): string {
     ),
     "",
     ...view.criterios.map((c) => `  ${c.id} → ${c.subtarea}: ${c.comando}`),
+    ...changesText(view.cambios),
     "",
     view.plan,
     "",
     view.diff_tests,
   ].join("\n");
+}
+
+function changesText(cambios: z.infer<typeof planViewSchema>["cambios"]): string[] {
+  if (cambios === null) return [];
+  const rows = [
+    ["sub-tasks nuevas", cambios.subtareas_agregadas],
+    ["sub-tasks que ya no están", cambios.subtareas_quitadas],
+    ["alcance nuevo", cambios.alcance_agregado],
+    ["alcance que ya no está", cambios.alcance_quitado],
+    ["tests nuevos", cambios.tests_agregados],
+    ["tests que ya no están", cambios.tests_quitados],
+  ] as const;
+  const changed = rows.filter(([, items]) => items.length > 0);
+  return [
+    "",
+    "Contra el plan anterior:",
+    ...(changed.length === 0
+      ? ["  las mismas sub-tasks, alcances y tests"]
+      : changed.map(([label, items]) => `  ${label}: ${items.join(", ")}`)),
+  ];
 }
 
 function waitingOrExplain(home: string, id: string) {

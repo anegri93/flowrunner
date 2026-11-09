@@ -8,7 +8,7 @@ import { git } from "../../test/helpers/git.ts";
 import { contextFor, makeProject, newRun, testDeps } from "../../test/helpers/project.ts";
 import { simQuery, type SimScript } from "../../test/helpers/sim-sdk.ts";
 import type { Plan } from "../gates/plan.ts";
-import { readLog } from "../store/run-log.ts";
+import { appendEvent, readLog } from "../store/run-log.ts";
 import { prepared } from "./inputs.ts";
 import { planificar, readPlan } from "./planificar.ts";
 import { preparar } from "./preparar.ts";
@@ -159,6 +159,53 @@ describe("planificar", () => {
     });
     expect(existsSync(join(worktree, "tests/viejo.mjs"))).toBe(false);
     expect(readFileSync(join(run.dir, "plan.md"), "utf8")).toContain("Un serializador.");
+  });
+
+  describe("con un plan anterior", () => {
+    // Si regresiona, cada pedido de cambios reescribe los tests desde cero y rehace el diseño entero.
+    test("los tests bloqueados del plan anterior vuelven al worktree, y el prompt trae los pedidos y el plan", async () => {
+      const { run, deps, sim, worktree } = await prepared_([
+        { calls: [writeTest], output: goodPlan },
+        { calls: [], output: goodPlan },
+        { calls: [], output: goodPlan },
+      ]);
+      expect(await planificar(contextFor(run, "planificar", deps))).toEqual({ tipo: "ok" });
+      for (const motivo of ["agregá la entrada en CAMBIOS.md", "la tabla se llama costos"]) {
+        appendEvent(run.dir, { tipo: "cambios_pedidos", motivo });
+        expect(
+          await planificar(contextFor(run, "planificar", deps, { instruccion: motivo })),
+        ).toEqual({ tipo: "ok" });
+      }
+      const third = sim.records[2]?.prompt ?? "";
+      expect(third).toContain("1. agregá la entrada en CAMBIOS.md\n2. la tabla se llama costos");
+      expect(third).toContain("Un serializador.");
+      expect(Object.keys(readPlan(run).locked)).toEqual(["tests/ac1.mjs"]);
+      expect(existsSync(join(worktree, "tests/ac1.mjs"))).toBe(true);
+    });
+
+    // Si regresiona, un test que el plan nuevo ya no declara queda bloqueado y en rojo para siempre.
+    test("un test del plan anterior que el plan nuevo no declara se borra", async () => {
+      const otherTest = {
+        tool: "Write",
+        input: { file_path: "tests/ac1b.mjs", content: writeTest.input.content },
+      };
+      const otherPlan = {
+        ...goodPlan,
+        criterios: [{ id: "AC-1", comando: "node tests/ac1b.mjs", subtarea: "ST-1" }],
+        tests: ["tests/ac1b.mjs"],
+      };
+      const { run, deps, worktree } = await prepared_([
+        { calls: [writeTest], output: goodPlan },
+        { calls: [otherTest], output: otherPlan },
+      ]);
+      await planificar(contextFor(run, "planificar", deps));
+      appendEvent(run.dir, { tipo: "cambios_pedidos", motivo: "renombrá el test" });
+      expect(
+        await planificar(contextFor(run, "planificar", deps, { instruccion: "renombrá el test" })),
+      ).toEqual({ tipo: "ok" });
+      expect(Object.keys(readPlan(run).locked)).toEqual(["tests/ac1b.mjs"]);
+      expect(existsSync(join(worktree, "tests/ac1.mjs"))).toBe(false);
+    });
   });
 
   describe("con formateador", () => {

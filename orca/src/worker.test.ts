@@ -2,7 +2,7 @@
 // decisiones que traduce a comandos fijos, y lo que rechaza antes de llegar al shell.
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assert, mockHost, mountWorker, test } from "orca/testing";
@@ -150,6 +150,30 @@ test("rechaza un id, una fase, un motivo o una sesión inválidos sin llamar a f
     assert.match(path.mensaje, /sesión inválida/);
     assert.deepEqual(calls(), []);
   } finally {
+    await worker.deactivate();
+  }
+});
+
+// Regresión: Orca lanza el worker con un entorno recortado, sin USER ni LOGNAME y con
+// ELECTRON_RUN_AS_NODE. Un run aprobado desde el panel lo heredaba, y Claude no encontraba la sesión
+// del Keychain: «Claude rechazó la credencial de la sesión» en VF-3 y VF-4.
+test("los comandos corren con tu usuario y sin las variables de Orca", async () => {
+  const saved = { ...process.env };
+  const { worker } = await fakeWorker();
+  const envLog = join(mkdtempSync(join(tmpdir(), "flowrunner-env-")), "env.log");
+  try {
+    delete process.env.USER;
+    delete process.env.LOGNAME;
+    process.env.ELECTRON_RUN_AS_NODE = "1";
+    process.env.NODE_CHANNEL_FD = "3";
+    process.env.FAKE_ENV_LOG = envLog;
+    await worker.request("flowrunner.runs");
+    assert.equal(
+      readFileSync(envLog, "utf8").trim(),
+      `USER=${userInfo().username} LOGNAME=${userInfo().username} ELECTRON_RUN_AS_NODE= NODE_CHANNEL_FD=`,
+    );
+  } finally {
+    process.env = saved;
     await worker.deactivate();
   }
 });

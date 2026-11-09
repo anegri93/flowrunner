@@ -854,6 +854,17 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Revisión ponytail:** a mano. Un link en una etapa, con la acción que ya existía.
 - **Desbloquea:** Gate Fase 8
 
+### T8.9c · Un run aprobado desde el panel encuentra la sesión de Claude
+- **Estado:** `[x] Hecho`
+- **Regresión de:** T8.7b
+- **Descripción:** en VF-3 y VF-4, implementar falló con «Claude rechazó la credencial de la sesión» justo después de aprobar o reanudar desde el panel de Orca: las seis sesiones respondieron `authentication_failed` en el primer pedido. Orca lanza su host de plugins solo con HOME, PATH y TMPDIR, más ELECTRON_RUN_AS_NODE y NODE_CHANNEL_*. El run heredaba ese entorno y, sin USER, Claude Code no encontraba la sesión del Keychain: `claude auth status` da `loggedIn: false` en ese entorno y `true` con solo agregar USER. Ahora el worker les pasa a sus comandos un entorno con el USER, el LOGNAME y el SHELL de la persona, sin las variables propias de Orca.
+- **Lint:** `pnpm lint` y `orca plugin validate`.
+- **Test:** `orca/src/worker.test.ts` › «los comandos corren con tu usuario y sin las variables de Orca»: sin USER ni LOGNAME y con ELECTRON_RUN_AS_NODE y NODE_CHANNEL_FD en el worker, el flowrunner falso recibe USER y LOGNAME del usuario y ninguna de las dos variables de Orca.
+- **Canario:** el test falló antes del arreglo: `USER= … ELECTRON_RUN_AS_NODE=1 NODE_CHANNEL_FD=3`.
+- **Criterio de aprobación:** reanudar VF-4 desde el panel arranca implementar sin el error de credencial.
+- **Revisión ponytail:** a mano. Una función de entorno que usan los dos lugares donde el worker lanza procesos.
+- **Desbloquea:** Gate Fase 8
+
 ### Gate Fase 8
 - **Estado:** `[x] Hecho`
 - **Validación de lint:** `pnpm lint` verde.

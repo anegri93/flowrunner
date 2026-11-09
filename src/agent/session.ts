@@ -129,8 +129,13 @@ export async function runSession<T>(
       if (message.type === "rate_limit_event" && message.rate_limit_info.status === "rejected") {
         limitUntil = (message.rate_limit_info.resetsAt ?? Date.now() / 1000 + 3600) * 1000;
       }
-      if (message.type === "result") result = message;
       if ((message as { error?: unknown }).error === "authentication_failed") authFailed = true;
+      // El `result` es el final de la sesión. No se espera a que el stream cierre: el SDK lo deja
+      // abierto mientras quede algún proceso que lanzó el agente, y eso trababa la sub-task.
+      if (message.type === "result") {
+        result = message;
+        break;
+      }
     }
   } catch (error) {
     if (limitUntil !== undefined) return { tipo: "limite", hasta: limitUntil };

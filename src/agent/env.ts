@@ -34,6 +34,11 @@ export function buildSessionEnv(
   // el host de plugins de Orca, dejaba cada sesión en modo login sin sesión.
   env.USER = base.USER ?? base.LOGNAME ?? userInfo().username;
   env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = "1";
+  // Sin esto, un comando que pasa el timeout de Bash no muere: queda en segundo plano, el agente no
+  // puede leer su salida (vive fuera del worktree) y el stream del SDK no termina mientras viva. En
+  // CUENTAS-1 dos e2e de Jest que no salían dejaron ST-2 trabada 8 min después de su `success`. Con
+  // la variable, el comando muere en su timeout y la sesión cierra.
+  env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = "1";
   env.ENABLE_CLAUDEAI_MCP_SERVERS = "false";
   env.CLAUDE_AGENT_SDK_CLIENT_APP = "flowrunner/0";
   if (auth.kind === "token") {

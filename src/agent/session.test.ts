@@ -103,6 +103,20 @@ describe("runSession", () => {
     ).toHaveLength(2);
   });
 
+  // Si regresiona, una sub-task que ya terminó queda trabada hasta su timeout porque el stream no
+  // cierra mientras viva algún proceso que lanzó el agente, como ST-2 en CUENTAS-1.
+  test("con el resultado, la sesión termina aunque el stream siga abierto", async () => {
+    const fake = fakeQuery((options) =>
+      (async function* () {
+        yield* stream("salida-estructurada");
+        yield* hanging(options);
+      })(),
+    );
+    const { rt } = runtime(fake.query);
+    const result = await runSession(spec({ timeoutMs: 2_000 }), rt);
+    expect(result.tipo).toBe("ok");
+  });
+
   test("un stream que termina sin resultado es falla de infraestructura", async () => {
     const { rt } = runtime(fakeQuery(stream("cortada-por-timeout")).query);
     expect(await runSession(spec(), rt)).toMatchObject({

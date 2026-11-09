@@ -42,6 +42,7 @@ describe("buildSessionEnv", () => {
       HOME: "/h",
       USER: userInfo().username,
       CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
+      CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1",
       ENABLE_CLAUDEAI_MCP_SERVERS: "false",
       CLAUDE_AGENT_SDK_CLIENT_APP: "flowrunner/0",
       CLAUDE_CODE_OAUTH_TOKEN: "tok",

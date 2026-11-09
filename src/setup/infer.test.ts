@@ -28,11 +28,11 @@ describe("inferRepo", () => {
       lockfiles: ["package-lock.json"],
       manifests: ["package.json"],
     });
-    expect(inferred.verify).toMatch(/\nset -e\nnpm run check\n$/);
+    expect(inferred.verify).toContain("\npaso npm run check\nif");
     expect(inferred.hallazgos.filter((h) => h.estado === "falta")).toEqual([]);
   });
 
-  test("repo pnpm sin check: encadena los scripts que existen, en orden", () => {
+  test("repo pnpm sin check: corre los scripts que existen, los tests primero", () => {
     const inferred = inferRepo({
       baseBranch: "develop",
       files: ["package.json", "pnpm-lock.yaml", "test/a.test.ts", "src/b.spec.tsx"],
@@ -40,7 +40,8 @@ describe("inferRepo", () => {
     });
     expect(inferred.config?.setup).toBe("pnpm install --frozen-lockfile");
     expect(inferred.config?.tests_globs).toEqual(["src/**/*.spec.tsx", "test/**"]);
-    expect(inferred.verify).toMatch(/\nset -e\npnpm lint\npnpm test\npnpm build\n$/);
+    expect(inferred.verify).toContain("\npaso pnpm test\npaso pnpm lint\npaso pnpm build\nif");
+    expect(inferred.verify).not.toContain("set -e");
   });
 
   // Si regresiona, un repo sin tests pasa por bueno y verify no prueba nada.

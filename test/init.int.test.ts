@@ -403,6 +403,20 @@ describe("brain draft", () => {
     );
   }, 120_000);
 
+  // Regresión: en mango-portal-colaborador --reemplazar dejó arriba la plantilla vieja, que dice que
+  // toda convención bloquea, encima de un borrador con marcas de severidad.
+  test("con --reemplazar, una plantilla vieja que nadie editó pasa a la de hoy", () => {
+    const w = world();
+    const old =
+      "# Convenciones del repo\n\nReglas que planificar, implementar y revisar aplican. Una violación es un bloqueante en la revisión.\nEscribí reglas concretas y verificables, con un ejemplo cuando ayude.\n\n-\n";
+    withBrain(w, `${old}\n## Borrador de flowrunner init\n\n- regla vieja del borrador\n`);
+    const out = runCli(["brain", "draft", w.work, "--reemplazar", "--json"], w.env);
+    expect(out.status, out.stdout + out.stderr).toBe(0);
+    const convenciones = git(w.remote, "show", `${DRAFT_REF}/convenciones.md`);
+    expect(convenciones.startsWith(template("convenciones.md"))).toBe(true);
+    expect(convenciones).not.toContain("Una violación es un bloqueante");
+  }, 120_000);
+
   // Si regresiona, el borrador deja un archivo pasado de tope y el próximo run no carga el cerebro.
   test("si con el borrador un archivo pasa su tope, no empuja nada", () => {
     const w = world();

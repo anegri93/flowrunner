@@ -5,14 +5,14 @@ import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { z } from "zod";
 import { runSession } from "../agent/session.ts";
-import { BRAIN_FILES, brainDir } from "../brain/brain.ts";
+import { BRAIN_FILES, brainDir, DRAFT_HEADING, withCurrentTemplate } from "../brain/brain.ts";
 import type { RepoConfig } from "../config/schemas.ts";
 import { git } from "../git/git.ts";
 import { render } from "../prompts/render.ts";
 import type { Deps, QueryFn, RunPaths } from "../runner/types.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
 
-export const DRAFT_HEADING = "## Borrador de flowrunner init";
+export { DRAFT_HEADING };
 
 /** Una línea de avance para la persona que espera en la terminal. */
 export type Progress = (line: string) => void;
@@ -201,10 +201,13 @@ function promptVars(
 export async function draftBrain(input: DraftInput): Promise<DraftResult> {
   const { worktree, deps } = input;
   const pathOf = (key: keyof Draft) => join(brainDir(worktree), TARGETS[key].file);
+  // Una plantilla vieja que nadie editó no queda arriba del borrador nuevo.
+  const read = (key: keyof Draft) =>
+    withCurrentTemplate(TARGETS[key].file, readFileSync(pathOf(key), "utf8"));
   const current = {
-    convenciones: readFileSync(pathOf("convenciones"), "utf8"),
-    contexto: readFileSync(pathOf("contexto"), "utf8"),
-    que_es_bien: readFileSync(pathOf("que_es_bien"), "utf8"),
+    convenciones: read("convenciones"),
+    contexto: read("contexto"),
+    que_es_bien: read("que_es_bien"),
   };
   const commits = await git(worktree, ["log", "-n", "20", "--no-merges", "--format=%s"], deps.env);
   const commit = (await git(worktree, ["rev-parse", "--short", "HEAD"], deps.env)).trim();

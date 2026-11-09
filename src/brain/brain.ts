@@ -9,6 +9,7 @@ import {
   readdirSync,
   readFileSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
 import { join, relative } from "node:path";
 import { ConfigError, type Problem } from "../config/schemas.ts";
@@ -20,6 +21,26 @@ export const BRAIN_FILES = {
   lecciones: { file: "lecciones.md", max: 12_000 },
 } as const;
 export const MAX_EXAMPLES = 20;
+
+/** Dónde empieza lo que redactó init; lo de arriba es de la persona. */
+export const DRAFT_HEADING = "## Borrador de flowrunner init";
+
+/**
+ * Las plantillas que flowrunner dejó antes, tal cual. Si lo que está arriba del borrador es una de
+ * estas, nadie lo escribió: se cambia por la plantilla de hoy. La primera decía que toda convención
+ * bloquea, y quedaba arriba del borrador nuevo contradiciendo sus marcas de severidad.
+ */
+const OLD_TEMPLATES: Readonly<Record<string, readonly string[]>> = {
+  "contexto.md": [
+    "# Contexto del repo\n\nArquitectura, dónde vive cada cosa y cómo se testea. Lo leen planificar e implementar.\n\n-",
+  ],
+  "convenciones.md": [
+    "# Convenciones del repo\n\nReglas que planificar, implementar y revisar aplican. Una violación es un bloqueante en la revisión.\nEscribí reglas concretas y verificables, con un ejemplo cuando ayude.\n\n-",
+  ],
+  "que-es-bien.md": [
+    "# Qué es una buena PR en este repo\n\nCriterios con los que revisar compara cada diff. Poné ejemplos reales de PRs dadas por buenas en\n`ejemplos/`.\n\n-",
+  ],
+};
 
 type BrainKey = keyof typeof BRAIN_FILES;
 
@@ -96,6 +117,33 @@ export function loadBrain(repo: string): Brain {
 }
 
 const TEMPLATES = join(import.meta.dirname, "..", "..", "templates", "brain");
+
+/**
+ * El texto con la plantilla de hoy en lugar de una vieja que nadie editó, y el borrador intacto. Si
+ * la persona tocó algo arriba del borrador, no lo cambia.
+ */
+export function withCurrentTemplate(file: string, text: string): string {
+  const at = text.indexOf(DRAFT_HEADING);
+  const top = (at === -1 ? text : text.slice(0, at)).trimEnd();
+  if (!(OLD_TEMPLATES[file] ?? []).includes(top)) return text;
+  const fresh = readFileSync(join(TEMPLATES, file), "utf8").trimEnd();
+  return at === -1 ? `${fresh}\n` : `${fresh}\n\n${text.slice(at)}`;
+}
+
+/** Cambia las plantillas viejas sin editar del cerebro por las de hoy; devuelve las que cambió. */
+export function refreshTemplates(repo: string): string[] {
+  const refreshed: string[] = [];
+  for (const file of Object.keys(OLD_TEMPLATES)) {
+    const path = join(brainDir(repo), file);
+    if (!existsSync(path) || lstatSync(path).isSymbolicLink()) continue;
+    const text = readFileSync(path, "utf8");
+    const fresh = withCurrentTemplate(file, text);
+    if (fresh === text) continue;
+    writeFileSync(path, fresh);
+    refreshed.push(relative(repo, path));
+  }
+  return refreshed;
+}
 
 /** Escribe las plantillas que faltan en `.flowrunner/` del repo. Nunca pisa un archivo existente. */
 export function initBrain(repo: string): string[] {

@@ -32,11 +32,13 @@ Se refresca cada 3 segundos mientras la pestaña se ve.
 Con Orca abierto:
 
 ```sh
-/Applications/Orca.app/Contents/Resources/bin/orca plugin dev load ~/Documents/PersonalProjects/flowrunner/orca
+flowrunner orca install
 ```
 
-Como corre comandos en tu máquina, Orca pide aprobarlo: el comando imprime el fingerprint y lo
-volvés a correr con `--approve <fingerprint>`. Después aparece el ícono del cohete en la barra
+Carga esta carpeta, esté donde esté clonado flowrunner. Como corre comandos en tu máquina, Orca pide
+aprobarlo: el comando imprime el fingerprint y lo volvés a correr con `--approve <fingerprint>`. Si
+mudás la carpeta de flowrunner, volvé a correrlo. Si Orca no está en `/Applications`, pasá su CLI en
+`ORCA`. Después aparece el ícono del cohete en la barra
 derecha. Si `flowrunner` no está en el PATH de tu shell de login, cambiá el comando en Settings ›
 Plugins › flowrunner.
 

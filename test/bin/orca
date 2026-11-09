@@ -1,0 +1,7 @@
+#!/bin/sh
+# CLI de Orca falso: registra los argumentos en orca.log y pide aprobación si no viene --approve.
+printf '%s\n' "$*" >> "${FAKE_LOG_DIR:-$HOME}/orca.log"
+case "$*" in
+  *--approve*) echo "Loaded local.flowrunner" ;;
+  *) echo "local.flowrunner 0.1.0 needs approval. To approve, run: orca plugin dev load $4 --approve ap1-test"; exit 3 ;;
+esac

@@ -203,6 +203,37 @@ describe("planificar", () => {
       expect(readPlan(run).cambia_lo_existente).toEqual([declared]);
     });
 
+    // Regresión: en CUENTAS-1 el plan cambió lo que devuelve asegurarAcceso y dos seeds que lo llamaban
+    // no estaban en ningún alcance. El plan se aprobó y verificar los iba a encontrar rotos sin dueño.
+    test("un símbolo que cambia con un llamador fuera de todo alcance no pasa el gate", async () => {
+      const files = {
+        "src/export/csv.js": "export function serializar(filas) {\n  return filas;\n}\n",
+        "src/scripts/volcar.js": "const s = cargar();\nconsole.log(s.serializar(filas));\n",
+      };
+      const changesSignature = {
+        ...goodPlan,
+        cambia_lo_existente: [
+          {
+            que: "serializar pasa a pedir el separador",
+            donde: "src/export/csv.js:1",
+            criterio: "AC-1",
+            simbolo: "serializar",
+          },
+        ],
+      };
+      const { run, deps } = await prepared_(
+        [{ calls: [writeTest], output: changesSignature }],
+        undefined,
+        undefined,
+        files,
+      );
+      const outcome = await planificar(contextFor(run, "planificar", deps));
+      expect(outcome).toMatchObject({ tipo: "falla", clase: "gate" });
+      expect(outcome.tipo === "falla" && outcome.motivo).toContain(
+        "serializar cambia (src/export/csv.js:1) y lo llaman archivos que ninguna sub-task tiene en su alcance: src/scripts/volcar.js",
+      );
+    });
+
     test("el prompt dice que cambiar lo existente no es una decisión del planificador", async () => {
       const { run, deps, sim } = await prepared_([{ calls: [writeTest], output: goodPlan }]);
       await planificar(contextFor(run, "planificar", deps));

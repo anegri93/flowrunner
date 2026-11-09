@@ -15,6 +15,7 @@ import { loadBrain, type Brain } from "../brain/brain.ts";
 import { loadRepoConfig } from "../config/load.ts";
 import type { RepoConfig } from "../config/schemas.ts";
 import { testsInScope, testsTouched, undeclared } from "../gates/existente.ts";
+import { callersOutOfScope } from "../gates/llamadores.ts";
 import { checkCommandsFail, checkPlanShape, planSchema, type Plan } from "../gates/plan.ts";
 import { changesSince, commitAll, resetHard } from "../git/git.ts";
 import { GRAFT_TOOLS, graftMcpServer } from "../graft/graft.ts";
@@ -176,7 +177,10 @@ export const planificar: PhaseFn = async (ctx) => {
   for (const d of plan.decisiones)
     emit({ tipo: "decision", fase: "planificar", que: d.que, por_que: d.por_que });
 
-  const problems = checkPlanShape(plan, feature, worktree, config);
+  const problems = [
+    ...checkPlanShape(plan, feature, worktree, config),
+    ...(await callersOutOfScope(plan, worktree, deps.env)),
+  ];
   const changes = await changesSince(worktree, prep.base_sha, deps.env);
   const written = changes.filter((c) => c.status !== "borrado").map((c) => c.path);
   if (written.length === 0) problems.push("planificar no escribió ningún test");

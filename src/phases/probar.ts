@@ -102,8 +102,8 @@ export const probar: PhaseFn = async (ctx) => {
     env: deps.env,
   });
   if (up.tipo === "falla") return { tipo: "falla", clase: "entorno", motivo: up.motivo };
-  const urls = config.probar.urls;
-  const origins = [...new Set(Object.values(urls).map((u) => new URL(u).origin))];
+  const urls = [...Object.entries(config.probar.urls), ...Object.entries(config.probar.servicios)];
+  const origins = [...new Set(urls.map(([, u]) => new URL(u).origin))];
   const plan = readPlan(run);
   const ids = plan.subtareas.map((t) => t.id);
   const declaradas = config.probar.fallas;
@@ -131,9 +131,7 @@ export const probar: PhaseFn = async (ctx) => {
         fase: "probar",
         nombre,
         prompt: render("probar", {
-          urls: Object.entries(urls)
-            .map(([name, url]) => `- ${name}: ${url}`)
-            .join("\n"),
+          urls: urls.map(([name, url]) => `- ${name}: ${url}`).join("\n"),
           notas: config.probar.notas,
           fallas: hayFallas
             ? Object.entries(declaradas)

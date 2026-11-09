@@ -39,8 +39,9 @@ const logTail = (file: string) =>
 /**
  * Copia los archivos de fuera de git, levanta el entorno y espera a que esté listo: que `levantar`
  * termine bien, o que siga corriendo si la config dice `sigue_corriendo`, y que respondan todas sus
- * URLs. Si una URL ya responde antes de levantar, es otro entorno, por ejemplo el de la persona:
- * probar contra él daría verde con un código que no es el de la feature.
+ * URLs y servicios. Si una URL ya responde antes de levantar, es otro entorno, por ejemplo el de la
+ * persona: probar contra él daría verde con un código que no es el de la feature. Un servicio no corre
+ * el código de la feature, así que puede estar prendido antes y seguir después de bajar.
  */
 export async function levantarEntorno(opts: {
   readonly worktree: string;
@@ -51,6 +52,7 @@ export async function levantarEntorno(opts: {
 }): Promise<Levantado> {
   const { worktree, repo, probar, log } = opts;
   const urls = Object.values(probar.urls);
+  const esperadas = [...urls, ...Object.values(probar.servicios)];
   const busy = [];
   for (const url of urls) if (await responds(url)) busy.push(url);
   if (busy.length > 0) {
@@ -115,12 +117,12 @@ export async function levantarEntorno(opts: {
         motivo: `\`${probar.levantar}\` salió ${String(exit)}:\n${logTail(log)}`,
       };
     }
-    up = await Promise.all(urls.map(responds));
+    up = await Promise.all(esperadas.map(responds));
     if (up.every(Boolean) && (exit === 0 || probar.sigue_corriendo)) return { tipo: "ok", entorno };
     await sleep(1_000);
   }
   await entorno.bajar();
-  const down = urls.filter((_, i) => up[i] !== true);
+  const down = esperadas.filter((_, i) => up[i] !== true);
   const motivo =
     down.length > 0
       ? `el entorno no respondió en ${String(probar.espera_segundos)} s (${down.join(", ")})`

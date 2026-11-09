@@ -62,6 +62,13 @@ export const repoConfigSchema = z
         bajar: z.string().min(1).optional(),
         /** Lo que el agente puede tocar, por nombre: `{ api: "http://localhost:3000" }`. */
         urls: z.record(z.string().min(1), z.url({ protocol: /^https?$/ })),
+        /**
+         * Servicios compartidos que el agente también puede tocar, como el Supabase local o su
+         * Mailpit: `{ correo: "http://127.0.0.1:54324" }`. A diferencia de `urls`, pueden estar
+         * prendidos antes de levantar y seguir después de bajar, porque no corren el código de la
+         * feature. `levantar` los deja respondiendo. Ver ADR 0018.
+         */
+        servicios: z.record(z.string().min(1), z.url({ protocol: /^https?$/ })).default({}),
         /** Archivos fuera de git, como los `.env`, que se copian del repo al worktree de la feature. */
         env_files: z.array(relativePath).default([]),
         /** `levantar` no termina, como un `pnpm dev`: está listo cuando responden las URLs. */

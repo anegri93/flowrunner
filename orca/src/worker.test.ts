@@ -109,6 +109,27 @@ test("abrir el informe de un run cerrado lo escribe en el .git de su repo y lo a
   }
 });
 
+// Si regresiona, tocar una sub-task en el panel no abre lo que implementó.
+test("abrir una sub-task pide su informe a flowrunner y lo abre como pestaña en el proyecto del run", async () => {
+  const { worker, calls, repo } = await fakeWorker();
+  try {
+    const id = "VF-2-20261109-001527";
+    assert.deepEqual(
+      await worker.request("flowrunner.abrir", {
+        run: id,
+        que: { tipo: "unidad", unidad: "ST-2" },
+      }),
+      { ok: true, mensaje: "abierto" },
+    );
+    const file = join(repo, ".git", "flowrunner", id, "ST-2.md");
+    assert.match(readFileSync(file, "utf8"), /^# ST-2\n\n```diff\n\+precio\n```\n$/);
+    assert.ok(calls().includes(`report ${id} --unidad ST-2 --json`));
+    assert.ok(calls().includes(`orca file open ${file} --worktree path:${repo} --focus`));
+  } finally {
+    await worker.deactivate();
+  }
+});
+
 // Si regresiona, aprobar o pedir cambios desde el panel no llega a flowrunner, o llega distinto.
 test("cada decisión corre su comando fijo, con el motivo tal cual, y devuelve lo que dijo flowrunner", async () => {
   const { worker, calls } = await fakeWorker();
@@ -149,7 +170,7 @@ test("cada decisión corre su comando fijo, con el motivo tal cual, y devuelve l
 });
 
 // Si regresiona, lo que llega del panel puede terminar como otro comando en el shell o en otra ruta.
-test("rechaza un id, una fase, un motivo o una sesión inválidos sin llamar a flowrunner", async () => {
+test("rechaza un id, una fase, un motivo, una sesión o una sub-task inválidos sin llamar a flowrunner", async () => {
   const { worker, calls } = await fakeWorker();
   try {
     const bad = [
@@ -172,6 +193,12 @@ test("rechaza un id, una fase, un motivo o una sesión inválidos sin llamar a f
     });
     assert.equal(path.ok, false);
     assert.match(path.mensaje, /sesión inválida/);
+    const unit = await worker.request("flowrunner.abrir", {
+      run: "VF-2-20261109-001527",
+      que: { tipo: "unidad", unidad: "ST-1; rm -rf ~" },
+    });
+    assert.equal(unit.ok, false);
+    assert.match(unit.mensaje, /sub-task inválida/);
     assert.deepEqual(calls(), []);
   } finally {
     await worker.deactivate();

@@ -15,9 +15,13 @@ export interface Outcome {
   readonly mensaje: string;
 }
 
-/** Lo que se abre en una pestaña de Orca: los pasos de una sesión, el plan o el informe del run. */
+/**
+ * Lo que se abre en una pestaña de Orca: los pasos de una sesión, una sub-task con su diff, el plan
+ * o el informe del run.
+ */
 export type Openable =
   | { readonly tipo: "pasos"; readonly sesion: string }
+  | { readonly tipo: "unidad"; readonly unidad: string }
   | { readonly tipo: "plan" }
   | { readonly tipo: "informe" };
 

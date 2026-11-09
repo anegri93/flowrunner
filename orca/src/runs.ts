@@ -56,8 +56,22 @@ export interface Run {
   readonly segundos: number;
   readonly motivo?: string;
   readonly siguiente?: string;
+  /** Lo que hoy existe y el plan cambia. Con algo acá, aprobar pide aceptarlo. */
+  readonly cambiaLoExistente?: readonly ExistingChange[];
   readonly fases: readonly Phase[];
 }
+
+/** Un comportamiento de hoy que el plan cambia: qué, dónde lo fija el código y qué criterio lo pide. */
+export interface ExistingChange {
+  readonly que: string;
+  readonly donde: string;
+  readonly criterio: string;
+}
+
+/** Lo que el plan cambia de lo existente; vacío con un flowrunner anterior que no lo informa. */
+export const existingChanges = (run: Run): readonly ExistingChange[] => run.cambiaLoExistente ?? [];
+
+export const describeExisting = (c: ExistingChange) => `${c.que} (${c.donde}) ← ${c.criterio}`;
 
 export type Tone = "neutral" | "accent" | "success" | "warning" | "danger";
 
@@ -390,7 +404,8 @@ export type PhaseName = (typeof STATIONS)[number];
 
 /** Una decisión que la persona toma desde el panel. El worker la traduce a un comando fijo. */
 export type Decision =
-  | { readonly accion: "aprobar" }
+  /** `aceptoCambios`: la persona vio lo que el plan cambia de lo existente y lo acepta. */
+  | { readonly accion: "aprobar"; readonly aceptoCambios?: true }
   | { readonly accion: "cambios"; readonly motivo: string }
   | { readonly accion: "reanudar" }
   | { readonly accion: "rehacer"; readonly desde: PhaseName }
@@ -456,7 +471,9 @@ export function planMarkdown(clave: string, data: unknown): string {
     subtareas?: { id: string; titulo: string; alcance?: string[]; depende_de?: string[] }[];
     criterios?: { id: string; comando: string; subtarea: string }[];
     cambios?: Record<string, string[]> | null;
+    cambia_lo_existente?: ExistingChange[];
   };
+  const existing = (d.cambia_lo_existente ?? []).map((c) => `- ${describeExisting(c)}`);
   const tasks = (d.subtareas ?? []).map(
     (t) =>
       `- **${t.id}** ${t.titulo}${t.alcance === undefined || t.alcance.length === 0 ? "" : ` — \`${t.alcance.join("`, `")}\``}${t.depende_de === undefined || t.depende_de.length === 0 ? "" : ` · depende de ${t.depende_de.join(", ")}`}`,
@@ -470,6 +487,16 @@ export function planMarkdown(clave: string, data: unknown): string {
   return [
     `# ${clave} · plan`,
     "",
+    ...(existing.length === 0
+      ? []
+      : [
+          `## ⚠ Cambia lo que ya existe (${String(existing.length)})`,
+          "",
+          "Aprobar el plan es aceptar estos cambios. Si alguno no va, pedí cambios.",
+          "",
+          ...existing,
+          "",
+        ]),
     ...(changes.length === 0 ? [] : ["## Contra el plan anterior", "", ...changes, ""]),
     "## Sub-tasks",
     "",

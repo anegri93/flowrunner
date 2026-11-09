@@ -5,6 +5,7 @@ import { stateOf, TERMINAL } from "../engine/engine.ts";
 import { transcriptSteps, type Step } from "../report/transcript.ts";
 import { loadRepoConfig } from "../config/load.ts";
 import { DEFAULT_MODELS } from "../config/schemas.ts";
+import { cambioExistenteSchema, type CambioExistente } from "../gates/plan.ts";
 import type { Phase } from "../store/events.ts";
 import { readLog } from "../store/run-log.ts";
 import { listRunIds, runPaths } from "../store/runs.ts";
@@ -52,6 +53,17 @@ function readSessions(dir: string): Map<string, SessionFile> {
 }
 
 /** El esfuerzo de cada fase con agente: el de la config del repo, o el de flowrunner si no se lee. */
+/** Lo que el plan declaró que cambia de lo existente; nada si no hay plan o el archivo no se entiende. */
+function readExisting(dir: string): CambioExistente[] {
+  try {
+    const raw = JSON.parse(readFileSync(join(dir, "cambios-existentes.json"), "utf8")) as unknown;
+    const parsed = cambioExistenteSchema.array().safeParse(raw);
+    return parsed.success ? parsed.data : [];
+  } catch {
+    return []; // todavía no hay plan, o es de antes de que existiera el archivo
+  }
+}
+
 function readEfforts(repo: string | undefined): Partial<Record<Phase, string>> {
   let models: Record<string, { effort: string }> = DEFAULT_MODELS;
   try {
@@ -70,6 +82,7 @@ export function loadTree(home: string, id: string, now: number): RunTree {
     events,
     esfuerzos: readEfforts(created?.tipo === "run_creado" ? created.repo : undefined),
     tasks: readTasks(dir),
+    cambiaLoExistente: readExisting(dir),
     titulo: readTitle(dir),
     sessions: readSessions(dir),
     now,

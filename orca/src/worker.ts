@@ -95,7 +95,9 @@ function runId(id: unknown): string {
 export function decisionArgs(id: string, decision: Decision): string {
   switch (decision.accion) {
     case "aprobar":
-      return `approve ${quote(id)}`;
+      return decision.aceptoCambios === true
+        ? `approve ${quote(id)} --acepto-cambios`
+        : `approve ${quote(id)}`;
     case "cambios": {
       const motivo = typeof decision.motivo === "string" ? decision.motivo.trim() : "";
       if (motivo === "") throw new Error("falta el motivo de los cambios");

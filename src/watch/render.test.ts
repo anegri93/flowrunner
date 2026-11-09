@@ -42,6 +42,7 @@ const tree: RunTree = {
   haceSegundos: undefined,
   motivo: undefined,
   siguiente: undefined,
+  cambiaLoExistente: [],
   fases: [
     phase("planificar", {
       estado: "ok",

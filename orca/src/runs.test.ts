@@ -181,6 +181,28 @@ test("el plan como Markdown para su pestaña, y los pasos de una sesión", () =>
   );
 });
 
+// Si regresiona, la pestaña del plan esconde lo que el plan cambia de lo existente debajo de todo,
+// y la persona aprueba sin verlo.
+test("el plan que cambia lo que ya existe lo dice arriba de todo en su pestaña", () => {
+  const md = planMarkdown("CUENTAS-1", {
+    plan: "Enfoque.",
+    subtareas: [],
+    criterios: [],
+    cambia_lo_existente: [
+      {
+        que: "el alta rechaza otro dominio; después lo acepta",
+        donde: "a.ts:42",
+        criterio: "AC-1",
+      },
+    ],
+  });
+  assert.match(
+    md,
+    /^# CUENTAS-1 · plan\n\n## ⚠ Cambia lo que ya existe \(1\)\n\n.*\n\n- el alta rechaza otro dominio; después lo acepta \(a\.ts:42\) ← AC-1\n/,
+  );
+  assert.ok(!planMarkdown("PIZ-3", { plan: "x" }).includes("Cambia lo que ya existe"));
+});
+
 test("una salida que no es JSON da un error legible", () => {
   assert.throws(() => parseWatch("zsh: command not found: flowrunner"), /no devolvió JSON/);
   assert.equal(tokenCount(1_000_000), "1M");

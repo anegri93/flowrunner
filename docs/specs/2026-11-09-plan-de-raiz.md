@@ -23,6 +23,10 @@ Cada cambio de este plan cumple estos principios, y cualquier cambio futuro tamb
 5. **Cada regla nueva cita el incidente que la justifica y la métrica que va a mover.** Una regla
    que no aparece en ningún run durante un mes se revisa.
 6. **Cada fase se mide contra la línea de base** (abajo). Lo que no mejora el número no se queda.
+7. **El contexto llega calculado, no se le pide al agente que lo busque.** Lo que flowrunner puede
+   calcular antes, como la API de un archivo o quién llama a una función, entra en el prompt. Cada
+   turno de búsqueda relee todo el contexto: un dato que se busca en tres turnos cuesta tres veces el
+   contexto entero.
 
 ## Línea de base
 
@@ -144,6 +148,24 @@ La causa con más impacto. Son 2 PRs.
 - Los alcances siguen, porque evitan que dos sub-tasks paralelas se pisen. Pero un archivo fuera del
   alcance que la sub-task necesita deja de ser un rechazo mudo: pasa a la fase 2 como pregunta.
 
+### 1.4 Cada sub-task arranca orientada
+
+- **Problema:** las sub-tasks no tienen graft (`graft: false` en `implementar.ts`) y se orientan con
+  `ls`, `cat`, `git log` y `git status` por Bash. Eso es buena parte de los unos 100 comandos de
+  lectura rechazados, y cada intento es un turno.
+- **Cambio:** flowrunner calcula con el índice de graft del run, y pone en el prompt de cada
+  sub-task:
+  - la API de los archivos de su alcance (`graft_file_api`);
+  - quién llama a las funciones de esos archivos (`graft_trace_calls`), marcando los llamadores que
+    quedan fuera de su alcance, para que sepa qué no puede romper;
+  - el estado de su rama: los commits de las sub-tasks ya integradas, que hoy averigua con
+    `git log`.
+
+  Es contexto calculado, sin la herramienta de graft: la sub-task no gasta turnos en buscarlo
+  (principio 7).
+- **Aceptación:** en 3 runs nuevos, los comandos de orientación (`ls`, `cat`, `git status`,
+  `git log`) bajan a la mitad, y el costo de implementar por sub-task no sube.
+
 ---
 
 ## Fase 2 · Detenerse y preguntar
@@ -224,8 +246,12 @@ Una PR.
   US$ 13 de implementar.
 - **Cambio:**
   - El planificador recibe las sub-tasks ya integradas: id, alcance y commit.
-  - Su salida suma `subtareas[].conserva: boolean`. El gate la acepta solo si esa sub-task existía
-    con el mismo alcance y no la nombran los pedidos de cambios.
+  - Su salida suma `subtareas[].conserva: boolean`. El gate la acepta solo si:
+    - esa sub-task existía con el mismo alcance;
+    - no la nombran los pedidos de cambios;
+    - según graft (`graft_trace_calls` sobre el código de la rama), no llama a ninguna función que el
+      plan nuevo declara que cambia (`cambia_lo_existente` con `simbolo`). Si la llama, su código
+      depende de algo que cambió, y se reimplementa.
   - Planificar arma la rama nueva así: la base, después el commit de los tests del plan nuevo,
     después el cherry-pick de los commits de las sub-tasks conservadas (los encuentra por el trailer
     `Flowrunner-Subtask`).
@@ -267,16 +293,30 @@ Son 2 o 3 PRs. Ataca el 55 % del costo.
   que corre los tests en rojo.
 - **Aceptación:** en 5 runs nuevos, a lo sumo un rechazo del gate de afuera.
 
-### 4.3 Darle lo que ya se exploró
+### 4.3 Darle lo que ya se exploró, con graft calculado
 
-- **Problema:** la feature, escrita con la skill, cita el código con `archivo:línea`, y el
-  planificador explora desde cero: el primer plan de VF-1 tuvo 97 `Read` en 267 turnos.
+- **Problema:**
+  - La feature, escrita con la skill, cita el código con `archivo:línea`, y el planificador explora
+    desde cero: el primer plan de VF-1 tuvo 97 `Read` en 267 turnos.
+  - **Graft se suma a las lecturas en vez de reemplazarlas.** El planificador lo usó en 17 de 23
+    sesiones (174 llamadas, 85 de ellas `graft_file_api`), y las sesiones que más lo usaron son las
+    que más leyeron: VF-1, con 26 a 37 llamadas y 59 a 73 `Read` por plan; VF-6, con 21 y 26. Pide
+    la API de un archivo y después lo lee igual, y cada llamada es un turno más.
+  - Revisar, en cambio, no llamó a graft ni una vez en 10 sesiones, y usa el radio de impacto que
+    flowrunner le calcula y le pone en el prompt (`blastRadius`). Lo calculado se usa; la herramienta
+    se suma.
 - **Cambio:**
   - La skill escribe esas citas en una sección `## Contexto` de la feature, y `parseFeature` la
     conserva.
-  - Planificar le arma al planificador, antes de empezar, un mapa de graft de esos archivos: su API
-    y quién los llama.
-  - El prompt dice: «partí de esto; leé solo lo que no está».
+  - Antes de abrir la sesión, planificar corre graft sobre los archivos que cita la feature y pone
+    el resultado en el prompt:
+    - su API (`graft_file_api`);
+    - quién llama a sus funciones (`graft_trace_calls`);
+    - los tests existentes que los ejercitan.
+  - El prompt dice: «partí de esto; leé con Read solo lo que no está acá, y solo los rangos que
+    necesites».
+  - El planificador conserva graft como herramienta, para lo que el contexto no cubre. Se mide si
+    lo sigue usando antes de leer.
 - **Aceptación:** el primer plan, en promedio, baja de US$ 2,76 a menos de US$ 1,5, y de 10 a menos
   de 6 minutos.
 
@@ -284,10 +324,12 @@ Son 2 o 3 PRs. Ataca el 55 % del costo.
 
 - **Problema:** el explorador (Haiku) existe, pero se usó en 5 de 23 sesiones, todas de ML-1 y VF-1.
   Opus explora solo y paga cada turno por el tamaño de lo que relee.
-- **Cambio:** una sesión `explorar` antes de planificar, con Sonnet. Recibe la feature y el mapa de
-  4.3, y entrega `exploracion.md`: archivos, funciones, tests existentes y riesgos, con
-  `archivo:línea`. Opus planifica sobre ese informe, con un contexto chico, y puede pedir más al
-  explorador.
+- **Cambio:** una sesión `explorar` antes de planificar, con Sonnet. Recibe la feature y el contexto
+  calculado de 4.3, y entrega `exploracion.md`: archivos, funciones, tests existentes y riesgos, con
+  `archivo:línea`.
+  - Es la que usa graft como herramienta para lo que falta: ubicar código sin leer archivos
+    enteros, cuando cada turno es barato.
+  - Opus planifica sobre ese informe, con un contexto chico, y puede pedir más al explorador.
 - **Aceptación:** comparado con 4.3 sola, el costo total de explorar más planificar baja otro 30 %
   sin que suban los rechazos del gate. Si no baja, se saca.
 
@@ -320,7 +362,10 @@ La mayoría ya está en #70. Esto completa.
 Al terminar las fases 1 a 4, antes de seguir agregando nada:
 
 1. **Cinco features reales** con flowrunner, con `stats --runs` contra la línea de base y el
-   objetivo.
+   objetivo. Para graft, el reporte suma por fase cuántas llamadas a graft, cuántos `Read` y cuántos
+   turnos hubo. Se compara el primer plan con graft calculado de antemano (4.3) contra graft solo
+   como herramienta (la línea de base). Si lo calculado no baja las lecturas, se revisa el formato
+   del contexto antes de sacarlo.
 2. **Una feature comparable en Claude Code solo**, con el mismo método: plan aprobado, tests en
    rojo primero, implementar, verify, revisión con un subagente y PR. Se mide tiempo, costo y
    cuántas veces corregiste.
@@ -335,9 +380,9 @@ Al terminar las fases 1 a 4, antes de seguir agregando nada:
 ## Orden y dependencias
 
 ```
-0.1 ─┬─ 0.2 ─┬─ 1.1 ── 1.2 ─┐
-     └─ 0.3 ─┘              ├─ 2.1 ── 2.2 ── 3 ──┐
-                 2.3, 2.4 ──┘                     ├─ 6
+0.1 ─┬─ 0.2 ─┬─ 1.1 ── 1.2 ── 1.4 ─┐
+     └─ 0.3 ─┘                     ├─ 2.1 ── 2.2 ── 3 ──┐
+                 2.3, 2.4 ─────────┘                     ├─ 6
                  4.1 ── 4.2 ── 4.3 ── 4.4 ── 4.5 ─┘
                  5 (en paralelo con la fase 2)
 ```
@@ -346,11 +391,13 @@ Al terminar las fases 1 a 4, antes de seguir agregando nada:
 - **La fase 2 antes que la 3:** el replan conservador recién rinde cuando el run deja de replanificar
   solo.
 - **4.1 y 4.2 no dependen de nada:** pueden ir en paralelo con la fase 2.
+- **1.4 y 4.3 comparten el mismo código:** armar contexto con graft para un prompt. Conviene hacer
+  primero ese módulo, en 1.4, y reusarlo en 4.3 y en la fase 3.
 
 | Fase | PRs | Tamaño |
 |---|---|---|
 | 0 | 2 | chico |
-| 1 | 2 | mediano: la política de comandos y su tabla de casos |
+| 1 | 3 | mediano: la política de comandos y su tabla de casos; el contexto calculado de cada sub-task |
 | 2 | 3 | grande: estado nuevo, comando `fix`, Orca |
 | 3 | 1 | mediano |
 | 4 | 3 o 4 | mediano |

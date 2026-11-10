@@ -8,6 +8,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
@@ -33,7 +34,7 @@ import { buildIndex, GRAFT_TOOLS, graftMcpServer } from "../graft/graft.ts";
 import { featureText, render } from "../prompts/render.ts";
 import { readLog } from "../store/run-log.ts";
 import type { Outcome, RunEvent } from "../store/events.ts";
-import { archivosNombrados } from "../feature/citas.ts";
+import { archivosNombrados, desajusteDe } from "../feature/citas.ts";
 import type { Feature } from "../feature/feature.ts";
 import type { PhaseContext, PhaseFn, RunPaths } from "../runner/types.ts";
 import { runSession, type SessionResult, type SessionSpec } from "../agent/session.ts";
@@ -109,12 +110,25 @@ export async function codigoUbicado(
       : archivosNombrados(feature, (r) => existsSync(join(worktree, r)), MAX_ARCHIVOS_UBICADOS);
   if (archivos.length === 0)
     return "La feature no ubicó código: explorá vos, con graft y el explorador.";
+  // `feature check` comparó las citas con el checkout de la persona; la sesión ve otra rama, bajada
+  // después y quizás con código conservado. Lo que no coincide con ella se marca, no se da por cierto.
+  const leer = (ruta: string) => {
+    const abs = join(worktree, ruta);
+    return existsSync(abs) && statSync(abs).isFile() ? readFileSync(abs, "utf8") : undefined;
+  };
   const lineas = citas.map((c) => {
     const lineasDe =
       c.desde === undefined
         ? ""
         : `:${c.desde}${c.hasta !== undefined && c.hasta !== c.desde ? `-${c.hasta}` : ""}`;
-    return `- ${c.ruta}${lineasDe} — ${c.que}`;
+    const d = desajusteDe(c, leer);
+    const marca =
+      d === undefined
+        ? ""
+        : d.tipo === "falta"
+          ? " · ⚠ no está en este worktree"
+          : ` · ⚠ en este worktree el archivo tiene ${d.lineas} líneas`;
+    return `- ${c.ruta}${lineasDe} — ${c.que}${marca}`;
   });
   const graft =
     sinIndice === undefined
@@ -461,21 +475,20 @@ async function intentoNuevo(ctx: PhaseContext, comun: Comun, sessionId: string):
     writeFileSync(join(worktree, path), content);
   }
   const inicioSesion = await headSha(worktree, deps.env);
-  // El índice tiene que describir la rama que ve la sesión: el planificador, `codigoUbicado` y
-  // `llamadoresDe` miran la API del código conservado, no la de la base. Y en un replan, aunque no se
-  // conserve nada, el índice es el que dejaron implementar o revisar sobre la rama de entonces.
+  // El índice tiene que describir la rama que ve la sesión: `codigoUbicado` y `llamadoresDe` lo leen
+  // sin refrescar. Siempre se reconstruye: con código conservado no es el de la base; en un replan es
+  // el que dejaron implementar o revisar; y en cualquier reintento, el MCP de la sesión anterior lo
+  // refrescó con los tests que el reset acaba de descartar.
   let sinIndice: string | undefined;
-  if (inicioSesion !== base || previous !== undefined) {
-    try {
-      await buildIndex(worktree, graftIndex(run), deps.env);
-    } catch (error) {
-      sinIndice = `graft no pudo reconstruir el índice: ${(error instanceof Error ? error.message : String(error)).split("\n")[0] ?? ""}`;
-      emit({
-        tipo: "aviso",
-        fase: "planificar",
-        texto: `${sinIndice}; el planificador arranca sin el contexto de graft y no se conserva nada que dependa de quién llama a qué`,
-      });
-    }
+  try {
+    await buildIndex(worktree, graftIndex(run), deps.env);
+  } catch (error) {
+    sinIndice = `graft no pudo reconstruir el índice: ${(error instanceof Error ? error.message : String(error)).split("\n")[0] ?? ""}`;
+    emit({
+      tipo: "aviso",
+      fase: "planificar",
+      texto: `${sinIndice}; el planificador arranca sin el contexto de graft y no se conserva nada que dependa de quién llama a qué`,
+    });
   }
   const implementadas: Implementada[] = armada.candidatas.flatMap((c) => {
     const task = previous?.subtareas.find((t) => t.id === c.id);
@@ -729,7 +742,8 @@ async function gateYCierre(ctx: PhaseContext, comun: Comun, intento: Intento): P
   if (problems.length > 0) {
     const motivo = `el plan no pasó el gate:\n- ${problems.join("\n- ")}`;
     // Se retoma solo sobre el worktree que vio la sesión, y con el índice que miró su gate (ADR 0025).
-    if (!rearmada && sinIndice === undefined)
+    // Sin candidatas, el gate no consulta el índice: un índice que no se reconstruyó no cambia nada.
+    if (!rearmada && (sinIndice === undefined || armada.candidatas.length === 0))
       writeFileSync(sesionFile(run), `${JSON.stringify({ ...intento.sesion, motivo })}\n`);
     return { tipo: "falla", clase: "gate", motivo };
   }

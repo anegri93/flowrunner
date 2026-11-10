@@ -42,4 +42,14 @@ describe("citas", () => {
       ),
     ).toEqual(["src/export/csv.ts", "src/api/", "tests/x.test.ts"]);
   });
+
+  // Revisión: si regresiona, una ruta con .. que existe fuera del repo llega a graft y al prompt.
+  test("archivosNombrados no toma una ruta que sale del repo, aunque exista", () => {
+    expect(
+      archivosNombrados(
+        { descripcion: "Mirá ../fuera/x.ts y src/../../y.ts", criterios: [], aclaraciones: [] },
+        () => true,
+      ),
+    ).toEqual([]);
+  });
 });

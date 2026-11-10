@@ -8,26 +8,37 @@ function lineasDe(texto: string): number {
   return texto.split("\n").length - (texto.endsWith("\n") ? 1 : 0);
 }
 
+/** Por qué una cita no coincide con un árbol: el archivo no está, o tiene menos líneas que su rango. */
+export type Desajuste =
+  | { readonly tipo: "falta" }
+  | { readonly tipo: "corta"; readonly hasta: number; readonly lineas: number };
+
+/** El desajuste de una cita contra `leer`, o undefined si coincide. */
+export function desajusteDe(
+  cita: Cita,
+  leer: (ruta: string) => string | undefined, // undefined si no existe o es carpeta
+): Desajuste | undefined {
+  const texto = leer(cita.ruta);
+  if (texto === undefined) return { tipo: "falta" };
+  const lineas = lineasDe(texto);
+  const hasta = cita.hasta ?? cita.desde;
+  return hasta !== undefined && hasta > lineas ? { tipo: "corta", hasta, lineas } : undefined;
+}
+
 /** Problemas de las citas contra el repo: archivo inexistente o línea fuera del archivo. */
 export function checkCitas(
   citas: readonly Cita[],
   leer: (ruta: string) => string | undefined, // undefined si no existe o es carpeta
 ): string[] {
-  const problemas: string[] = [];
-  for (const { ruta, desde, hasta } of citas) {
-    const texto = leer(ruta);
-    if (texto === undefined) {
-      problemas.push(
-        `Contexto cita ${ruta}, que no existe en el repo: las citas son del código de hoy`,
-      );
-      continue;
-    }
-    const n = lineasDe(texto);
-    const ultima = hasta ?? desde;
-    if (desde !== undefined && ultima !== undefined && ultima > n)
-      problemas.push(`Contexto cita ${ruta}:${desde}-${ultima}, pero el archivo tiene ${n} líneas`);
-  }
-  return problemas;
+  return citas.flatMap((cita) => {
+    const d = desajusteDe(cita, leer);
+    if (d === undefined) return [];
+    return d.tipo === "falta"
+      ? [`Contexto cita ${cita.ruta}, que no existe en el repo: las citas son del código de hoy`]
+      : [
+          `Contexto cita ${cita.ruta}:${cita.desde ?? d.hasta}-${d.hasta}, pero el archivo tiene ${d.lineas} líneas`,
+        ];
+  });
 }
 
 /**

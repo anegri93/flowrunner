@@ -227,9 +227,9 @@ export function statsPorRun(home: string, project?: string) {
     const { events } = readLog(dir);
     const first = events[0];
     if (first === undefined) continue;
-    const s = runStats(dir, events);
-    if (project !== undefined && s.proyecto !== project) continue;
-    loaded.push({ createdAt: Date.parse(first.at), stats: s });
+    // Antes de leer las sesiones: las de otro proyecto no hace falta abrirlas.
+    if (project !== undefined && stateOf(events).proyecto !== project) continue;
+    loaded.push({ createdAt: Date.parse(first.at), stats: runStats(dir, events) });
   }
   // En el orden en que se crearon: el nombre ordena por clave, no por fecha.
   const runs = loaded.sort((a, b) => a.createdAt - b.createdAt).map((r) => r.stats);

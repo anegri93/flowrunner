@@ -232,7 +232,8 @@ async function guardadas(
       (e) =>
         (e.tipo === "accion_iniciada" && e.fase !== "planificar") ||
         e.tipo === "arreglo_manual_iniciado" ||
-        e.tipo === "arreglo_manual",
+        e.tipo === "arreglo_manual" ||
+        e.tipo === "autofix",
     );
   if (otraFase) return undefined;
   return (await refSha(worktree, refAnterior(run), env)) === data.anterior ? data : undefined;

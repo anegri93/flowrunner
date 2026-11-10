@@ -30,6 +30,7 @@ import {
   acceptRun,
   acceptUntested,
   BIN,
+  autofixRun,
   fixRun,
   rerunRun,
   resumeRun,
@@ -55,6 +56,8 @@ const USAGE = `uso: flowrunner <comando> [--json]
   fix <run> --unidad ST-n "<qué>"
                                  que esa sub-task lo corrija sobre el código que ya está
   fix <run> --yo                 lo arreglás vos en el worktree; después resume
+  fix <run> --auto               formateador y lint del repo y vuelve a verificar; si sigue en
+                                 rojo, las sub-tasks lo corrigen solas, una vez
   accept <run> "<por qué>"       seguir a la fase siguiente igual
                                  fix y accept, solo si el run detenido lo ofrece, con
                                  [--origen terminal|claude|orca]; por defecto terminal
@@ -179,6 +182,7 @@ export async function main(
       sesion: { type: "string" },
       unidad: { type: "string", multiple: true },
       yo: { type: "boolean", default: false },
+      auto: { type: "boolean", default: false },
       origen: { type: "string" },
       fase: { type: "string" },
       confirmar: { type: "boolean", default: false },
@@ -278,6 +282,17 @@ export async function main(
         return 0;
       }
       case "fix": {
+        if (values.auto === true) {
+          if (values.yo === true || strings(values.unidad).length > 0 || rest.length > 0) {
+            throw new UserError(
+              "--auto va solo: sin --yo, sin --unidad y sin instrucción",
+              `flowrunner status ${first ?? "<run>"}`,
+            );
+          }
+          const auto = await autofixRun(home, runArg(home, first), parseOrigen(values.origen), env);
+          print(auto, `run ${auto.id} ${auto.accion}`);
+          return 0;
+        }
         const fixed = fixRun(
           home,
           runArg(home, first),

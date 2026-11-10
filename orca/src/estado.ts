@@ -209,8 +209,8 @@ export class Panel {
     try {
       const answer = await this.#api.decidir(run, decision);
       if (answer.ok) this.#set({ borrador: "" });
-      // Lo que dice al aprender, y la ruta del worktree para arreglarlo a mano, se muestran aunque salga.
-      if (!answer.ok || decision.accion === "aprender" || decision.accion === "aMano")
+      // Lo que dice al aprender, y si Autofix commiteó algo, se muestran aunque salga.
+      if (!answer.ok || decision.accion === "aprender" || decision.accion === "autofix")
         this.#set({ dicho: { run, ...answer } });
     } catch (error) {
       this.#set({ dicho: { run, ok: false, mensaje: message(error) } });

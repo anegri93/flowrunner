@@ -453,6 +453,7 @@ describe("detenerse y preguntar (ADR 0023)", () => {
     const s = stateOf(verifyQuestion);
     expect(commands(s)).toEqual([
       `flowrunner fix ${R} --unidad ST-2 "<qué cambiar>"`,
+      `flowrunner fix ${R} --auto`,
       `flowrunner fix ${R} --yo`,
       `flowrunner accept ${R} "<por qué>"`,
       `flowrunner rerun ${R} --desde planificar`,
@@ -575,7 +576,11 @@ describe("detenerse y preguntar (ADR 0023)", () => {
     ]);
     expect(waiting).toMatchObject({ status: "detenido", aMano: true, fase: "verificar" });
     expect(waiting.halt?.motivo).toMatch(/arreglo a mano/);
-    expect(commands(waiting)).toEqual([`flowrunner resume ${R}`, `flowrunner abort ${R}`]);
+    expect(commands(waiting)).toEqual([
+      `flowrunner resume ${R}`,
+      `flowrunner fix ${R} --auto`,
+      `flowrunner abort ${R}`,
+    ]);
     expect(waiting.halt?.siguiente).toBe(`flowrunner resume ${R}`);
     const after = stateOf([
       ...verifyQuestion,
@@ -804,5 +809,111 @@ describe("detenerse y preguntar (ADR 0023)", () => {
     ];
     same(untestedByHand, { tipo: "sin_probar_aceptado", motivo: "x" });
     same(untestedByHand, { tipo: "aceptado", fase: "probar", motivo: "x", origen: "terminal" });
+  });
+});
+
+describe("Autofix (ADR 0026)", () => {
+  const R = "R1";
+  const zero: RunEvent = { ...created, vueltas: 0 };
+  const implemented = [...upTo("preparar", "planificar"), ...ok("aprobar"), ...ok("implementar")];
+  const back = (fase: Phase, unidades: string[], motivo = "AC-1 sigue en rojo") =>
+    done(fase, { tipo: "vuelve", unidades, motivo });
+  const commands = (s: RunState) => s.halt?.opciones.map((o) => o.comando);
+  const asked = [zero, ...implemented, ...back("verificar", ["ST-2"])];
+  const autofix = ev({ tipo: "autofix", origen: "orca", sha: "abc1234" });
+
+  // Si regresiona, el panel ofrece Autofix donde el CLI lo rechaza, o no lo ofrece donde sirve.
+  test("se ofrece en una pregunta de verificar, revisar o probar con sub-tasks, y durante un arreglo a mano", () => {
+    expect(commands(stateOf(asked))).toContain(`flowrunner fix ${R} --auto`);
+    const byHand = stateOf([
+      ...asked,
+      ev({ tipo: "arreglo_manual_iniciado", origen: "terminal", base: "abc1234" }),
+    ]);
+    expect(commands(byHand)).toContain(`flowrunner fix ${R} --auto`);
+    // Una sub-task que no arrancó no se formatea: implementar pregunta sin Autofix.
+    const implementQuestion = state(
+      upTo("preparar", "planificar"),
+      ok("aprobar"),
+      done("implementar", { tipo: "pregunta", motivo: "x", unidades: ["ST-1"] }),
+    );
+    expect(commands(implementQuestion)).not.toContain(`flowrunner fix ${R} --auto`);
+    // Lo que falta para probar no lo arreglan las herramientas.
+    const untested = state(
+      upTo("preparar", "planificar"),
+      ok("aprobar"),
+      upTo("implementar", "verificar", "revisar"),
+      done("probar", { tipo: "falla", clase: "sin_probar", motivo: "AC-1 sin probar" }),
+    );
+    expect(commands(untested)).not.toContain(`flowrunner fix ${R} --auto`);
+  });
+
+  // Si regresiona, Autofix no vuelve a verificar lo que commitearon las herramientas.
+  test("vuelve a verificar sin gastar vueltas, también desde un arreglo a mano sin empezar", () => {
+    const s = stateOf([...asked, autofix]);
+    expect(s).toMatchObject({ status: "en_curso", fase: "verificar", autofix: true });
+    expect(s.vueltas.verificar).toBe(1);
+    expect(nextAction(s)).toMatchObject({ tipo: "fase", fase: "verificar" });
+    const fromHand = stateOf([
+      ...asked,
+      ev({ tipo: "arreglo_manual_iniciado", origen: "terminal", base: "abc1234" }),
+      autofix,
+    ]);
+    expect(fromHand).toMatchObject({ status: "en_curso", fase: "verificar", aMano: false });
+  });
+
+  // Si regresiona, Autofix se detiene en el rojo que tenía que mandar a corregir, o no para nunca.
+  test("si verificar sigue en rojo, las sub-tasks lo corrigen con su motivo, una sola vez", () => {
+    const red = [...asked, autofix, ...back("verificar", ["ST-2", "ST-3"], "lint: no-unused-vars")];
+    const s = stateOf(red);
+    expect(s.status).toBe("en_curso");
+    expect(nextAction(s)).toMatchObject({
+      fase: "implementar",
+      unidades: ["ST-2", "ST-3"],
+      instruccion: "lint: no-unused-vars",
+    });
+    expect(s.autofix).toBe(false);
+    const again = stateOf([...red, ...ok("implementar"), ...back("verificar", ["ST-2"])]);
+    expect(again.status).toBe("detenido");
+    expect(commands(again)?.[0]).toBe(`flowrunner fix ${R} --unidad ST-2 "<qué cambiar>"`);
+  });
+
+  // Si regresiona, un rojo que aparece después de un verificar verde no se corrige solo.
+  test("vale hasta el próximo rojo, aunque sea de revisar", () => {
+    const s = stateOf([...asked, autofix, ...ok("verificar"), ...back("revisar", ["ST-1"])]);
+    expect(nextAction(s)).toMatchObject({ fase: "implementar", unidades: ["ST-1"] });
+  });
+
+  // Si regresiona, Autofix manda a implementar sin saber a quién, o sobrevive a otra decisión.
+  test("sin sub-tasks a quién darlo, o después de otra detención o de rehacer, pregunta", () => {
+    const noUnits = stateOf([...asked, autofix, ...back("verificar", [])]);
+    expect(noUnits.status).toBe("detenido");
+    expect(noUnits.autofix).toBe(false);
+    const afterHalt = stateOf([
+      ...asked,
+      autofix,
+      ...done("verificar", { tipo: "falla", clase: "entorno", motivo: "falta jsqr" }),
+      ev({ tipo: "reanudado" }),
+      ...back("verificar", ["ST-2"]),
+    ]);
+    expect(afterHalt.status).toBe("detenido");
+    const rehecho = stateOf([
+      ...asked,
+      autofix,
+      ev({ tipo: "rehacer", desde: "verificar" }),
+      ...back("verificar", ["ST-2"]),
+    ]);
+    expect(rehecho.status).toBe("detenido");
+  });
+
+  // Si regresiona, un evento suelto manda a verificar un run que se detuvo por otra cosa.
+  test("un autofix que el halt no ofrece no cambia nada", () => {
+    const porEntorno = [
+      zero,
+      ...implemented,
+      ...done("verificar", { tipo: "falla", clase: "entorno", motivo: "falta jsqr" }),
+    ];
+    expect(stateOf([...porEntorno, autofix])).toEqual(stateOf(porEntorno));
+    const running = [zero, ...ok("preparar")];
+    expect(stateOf([...running, autofix])).toEqual(stateOf(running));
   });
 });

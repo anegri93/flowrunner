@@ -173,6 +173,13 @@ function decided(e: RunEvent): Decided | undefined {
       };
     case "arreglo_manual_iniciado":
       return { que: "elegiste arreglarlo a mano", origen: e.origen, alPlan: false, cola: "" };
+    case "autofix":
+      return {
+        que: "elegiste Autofix",
+        origen: e.origen,
+        alPlan: false,
+        cola: e.sha === null ? "" : `: formato y lint en ${e.sha.slice(0, 7)}`,
+      };
     case "aceptado":
       return {
         que: `aceptaste seguir con ${e.fase} en rojo`,

@@ -178,6 +178,7 @@ const asked: Run = {
   opciones: [
     { comando: `flowrunner fix ${ID} --unidad ST-2 "<qué cambiar>"`, que: "que ST-2 lo corrija" },
     { comando: `flowrunner fix ${ID} --unidad ST-10 "<qué cambiar>"`, que: "que ST-10 lo corrija" },
+    { comando: `flowrunner fix ${ID} --auto`, que: "formateador y lint" },
     { comando: `flowrunner fix ${ID} --yo`, que: "lo arreglás vos" },
     { comando: `flowrunner accept ${ID} "<por qué>"`, que: "seguir a revisar igual" },
     { comando: `flowrunner rerun ${ID} --desde planificar`, que: "replanificar" },
@@ -186,22 +187,32 @@ const asked: Run = {
 };
 
 // Si regresiona, el panel no ofrece las respuestas que el run espera, u ofrece una que rechaza.
-test("un run detenido con opciones ofrece arreglar por sub-task, a mano y seguir igual", () => {
-  assert.deepEqual(decisionsFor(asked), ["arreglar", "aMano", "aceptar", "rehacer"]);
+// «Lo arreglo yo» quedó solo en el CLI: en el panel lo reemplaza Autofix (ADR 0026).
+test("un run detenido con opciones ofrece arreglar por sub-task, Autofix y seguir igual", () => {
+  assert.deepEqual(decisionsFor(asked), ["arreglar", "autofix", "aceptar", "rehacer"]);
   assert.equal(rerunPhase(asked), "planificar");
-  assert.equal(offers(asked, "fix --yo"), true);
+  assert.equal(offers(asked, "fix --auto"), true);
   assert.equal(offers(asked, "accept"), true);
   assert.equal(offers(asked, "resume"), false);
-  // Esperando el arreglo a mano: solo retomar.
+  // Esperando el arreglo a mano: retomar, o Autofix si la persona no llegó a tocar nada.
   const byHand: Run = {
     ...asked,
     siguiente: `flowrunner resume ${ID}`,
     opciones: [
       { comando: `flowrunner resume ${ID}`, que: "commitear tu cambio a mano" },
+      { comando: `flowrunner fix ${ID} --auto`, que: "formateador y lint" },
       { comando: `flowrunner abort ${ID}`, que: "cortar el run" },
     ],
   };
-  assert.deepEqual(decisionsFor(byHand), ["reanudar"]);
+  assert.deepEqual(decisionsFor(byHand), ["autofix", "reanudar"]);
+  // Un run de un flowrunner anterior, sin Autofix entre sus opciones: no se ofrece.
+  assert.deepEqual(
+    decisionsFor({
+      ...byHand,
+      opciones: byHand.opciones?.filter((o) => !o.comando.includes("--auto")),
+    }),
+    ["reanudar"],
+  );
   // Un snapshot de un flowrunner anterior, sin opciones: lo de antes.
   const { opciones: _sin, ...old } = asked;
   assert.deepEqual(decisionsFor({ ...old, siguiente: `flowrunner resume ${ID}` }), ["reanudar"]);

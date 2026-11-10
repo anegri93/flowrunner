@@ -646,6 +646,7 @@ describe("detenido con pregunta", () => {
     expect(tree.unidades).toEqual(["ST-2"]);
     expect(tree.opciones?.map((o) => o.comando)).toEqual([
       'flowrunner fix PIZ-1-x --unidad ST-2 "<qué cambiar>"',
+      "flowrunner fix PIZ-1-x --auto",
       "flowrunner fix PIZ-1-x --yo",
       'flowrunner accept PIZ-1-x "<por qué>"',
       "flowrunner rerun PIZ-1-x --desde planificar",

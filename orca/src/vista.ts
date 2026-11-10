@@ -194,8 +194,8 @@ function decisiones(e: Estado, run: Run): string {
         ? "¿Aprobar el plan? Arranca implementar."
         : mine.accion === "reanudar"
           ? `¿Reanudar ${run.clave}?`
-          : mine.accion === "aMano"
-            ? `¿Lo arreglás vos en el worktree de ${run.clave}? Después, Reanudar commitea tu cambio y vuelve a verificar.`
+          : mine.accion === "autofix"
+            ? `¿Autofix en ${run.clave}? Pasa el formateador y el lint y vuelve a verificar; si sigue en rojo, las sub-tasks lo corrigen solas.`
             : `¿Rehacer ${run.clave} desde ${mine.accion === "rehacer" ? mine.desde : ""}?`;
     return `<div class="pila">${texto(question, "fuerte")}<div class="botones">${boton({ t: "decidir", run: run.id, decision: mine }, "Sí, confirmar", { clase: "btn solid success" })}${cancelar}</div></div>`;
   }
@@ -220,7 +220,7 @@ function decisiones(e: Estado, run: Run): string {
     ...units.map((unidad) =>
       boton(ask({ accion: "arreglar", unidad, instruccion: "" }), `Arreglar ${unidad}`),
     ),
-    offered.includes("aMano") ? boton(ask({ accion: "aMano" }), "Lo arreglo yo") : "",
+    offered.includes("autofix") ? boton(ask({ accion: "autofix" }), "Autofix") : "",
     offered.includes("aceptar")
       ? boton(ask({ accion: "aceptar", motivo: "" }), "Seguir igual")
       : "",

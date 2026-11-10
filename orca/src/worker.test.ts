@@ -399,7 +399,7 @@ test("aprobar y cambios mandan --origen orca", async () => {
 });
 
 // Si regresiona, la respuesta del panel a un run detenido no llega, o llega sin decir que vino de Orca.
-test("arreglar, a mano y aceptar se traducen a fix y accept con --origen orca", async () => {
+test("arreglar, Autofix y aceptar se traducen a fix y accept con --origen orca", async () => {
   const { worker, calls } = await fakeWorker();
   const id = "VF-2-20261109-001527";
   try {
@@ -409,7 +409,7 @@ test("arreglar, a mano y aceptar se traducen a fix y accept con --origen orca", 
       decision: { accion: "arreglar", unidad: "ST-2", instruccion },
     });
     assert.deepEqual(fixed, { ok: true, mensaje: "arreglando" });
-    await worker.request("flowrunner.decidir", { run: id, decision: { accion: "aMano" } });
+    await worker.request("flowrunner.decidir", { run: id, decision: { accion: "autofix" } });
     const accepted = await worker.request("flowrunner.decidir", {
       run: id,
       decision: { accion: "aceptar", motivo: "AC-1 es flaky" },
@@ -417,7 +417,7 @@ test("arreglar, a mano y aceptar se traducen a fix y accept con --origen orca", 
     assert.deepEqual(accepted, { ok: true, mensaje: "aceptado: revisar arrancó" });
     assert.deepEqual(calls(), [
       `fix ${id} --unidad ST-2 ${instruccion} --origen orca --json`,
-      `fix ${id} --yo --origen orca --json`,
+      `fix ${id} --auto --origen orca --json`,
       `accept ${id} AC-1 es flaky --origen orca --json`,
     ]);
   } finally {

@@ -466,8 +466,11 @@ export type Decision =
   | { readonly accion: "abortar" }
   /** Que esa sub-task corrija lo que la persona escribe, sobre el código que ya está. */
   | { readonly accion: "arreglar"; readonly unidad: string; readonly instruccion: string }
-  /** La persona lo arregla en el worktree; flowrunner contesta con su ruta. */
-  | { readonly accion: "aMano" }
+  /**
+   * Autofix (ADR 0026): formateador y lint del repo y a verificar; si sigue en rojo, las sub-tasks lo
+   * corrigen solas. Reemplaza en el panel a «Lo arreglo yo», que sigue en el CLI (`fix --yo`).
+   */
+  | { readonly accion: "autofix" }
   /** Seguir a la fase siguiente igual; el motivo queda en la PR. */
   | { readonly accion: "aceptar"; readonly motivo: string };
 
@@ -482,9 +485,9 @@ export const fixUnits = (run: Run): string[] =>
   });
 
 /** El run detenido ofrece ese comando entre sus opciones. */
-export function offers(run: Run, comando: "fix --yo" | "accept" | "resume"): boolean {
+export function offers(run: Run, comando: "fix --auto" | "accept" | "resume"): boolean {
   const matches: Record<typeof comando, RegExp> = {
-    "fix --yo": /^flowrunner fix \S+ --yo$/,
+    "fix --auto": /^flowrunner fix \S+ --auto$/,
     accept: /^flowrunner accept \S+ /,
     resume: /^flowrunner resume \S+$/,
   };
@@ -497,7 +500,7 @@ function stoppedDecisions(run: Run): Decision["accion"][] {
     return rerunPhase(run) === undefined ? ["reanudar"] : ["reanudar", "rehacer"];
   const out: Decision["accion"][] = [];
   if (fixUnits(run).length > 0) out.push("arreglar");
-  if (offers(run, "fix --yo")) out.push("aMano");
+  if (offers(run, "fix --auto")) out.push("autofix");
   if (offers(run, "accept")) out.push("aceptar");
   if (offers(run, "resume")) out.push("reanudar");
   if (rerunPhase(run) !== undefined) out.push("rehacer");

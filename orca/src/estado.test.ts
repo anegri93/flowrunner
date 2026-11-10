@@ -319,6 +319,7 @@ test("un run detenido muestra Arreglar ST-n, que pide qué corregir y lo manda",
               comando: `flowrunner fix ${VF2} --unidad ST-2 "<qué cambiar>"`,
               que: "que ST-2 lo corrija",
             },
+            { comando: `flowrunner fix ${VF2} --auto`, que: "formateador y lint" },
             { comando: `flowrunner fix ${VF2} --yo`, que: "lo arreglás vos" },
             { comando: `flowrunner accept ${VF2} "<por qué>"`, que: "seguir igual" },
             { comando: `flowrunner abort ${VF2}`, que: "cortar el run" },
@@ -336,7 +337,9 @@ test("un run detenido muestra Arreglar ST-n, que pide qué corregir y lo manda",
     }),
   );
   assert.ok(sees(panel, "Parece ser de: ST-2"));
-  assert.ok(find(panel, "Lo arreglo yo"));
+  // «Lo arreglo yo» quedó solo en el CLI: en el panel lo reemplaza Autofix (ADR 0026).
+  assert.ok(find(panel, "Autofix"));
+  assert.equal(find(panel, "Lo arreglo yo"), undefined);
   assert.ok(find(panel, "Seguir igual"));
   await press(panel, "Arreglar ST-2");
   assert.deepEqual(sent, []);

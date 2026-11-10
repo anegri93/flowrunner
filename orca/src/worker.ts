@@ -138,8 +138,8 @@ export function decisionArgs(id: string, decision: Decision): string {
       );
       return `fix ${quote(id)} --unidad ${decision.unidad} ${quote(instruccion)} --origen orca`;
     }
-    case "aMano":
-      return `fix ${quote(id)} --yo --origen orca`;
+    case "autofix":
+      return `fix ${quote(id)} --auto --origen orca`;
     case "aceptar": {
       const motivo = personText(
         decision.motivo,

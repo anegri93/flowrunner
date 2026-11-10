@@ -211,6 +211,11 @@ Las líneas punteadas del diagrama son el trabajo que vuelve atrás: un criterio
 la revisión o una prueba que falla en el entorno vuelven a implementar, y tus cambios al plan vuelven a planificar. Las lecciones llegan al
 cerebro del repo, y el próximo run las lee.
 
+Si un run se replanifica, el código de las sub-tasks que el plan nuevo no cambia se conserva: el
+planificador lo ve en el worktree, lo marca con `conserva: true`, y implementar solo corre las
+sub-tasks nuevas o cambiadas. Si no se puede comprobar que el plan nuevo no lo rompe, se reimplementa
+(ADR 0024).
+
 Los tests de aceptación quedan bloqueados: ninguna sub-task los puede tocar. Por eso, antes de
 bloquearlos, flowrunner les pasa el lint del repo en modo arreglar y el formateador. Un error que el
 lint no arregla solo rechaza el plan, y el planificador lo corrige antes de que lo veas.

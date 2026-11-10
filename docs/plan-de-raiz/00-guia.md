@@ -1,6 +1,6 @@
 # 00 · Guía para implementar el plan de raíz
 
-Para la sesión que implementa, con Sonnet 5.5 en Claude Code. El porqué está en
+Para la sesión que implementa, con Opus 5.5 y esfuerzo alto en Claude Code. El porqué está en
 `docs/specs/2026-11-09-por-que-falla-y-tarda.md` y `docs/specs/2026-11-09-plan-de-raiz.md`. Los
 contratos que comparten las PRs están en `01-contratos.md`. Cada PR tiene su spec, `pr-NN-*.md`.
 
@@ -69,10 +69,10 @@ algo de una spec no cierra con el código, se detiene y se pregunta (regla 6); n
    en inglés, como el historial del repo, y el cuerpo diciendo por qué. Al final de cada commit:
 
    ```
-   Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
    ```
 
-8. **Antes de abrir cada PR:** revisá el diff con el agente `harness-engineering-code-reviewer` y
+8. **Antes de abrir cada PR:** revisá el diff con el agente `harness-engineering-code-reviewer`, con Opus y esfuerzo alto, y
    corregí lo que confirme. Después abrí la PR con `gh pr create --base <rama anterior>`.
 9. **El cuerpo de la PR, en español:**
    - qué pasaba, con el incidente que cita la spec;
@@ -140,7 +140,7 @@ algo de una spec no cierra con el código, se detiene y se pregunta (regla 6); n
 - **Después de mergear,** la persona corre `flowrunner self-update`, lanza 5 features reales y
   compara con `flowrunner stats --runs` contra la línea de base del plan. Eso es la fase 6.
 
-## El prompt para la sesión de Sonnet
+## El prompt para la sesión que implementa
 
 > Implementá el plan de raíz de flowrunner. Leé primero
 > `docs/plan-de-raiz/00-guia.md` y `docs/plan-de-raiz/01-contratos.md`, y seguí la guía al pie de

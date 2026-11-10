@@ -118,6 +118,11 @@ export const eventSchema = z.discriminatedUnion("tipo", [
     estado: z.enum(["iniciada", "commiteada", "integrada", "fallida", "sin_cambios"]),
     sha: z.string().optional(),
     motivo: z.string().optional(),
+    /**
+     * fallida por un corte de red: el engine reintenta la fase, y ese intento no cuenta para
+     * `MAX_UNIT_ATTEMPTS` ni deja la sub-task fallida (ADR 0023).
+     */
+    corte_de_red: z.literal(true).optional(),
   }),
   z.strictObject({
     tipo: z.literal("preparado"),

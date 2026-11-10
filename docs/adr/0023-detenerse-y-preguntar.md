@@ -123,8 +123,15 @@ reintentos de infraestructura esperaban 5 y 20 s.
   `flowrunner doctor`, y las opciones quedan `doctor`, `resume` y `abort`. En VF-3 y VF-4 el «para
   seguir» decía `resume`, y retomar sin arreglar la credencial vuelve a fallar. Los dos textos de
   credencial viven en `motivos.ts`, para que el engine los reconozca sin comparar strings sueltos.
-- **Implementar no pasa por acá:** una sesión de sub-task que falla por infraestructura se reintenta
-  dentro de la sub-task, sin espera, hasta `MAX_UNIT_ATTEMPTS`, y termina en la pregunta de la fase.
+- **En implementar, el corte sube al engine.** Una sesión de sub-task cortada por la red deja su
+  `unidad` `fallida` con `corte_de_red: true` y la fase devuelve `falla infra`: el engine espera y la
+  reintenta como en las otras fases. Antes se reintentaba dentro de la sub-task, sin espera, y tres
+  cortes seguidos gastaban sus intentos en segundos y terminaban en una pregunta sobre una sub-task que
+  no estaba trabada. Las demás fallas de infraestructura de una sesión se siguen reintentando adentro,
+  y un run creado antes de `reintentos_red` también.
+- **El reintento sigue la misma entrada a implementar,** como en el engine: lo integrado antes del
+  corte no se rehace, y un intento cortado no cuenta para `MAX_UNIT_ATTEMPTS`. Retomar una detención a
+  la que se llegó con reintentos de infraestructura, como la de cuatro cortes, también la sigue.
 
 Detalle en `docs/plan-de-raiz/pr-07-reintentos-de-red.md`.
 
@@ -165,3 +172,6 @@ Detalle en `docs/plan-de-raiz/pr-07-reintentos-de-red.md`.
 - `src/engine/motivos.test.ts`: qué motivos son de red y cuáles no, y las dos credenciales.
 - `src/engine/engine.test.ts`, «reintentos de red y credenciales», y `src/runner/runner.test.ts`: tres
   reintentos de red con sus esperas, dos para el resto, y `doctor` primero ante una credencial.
+- `src/phases/implementar.test.ts`, «cortes de red en implementar»: la sub-task cortada espera sin
+  gastar sus intentos, cuatro cortes detienen con `resume`, lo integrado no se rehace al reintentar ni
+  al retomar, y un run viejo reintenta como antes.

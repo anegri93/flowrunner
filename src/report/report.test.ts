@@ -441,3 +441,37 @@ test("Tus decisiones lista solo las que el run tomó, con la demora desde que te
     /· aceptaste seguir con verificar en rojo desde orca, 3 s después de que te esperó: «AC-3 es flaky»$/,
   );
 });
+
+// Si regresiona, el informe cuenta como tuyo un Autofix que corrió flowrunner solo, o no lo cuenta.
+test("Tus decisiones cuenta en palabras el Autofix que flowrunner corrió solo, entre lo tuyo", () => {
+  const red = (hora: string): RunEvent[] => [
+    atHour({ tipo: "accion_iniciada", fase: "verificar" }, hora),
+    atHour(
+      {
+        tipo: "accion_terminada",
+        fase: "verificar",
+        resultado: { tipo: "vuelve", unidades: ["ST-1"], motivo: "AC-3 en rojo" },
+      },
+      hora,
+    ),
+  ];
+  const events = [
+    { ...waitingForYou()[0], vueltas: 0 } as RunEvent,
+    ...waitingForYou().slice(1),
+    atHour({ tipo: "aprobado", origen: "orca" }, "01:07:40"),
+    ...step("implementar", { tipo: "ok" }),
+    ...red("01:20:00"),
+    atHour({ tipo: "autofix", origen: "flowrunner", sha: "abc1234def" }, "01:20:02"),
+    ...red("01:21:00"),
+    ...step("implementar", { tipo: "ok" }),
+    ...red("01:30:00"),
+    atHour({ tipo: "autofix", origen: "terminal", sha: null }, "01:30:09"),
+  ];
+  const section = buildReport(events, run).split("## Tus decisiones")[1]?.split("\n## ")[0] ?? "";
+  const lines = section.trim().split("\n");
+  expect(lines).toHaveLength(3);
+  expect(lines[1]).toMatch(
+    /^- \d\d:\d\d:\d\d · flowrunner corrió Autofix solo, sin esperarte: formato y lint en abc1234$/,
+  );
+  expect(lines[2]).toMatch(/· elegiste Autofix desde terminal, 9 s después de que te esperó$/);
+});

@@ -1,6 +1,6 @@
 // La máquina de estados del run: una función pura sobre el log. El código decide qué fase toca;
 // la fase solo informa cómo le fue.
-import type { Outcome, Phase, RunEvent } from "../store/events.ts";
+import type { Arreglo, Outcome, Phase, RunEvent } from "../store/events.ts";
 import { esCredencial, esFallaDeRed } from "./motivos.ts";
 
 export type RunStatus =
@@ -69,6 +69,8 @@ export interface Opcion {
   readonly comando: string;
   /** Qué hace, en una frase, para el aviso, Orca y la skill. */
   readonly que: string;
+  /** Un `fix --unidad` con la instrucción ya escrita: la sub-task y el texto, sin comillas (ADR 0028). */
+  readonly arreglo?: Arreglo;
 }
 
 export interface Halt {
@@ -119,6 +121,11 @@ export interface RunState {
    * vez de detenerse. Se gasta una vez; cualquier detención lo apaga.
    */
   readonly autofix: boolean;
+  /**
+   * Autofix ya corrió desde la última respuesta de la persona que mandó el run a trabajar: flowrunner
+   * no lo vuelve a correr solo en la próxima detención (ADR 0028).
+   */
+  readonly autofixCorrio: boolean;
 }
 
 export type Action =
@@ -133,6 +140,12 @@ export type Action =
 
 /** El primer paso ante una credencial rechazada: retomar sin arreglarla vuelve a fallar (VF-3, VF-4). */
 const DOCTOR = "flowrunner doctor";
+
+/**
+ * Un texto entre comillas simples de shell: el arreglo lo escribe el revisor, y en comillas dobles un
+ * `` `engines.node` `` se ejecutaría al copiar el comando.
+ */
+const shellQuote = (text: string) => `'${text.replaceAll("'", `'\\''`)}'`;
 
 /** Qué hace un comando de la fila «cualquier otro» de `opcionesDe`, en palabras. */
 function queHace(comando: string, runId: string, fase: Phase): string {
@@ -150,12 +163,14 @@ function queHace(comando: string, runId: string, fase: Phase): string {
  * Los comandos son parte del contrato del log: el reductor decide si `arreglo_pedido`,
  * `arreglo_manual_iniciado`, `autofix` y `aceptado` valen comparando con ellos (`offers`), y se
  * recalculan en cada replay. Cambiar su texto, o sacar uno de una fila, cambia cómo se reduce un log
- * ya escrito.
+ * ya escrito. Los `arreglos` solo suman opciones con el mismo prefijo que el `fix --unidad` genérico,
+ * que se queda: un log sin ellos se reduce igual (ADR 0028).
  */
 export function opcionesDe(
   state: RunState,
   fase: Phase,
   unidades: readonly string[] | undefined,
+  arreglos: readonly Arreglo[] = [],
 ): Opcion[] {
   const R = state.runId;
   const abort: Opcion = { comando: `flowrunner abort ${R}`, que: "cortar el run; la rama queda" };
@@ -177,6 +192,14 @@ export function opcionesDe(
     comando: `flowrunner fix ${R} --unidad ${u} "<qué cambiar>"`,
     que: `que ${u} lo corrija con tu instrucción, sobre el código que ya está`,
   }));
+  // La solución ya escrita, para elegirla sin escribir nada; el genérico queda para escribir otra.
+  const suggested = arreglos
+    .filter((a) => (unidades ?? []).includes(a.unidad))
+    .map((a): Opcion => ({
+      comando: `flowrunner fix ${R} --unidad ${a.unidad} ${shellQuote(a.instruccion)}`,
+      que: `que ${a.unidad} lo corrija así: ${a.instruccion}`,
+      arreglo: a,
+    }));
   if (state.aMano) {
     return [
       {
@@ -202,6 +225,7 @@ export function opcionesDe(
   const next = NEXT[fase];
   if (isRoundPhase(fase) && fixes.length > 0 && next !== undefined) {
     return [
+      ...suggested,
       ...fixes,
       autofix,
       byHand,
@@ -227,6 +251,7 @@ function halt(
   motivo: string,
   siguiente?: string,
   unidades?: readonly string[],
+  arreglos?: readonly Arreglo[],
 ): RunState {
   const base: Halt = {
     motivo,
@@ -234,7 +259,7 @@ function halt(
     opciones: [],
     ...(unidades === undefined ? {} : { unidades }),
   };
-  const opciones = opcionesDe({ ...state, halt: base }, state.fase, unidades);
+  const opciones = opcionesDe({ ...state, halt: base }, state.fase, unidades, arreglos);
   const first = opciones[0];
   if (first === undefined) throw new Error("opcionesDe devolvió una lista vacía");
   return {
@@ -243,6 +268,17 @@ function halt(
     halt: { ...base, siguiente: first.comando, opciones },
     autofix: false,
   };
+}
+
+/**
+ * La instrucción de una vuelta que nadie eligió (las automáticas y la que sigue a Autofix): el motivo y,
+ * si la fase los propuso, sus arreglos. Sin arreglos es el motivo, como antes (ADR 0028).
+ */
+function roundInstruction(outcome: Extract<Outcome, { tipo: "vuelve" }>): string {
+  const arreglos = (outcome.arreglos ?? []).filter((a) => outcome.unidades.includes(a.unidad));
+  if (arreglos.length === 0) return outcome.motivo;
+  const lines = arreglos.map((a) => `- ${a.unidad}: ${a.instruccion}`);
+  return `${outcome.motivo}\n\nArreglos propuestos:\n${lines.join("\n")}`;
 }
 
 function enter(state: RunState, fase: Phase, extra: Partial<RunState> = {}): RunState {
@@ -290,7 +326,7 @@ function onOutcome(state: RunState, fase: Phase, outcome: Outcome): RunState {
       if (vueltas[fase] > state.vueltasMax && state.autofix && outcome.unidades.length > 0) {
         return enter({ ...state, vueltas }, "implementar", {
           unidades: outcome.unidades,
-          instruccion: outcome.motivo,
+          instruccion: roundInstruction(outcome),
           autofix: false,
         });
       }
@@ -302,11 +338,12 @@ function onOutcome(state: RunState, fase: Phase, outcome: Outcome): RunState {
             : `${fase} devolvió trabajo ${vueltas[fase]} veces; el máximo es ${state.vueltasMax}. Último motivo: ${outcome.motivo}`,
           undefined,
           outcome.unidades,
+          outcome.arreglos,
         );
       }
       return enter({ ...state, vueltas }, "implementar", {
         unidades: outcome.unidades,
-        instruccion: outcome.motivo,
+        instruccion: roundInstruction(outcome),
       });
     }
     // La fase sabe que reintentar solo no sirve: pregunta sin gastar intentos ni vueltas.
@@ -389,6 +426,7 @@ export function initialState(): RunState {
     sinProbar: false,
     aMano: false,
     autofix: false,
+    autofixCorrio: false,
   };
 }
 
@@ -473,7 +511,7 @@ export function reduce(state: RunState, event: RunEvent): RunState {
     case "sin_probar_aceptado":
       // Durante un arreglo a mano no: la PR saldría sin el cambio, que queda sin commitear.
       return state.status === "detenido" && state.sinProbar && !state.aMano
-        ? enter(state, "entregar")
+        ? enter(state, "entregar", { autofixCorrio: false })
         : state;
     case "arreglo_pedido": {
       if (!offersFix(state, event.unidades)) return state;
@@ -483,11 +521,13 @@ export function reduce(state: RunState, event: RunEvent): RunState {
         return enter(state, "implementar", {
           unidades: [...new Set([...event.unidades, ...(state.halt?.unidades ?? [])])],
           instruccion: `Para ${event.unidades.join(", ")}: ${event.instruccion}`,
+          autofixCorrio: false,
         });
       }
       return enter(state, "implementar", {
         unidades: event.unidades,
         instruccion: event.instruccion,
+        autofixCorrio: false,
       });
     }
     case "arreglo_manual_iniciado":
@@ -498,12 +538,15 @@ export function reduce(state: RunState, event: RunEvent): RunState {
           )
         : state;
     case "arreglo_manual":
-      return state.status === "detenido" && state.aMano ? enter(state, "verificar") : state;
-    // Lo de las herramientas ya está commiteado (el CLI lo hizo antes de escribir el evento): se
-    // verifica, y el próximo rojo con sub-tasks vuelve a implementar sin preguntar.
+      return state.status === "detenido" && state.aMano
+        ? enter(state, "verificar", { autofixCorrio: false })
+        : state;
+    // Lo de las herramientas ya está commiteado (el CLI o el proceso del run lo hizo antes de escribir
+    // el evento): se verifica, y el próximo rojo con sub-tasks vuelve a implementar sin preguntar. Lo
+    // haya elegido la persona o no, el origen no cambia cómo se reduce.
     case "autofix":
       return offers(state, `flowrunner fix ${state.runId} --auto`)
-        ? enter(state, "verificar", { autofix: true })
+        ? enter(state, "verificar", { autofix: true, autofixCorrio: true })
         : state;
     case "aceptado": {
       const next = NEXT[event.fase];
@@ -512,10 +555,13 @@ export function reduce(state: RunState, event: RunEvent): RunState {
         event.fase === state.fase &&
         isRoundPhase(event.fase) &&
         next !== undefined;
-      return applies ? enter(state, next) : state;
+      return applies ? enter(state, next, { autofixCorrio: false }) : state;
     }
     case "rehacer":
-      return enter({ ...state, vueltas: NO_ROUNDS, autofix: false }, event.desde);
+      return enter(
+        { ...state, vueltas: NO_ROUNDS, autofix: false, autofixCorrio: false },
+        event.desde,
+      );
     case "abortado":
       return { ...state, status: "abortado" };
     case "pr_cerrada":
@@ -531,6 +577,20 @@ export function reduce(state: RunState, event: RunEvent): RunState {
       return state;
   }
 }
+
+/**
+ * flowrunner corre Autofix solo en esta detención (ADR 0028): una de verificar, revisar o probar con
+ * sub-tasks, donde la persona lo podría elegir, y sin un Autofix desde su última respuesta. Si después
+ * sigue en rojo, la detención siguiente pregunta como siempre. Los efectos (las herramientas y el
+ * commit) los hace el proceso del run; esto solo decide.
+ */
+export const correAutofixSolo = (state: RunState): boolean =>
+  state.status === "detenido" &&
+  !state.aMano &&
+  !state.sinProbar &&
+  !state.autofixCorrio &&
+  isRoundPhase(state.fase) &&
+  offers(state, `flowrunner fix ${state.runId} --auto`);
 
 export function stateOf(events: readonly RunEvent[]): RunState {
   return events.reduce(reduce, initialState());

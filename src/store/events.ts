@@ -15,6 +15,13 @@ export const PHASES = [
 export type Phase = (typeof PHASES)[number];
 export const phaseSchema = z.enum(PHASES);
 
+/** Un arreglo concreto para una sub-task: la instrucción que recibiría con `fix --unidad` (ADR 0028). */
+export const arregloSchema = z.strictObject({
+  unidad: z.string().min(1),
+  instruccion: z.string().min(1),
+});
+export type Arreglo = z.infer<typeof arregloSchema>;
+
 /** Lo que devuelve una fase. El engine decide qué pasa después; la fase nunca elige la siguiente. */
 export const outcomeSchema = z.discriminatedUnion("tipo", [
   z.strictObject({
@@ -31,11 +38,15 @@ export const outcomeSchema = z.discriminatedUnion("tipo", [
     clase: z.enum(["gate", "infra", "entorno", "invariante", "sin_probar"]),
     motivo: z.string().min(1),
   }),
-  /** verificar, revisar o probar devuelven trabajo a implementar. */
+  /**
+   * verificar, revisar o probar devuelven trabajo a implementar. `arreglos`, lo que la fase propone
+   * que haga cada sub-task, una instrucción por arreglo; falta en runs anteriores (ADR 0028).
+   */
   z.strictObject({
     tipo: z.literal("vuelve"),
     unidades: z.array(z.string().min(1)).min(1),
     motivo: z.string().min(1),
+    arreglos: z.array(arregloSchema).min(1).optional(),
   }),
   /** La fase espera algo de afuera: la aprobación del plan o el merge de la PR. */
   z.strictObject({ tipo: z.literal("espera") }),
@@ -59,6 +70,12 @@ const unit = z.string().min(1).optional();
 /** De dónde vino una decisión de la persona: la terminal, la skill de Claude Code o el panel de Orca. */
 export const origenSchema = z.enum(["terminal", "claude", "orca"]);
 export type Origen = z.infer<typeof origenSchema>;
+/**
+ * De dónde vino un Autofix: una de las de la persona, o `flowrunner`, que lo corre solo al detenerse
+ * (ADR 0028). No es un `--origen` del CLI: nadie lo elige en nombre de flowrunner.
+ */
+export const origenAutofixSchema = z.enum([...origenSchema.options, "flowrunner"]);
+export type OrigenAutofix = z.infer<typeof origenAutofixSchema>;
 
 export const eventSchema = z.discriminatedUnion("tipo", [
   z.strictObject({
@@ -176,14 +193,15 @@ export const eventSchema = z.discriminatedUnion("tipo", [
   /** `resume` commiteó el arreglo a mano; `sha` es null si no había cambios. */
   z.strictObject({ tipo: z.literal("arreglo_manual"), at, sha: z.string().nullable() }),
   /**
-   * La persona eligió Autofix (ADR 0026): flowrunner pasó el lint y el formateador del repo por lo que
-   * cambió la rama y vuelve a verificar; si una fase sigue en rojo, sus sub-tasks lo corrigen solas,
-   * una vez. `sha`, el commit de las herramientas, o null si no cambiaron nada.
+   * Autofix (ADR 0026): flowrunner pasó el lint y el formateador del repo por lo que cambió la rama y
+   * vuelve a verificar; si una fase sigue en rojo, sus sub-tasks lo corrigen solas, una vez. Lo eligió
+   * la persona, o, con `origen: "flowrunner"`, corrió solo al detenerse (ADR 0028). `sha`, el commit de
+   * las herramientas, o null si no cambiaron nada.
    */
   z.strictObject({
     tipo: z.literal("autofix"),
     at,
-    origen: origenSchema,
+    origen: origenAutofixSchema,
     sha: z.string().nullable(),
   }),
   /** La persona decidió seguir a la fase siguiente con la fase en rojo, y dijo por qué. */

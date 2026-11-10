@@ -349,6 +349,51 @@ test("un run detenido muestra Arreglar ST-n, que pide qué corregir y lo manda",
   ]);
 });
 
+// Si regresiona, la persona tiene que escribir el arreglo que flowrunner ya trae (PIZ-3), o tocarlo
+// no lo manda: elegirlo es la confirmación, como en el CLI.
+test("un arreglo escrito se manda con un toque, con su texto, y Arreglar ST-n sigue para escribir otro", async () => {
+  const sent: { run: string; decision: Decision }[] = [];
+  const instruccion = "Subí `engines.node` a `>=24` en package.json";
+  const asked = runs.map((r): Run =>
+    r.id === VF2
+      ? {
+          ...r,
+          status: "detenido",
+          motivo: "revisar: unpdf pide Node 24",
+          siguiente: `flowrunner fix ${VF2} --unidad ST-2 'x'`,
+          unidades: ["ST-2"],
+          opciones: [
+            {
+              comando: `flowrunner fix ${VF2} --unidad ST-2 'x'`,
+              que: `que ST-2 lo corrija así: ${instruccion}`,
+              arreglo: { unidad: "ST-2", instruccion },
+            },
+            {
+              comando: `flowrunner fix ${VF2} --unidad ST-2 "<qué cambiar>"`,
+              que: "que ST-2 lo corrija",
+            },
+            { comando: `flowrunner fix ${VF2} --auto`, que: "formateador y lint" },
+            { comando: `flowrunner abort ${VF2}`, que: "cortar el run" },
+          ],
+        }
+      : r,
+  );
+  const panel = await abrirPanel(
+    fakeApi({
+      runs: () => ({ runs: asked, at: 0 }),
+      decidir: (input) => {
+        sent.push(input);
+        return { ok: true, mensaje: "arreglando ST-2" };
+      },
+    }),
+  );
+  assert.equal(findAll(panel, "Arreglar ST-2").length, 1);
+  await press(panel, `ST-2 · ${instruccion}`);
+  assert.deepEqual(sent, [
+    { run: VF2, decision: { accion: "arreglar", unidad: "ST-2", instruccion } },
+  ]);
+});
+
 // Si regresiona, un run vivo no se puede abortar desde el panel, o se aborta sin confirmar.
 test("cada run vivo tiene «Abortar el run» al pie, que pide confirmación antes de mandarlo", async () => {
   const sent: { run: string; decision: Decision }[] = [];

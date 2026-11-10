@@ -156,10 +156,13 @@ export async function diagnose(
       });
       return undefined;
     }
+    // Lo que el diagnóstico le pide a la sub-task ya es un arreglo: se ofrece escrito (ADR 0028).
+    const arreglo = d.instruccion.replaceAll(/\s+/g, " ").trim();
     return {
       tipo: "vuelve",
       unidades: [d.subtarea],
       motivo: `Diagnóstico: ${d.explicacion}\n\n${d.instruccion}`,
+      ...(arreglo === "" ? {} : { arreglos: [{ unidad: d.subtarea, instruccion: arreglo }] }),
     };
   }
   if (d.causa === "test") {

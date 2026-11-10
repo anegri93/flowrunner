@@ -71,6 +71,38 @@ describe("revisar", () => {
     expect(sim.records[0]?.options?.tools).toEqual(["Read", "Grep", "Glob"]);
   });
 
+  // Si regresiona, la persona tiene que escribir a mano el arreglo que el revisor ya sabía (PIZ-3).
+  test("los arreglos de cada bloqueante viajan en el outcome: en una línea, sin repetir y hasta 3", async () => {
+    const { outcome, sim } = await reviewWith({
+      hallazgos: [
+        finding({
+          arreglos: [
+            "Cambiá `var` por `const`\n en src/ST-2/x.js",
+            "Cambiá `var` por `const` en src/ST-2/x.js",
+            "Usá let",
+            "  ",
+            "Borrá la variable",
+            "Un cuarto que no entra",
+          ],
+        }),
+        finding({ severidad: "aviso", subtarea: "ST-1", arreglos: ["no es bloqueante"] }),
+      ],
+      decisiones: [],
+    });
+    expect(outcome).toMatchObject({
+      tipo: "vuelve",
+      unidades: ["ST-2"],
+      arreglos: [
+        { unidad: "ST-2", instruccion: "Cambiá `var` por `const` en src/ST-2/x.js" },
+        { unidad: "ST-2", instruccion: "Usá let" },
+      ],
+    });
+    // Sin arreglos, el outcome es el de antes.
+    const plain = await reviewWith({ hallazgos: [finding({ arreglos: [] })], decisiones: [] });
+    expect(plain.outcome).not.toHaveProperty("arreglos");
+    expect(sim.records[0]?.prompt ?? "").toContain("`arreglos`");
+  });
+
   test("solo avisos: avanza, los avisos quedan como eventos y review.json en el run", async () => {
     const { outcome, run } = await reviewWith({
       hallazgos: [finding({ severidad: "aviso" })],
@@ -107,6 +139,14 @@ describe("revisar", () => {
 // Si regresiona, el modelo puede omitir el paso a paso: el default solo existe para leer review.json viejos.
 test("el schema que recibe el revisor exige como_probar", () => {
   expect(z.toJSONSchema(reviewSchema, { target: "draft-7" }).required).toContain("como_probar");
+});
+
+// Si regresiona, el modelo puede omitir los arreglos y la detención vuelve a pedir el texto a mano.
+test("el schema que recibe el revisor exige arreglos en cada hallazgo", () => {
+  const schema = z.toJSONSchema(reviewSchema, { target: "draft-7" }) as unknown as {
+    properties: { hallazgos: { items: { required: string[] } } };
+  };
+  expect(schema.properties.hallazgos.items.required).toContain("arreglos");
 });
 
 // Regresión de VF-6: el bloqueo rechazó el script de package.json, ST-5 siguió sin decirlo y revisar

@@ -303,11 +303,17 @@ hacer en su lugar.
 Cuando algo sale mal, el run se detiene y te pregunta. `flowrunner status <run>`, el aviso, watch y el
 panel de Orca dicen el motivo, a qué sub-task se atribuye y tus respuestas, como comandos:
 
+- `flowrunner fix <run> --unidad ST-n '<arreglo>'`: cuando la revisión sabe cómo resolverlo, cada
+  arreglo que propone viene escrito, de 1 a 3 por bloqueante, como «Subí `engines.node` a `>=24` en
+  package.json y en el README». Elegirlo es la respuesta: se corre tal cual.
 - `flowrunner fix <run> --unidad ST-n "<qué cambiar>"`: que esa sub-task lo corrija con tu instrucción,
   sobre el código que ya está.
 - `flowrunner fix <run> --auto` (Autofix): pasa el lint y el formateador del repo (`lint_fix` y `format`
   de su config de hoy) por lo que cambió la rama, lo commitea y vuelve a verificar. Si sigue en rojo,
   las sub-tasks lo corrigen solas con el motivo, una vez; si tampoco alcanza, te vuelve a preguntar.
+  Antes de preguntarte, flowrunner ya lo corrió solo, una vez por detención (ADR 0028): la pregunta
+  que te llega es la de después. Si Autofix se negó, por ejemplo por cambios sin commitear en el
+  worktree, el aviso del run dice por qué. El informe lo cuenta: «flowrunner corrió Autofix solo».
 - `flowrunner fix <run> --yo`: lo arreglás vos en el worktree de la feature, que el comando te dice, y
   después `flowrunner resume <run>` commitea tu cambio y vuelve a verificar. Podés commitear vos
   también: resume chequea todo lo que cambió desde `fix --yo`. No pasa un cambio que toque `.git`,
@@ -372,8 +378,9 @@ barra derecha, con el ícono del cohete. Cada run es una tarjeta con su estado, 
 etapas del flujo, cada una con su tiempo y un indicador de su estado: la que trabaja tiene una
 animación propia de su etapa, y debajo dice qué está haciendo. Desde
 ahí decidís lo que el run espera: aprobar o pedir cambios al plan, reanudar o rehacer un run detenido,
-o responder su pregunta: «Arreglar ST-n» con lo que tiene que corregir, «Autofix» o «Seguir igual»
-con tu motivo. Arreglarlo a mano queda en la terminal (`fix --yo`).
+o responder su pregunta: un arreglo ya escrito, que se manda con un toque, «Arreglar ST-n» con lo que
+tiene que corregir, «Autofix» o «Seguir igual» con tu motivo. Arreglarlo a mano queda en la terminal
+(`fix --yo`).
 Aprobar se habilita después de abrir el plan (el botón Plan o el link de la etapa Aprobar). Un plan
 corregido se vuelve a abrir.
 Al pie de cada run vivo, «Abortar el run» lo corta en cualquier etapa.

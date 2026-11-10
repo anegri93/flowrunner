@@ -276,7 +276,12 @@ describe("stats por run", () => {
     ]);
     mkdirSync(join(dir, "sesiones"));
     const linea = (o: object) => JSON.stringify(o);
-    const toolUse = (name: string) => ({ type: "tool_use", id: name, name, input: {} });
+    const toolUse = (name: string, input: object = {}) => ({
+      type: "tool_use",
+      id: name,
+      name,
+      input,
+    });
     writeFileSync(
       join(dir, "sesiones", "planificar-1.jsonl"),
       [
@@ -308,7 +313,13 @@ describe("stats por run", () => {
         linea({
           type: "assistant",
           parent_tool_use_id: "toolu_explorador",
-          message: { content: [toolUse("Read"), toolUse("mcp__graft__graft_find_code")] },
+          // Un Read con `limit` es un rango, no un archivo entero.
+          message: {
+            content: [
+              toolUse("Read", { file_path: "/w/a.ts", offset: 40, limit: 20 }),
+              toolUse("mcp__graft__graft_find_code"),
+            ],
+          },
         }),
         '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Re',
       ].join("\n"),
@@ -321,8 +332,9 @@ describe("stats por run", () => {
     expect(statsPorRun(home).runs[0]?.graftPlanificar).toEqual({
       llamadas: 1,
       reads: 1,
+      readsEnteros: 1,
       turnos: 3,
-      subagente: { reads: 2, llamadas: 1 },
+      subagente: { reads: 2, readsEnteros: 1, llamadas: 1 },
     });
   });
 
@@ -377,11 +389,11 @@ describe("stats por run", () => {
     expect(statsPorRun(home, "otro").runs.map((r) => r.proyecto)).toEqual(["otro"]);
     const lines = describeStatsPorRun(s).split("\n");
     expect(lines[0]).toMatch(
-      /^\| id +\| activo +\| US\$ +\| planes +\| rechazos +\| vueltas +\| derecho +\|$/,
+      /^\| id +\| activo +\| US\$ +\| planes +\| rechazos +\| graft +\| vueltas +\| derecho +\|$/,
     );
     expect(lines.filter((l) => l.startsWith("| SHOP-1") || l.startsWith("| AAA-1"))).toHaveLength(
       2,
     );
-    expect(lines.at(-6)).toMatch(/activo/);
+    expect(lines.at(-7)).toMatch(/activo/);
   });
 });

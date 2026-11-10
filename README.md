@@ -274,6 +274,12 @@ estén en rojo; si rechaza el plan, el reintento retoma esa misma conversación 
 planificar de cero (ADR 0025). Un criterio que pide el repo en verde corre el `verify.sh` del repo tal
 cual y es «del run»: no se asigna a una sub-task, lo comprueba verificar.
 
+Las sesiones que tienen graft (planificar con su explorador, explorar y revisar) leen por rango: un
+Read sin `limit` de un archivo de más de 200 líneas se rechaza, y el motivo le dice al agente que ubique
+las líneas con graft, o con Grep en CSS, JSON o texto literal. Cada archivo leído entero se arrastra en
+todos los turnos que siguen. Para ver si el planificador ubica o lee de más, `flowrunner stats --runs`
+muestra, por run, sus llamadas a graft y sus intentos de leer un archivo entero.
+
 Si un run se replanifica, el código de las sub-tasks que el plan nuevo no cambia se conserva: el
 planificador lo ve en el worktree, lo marca con `conserva: true`, y implementar solo corre las
 sub-tasks nuevas o cambiadas. Si no se puede comprobar que el plan nuevo no lo rompe, se reimplementa
@@ -426,7 +432,7 @@ equivalente de API: con la suscripción no se cobran, y lo que limita es su cupo
 | `flowrunner abort <run>`                       | cancelar un run                               |
 | `flowrunner learn <run>`                       | aprender ya de una PR mergeada                |
 | `flowrunner stats [proyecto]`                  | en qué fase se va el tiempo y el costo        |
-| `flowrunner stats --runs [proyecto]`           | tiempo activo, costo y rechazos de cada run   |
+| `flowrunner stats --runs [proyecto]`           | tiempo, costo, rechazos y graft de cada run   |
 | `flowrunner doctor`                            | qué le falta a esta máquina                   |
 | `flowrunner self-update`                       | llevar el flowrunner que corre a `main`       |
 

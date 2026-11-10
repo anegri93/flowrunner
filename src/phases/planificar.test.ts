@@ -188,6 +188,8 @@ describe("planificar", () => {
     const prompt = sim.records[0]?.prompt ?? "";
     expect(prompt).toContain("graft_find_code");
     expect(prompt).toContain("`offset` y `limit`");
+    // Si regresiona, la regla se lee como «nunca Grep», también para CSS y texto literal (issue 97).
+    expect(prompt).toContain("graft no indexa CSS ni JSON, así que ahí Grep es lo correcto");
     // Si regresiona, el criterio de «todo en verde» encadena con && y el primer rojo esconde el resto.
     expect(prompt).toContain("su comando es `./.flowrunner/verify.sh`, no una cadena con `&&`");
   });

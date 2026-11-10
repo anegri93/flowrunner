@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { contextoGraft, llamadoresDe } from "../src/graft/contexto.ts";
+import { contextoGraft, GraftError, llamadoresDe } from "../src/graft/contexto.ts";
 import { buildIndex } from "../src/graft/graft.ts";
 import { repoWith, tempDir } from "./helpers/git.ts";
 
@@ -50,6 +50,15 @@ describe("el contexto de graft, con el graft real", () => {
     const { repo, idx } = await indexado();
     expect(await llamadoresDe(repo, idx, "uno", process.env)).toEqual(["src/b/dos.ts"]);
     expect(await llamadoresDe(repo, idx, "noExiste", process.env)).toEqual([]);
+  });
+
+  // Revisión: si regresiona, el replan de la PR 09 recibe «nadie lo llama» cuando graft no pudo
+  // comprobarlo, y conserva código que rompe a quien lo usa.
+  test("sin índice, llamadoresDe tira GraftError en vez de decir que nadie llama", async () => {
+    const repo = repoWith(FILES);
+    await expect(
+      llamadoresDe(repo, join(tempDir(), "no-hay"), "uno", process.env),
+    ).rejects.toBeInstanceOf(GraftError);
   });
 
   // graft resuelve un nombre suelto a cualquier archivo con ese nombre. Si regresiona, un archivo

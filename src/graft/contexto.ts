@@ -106,7 +106,9 @@ function primeraLinea(error: unknown): string {
   const lineas = (typeof stderr === "string" ? stderr : "")
     .split("\n")
     .map((l) => l.trim())
-    .filter((l) => l !== "" && !l.startsWith("[graft]"));
+    // `[graft]` es la línea de ahorro; `⬆`, el aviso de versión nueva («run `graft upgrade`»); `·`,
+    // el de telemetría. Las tres le hablan al agente, no dicen qué falló.
+    .filter((l) => l !== "" && !/^(\[graft\]|⬆|·)/.test(l));
   const linea =
     lineas.find((l) => l.startsWith("✗")) ??
     lineas[0] ??
@@ -119,6 +121,8 @@ interface Graft {
   readonly repo: string;
   readonly indexDir: string;
   readonly env: NodeJS.ProcessEnv;
+  /** Corta las consultas en curso cuando ya no sirven: una falló o ya se devolvió el texto. */
+  readonly signal?: AbortSignal;
 }
 
 /** Corre una consulta de graft con `--json --no-refresh` y devuelve su JSON. */
@@ -129,7 +133,13 @@ async function consultar(g: Graft, args: readonly string[], timeoutMs: number): 
     ({ stdout } = await exec(
       "graft",
       ["--dir", g.indexDir, args[0] ?? "", "--json", "--no-refresh", "--", ...args.slice(1)],
-      { cwd: g.repo, env: graftEnv(g.env), maxBuffer: 16 * 1024 * 1024, timeout: timeoutMs },
+      {
+        cwd: g.repo,
+        env: graftEnv(g.env),
+        maxBuffer: 16 * 1024 * 1024,
+        timeout: timeoutMs,
+        signal: g.signal,
+      },
     ));
   } catch (error) {
     const e = error as { killed?: unknown; code?: unknown };
@@ -223,10 +233,16 @@ async function expandir(
 
 /** `contextoGraft` con topes elegidos. Lo usan los tests; el código usa `contextoGraft`. */
 export async function armarContexto(opts: ContextoOpts, limites: Limites): Promise<string> {
+  const corte = new AbortController();
   try {
     const hasta = Date.now() + limites.totalMs;
     const quedan = () => hasta - Date.now();
-    const g: Graft = { repo: opts.repo, indexDir: opts.indexDir, env: opts.env };
+    const g: Graft = {
+      repo: opts.repo,
+      indexDir: opts.indexDir,
+      env: opts.env,
+      signal: corte.signal,
+    };
     const todos = await expandir(opts.repo, opts.archivos, opts.env);
     const archivos = todos.slice(0, limites.archivos);
     const apis = await deAPocos(archivos, limites.paralelas, (a) => skeleton(g, a, quedan()));
@@ -267,6 +283,9 @@ export async function armarContexto(opts: ContextoOpts, limites: Limites): Promi
           ? error.message
           : primeraLinea(error);
     return `(graft no pudo armar el contexto: ${motivo})`;
+  } finally {
+    // Después de una falla, `deAPocos` no espera a las consultas que estaban en curso.
+    corte.abort();
   }
 }
 
@@ -290,7 +309,10 @@ export async function llamadoresDe(
       throw new GraftError(`graft no respondió en ${LIMITES.totalMs / 1000} s`);
     throw error;
   }
-  // Con un nombre ambiguo, la unión de todos: es lo conservador para decidir qué se conserva.
+  // Con un nombre repetido, la unión de todos los matches, como pide la spec. Pero graft 0.29 no
+  // lista los llamadores de otros archivos de un nombre repetido («a cross-file caller of an
+  // ambiguous name is dropped», en el `note` de cada match): la unión puede quedar corta. Pendiente
+  // de decisión antes de la PR 09; ver «Pendiente» en el ADR 0022.
   const rutas = matches.flatMap((m) =>
     m.hits.flatMap((h) => (h.path === m.symbol.path ? [] : [h.path])),
   );

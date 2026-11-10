@@ -55,6 +55,25 @@ Medido con graft 0.29, que es el instalado; la spec se escribió con 0.18 y el J
   tiene su sección, que dice que todavía no existe.
 - **Las rutas van a `git ls-files` literales** (`--literal-pathspecs`): `[id]` de Next es una ruta, no
   un patrón.
+- **Después de una falla, las consultas en curso se cortan** (un `AbortController`): `contextoGraft`
+  devuelve enseguida y no deja graft corriendo hasta el plazo.
+- **Del error de graft se toma una línea de stderr, nunca de stdout,** sin las que le hablan al agente:
+  `[graft]` (el ahorro), `⬆` (versión nueva, «run `graft upgrade`») y `·` (telemetría).
+- **La orientación se arma antes de copiar los `env_files`** al worktree de la sub-task: tarda hasta
+  60 s, y si tira no hay `finally` que los borre.
+- **El tope de `maxChars` es del texto de `contextoGraft`,** sin las notas finales. Implementar le suma
+  después « · fuera de tu alcance» a cada llamador marcado, así que lo que llega al prompt puede pasar
+  el tope: en `src/store/` de flowrunner, 11.787 caracteres sin marcar y 15.175 marcados.
+- **Un corte por el tope de 30 archivos dice «por tamaño»,** con el texto exacto de la spec.
+
+## Pendiente
+
+- **Un nombre repetido pierde sus llamadores de otros archivos.** graft 0.29 no los lista: si
+  `src/a/uno.ts` y `src/c/otro.ts` definen `uno`, el llamador de `src/b/dos.ts` no aparece, y lo dice
+  solo en el `note` del match. La spec da la unión por conservadora («Si el nombre es ambiguo, es la
+  unión»), y no lo es. Hoy `llamadoresDe` devuelve esa unión, que puede quedar vacía, y
+  `contextoGraft` muestra la entrada sin llamadores. Hay que decidirlo antes de la PR 09, que usa
+  `llamadoresDe` para conservar código.
 
 ## Consecuencias
 

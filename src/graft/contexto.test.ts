@@ -250,3 +250,82 @@ describe("los topes de contextoGraft", () => {
     ).toBe("(graft no pudo armar el contexto: ✗ no graph found at idx — run graft build first)");
   });
 });
+
+describe("los procesos y los errores de graft", () => {
+  /** El pid está vivo. */
+  const vivo = (pid: number) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Revisión: si regresiona, una consulta que falla devuelve el texto de falla pero deja los demás
+  // graft corriendo hasta su propio plazo, casi 60 s, mientras la sub-task ya arrancó.
+  test("después de una falla no queda ningún graft corriendo", async () => {
+    const repo = repoWith({ "src/a.ts": "export {};\n", "src/b.ts": "export {};\n" });
+    const { env, dir } = fakeGraft(
+      [
+        `if [ "$arg" = src/a.ts ]; then echo $$ > "$FAKE_DIR/pid"; exec sleep 30; fi`,
+        // Espera a que el otro esté corriendo antes de fallar.
+        `while [ ! -f "$FAKE_DIR/pid" ]; do sleep 0.05; done`,
+        `echo "✗ boom" >&2; exit 1`,
+      ].join("\n"),
+    );
+    const texto = await contextoGraft({
+      repo,
+      indexDir: "idx",
+      archivos: ["src/a.ts", "src/b.ts"],
+      env: { ...env, FAKE_DIR: dir },
+    });
+    expect(texto).toBe("(graft no pudo armar el contexto: ✗ boom)");
+    const pid = Number(readFileSync(join(dir, "pid"), "utf8"));
+    for (let i = 0; i < 40 && vivo(pid); i++) await new Promise((r) => setTimeout(r, 50));
+    expect(vivo(pid)).toBe(false);
+  });
+
+  // Revisión: graft avisa en stderr que hay versión nueva («run `graft upgrade`»). Si regresiona, esa
+  // orden dirigida al agente llega al prompt en lugar del error.
+  test("el aviso de versión nueva de graft no llega al texto de falla", async () => {
+    const repo = repoWith({ "src/a.ts": "export {};\n" });
+    const { env } = fakeGraft(
+      [
+        `echo "⬆ graft 0.29.0 → 0.30.0 available: run \\\`graft upgrade\\\` (restart your agent after)" >&2`,
+        `echo "Error: boom" >&2; exit 2`,
+      ].join("\n"),
+    );
+    const texto = await contextoGraft({ repo, indexDir: "idx", archivos: ["src/a.ts"], env });
+    expect(texto).toBe("(graft no pudo armar el contexto: Error: boom)");
+  });
+
+  // Si regresiona, un alcance grande lanza decenas de graft a la vez y satura la máquina.
+  test("corren como mucho 4 consultas a la vez", async () => {
+    const repo = repoWith({ "src/a.ts": "export {};\n" });
+    const entradas = Array.from(
+      { length: 12 },
+      (_, i) => `{"name":"f${i}","kind":"function","span":"L1-L1","signature":"function f${i}()"}`,
+    ).join(",");
+    const { env, dir } = fakeGraft(
+      [
+        `if [ "$sub" = skeleton ]; then echo '{"file":"src/a.ts","entries":[${entradas}]}'; exit 0; fi`,
+        `echo + >> "$FAKE_DIR/log"; sleep 0.2; echo - >> "$FAKE_DIR/log"`,
+        `echo '{"query":"'"$arg"'","matches":[]}'`,
+      ].join("\n"),
+    );
+    await contextoGraft({
+      repo,
+      indexDir: "idx",
+      archivos: ["src/a.ts"],
+      env: { ...env, FAKE_DIR: dir },
+    });
+    let ahora = 0;
+    let max = 0;
+    for (const marca of readFileSync(join(dir, "log"), "utf8").trim().split("\n")) {
+      ahora += marca === "+" ? 1 : -1;
+      max = Math.max(max, ahora);
+    }
+    expect(max).toBe(4);
+  });
+});

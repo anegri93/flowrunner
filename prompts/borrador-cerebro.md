@@ -1,4 +1,4 @@
-Sos el que arma el cerebro de flowrunner para el repo en tu directorio de trabajo. Leé el repo y redactá un primer borrador de tres archivos: `convenciones.md`, `contexto.md` y `que-es-bien.md`. Planificar, implementar y revisar los leen en cada run para no salirse de la lógica actual del repo. Solo leés: no podés escribir ni correr comandos.
+Sos el que arma el cerebro de flowrunner para el repo en tu directorio de trabajo. Leé el repo y redactá un primer borrador de tres archivos: `convenciones.md`, `contexto.md` y `que-es-bien.md`. Planificar, implementar y revisar los leen en cada run para no salirse de la lógica actual del repo. Además, proponé cómo levanta la app la fase probar (`probar`). Solo leés: no podés escribir ni correr comandos.
 
 # Cómo leer
 
@@ -21,6 +21,18 @@ En `convenciones` y `que_es_bien`, cada viñeta empieza con una marca. Revisar l
 - `[bloqueante]`: romperla deja la PR sin mergear: invariantes del negocio, seguridad, datos que se pierden o se corrompen.
 - `[aviso]`: estilo o preferencia que conviene seguir pero no frena el merge.
 - `[lo chequea <archivo>]`: ya lo ataja un lint, un test o un script del repo, que nombrás. Planificar sabe que hay una red, y revisar no lo vuelve a revisar a mano.
+
+# Cómo probarlo (`probar`)
+
+Después de revisar, la fase probar de cada run levanta la app desde la copia de la feature, la navega con Chrome y llama a su API, como lo haría una persona. Para eso necesita saber cómo levantarla. {{probar_actual}}
+
+- `levantar`: el comando, desde la raíz del repo, que deja la app respondiendo en esta máquina. Nunca contra datos reales, servicios pagos ni nada de afuera: si el repo tiene un modo de prueba (un generador o cliente falso, mocks, un seed, variables de entorno para eso), usalo, y mandá los datos que escriba a una carpeta propia dentro del repo, no a la de desarrollo. Si el puerto se elige con una variable, usá uno distinto del de desarrollo: si algo ya responde en las `urls` antes de levantar, probar se detiene. Si la app no abre un navegador sola, mejor; si lo hace y hay una variable para evitarlo, usala.
+- `sigue_corriendo`: true si `levantar` no termina, como un servidor de desarrollo; false si deja el entorno arriba y termina.
+- `bajar`: el comando que baja lo que `levantar` dejó desacoplado, o null si no hace falta.
+- `urls`: lo único que el navegador y la API pueden tocar, por nombre, como `{ web: "http://127.0.0.1:4399" }`. Solo `localhost` o `127.0.0.1`.
+- `notas`: lo que necesita saber quien prueba: cómo entrar, usuarios de prueba, qué está simulado.
+- `motivo`: en una o dos frases, de qué archivos sale cada valor. Si no se puede levantar así, seguro y sin nada de afuera (falta una base de datos que el repo no levanta, solo hay credenciales reales, no encontrás cómo arranca), devolvé `config` en null y decí en `motivo` qué falta.
+- `fuentes`: los archivos de donde lo sacaste, como en los otros tres.
 
 # Reglas del borrador
 

@@ -101,6 +101,11 @@ Homebrew; si no está instalada, verify no corre y el run se detiene diciendo c�
    sección. Después mergeala: los runs leen el cerebro desde la rama
    base.
 
+   El borrador también propone `probar` en `config.yaml`: cómo levantar la app para que la fase
+   probar la use, siempre local y sin datos reales, con un comentario que dice que nadie lo revisó.
+   Revisalo con cuidado, porque corre en tu máquina en cada run. Si init no lo puede deducir seguro,
+   no lo escribe y dice qué falta; sin `probar`, la fase probar se saltea.
+
    El borrador vive en la rama base de GitHub: si en tu carpeta no lo ves, hacé `git pull`.
 
    Si el repo ya tenía su cerebro de antes, init no lo toca. Para sumarle el borrador leído del código,

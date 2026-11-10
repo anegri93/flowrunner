@@ -28,7 +28,13 @@ import { repoNode } from "../proc/node.ts";
 import { runProc, runShell, tail } from "../proc/proc.ts";
 import type { Deps, RunPaths } from "../runner/types.ts";
 import { resolvesToApp, selfUpdate } from "./app.ts";
-import { draftBrain, DRAFT_HEADING, type Progress, withoutDraft } from "./draft.ts";
+import {
+  draftBrain,
+  DRAFT_HEADING,
+  type ProbarDraft,
+  type Progress,
+  withoutDraft,
+} from "./draft.ts";
 import { ciStepsVerifyMisses, type Finding, inferRepo } from "./infer.ts";
 
 export const INIT_BRANCH = "chore/flowrunner-init";
@@ -134,6 +140,52 @@ function ciGap(worktree: string, files: readonly string[], setup: string): Findi
   };
 }
 
+const PROBAR_README = "README, «Probar la feature en el entorno»";
+
+/** Lo que pasó con `probar`, como paso de init; undefined si la config ya lo tenía. */
+function probarPaso(probar: ProbarDraft): Paso | undefined {
+  switch (probar.tipo) {
+    case "ya estaba":
+      return undefined;
+    case "propuesto":
+      return {
+        que: "probar",
+        estado: "inferido",
+        detalle: `\`${probar.levantar}\` en ${probar.urls.join(", ")}: ${probar.motivo}. Revisalo antes de mergear: la fase probar lo corre en tu máquina en cada run`,
+      };
+    case "falta":
+      return {
+        que: "probar",
+        estado: "pendiente",
+        detalle: `no lo pude deducir: ${probar.motivo}. Sin esto, la fase probar se saltea; agregalo a mano (${PROBAR_README})`,
+      };
+  }
+}
+
+/** La base ya tiene cerebro pero no `probar`: la fase probar se saltea en cada run. */
+async function probarFaltaEnBase(
+  repo: string,
+  base: string,
+  env: NodeJS.ProcessEnv,
+): Promise<Paso | undefined> {
+  const text = await git(repo, ["show", `origin/${base}:.flowrunner/config.yaml`], env).catch(
+    () => undefined,
+  );
+  if (text === undefined) return undefined;
+  let config: unknown;
+  try {
+    config = parse(text);
+  } catch {
+    return undefined;
+  }
+  if (typeof config === "object" && config !== null && "probar" in config) return undefined;
+  return {
+    que: "probar",
+    estado: "pendiente",
+    detalle: `origin/${base} no tiene \`probar\` en .flowrunner/config.yaml: la fase probar se saltea en cada run. Agregalo a mano (${PROBAR_README}), o \`flowrunner brain draft ${repo} --reemplazar\` lo propone con un borrador nuevo del cerebro`,
+  };
+}
+
 /** Si la base ya tiene el cerebro de flowrunner. */
 async function hasBrain(repo: string, base: string, env: NodeJS.ProcessEnv): Promise<boolean> {
   return git(repo, ["cat-file", "-e", `origin/${base}:.flowrunner/config.yaml`], env)
@@ -163,6 +215,7 @@ async function brainSteps(
 ): Promise<Paso[]> {
   const { env } = deps;
   if (await hasBrain(repo, base, env)) {
+    const probar = await probarFaltaEnBase(repo, base, env);
     return [
       {
         que: "cerebro del repo",
@@ -171,6 +224,7 @@ async function brainSteps(
           ? `en origin/${base}, con el borrador leído del código`
           : `en origin/${base}; para sumarle un borrador leído del código: flowrunner brain draft ${repo}`,
       },
+      ...(probar === undefined ? [] : [probar]),
     ];
   }
   const open = aplicar ? await findPr(repo, INIT_BRANCH, env) : undefined;
@@ -275,6 +329,11 @@ async function brainSteps(
             detalle: `no se redactó: ${draft.motivo}. Quedan las plantillas para completar a mano`,
           },
     );
+    const probar =
+      draft.tipo === "ok"
+        ? probarPaso(draft.probar)
+        : probarPaso({ tipo: "falta", motivo: "el borrador no se redactó" });
+    if (probar !== undefined) pasos.push(probar);
     progress(`abriendo la PR en ${INIT_BRANCH}`);
     const pr = await openBrainPr(
       worktree,
@@ -286,6 +345,7 @@ async function brainSteps(
           "El cerebro de flowrunner para este repo, armado por `flowrunner init`.",
           "",
           ...hallazgos.map((h) => `- **${h.que}:** ${h.detalle}`),
+          ...(probar === undefined ? [] : [`- **probar:** ${probar.detalle}`]),
           "",
           ...(draft.tipo === "ok"
             ? [
@@ -392,6 +452,7 @@ export async function draftExistingBrain(
       progress,
     });
     if (draft.tipo === "falla") return outcome("falta", `no se redactó: ${draft.motivo}`);
+    const probar = probarPaso(draft.probar);
     progress(`abriendo la PR en ${DRAFT_BRANCH}`);
     const pr = await openBrainPr(
       worktree,
@@ -407,12 +468,17 @@ export async function draftExistingBrain(
             ? "estaba, y reemplaza al borrador anterior. Corregí o borrá lo que no sea así antes de mergear:"
             : "estaba. Corregí o borrá lo que no sea así antes de mergear:",
           "planificar, implementar y revisar lo leen en cada run.",
-          ...(gap === undefined ? [] : ["", `- **${gap.que}:** ${gap.detalle}`]),
+          ...(gap === undefined && probar === undefined ? [] : [""]),
+          ...(gap === undefined ? [] : [`- **${gap.que}:** ${gap.detalle}`]),
+          ...(probar === undefined ? [] : [`- **probar:** ${probar.detalle}`]),
         ],
       },
       env,
     );
-    return outcome("hecho", `${pr.url} (USD ${draft.costoUsd.toFixed(2)}): revisala y mergeala`);
+    return outcome(
+      "hecho",
+      `${pr.url} (USD ${draft.costoUsd.toFixed(2)}): revisala y mergeala${probar === undefined ? "" : `. probar: ${probar.detalle}`}`,
+    );
   } finally {
     await removeWorktree(repo, worktree, env);
   }

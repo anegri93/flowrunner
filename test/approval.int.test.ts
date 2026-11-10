@@ -22,8 +22,14 @@ describe("aprobar", () => {
     const id = w.launch();
     await waitFor("esperando", () => w.state(id).status === "esperando_aprobacion", 60_000);
     await waitFor("lugar suelto", () => lockPid(w, id) === undefined, 10_000);
-    expect(w.notices()).toContain(
-      "SHOP-214: el plan espera tu aprobación. Pedile a Claude que te lo muestre.",
+    // El aviso sale por osascript en segundo plano: puede escribirse después de soltar el lugar.
+    await waitFor(
+      "el aviso",
+      () =>
+        w
+          .notices()
+          .includes("SHOP-214: el plan espera tu aprobación. Pedile a Claude que te lo muestre."),
+      10_000,
     );
   });
 

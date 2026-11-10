@@ -99,6 +99,13 @@ Homebrew; si no está instalada, verify no corre y el run se detiene diciendo c�
 6. Revisá la PR, corregí lo que haga falta y mergeala. En el próximo chequeo, que corre cada 10 minutos,
    flowrunner aprende de tus correcciones y cierra el run.
 
+### Avisos
+
+flowrunner te avisa en el escritorio cada vez que un run cambia de estado sin que se lo pidas: sale
+de la cola y arranca, el plan te espera, se pausa por el límite de la suscripción o vuelve de la
+pausa, se detiene, abre la PR o se cierra después del merge. Lo que hacés vos con un comando, desde
+la terminal, Claude u Orca, no avisa: ya te lo dice la respuesta.
+
 ### Varias features del mismo repo a la vez
 
 Hasta dos runs de un repo avanzan a la vez. Un run que espera tu aprobación o está en pausa no ocupa

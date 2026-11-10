@@ -11,7 +11,7 @@ import { featureWorktree, prepared, runFeature } from "./inputs.ts";
 import { proposeLessons } from "./proponer.ts";
 
 export const entregar: PhaseFn = async (ctx) => {
-  const { run, deps, emit, state } = ctx;
+  const { run, deps, emit } = ctx;
   const prep = prepared(ctx.events);
   const worktree = featureWorktree(run);
   const feature = runFeature(run);
@@ -50,11 +50,6 @@ export const entregar: PhaseFn = async (ctx) => {
       );
     }
     emit({ tipo: "pr", url: pr.url, numero: pr.number });
-    const rounds = Object.values(state.vueltas).reduce((a, b) => a + b, 0);
-    deps.notify(
-      "flowrunner",
-      `${feature.clave}: PR abierta${rounds === 0 ? "" : `, ${rounds} ${rounds === 1 ? "vuelta" : "vueltas"}`}. Pedile a Claude que te explique el informe.`,
-    );
     return { tipo: "ok" };
   } catch (error) {
     if (error instanceof GitError || error instanceof GhError) {

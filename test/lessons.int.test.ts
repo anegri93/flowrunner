@@ -6,6 +6,7 @@ import { readLog } from "../src/store/run-log.ts";
 import { runCli } from "./helpers/cli.ts";
 import { delivered, type Delivered } from "./helpers/delivered.ts";
 import { git } from "./helpers/git.ts";
+import { waitFor } from "./helpers/runs.ts";
 
 /** Agrega guiones para las sesiones que vienen, ya con los orígenes reales de las correcciones. */
 function addScripts(d: Delivered, scripts: SimScript[]): void {
@@ -39,6 +40,11 @@ describe("lecciones", () => {
     ]);
     d.setPr(412, (pr) => (pr.state = "MERGED"));
     expect(runCli(["learn", d.id], d.env).stdout).toContain("quedó cerrado");
+    await waitFor(
+      "el aviso del cierre",
+      () => d.notices().includes("SHOP-214: cerrado después del merge, con 2 lecciones"),
+      10_000,
+    );
     const lessons = lessonsOnBase(d);
     expect(lessons).toMatch(
       /### L-1 · Los valores de export son constantes\n\nRegla: Usar const\.\n\nOrigen: https:\/\/github\.com\/acme\/acme-api\/pull\/412\/commits\//,

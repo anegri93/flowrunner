@@ -1,6 +1,7 @@
 // El loop del run: lee el log, pide la siguiente acción al engine y la ejecuta con su fase.
 // Cada acción queda entre `accion_iniciada` y `accion_terminada`; una iniciada sin terminar se rehace.
-import { nextAction, stateOf, type RunState } from "../engine/engine.ts";
+import { nextAction, stateOf, type RunState, type RunStatus } from "../engine/engine.ts";
+import { avisoDeEstado, cambiosDelPlan } from "../notify/estado.ts";
 import { outcomeSchema, type Outcome } from "../store/events.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
 import { TurnoAgotadoError } from "../store/turno.ts";
@@ -35,14 +36,19 @@ export async function runUntilStop(
   deps: Deps,
   opts: { readonly tick?: boolean } = {},
 ): Promise<RunState> {
+  let inicial: RunStatus | undefined;
   for (;;) {
     const { events } = readLog(run.dir);
     const state = stateOf(events);
+    inicial ??= state.status;
     const action = nextAction(state, opts);
     if (action.tipo === "fin") {
-      if (state.status === "detenido" && state.halt !== undefined) {
-        deps.notify(`${state.clave}: el run se detuvo`, state.halt.motivo);
-      }
+      // El proceso avanza solo: cada estado al que llega es algo que la persona no pidió recién.
+      const aviso = avisoDeEstado(inicial, state, {
+        events,
+        cambiosExistentes: cambiosDelPlan(run),
+      });
+      if (aviso !== undefined) deps.notify(aviso.title, aviso.body);
       return state;
     }
     const emit = (event: Parameters<typeof appendEvent>[1]) =>
@@ -54,7 +60,16 @@ export async function runUntilStop(
     const outcome = await runPhase(registry, { run, state, action, events: current, emit, deps });
     emit({ tipo: "accion_terminada", fase: action.fase, resultado: outcome });
     // En un tick, aprender corre una sola vez: con la PR abierta vuelve a probar en el próximo tick.
-    if (opts.tick === true && action.fase === "aprender") return stateOf(readLog(run.dir).events);
+    if (opts.tick === true && action.fase === "aprender") {
+      const after = readLog(run.dir).events;
+      const final = stateOf(after);
+      const aviso = avisoDeEstado(inicial, final, {
+        events: after,
+        cambiosExistentes: cambiosDelPlan(run),
+      });
+      if (aviso !== undefined) deps.notify(aviso.title, aviso.body);
+      return final;
+    }
     if (outcome.tipo === "falla" && outcome.clase === "infra") {
       await deps.sleep(infraBackoffMs(state.infra + 1));
     }

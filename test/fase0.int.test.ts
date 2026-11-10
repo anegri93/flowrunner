@@ -51,7 +51,7 @@ describe("Fase 0 ensamblada", () => {
   });
 
   // Si regresiona, feature check no lee el package.json del repo, o no ve sus binarios locales, y los
-  // avisos de scripts faltan o sobran.
+  // avisos de scripts faltan o sobran. AC-2 además solo pide el typecheck del repo (ADR 0027).
   test("feature check avisa un script que no está en el package.json del repo, y no un binario local", () => {
     const { repo, env, feature } = setup();
     writeFileSync(join(repo, "package.json"), JSON.stringify({ scripts: { test: "vitest" } }));
@@ -68,6 +68,7 @@ describe("Fase 0 ensamblada", () => {
     expect(result.status).toBe(0);
     expect((JSON.parse(result.stdout) as { avisos: string[] }).avisos).toEqual([
       'AC-1 usa `npm run mac`, y el package.json del repo no tiene el script "mac". Si la feature lo crea, el plan tiene que poner package.json en el alcance de una sub-task; si no, el criterio no se puede cumplir',
+      "AC-2 solo pide que el repo pase sus chequeos: eso ya lo corre verificar en cada vuelta, y probar no puede correr comandos, así que el criterio sobra y frena el run. Sacalo; si a .flowrunner/verify.sh le falta un chequeo, sumáselo ahí",
       SIN_PROBAR,
     ]);
   });

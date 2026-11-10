@@ -41,12 +41,13 @@ async function testWith(
   output: Pruebas | undefined,
   withConfig = true,
   probarExtra: Record<string, unknown> = {},
+  conPlan: Plan = plan,
 ) {
   const port = await freePort();
   const url = `http://127.0.0.1:${String(port)}`;
   const sim = simQuery([{ output }]);
   const deps = testDeps({ query: sim.query });
-  const { run } = await plannedRun(plan, { "tests/ac1.mjs": "process.exit(0);\n" }, deps, {
+  const { run } = await plannedRun(conPlan, { "tests/ac1.mjs": "process.exit(0);\n" }, deps, {
     files: { "server.cjs": serverScript(port) },
     ...(withConfig
       ? {
@@ -119,6 +120,37 @@ describe("probar", () => {
         tipo: "aviso",
         texto: "no se pudo probar AC-2 (crear una cuenta): no hay usuario admin",
       }),
+    );
+  });
+
+  // Regresión de PIZ-3: «AC-9: `npm run check` pasa» era el verify del repo, que verificar ya había
+  // dado en verde. probar no corre comandos, lo dejó sin probar y el run se detuvo sin nada que arreglar.
+  test("un criterio que es el verify del repo no se prueba ni frena el run como sin probar", async () => {
+    const { outcome, sim } = await testWith(
+      {
+        pruebas: [
+          prueba({}),
+          prueba({
+            criterio: "AC-9",
+            resultado: "no_probado",
+            evidencia: "no hay herramienta para correr comandos",
+          }),
+        ],
+        decisiones: [],
+      },
+      true,
+      {},
+      {
+        ...plan,
+        criterios: [
+          ...plan.criterios,
+          { id: "AC-9", comando: "./.flowrunner/verify.sh", subtarea: "run" },
+        ],
+      },
+    );
+    expect(outcome).toEqual({ tipo: "ok" });
+    expect(sim.records[0]?.prompt).toContain(
+      "AC-9: es el verify del repo y verificar ya lo comprobó en verde. No lo pruebes.",
     );
   });
 

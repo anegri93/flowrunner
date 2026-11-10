@@ -94,6 +94,7 @@ test("un criterio del run se muestra como del run, no como una sub-task", () => 
     diff_tests: "",
     cambia_lo_existente: [],
     se_pisa_con: [],
+    versiones: null,
     cambios: null,
   } as unknown as z.infer<typeof planViewSchema>;
   const text = describePlan(view);

@@ -287,6 +287,29 @@ export function acceptanceRunner(worktree: string, env: NodeJS.ProcessEnv) {
 }
 
 /**
+ * vitest («Tests  2 skipped (2)») y jest («Tests:       2 skipped, 2 total») con todos los tests
+ * salteados: un `-t` que no coincide con ningún nombre sale 0 en los dos (PIZ-3), y jest igual con
+ * `--passWithNoTests=false`, que solo mira si hay archivos de test.
+ */
+const TODOS_SALTEADOS = /\bTests:?\s+(\d+) skipped(?: \(\1\)|, \1 total)/;
+const ANSI = new RegExp(String.raw`\x1b\[[0-9;]*m`, "g");
+
+function todosSalteados(result: ProcResult): boolean {
+  return TODOS_SALTEADOS.test(`${result.stdout}\n${result.stderr}`.replace(ANSI, ""));
+}
+
+/** «ningún test coincide con `-t "…"`», o «todos sus tests salen salteados» si no hay un filtro a la vista. */
+function ningunTest(comando: string): string {
+  const filtro =
+    /(?:^|\s)(-t|--testNamePattern|--test-name-pattern)(?:=|\s+)("[^"]*"|'[^']*'|\S+)/.exec(
+      comando,
+    );
+  return filtro === null
+    ? `todos los tests de \`${comando}\` salen salteados`
+    : `ningún test coincide con \`${filtro[1] ?? ""} ${filtro[2] ?? ""}\``;
+}
+
+/**
  * La parte del gate que corre los comandos: cada uno tiene que fallar, y fallar de verdad. `skip`
  * deja afuera los que no se corren en rojo, como el verify del repo: los comprueba verificar.
  */
@@ -306,7 +329,9 @@ export async function checkCommandsFail(
       );
     } else if (result.code === 0) {
       problems.push(
-        `${criterion.id} ya pasa antes de implementar: \`${criterion.comando}\` tiene que fallar`,
+        todosSalteados(result)
+          ? `${criterion.id} ya pasa antes de implementar sin probar nada: ${ningunTest(criterion.comando)}, y el comando da verde igual. El test del criterio va en el plan como test bloqueado, con un nombre que el filtro encuentre, o el comando apunta a su archivo de test`
+          : `${criterion.id} ya pasa antes de implementar: \`${criterion.comando}\` tiene que fallar`,
       );
     }
   }

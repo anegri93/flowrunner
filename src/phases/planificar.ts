@@ -41,6 +41,7 @@ import { runSession, type SessionResult, type SessionSpec } from "../agent/sessi
 import { SIN_COMANDOS } from "../tripwires/comandos.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
 import { isTestFile } from "../tripwires/rules.ts";
+import { versionesSchema, type Versiones } from "../versiones/versiones.ts";
 import { copyEnvFiles } from "./env-files.ts";
 import { EXPLORACION_FALLIDA, explorar } from "./explorar.ts";
 import { runFixers } from "./fixers.ts";
@@ -163,6 +164,20 @@ export function writePlanArtifacts(
   writeFileSync(join(run.dir, "locked.json"), json(locked));
   writeFileSync(join(run.dir, "cambios-existentes.json"), json(plan.cambia_lo_existente));
   writeFileSync(join(run.dir, "conservadas.json"), json(conservadas));
+  // Las versiones son de un plan: las del anterior no valen para este. Las elige aprobar.
+  rmSync(versionesFile(run.dir), { force: true });
+}
+
+const versionesFile = (dir: string) => join(dir, "versiones.json");
+
+/** Las sub-tasks con sus dependencias fijadas, y qué eligió aprobar (ADR 0029). */
+export function writeVersiones(
+  run: RunPaths,
+  subtareas: Plan["subtareas"],
+  versiones: Versiones,
+): void {
+  writeFileSync(join(run.dir, "tasks.json"), `${JSON.stringify(subtareas, null, 2)}\n`);
+  writeFileSync(versionesFile(run.dir), `${JSON.stringify(versiones, null, 2)}\n`);
 }
 
 export const readPlan = (run: RunPaths) => readPlanAt(run.dir);
@@ -174,6 +189,8 @@ export function readPlanAt(dir: string): Pick<
   plan: string;
   locked: Record<string, string>;
   conservadas: Record<string, string[]>;
+  /** Undefined si aprobar todavía no eligió, o el repo no es de npm. */
+  versiones: Versiones | undefined;
 } {
   const read = (name: string) => readFileSync(join(dir, name), "utf8");
   const cambios = join(dir, "cambios-existentes.json");
@@ -191,6 +208,9 @@ export function readPlanAt(dir: string): Pick<
     conservadas: existsSync(kept)
       ? (JSON.parse(readFileSync(kept, "utf8")) as Record<string, string[]>)
       : {},
+    versiones: existsSync(versionesFile(dir))
+      ? versionesSchema.parse(JSON.parse(readFileSync(versionesFile(dir), "utf8")))
+      : undefined,
   };
 }
 

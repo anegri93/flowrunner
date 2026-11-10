@@ -1,8 +1,9 @@
 # flowrunner
 
 Le pedís una feature a Claude Code y flowrunner la lleva sola hasta una PR lista para revisar. Vos
-intervenís en dos momentos: cuando aprobás el plan y cuando revisás la PR. Todo lo demás corre sin
-vos, en segundo plano, y cada repo tiene un cerebro en `.flowrunner/` que aprende de tus correcciones.
+intervenís cuando aprobás el plan y cuando revisás la PR, y también si el run se traba: en vez de
+reintentar a ciegas, se detiene y te pregunta qué hacer. Todo lo demás corre sin vos, en segundo plano,
+y cada repo tiene un cerebro en `.flowrunner/` que aprende de tus correcciones.
 
 ## Instalar
 
@@ -47,6 +48,30 @@ No actualiza con un run corriendo: los que esperan aprobación, detenidos o en c
 nuevo. El checkout que clonaste queda para desarrollar, y cambiar de rama ahí no afecta a ningún run.
 `flowrunner doctor` avisa si el comando o el job de launchd apuntan a otro lado. `self-update` instala con
 `pnpm install --frozen-lockfile`: pnpm tiene que estar en el PATH de quien lo corre.
+
+### Si ya tenías una versión anterior
+
+Antes de `~/.flowrunner/app`, flowrunner corría desde el checkout. Para pasar a esta versión:
+
+1. `flowrunner status`: esperá a que termine cualquier run que esté trabajando. Los que esperan
+   aprobación, detenidos o cerrados no molestan, y siguen con el código nuevo.
+2. En el checkout:
+
+   ```bash
+   git switch main && git pull && pnpm install --frozen-lockfile
+   ```
+
+3. Instalá la app y apuntá todo ahí:
+
+   ```bash
+   node bin/flowrunner.js self-update
+   ```
+
+4. Si usás Orca, corré el `orca plugin dev load … --approve …` que imprime, tal cual.
+5. `flowrunner doctor` tiene que dar «flowrunner corre desde ~/.flowrunner/app» en verde. Abrí una
+   sesión nueva de Claude Code para que tome la skill nueva.
+
+Después de actualizar, no vuelvas a correr la versión anterior: no lee los runs que crea la nueva.
 
 ## Sumar un repo
 
@@ -227,9 +252,18 @@ naranjas, vos.
 | 8 · Entregar    | código         | Sube la rama y abre la PR, con lo que aprendió el run                   | la PR y el informe     |
 | 9 · Aprender    | agente         | Después del merge, convierte tus correcciones en lecciones              | una PR de lecciones    |
 
-Las líneas punteadas del diagrama son el trabajo que vuelve atrás: un criterio en rojo o un bloqueante de
-la revisión o una prueba que falla en el entorno vuelven a implementar, y tus cambios al plan vuelven a planificar. Las lecciones llegan al
-cerebro del repo, y el próximo run las lee.
+Las líneas punteadas del diagrama son el trabajo que vuelve atrás: un criterio en rojo, un bloqueante de
+la revisión o una prueba que falla en el entorno vuelven a implementar, y tus cambios al plan vuelven a
+planificar. Por defecto, la vuelta a implementar no es automática: el run se detiene y te pregunta (ver
+[Qué pasa cuando algo falla](#qué-pasa-cuando-algo-falla)). Las lecciones llegan al cerebro del repo, y
+el próximo run las lee.
+
+Antes de devolver el plan, el planificador lo chequea con la herramienta `validar_plan`, que aplica
+las mismas reglas estáticas del gate (forma, llamadores, tests declarados y escritos, lo que conserva)
+sin correr nada, y lo corrige en la misma sesión. Después, el gate de afuera comprueba que los tests
+estén en rojo; si rechaza el plan, el reintento retoma esa misma conversación con el motivo, en vez de
+planificar de cero (ADR 0025). Un criterio que pide el repo en verde corre el `verify.sh` del repo tal
+cual y es «del run»: no se asigna a una sub-task, lo comprueba verificar.
 
 Si un run se replanifica, el código de las sub-tasks que el plan nuevo no cambia se conserva: el
 planificador lo ve en el worktree, lo marca con `conserva: true`, y implementar solo corre las
@@ -241,7 +275,12 @@ bloquearlos, flowrunner les pasa el lint del repo en modo arreglar y el formatea
 lint no arregla solo rechaza el plan, y el planificador lo corrige antes de que lo veas.
 
 Mientras trabajan, los agentes no pueden salirse de lo suyo: cada sub-task solo escribe dentro de su
-alcance, y flowrunner lo controla en cada herramienta y otra vez sobre el diff.
+alcance, y flowrunner lo controla en cada herramienta y otra vez sobre el diff. Los comandos de Bash
+se juzgan por tramos (`;`, `&&`, `|`) contra una política (ADR 0021): pasan los de lectura (`git log`,
+`ls`, `grep`, `sed -n`…) sobre lo que la sub-task puede leer, sus criterios aunque lleven `| tail`
+detrás, el typecheck y el lint o el formato del repo sobre sus archivos. Se rechazan `cd`, las
+variables y sustituciones, la red, los scripts sueltos y git que escribe, y cada rechazo dice qué
+hacer en su lugar.
 
 ## Qué pasa cuando algo falla
 
@@ -330,7 +369,9 @@ flowrunner orca install
 ```
 
 Orca pide aprobarlo porque corre comandos en tu máquina: repetí el comando con el `--approve` que
-imprime. Si mudás la carpeta de flowrunner, volvé a correrlo para que Orca la encuentre.
+imprime. El plugin carga desde `~/.flowrunner/app/orca`, y `flowrunner self-update` lo vuelve a apuntar
+ahí: si después de actualizar Orca pide aprobarlo de nuevo, corré el `--approve` que imprime
+`self-update`.
 
 Los tokens nuevos son lo que cada fase leyó o escribió por primera vez, sin las relecturas de caché. El
 costo de lo que corre es un mínimo, `≥ 2.97`, porque la salida se conoce al terminar. Los USD son el
@@ -348,7 +389,7 @@ equivalente de API: con la suscripción no se cobran, y lo que limita es su cupo
 | `flowrunner plan <run>`                        | el plan que espera aprobación                 |
 | `flowrunner approve <run>`                     | aprobar el plan                               |
 | `flowrunner changes <run> "<motivo>"`          | pedir cambios al plan                         |
-| `flowrunner report <run>`                      | el informe del run                            |
+| `flowrunner report <run>`                      | el informe del run, con tus decisiones        |
 | `flowrunner resume <run>`                      | retomar un run detenido                       |
 | `flowrunner fix <run> --unidad ST-n "<qué>"`   | que una sub-task corrija lo que le pedís      |
 | `flowrunner fix <run> --yo`                    | arreglarlo vos; después `resume`              |

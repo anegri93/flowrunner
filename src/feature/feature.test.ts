@@ -76,4 +76,42 @@ describe("parseFeature", () => {
   test("sin frontmatter es un error", () => {
     expect(problemsOf("## Descripción\nalgo\n")).toMatch(/frontmatter/);
   });
+
+  // Si regresiona, las citas que comprobó la skill no llegan al planificador, que vuelve a buscar el
+  // código desde cero (VF-1: 97 Read en un plan).
+  test("la sección Contexto trae cada cita con su ruta, sus líneas y qué hace", () => {
+    const text = VALID.replace(
+      "## Criterios",
+      [
+        "## Contexto",
+        "- src/a.ts:12-20 — arma X",
+        "- src/b.ts — fija Y",
+        "  en dos líneas",
+        "",
+        "## Criterios",
+      ].join("\n"),
+    );
+    expect(parseFeature("f.md", text).contexto).toEqual([
+      { ruta: "src/a.ts", desde: 12, hasta: 20, que: "arma X" },
+      { ruta: "src/b.ts", que: "fija Y en dos líneas" },
+    ]);
+    // Una feature vieja, sin la sección, se sigue leyendo igual.
+    expect(parseFeature("f.md", VALID).contexto).toEqual([]);
+  });
+
+  // Si regresiona, una cita mal escrita llega como contexto roto al planificador, o una ruta absoluta
+  // le hace leer fuera del repo.
+  test("una cita de Contexto sin la forma ruta:línea — qué hace es un error", () => {
+    const problems = problemsOf(
+      VALID.replace(
+        "## Criterios",
+        "## Contexto\n- src/a.ts arma X\n- /abs.ts:1 — x\n- src/a.ts:9-3 — x\n\n## Criterios",
+      ),
+    ).split("\n");
+    expect(problems).toEqual([
+      '"src/a.ts arma X" no tiene la forma ruta:línea — qué hace',
+      '"/abs.ts:1 — x": la ruta va relativa al repo, sin ./ ni .., y las líneas desde 1, con desde <= hasta',
+      '"src/a.ts:9-3 — x": la ruta va relativa al repo, sin ./ ni .., y las líneas desde 1, con desde <= hasta',
+    ]);
+  });
 });

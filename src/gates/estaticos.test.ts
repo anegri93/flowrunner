@@ -15,6 +15,7 @@ const feature = {
   criterios: [{ id: "AC-1", text: "csv" }],
   aclaraciones: [],
   fueraDeAlcance: [],
+  contexto: [],
 } satisfies Feature;
 
 const config = repoConfigSchema.parse({ setup: "true", tests_globs: ["tests/**"] });

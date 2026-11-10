@@ -23,6 +23,7 @@ const feature = {
   ],
   aclaraciones: [],
   fueraDeAlcance: [],
+  contexto: [],
 } satisfies Feature;
 
 const rules = {

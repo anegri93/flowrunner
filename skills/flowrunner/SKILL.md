@@ -25,7 +25,7 @@ Si el repo tiene `.flowrunner/`, o el arranque de la sesión avisa que usa flowr
 ## Escribir una feature
 
 1. Preguntá el proyecto; `flowrunner status --json` y la config global dicen cuáles hay. Si falta, corré `flowrunner init <ruta> --json`, mostrale a la persona qué está, qué se infirió y qué falta, y solo con su sí corré `flowrunner init <ruta> --aplicar --json`. Eso abre la PR del cerebro: el proyecto queda listo cuando la persona la mergea.
-2. Leé el código del repo y su `.flowrunner/` con herramientas de lectura. **Todo lo que la feature diga sobre cómo funciona hoy lo comprobás en el código y lo citás con `archivo:línea`**, incluidas las validaciones y los tests que ya fijan ese comportamiento. Si la feature cambia algo que hoy funciona, lo decís así en la Descripción («hoy X rechaza Y; pasa a aceptarlo») y lo preguntás. Una suposición sin comprobar termina en un plan que cambia una regla vigente sin que nadie lo haya pedido.
+2. Leé el código del repo y su `.flowrunner/` con herramientas de lectura. **Todo lo que la feature diga sobre cómo funciona hoy lo comprobás en el código y lo citás con `archivo:línea`**, incluidas las validaciones y los tests que ya fijan ese comportamiento. Si la feature cambia algo que hoy funciona, lo decís así en la Descripción («hoy X rechaza Y; pasa a aceptarlo») y lo preguntás. Una suposición sin comprobar termina en un plan que cambia una regla vigente sin que nadie lo haya pedido. Esas citas van en la sección `## Contexto` de la feature: el planificador arranca por ahí.
 3. Entrevistá **una pregunta por vez**, solo sobre decisiones que son de la persona: qué datos se pierden, quién puede hacer qué, formatos, límites, qué pasa con lo existente. Proponé la respuesta cuando puedas. Las dudas de cómo construirlo no se preguntan: quedan para el planificador.
 4. Escribí `~/.flowrunner/features/<proyecto>/<clave>.md` con este formato exacto:
 
@@ -40,6 +40,11 @@ Si el repo tiene `.flowrunner/`, o el arranque de la sesión avisa que usa flowr
 
    <qué y para quién>
 
+   ## Contexto
+
+   - src/export/pedidos.ts:40-58 — arma la consulta de pedidos por rango
+   - tests/pedidos.test.ts:12 — fija que un rango vacío devuelve []
+
    ## Criterios
 
    - AC-1: <condición verificable con un comando>
@@ -52,6 +57,8 @@ Si el repo tiene `.flowrunner/`, o el arranque de la sesión avisa que usa flowr
 
    - <lo que no entra>
    ```
+
+   Contexto es opcional, pero cada cita que comprobaste en el paso 2 va ahí, con la forma `ruta:línea — qué hace`. Solo código que ya existe: `feature check` frena una cita a un archivo que no está.
 
 5. Corré `flowrunner feature check <archivo> --json` hasta que salga `ok`. Si trae `avisos`, mostráselos a la persona antes de lanzar:
    - un criterio sobre `CLAUDE.md` o `.claude/` lo tiene que hacer ella a mano, porque ningún agente del run puede escribirlos;

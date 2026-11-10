@@ -12,6 +12,8 @@ import { blastRadius, buildIndex, graftMcpServer } from "../graft/graft.ts";
 import { featureText, render } from "../prompts/render.ts";
 import type { PhaseFn } from "../runner/types.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
+import { WRITE_TOOLS } from "../tripwires/rules.ts";
+import type { RunEvent } from "../store/events.ts";
 import { featureWorktree, graftIndex, prepared, runFeature } from "./inputs.ts";
 import { brainVars, readPlan, sessionName } from "./planificar.ts";
 
@@ -35,6 +37,22 @@ export type Review = z.input<typeof reviewSchema>;
 export const REVISAR_TIMEOUT_MS = 30 * 60_000;
 /** Un diff más largo que esto se corta en el prompt; el revisor puede leer los archivos con Read. */
 export const MAX_DIFF_CHARS = 60_000;
+
+/**
+ * Lo que el bloqueo no dejó escribir a las sub-tasks desde la última aprobación del plan. Una sub-task
+ * puede seguir sin eso y no decirlo (VF-6: el script `mac` de package.json, rechazado dos veces,
+ * quedó documentado y sin existir, con todo en verde).
+ */
+export function rejectedWritesText(events: readonly RunEvent[]): string {
+  const since = events.findLastIndex((e) => e.tipo === "aprobado");
+  const lines = new Set<string>();
+  for (const e of events.slice(since + 1)) {
+    if (e.tipo !== "rechazo" || e.fase !== "implementar" || !WRITE_TOOLS.has(e.herramienta))
+      continue;
+    lines.add(`- ${e.unidad ?? "?"}: ${e.motivo}`);
+  }
+  return lines.size === 0 ? "Ninguna." : [...lines].join("\n");
+}
 
 export const revisar: PhaseFn = async (ctx) => {
   const { run, deps, emit, action } = ctx;
@@ -66,6 +84,7 @@ export const revisar: PhaseFn = async (ctx) => {
         plan: plan.plan,
         diff,
         blast: await blastRadius(worktree, graftIndex(run), prep.base_sha, deps.env),
+        rechazos: rejectedWritesText(ctx.events),
         ...brainVars(brain),
       }),
       cwd: worktree,

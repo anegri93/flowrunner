@@ -254,15 +254,26 @@ export function runTree(input: TreeInput): RunTree {
       return { owner, node: { ...node, corriendo: node.corriendo && !terminal, esfuerzo } };
     });
 
+  /** Un `rehacer` desde esta fase o una anterior deja lo que esa fase hizo antes en otra corrida. */
+  const redoesFrom = (e: RunEvent, index: number) =>
+    e.tipo === "rehacer" && PHASES.indexOf(e.desde) <= index;
+  const IMPLEMENTAR = PHASES.indexOf("implementar");
+
+  // Las sub-tasks arrancan de cero si el run se rehace desde implementar o antes: el plan es otro.
   const unitStates = new Map<string, UnitState>();
-  for (const e of events) if (e.tipo === "unidad") unitStates.set(e.unidad, UNIT_STATE[e.estado]);
+  for (const e of events) {
+    if (redoesFrom(e, IMPLEMENTAR)) unitStates.clear();
+    else if (e.tipo === "unidad") unitStates.set(e.unidad, UNIT_STATE[e.estado]);
+  }
 
   /** Cuándo empezó por última vez cada fase: lo que dice si el run dejó atrás una falla. */
   const lastStart = new Map<Phase, number>();
   for (const e of events) if (e.tipo === "accion_iniciada") lastStart.set(e.fase, Date.parse(e.at));
-  const everIntegrated = new Set(
-    events.flatMap((e) => (e.tipo === "unidad" && e.estado === "integrada" ? [e.unidad] : [])),
-  );
+  const everIntegrated = new Set<string>();
+  for (const e of events) {
+    if (redoesFrom(e, IMPLEMENTAR)) everIntegrated.clear();
+    else if (e.tipo === "unidad" && e.estado === "integrada") everIntegrated.add(e.unidad);
+  }
 
   const fases = PHASES.map((fase, index): PhaseNode => {
     let started: number | undefined;
@@ -293,6 +304,15 @@ export function runTree(input: TreeInput): RunTree {
       }
     }
     const r = ended?.resultado;
+    // Lo que terminó antes de un `rehacer` desde esta fase o una anterior es de otra corrida: la
+    // fase vuelve a estar pendiente, no fallada ni hecha (VF-6).
+    const redo =
+      ended === undefined
+        ? undefined
+        : events.find(
+            (e): e is Extract<RunEvent, { tipo: "rehacer" }> =>
+              redoesFrom(e, index) && Date.parse(e.at) >= ended.at,
+          );
     // Una falla o una vuelta que el run dejó atrás: una fase posterior corrió después.
     const overtaken =
       ended !== undefined && (r?.tipo === "falla" || r?.tipo === "vuelve")
@@ -311,13 +331,19 @@ export function runTree(input: TreeInput): RunTree {
           : r.tipo === "limite"
             ? "pausa"
             : r.tipo;
-    const estado: PhaseState = overtaken === undefined ? raw : "ok";
+    const estado: PhaseState =
+      redo !== undefined ? "pendiente" : overtaken === undefined ? raw : "ok";
+    const verbo = r?.tipo === "falla" ? "falló" : "volvió";
     const nota =
-      overtaken === undefined
-        ? undefined
-        : `${r?.tipo === "falla" ? "falló" : "volvió"} en una corrida anterior; el run siguió desde ${overtaken}`;
+      redo !== undefined
+        ? r?.tipo === "falla" || r?.tipo === "vuelve"
+          ? `${verbo} en una corrida anterior; el run se rehízo desde ${redo.desde}`
+          : undefined
+        : overtaken === undefined
+          ? undefined
+          : `${verbo} en una corrida anterior; el run siguió desde ${overtaken}`;
     const detalle =
-      overtaken === undefined && (r?.tipo === "falla" || r?.tipo === "vuelve")
+      redo === undefined && overtaken === undefined && (r?.tipo === "falla" || r?.tipo === "vuelve")
         ? r.motivo
         : undefined;
     const mine = sessions.filter((s) => s.owner?.fase === fase);

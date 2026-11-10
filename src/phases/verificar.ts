@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadRepoConfig } from "../config/load.ts";
+import { isVerifyCommand, loadRepoConfig } from "../config/load.ts";
 import { acceptanceRunner } from "../gates/plan.ts";
 import { runShell, tail } from "../proc/proc.ts";
 import type { PhaseFn } from "../runner/types.ts";
@@ -133,7 +133,11 @@ export const verificar: PhaseFn = async (ctx) => {
       }),
     );
 
-  let failing = await runCriteria(plan.criterios);
+  // Un criterio que es el verify del repo, como «verify.sh en verde», no es de la sub-task que lo
+  // tiene asignado: lo corre el paso de verify de abajo, que atribuye el rojo por archivo. Corrido acá
+  // volvía a esa sub-task aunque el rojo fuera de otra (VF-6: el Prettier de ST-3 volvía a ST-6).
+  const criteria = plan.criterios.filter((c) => !isVerifyCommand(config, c.comando));
+  let failing = await runCriteria(criteria);
   // Una señal de entorno no la arregla una sub-task: se reinstala y se repite una vez.
   if (failing.some((f) => f.hint !== undefined)) {
     const setup = await runShell(config.setup, {
@@ -143,7 +147,7 @@ export const verificar: PhaseFn = async (ctx) => {
     });
     if (setup.code === 0) {
       const again = new Set(failing.map((f) => f.id));
-      failing = await runCriteria(plan.criterios.filter((c) => again.has(c.id)));
+      failing = await runCriteria(criteria.filter((c) => again.has(c.id)));
     }
     const stuck = failing.find((f) => f.hint !== undefined);
     if (stuck !== undefined) {
@@ -195,7 +199,7 @@ export const verificar: PhaseFn = async (ctx) => {
             motivo: `el test bloqueado ${diagnosed.archivo} tiene que cambiar y flowrunner no pudo repararlo: ${diagnosed.explicacion}. Para replanificar: flowrunner rerun ${run.id} --desde planificar`,
           };
         }
-        failing = await runCriteria(plan.criterios);
+        failing = await runCriteria(criteria);
       } else if (diagnosed !== undefined) return diagnosed;
     }
     if (failing.length > 0) {
@@ -246,8 +250,8 @@ const covers = (scope: string, file: string) =>
   file === normalize(scope) || file.startsWith(`${normalize(scope)}/`);
 
 /**
- * Los archivos versionados que nombra una salida con su línea, como `src/a.ts:12`, `src/a.ts(12,5)` o
- * la ruta absoluta del worktree. Una ruta relativa a un paquete del monorepo, como la que imprime
+ * Los archivos versionados que nombra una salida: con su línea, como `src/a.ts:12`, `src/a.ts(12,5)` o
+ * la ruta absoluta del worktree, o solos en una línea, como los muestran Prettier y ESLint. Una ruta relativa a un paquete del monorepo, como la que imprime
  * `tsc` desde `apps/api`, cuenta si termina un único archivo del repo.
  */
 export async function namedFiles(
@@ -260,6 +264,14 @@ export async function namedFiles(
   const mentioned = [
     ...relative.matchAll(/(?:^|[\s'"`(])((?:[\w@.-]+\/)*[\w@.-]+\.[A-Za-z0-9]{1,6})(?=[:(]\d)/gm),
   ].map((m) => (m[1] ?? "").replace(/^\.\//, ""));
+  // Lo que nombra un archivo sin línea: Prettier (`[warn] src/a.ts`) y el formato de ESLint, que pone
+  // la ruta sola en una línea y debajo sus errores. Solo cuenta si la línea entera es la ruta.
+  const alone = relative
+    .split("\n")
+    .map((line) => line.trim().replace(/^\[(?:warn|error)\]\s+/, ""))
+    .filter((line) => /^(?:[\w@.-]+\/)*[\w@.-]+\.[A-Za-z0-9]{1,6}$/.test(line))
+    .map((line) => line.replace(/^\.\//, ""));
+  mentioned.push(...alone);
   const found = mentioned.flatMap((m) => {
     if (tracked.includes(m)) return [m];
     const suffix = tracked.filter((t) => t.endsWith(`/${m}`));

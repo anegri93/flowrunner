@@ -15,16 +15,18 @@ import {
   changesSince,
   cherryPick,
   commitAll,
+  git,
   headSha,
   removeWorktree,
+  type FileChange,
 } from "../git/git.ts";
 import { runShell, tail } from "../proc/proc.ts";
 import { featureText, render } from "../prompts/render.ts";
 import type { PhaseFn } from "../runner/types.ts";
 import type { Outcome, RunEvent } from "../store/events.ts";
-import { checkChanges } from "../tripwires/diff.ts";
+import { checkChanges, type Violation } from "../tripwires/diff.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
-import type { Scope } from "../tripwires/rules.ts";
+import { dependencySectionsChanged, WRITE_TOOLS, type Scope } from "../tripwires/rules.ts";
 import { copyEnvFiles } from "./env-files.ts";
 import { featureWorktree, prepared, runFeature, unitWorktree } from "./inputs.ts";
 import { brainVars, readPlan, sessionName } from "./planificar.ts";
@@ -140,6 +142,31 @@ export function unitScope(
   };
 }
 
+/**
+ * Un package.json tocado por una sub-task sin dependencias declaradas: puede cambiar scripts, pero no
+ * sus dependencias. El hook deja editarlo entero; esto mira el resultado.
+ */
+async function dependencyEdits(
+  wt: string,
+  start: string,
+  changes: readonly FileChange[],
+  env: NodeJS.ProcessEnv,
+): Promise<Violation[]> {
+  const out: Violation[] = [];
+  for (const change of changes) {
+    if (!(change.path === "package.json" || change.path.endsWith("/package.json"))) continue;
+    if (change.status !== "modificado") continue;
+    const before = await git(wt, ["show", `${start}:${change.path}`], env);
+    const changed = dependencySectionsChanged(before, readFileSync(join(wt, change.path), "utf8"));
+    if (changed.length > 0)
+      out.push({
+        path: change.path,
+        motivo: `${change.path} cambia ${changed.join(", ")} sin dependencias declaradas: solo se pueden cambiar otras partes, como los scripts`,
+      });
+  }
+  return out;
+}
+
 type UnitResult =
   { readonly ok: true } | { readonly ok: false; readonly fatal?: Outcome; readonly motivo: string };
 
@@ -226,6 +253,14 @@ export const implementar: PhaseFn = async (ctx) => {
         };
       }
       const scope = unitScope(wt, config, task, locked, bash);
+      // Lo que el bloqueo no le dejó escribir en esta sesión. Una sub-task devuelta que termina sin
+      // cambios por eso no está «sin cambios» (VF-6: ST-6, cuatro veces, sobre CLAUDE.md).
+      const rejectedWrites: string[] = [];
+      const sessionEmit: typeof emit = (event) => {
+        if (event.tipo === "rechazo" && WRITE_TOOLS.has(event.herramienta))
+          rejectedWrites.push(event.motivo);
+        return emit(event);
+      };
       const result = await runSession(
         {
           fase: "implementar",
@@ -270,7 +305,7 @@ export const implementar: PhaseFn = async (ctx) => {
               agents: false,
               graft: false,
             },
-            emit,
+            sessionEmit,
           ),
           timeoutMs: UNIT_TIMEOUT_MS,
         },
@@ -292,13 +327,18 @@ export const implementar: PhaseFn = async (ctx) => {
       if (changes.length === 0) {
         // Devuelta y sin nada que cambiar: su código ya está integrado y la sub-task lo sostiene.
         // Reintentarla no arregla nada; verificar decide de qué lado está el problema.
-        if (action.unidades?.includes(task.id) === true) {
+        // Con escrituras rechazadas no: no es que no hubiera nada que hacer, es que no la dejaron.
+        if (action.unidades?.includes(task.id) === true && rejectedWrites.length === 0) {
           emit({ tipo: "unidad", fase: "implementar", unidad: task.id, estado: "sin_cambios" });
           await removeWorktree(state.repo, wt, deps.env);
           return { ok: true };
         }
         const said = result.texto.trim();
-        const why = `no cambió ningún archivo${said === "" ? "" : `. Lo último que dijo: ${said.slice(0, 400)}`}`;
+        const blocked =
+          rejectedWrites.length === 0
+            ? ""
+            : `. El bloqueo rechazó lo que intentó escribir: ${[...new Set(rejectedWrites)].join("; ")}`;
+        const why = `no cambió ningún archivo${blocked}${said === "" ? "" : `. Lo último que dijo: ${said.slice(0, 400)}`}`;
         // Dos intentos seguidos sin avanzar: un tercero no va a ser distinto.
         if (stalled) {
           const stop = `${task.id} no avanzó en dos intentos seguidos: ${why}`;
@@ -316,6 +356,8 @@ export const implementar: PhaseFn = async (ctx) => {
         continue;
       }
       stalled = false;
+      if (!scope.depsDeclared)
+        violations.push(...(await dependencyEdits(wt, start, changes, deps.env)));
       if (violations.length > 0) {
         motivo = `el diff de ${task.id} rompe las reglas:\n${violations.map((v) => `- ${v.motivo}`).join("\n")}`;
         for (const v of violations)

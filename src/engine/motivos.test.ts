@@ -23,6 +23,11 @@ describe("motivos", () => {
       "src/a.ts:512:3 error TS2322",
       "el setup `pnpm install` salió 1: ERR_PNPM_OUTDATED_LOCKFILE",
       "AC-1 sigue en rojo: status 500 esperado, llegó 200",
+      // git usa «unable to access» para cualquier error HTTP o TLS: un 403 es una credencial, no la red.
+      "git push falló: fatal: unable to access 'https://github.com/a/b.git/': The requested URL returned error: 403",
+      "git fetch falló: fatal: unable to access 'https://github.com/a/b.git/': SSL certificate problem: unable to get local issuer certificate",
+      // Un pipe local roto no es un corte de red.
+      "el formateador falló: Error: write EPIPE",
     ])
       expect(esFallaDeRed(motivo), motivo).toBe(false);
   });

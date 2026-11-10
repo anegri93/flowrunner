@@ -8,13 +8,16 @@ export const LOGIN_MISSING =
 export const esCredencial = (motivo: string): boolean =>
   motivo.includes(TOKEN_REJECTED) || motivo.includes(LOGIN_MISSING);
 
-/** Cortes de red de git, de Node y de la API de Anthropic. Una lista cerrada: un rojo de código no entra. */
+/**
+ * Cortes de red de git, de Node y de la API de Anthropic. Una lista cerrada: un rojo de código no entra.
+ * Sin «unable to access» de git, que también precede a un 403 o a un error de TLS, ni EPIPE, que es un
+ * pipe local: esperar no los arregla.
+ */
 const RED: readonly RegExp[] = [
   /Could not resolve host/i,
-  /unable to access '[^']*':/i,
   /Failed to connect to/i,
   /Connection (?:timed out|refused|reset)/i,
-  /\b(?:ENOTFOUND|EAI_AGAIN|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENETUNREACH|EHOSTUNREACH|EPIPE)\b/,
+  /\b(?:ENOTFOUND|EAI_AGAIN|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENETUNREACH|EHOSTUNREACH)\b/,
   /socket hang up/i,
   /\bfetch failed\b/i,
   /overloaded_error/i,

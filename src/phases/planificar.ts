@@ -22,6 +22,7 @@ import { GRAFT_TOOLS, graftMcpServer } from "../graft/graft.ts";
 import { featureText, render } from "../prompts/render.ts";
 import type { PhaseFn, RunPaths } from "../runner/types.ts";
 import { runSession } from "../agent/session.ts";
+import { SIN_COMANDOS } from "../tripwires/comandos.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
 import { isTestFile } from "../tripwires/rules.ts";
 import { copyEnvFiles } from "./env-files.ts";
@@ -125,7 +126,7 @@ export const planificar: PhaseFn = async (ctx) => {
         manifests: config.manifests,
         depsDeclared: false,
         testGlobs: config.tests_globs,
-        bash: [],
+        comandos: SIN_COMANDOS,
       },
       fase: "planificar",
       write: true,

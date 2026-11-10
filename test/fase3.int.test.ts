@@ -6,6 +6,7 @@ import { describe, expect, test } from "vitest";
 import { runSession } from "../src/agent/session.ts";
 import { addWorktree, changesSince } from "../src/git/git.ts";
 import { appendEvent, readLog } from "../src/store/run-log.ts";
+import { SIN_COMANDOS } from "../src/tripwires/comandos.ts";
 import { checkChanges } from "../src/tripwires/diff.ts";
 import { tripwireHook, type HookPolicy } from "../src/tripwires/hook.ts";
 import { repoWithRemote, tempDir } from "./helpers/git.ts";
@@ -35,7 +36,7 @@ describe("Fase 3 ensamblada", () => {
         manifests: [],
         depsDeclared: false,
         testGlobs: ["tests/**"],
-        bash: [],
+        comandos: SIN_COMANDOS,
       },
       fase: "implementar",
       unidad: "ST-2",

@@ -3,8 +3,8 @@
 import type { HookCallback, SyncHookJSONOutput } from "@anthropic-ai/claude-agent-sdk";
 import { scrubCommand } from "../agent/env.ts";
 import type { NewEvent, Phase } from "../store/events.ts";
+import { checkCommand } from "./comandos.ts";
 import {
-  checkBash,
   checkContent,
   checkReadPath,
   checkSearchPath,
@@ -72,7 +72,7 @@ export function decide(
       if (!policy.bash)
         return { verdict: { ok: false, motivo: `${policy.fase} no corre comandos` } };
       const command = asString(input.command) ?? "";
-      const verdict = checkBash(policy.scope, command);
+      const verdict = checkCommand(policy.scope, command);
       return verdict.ok
         ? { verdict, updatedInput: { ...input, command: scrubCommand(command.trim()) } }
         : { verdict };

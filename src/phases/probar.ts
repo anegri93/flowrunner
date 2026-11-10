@@ -21,6 +21,7 @@ import {
 import { featureText, render } from "../prompts/render.ts";
 import type { PhaseFn, RunPaths } from "../runner/types.ts";
 import type { Outcome } from "../store/events.ts";
+import { SIN_COMANDOS } from "../tripwires/comandos.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
 import { featureWorktree, runFeature } from "./inputs.ts";
 import { readPlan, sessionName } from "./planificar.ts";
@@ -168,7 +169,7 @@ export const probar: PhaseFn = async (ctx) => {
                 manifests: [],
                 depsDeclared: false,
                 testGlobs: config.tests_globs,
-                bash: [],
+                comandos: SIN_COMANDOS,
                 unreadable: probarConfig.env_files,
               },
               fase: "probar",

@@ -20,6 +20,7 @@ import { addDetachedWorktree, git, removeWorktree } from "../git/git.ts";
 import { isUnrunnable, runShell } from "../proc/proc.ts";
 import { render } from "../prompts/render.ts";
 import type { PhaseContext } from "../runner/types.ts";
+import { SIN_COMANDOS } from "../tripwires/comandos.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
 import { withEnvFiles } from "./env-files.ts";
 import { runFixers } from "./fixers.ts";
@@ -92,7 +93,7 @@ export async function repairTest(ctx: PhaseContext, input: RepairInput): Promise
             manifests: config.manifests,
             depsDeclared: false,
             testGlobs: config.tests_globs,
-            bash: [],
+            comandos: SIN_COMANDOS,
           },
           fase: "verificar",
           write: true,

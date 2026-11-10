@@ -12,6 +12,7 @@ import type { Plan } from "../gates/plan.ts";
 import { featureText, render } from "../prompts/render.ts";
 import type { Outcome } from "../store/events.ts";
 import type { PhaseContext } from "../runner/types.ts";
+import { describeComandos, type Comandos } from "../tripwires/comandos.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
 import { runFeature } from "./inputs.ts";
 import { sessionName } from "./planificar.ts";
@@ -80,18 +81,13 @@ export async function diagnose(
   const { run, deps, emit } = ctx;
   const { worktree, config, plan, failing } = input;
   const ids = plan.subtareas.map((t) => t.id);
-  const commands = [
-    ...failing.map((f) => f.comando),
-    "git status",
-    "git diff",
-    "git log --oneline -10",
-  ];
+  const comandos: Comandos = { ampliables: failing.map((f) => f.comando), exactos: [], fixers: [] };
   const result = await runSession(
     {
       fase: "verificar",
       nombre: sessionName(run, "verificar-diagnostico"),
       prompt: render("diagnosticar", {
-        comandos: commands.map((c) => `\`${c}\``).join(", "),
+        comandos: describeComandos(comandos),
         subtareas: ids.join(", "),
         feature: featureText(runFeature(run)),
         plan: plan.plan,
@@ -122,7 +118,7 @@ export async function diagnose(
             manifests: [],
             depsDeclared: false,
             testGlobs: config.tests_globs,
-            bash: commands,
+            comandos,
           },
           fase: "verificar",
           write: false,

@@ -26,6 +26,7 @@ import { render } from "../prompts/render.ts";
 import type { PhaseContext, PhaseFn } from "../runner/types.ts";
 import type { Phase } from "../store/events.ts";
 import { intentarTurno, soltarTurno, turnoFile } from "../store/turno.ts";
+import { SIN_COMANDOS } from "../tripwires/comandos.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
 import { featureWorktree, runFeature } from "./inputs.ts";
 import { sessionName } from "./planificar.ts";
@@ -116,7 +117,7 @@ export function readOnlyHook(ctx: PhaseContext, root: string, fase: Phase = "apr
         manifests: [],
         depsDeclared: false,
         testGlobs: [],
-        bash: [],
+        comandos: SIN_COMANDOS,
       },
       fase,
       write: false,

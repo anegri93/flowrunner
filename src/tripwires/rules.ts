@@ -2,6 +2,7 @@
 // momento de cada herramienta, y el doble control, sobre el diff real.
 import { existsSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, matchesGlob, relative, resolve, sep } from "node:path";
+import type { Comandos } from "./comandos.ts";
 
 export type Verdict = { readonly ok: true } | { readonly ok: false; readonly motivo: string };
 const OK: Verdict = { ok: true };
@@ -39,8 +40,8 @@ export interface Scope {
   readonly manifests: readonly string[];
   readonly depsDeclared: boolean;
   readonly testGlobs: readonly string[];
-  /** Comandos de Bash permitidos tal cual. */
-  readonly bash: readonly string[];
+  /** Lo que una sesión con Bash puede correr; ver `checkCommand`. */
+  readonly comandos: Comandos;
   /** Archivos con secretos que no se leen ni se buscan, como los `.env` que copia probar. */
   readonly unreadable?: readonly string[];
 }
@@ -189,21 +190,4 @@ export function checkContent(scope: Scope, rel: string, added: readonly string[]
     }
   }
   return OK;
-}
-
-const COMPOSITION = /[;&|`]|\$\(|>|</;
-
-export function checkBash(scope: Scope, command: string): Verdict {
-  const trimmed = command.trim();
-  if (scope.bash.includes(trimmed)) return OK;
-  const allowed =
-    scope.bash.length === 0 ? "ninguno" : scope.bash.map((c) => `\`${c}\``).join(", ");
-  if (COMPOSITION.test(trimmed)) {
-    return no(
-      `el comando compone otros comandos y no está en la lista permitida tal cual. Permitidos: ${allowed}`,
-    );
-  }
-  return no(
-    `\`${trimmed}\` no está en la lista permitida de ${scope.owner}. Permitidos: ${allowed}`,
-  );
 }

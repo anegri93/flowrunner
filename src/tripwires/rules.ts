@@ -7,6 +7,14 @@ export type Verdict = { readonly ok: true } | { readonly ok: false; readonly mot
 const OK: Verdict = { ok: true };
 const no = (motivo: string): Verdict => ({ ok: false, motivo });
 
+/** Las herramientas que escriben archivos: un rechazo suyo es algo que el agente no pudo hacer. */
+export const WRITE_TOOLS: ReadonlySet<string> = new Set([
+  "Write",
+  "Edit",
+  "MultiEdit",
+  "NotebookEdit",
+]);
+
 /** Nunca los escribe un agente, en ninguna fase. */
 export const ALWAYS_PROTECTED = [
   ".flowrunner",
@@ -79,8 +87,15 @@ export function checkWritePath(scope: Scope, path: string): Verdict {
   if (scope.harness.some((h) => covers(h, rel)))
     return no(`${rel} es parte del harness de tests: no se toca`);
   const isDepFile = [...scope.lockfiles, ...scope.manifests].includes(rel);
-  if (isDepFile && !scope.depsDeclared) {
-    return no(`${rel} solo se toca si ${scope.owner} declaró dependencias, y no declaró ninguna`);
+  // Un package.json en el alcance se puede tocar sin declarar dependencias, como para agregar un
+  // script (VF-6: `npm run mac` quedó documentado y sin existir). Sus dependencias no: lo controla
+  // `dependencySectionsChanged` sobre el diff.
+  const scriptsOnly =
+    isPackageJson(rel) && !scope.depsDeclared && scope.writable.some((w) => covers(w, rel));
+  if (isDepFile && !scope.depsDeclared && !scriptsOnly) {
+    return no(
+      `${rel} solo se toca si ${scope.owner} declaró dependencias, y no declaró ninguna${isPackageJson(rel) ? `. Para cambiar otra cosa, como un script, el plan tiene que poner ${rel} en el alcance de ${scope.owner}` : ""}`,
+    );
   }
   const inScope =
     isDepFile ||
@@ -88,6 +103,36 @@ export function checkWritePath(scope: Scope, path: string): Verdict {
     scope.writeGlobs.some((g) => matchesGlob(rel, g));
   if (!inScope) return no(`${rel} está fuera del alcance de ${scope.owner}`);
   return OK;
+}
+
+const isPackageJson = (rel: string) => rel === "package.json" || rel.endsWith("/package.json");
+
+const DEPENDENCY_SECTIONS = [
+  "dependencies",
+  "devDependencies",
+  "peerDependencies",
+  "optionalDependencies",
+  "bundledDependencies",
+  "overrides",
+  "resolutions",
+] as const;
+
+/**
+ * Las secciones de dependencias de un package.json que cambiaron entre `before` y `after`. Un JSON
+ * que no se lee cuenta como cambiado: no se puede decir que no tocó las dependencias.
+ */
+export function dependencySectionsChanged(before: string, after: string): string[] {
+  let a: Record<string, unknown>;
+  let b: Record<string, unknown>;
+  try {
+    a = JSON.parse(before) as Record<string, unknown>;
+    b = JSON.parse(after) as Record<string, unknown>;
+  } catch {
+    return ["(el JSON no se lee)"];
+  }
+  return DEPENDENCY_SECTIONS.filter(
+    (k) => JSON.stringify(a[k] ?? null) !== JSON.stringify(b[k] ?? null),
+  );
 }
 
 export function checkReadPath(scope: Scope, path: string | undefined): Verdict {

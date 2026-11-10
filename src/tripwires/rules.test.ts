@@ -2,7 +2,14 @@ import { mkdirSync, realpathSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { tempDir } from "../../test/helpers/git.ts";
-import { checkBash, checkContent, checkReadPath, checkWritePath, type Scope } from "./rules.ts";
+import {
+  checkBash,
+  checkContent,
+  checkReadPath,
+  checkWritePath,
+  dependencySectionsChanged,
+  type Scope,
+} from "./rules.ts";
 
 function scope(extra: Partial<Scope> = {}): Scope {
   const root = realpathSync(tempDir("fr-scope-"));
@@ -133,5 +140,42 @@ describe("Bash", () => {
       /`rm -rf src` no está en la lista permitida de ST-2/,
     );
     expect(reason(checkBash(scope(), "cat x > y"))).toMatch(/compone/);
+  });
+});
+
+describe("package.json sin dependencias declaradas", () => {
+  // Regresión de VF-6: ST-5 no pudo agregar el script `mac` y la documentación quedó mintiendo.
+  test("en el alcance se puede tocar; fuera, no, y el motivo dice cómo pedirlo", () => {
+    expect(checkWritePath(scope({ writable: ["src/", "package.json"] }), "package.json").ok).toBe(
+      true,
+    );
+    expect(reason(checkWritePath(scope(), "package.json"))).toBe(
+      "package.json solo se toca si ST-2 declaró dependencias, y no declaró ninguna. Para cambiar otra cosa, como un script, el plan tiene que poner package.json en el alcance de ST-2",
+    );
+    // El lockfile no: cambiarlo es cambiar dependencias.
+    expect(checkWritePath(scope({ writable: ["pnpm-lock.yaml"] }), "pnpm-lock.yaml").ok).toBe(
+      false,
+    );
+  });
+
+  test("dependencySectionsChanged ve las secciones de dependencias, no los scripts", () => {
+    const before = JSON.stringify({ scripts: { a: "1" }, dependencies: { zod: "4" } });
+    expect(
+      dependencySectionsChanged(
+        before,
+        JSON.stringify({ scripts: { a: "2" }, dependencies: { zod: "4" } }),
+      ),
+    ).toEqual([]);
+    expect(
+      dependencySectionsChanged(
+        before,
+        JSON.stringify({
+          scripts: { a: "1" },
+          dependencies: { zod: "4" },
+          devDependencies: { x: "1" },
+        }),
+      ),
+    ).toEqual(["devDependencies"]);
+    expect(dependencySectionsChanged(before, "{roto")).toEqual(["(el JSON no se lee)"]);
   });
 });

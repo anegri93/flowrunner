@@ -8,7 +8,8 @@ import type { Plan } from "../gates/plan.ts";
 import { commitAll } from "../git/git.ts";
 import { readLog } from "../store/run-log.ts";
 import { z } from "zod";
-import { revisar, reviewSchema, type Review } from "./revisar.ts";
+import { rejectedWritesText, revisar, reviewSchema, type Review } from "./revisar.ts";
+import type { RunEvent } from "../store/events.ts";
 
 const plan: Plan = {
   plan: "dos sub-tasks",
@@ -106,4 +107,29 @@ describe("revisar", () => {
 // Si regresiona, el modelo puede omitir el paso a paso: el default solo existe para leer review.json viejos.
 test("el schema que recibe el revisor exige como_probar", () => {
   expect(z.toJSONSchema(reviewSchema, { target: "draft-7" }).required).toContain("como_probar");
+});
+
+// Regresión de VF-6: el bloqueo rechazó el script de package.json, ST-5 siguió sin decirlo y revisar
+// no se enteró: la PR documentaba `npm run mac` sin que existiera.
+test("revisar recibe las escrituras rechazadas desde la última aprobación, sin repetir ni comandos", () => {
+  const at = "2026-11-09T10:00:00.000Z";
+  const rechazo = (unidad: string, herramienta: string, motivo: string): RunEvent => ({
+    tipo: "rechazo",
+    at,
+    fase: "implementar",
+    unidad,
+    herramienta,
+    motivo,
+  });
+  const events: RunEvent[] = [
+    rechazo("ST-1", "Write", "de un plan anterior"),
+    { tipo: "aprobado", at },
+    rechazo("ST-5", "Edit", "package.json solo se toca si ST-5 declaró dependencias"),
+    rechazo("ST-5", "Edit", "package.json solo se toca si ST-5 declaró dependencias"),
+    rechazo("ST-3", "Bash", "`prettier --write` no está en la lista"),
+  ];
+  expect(rejectedWritesText(events)).toBe(
+    "- ST-5: package.json solo se toca si ST-5 declaró dependencias",
+  );
+  expect(rejectedWritesText([])).toBe("Ninguna.");
 });

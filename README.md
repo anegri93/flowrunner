@@ -290,6 +290,8 @@ etapas del flujo, cada una con su tiempo. La que trabaja gira, y debajo dice qu�
 ahí decidís lo que el run espera: aprobar o pedir cambios al plan, reanudar o rehacer un run detenido,
 o responder su pregunta: «Arreglar ST-n» con lo que tiene que corregir, «Lo arreglo yo» o «Seguir
 igual» con tu motivo.
+Aprobar se habilita después de abrir el plan (el botón Plan o el link de la etapa Aprobar). Un plan
+corregido se vuelve a abrir.
 Al pie de cada run vivo, «Abortar el run» lo corta en cualquier etapa.
 El botón de pasos de una sesión y «Plan» abren el archivo como pestaña de Orca. Tocar una etapa que ya
 arrancó abre su detalle: los intentos, lo propio de la etapa, las decisiones, los rechazos y las

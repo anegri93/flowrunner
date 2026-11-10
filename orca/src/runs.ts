@@ -510,6 +510,10 @@ export function decisionsFor(run: Run): Decision["accion"][] {
   }
 }
 
+/** La versión del plan de un run: cambia cada vez que planificar vuelve a correr. */
+export const planVersion = (run: Run): string =>
+  `${run.id}#${String(run.fases.find((p) => p.fase === "planificar")?.sesiones.length ?? 0)}`;
+
 /**
  * La fase desde la que la detención ofrece rehacer: `rerun <id> --desde verificar`, en sus opciones o,
  * con un flowrunner anterior, en `siguiente`.

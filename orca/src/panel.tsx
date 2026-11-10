@@ -24,7 +24,7 @@ import {
   update,
   type PanelContext,
 } from "orca";
-import { Abort, Decisions } from "./decisiones";
+import { Abort, Decisions, forgetPlans, markPlanSeen } from "./decisiones";
 import type { Openable, Snapshot } from "./protocol";
 import {
   canAbort,
@@ -88,6 +88,8 @@ export async function refresh(): Promise<void> {
     const same =
       prev !== null && JSON.stringify({ ...prev, at: 0 }) === JSON.stringify({ ...shown, at: 0 });
     if (!same) set(snapshot, shown);
+    // Los runs que dejaron de estar activos no necesitan recordar qué plan se abrió.
+    if (next.error === undefined) forgetPlans(next.runs.map((r) => r.id));
   } catch (error) {
     if (asked !== generation) return;
     const prev = read(snapshot);
@@ -103,12 +105,16 @@ export async function refresh(): Promise<void> {
   }
 }
 
-/** Abre los pasos, una sub-task, el plan o el informe como pestaña de Orca; si no, dice por qué. */
-async function open(run: string, que: Openable): Promise<void> {
+/**
+ * Abre los pasos, una sub-task, el plan o el informe como pestaña de Orca; si no, dice por qué.
+ * `onOpened` corre solo si se abrió: así se marca el plan como visto.
+ */
+async function open(run: string, que: Openable, onOpened?: () => void): Promise<void> {
   set(notice, null);
   try {
     const answer = await plugin.request("flowrunner.abrir", { run, que });
-    if (!answer.ok) set(notice, { run, texto: answer.mensaje });
+    if (answer.ok) onOpened?.();
+    else set(notice, { run, texto: answer.mensaje });
   } catch (error) {
     set(notice, { run, texto: `No se pudo abrir: ${String(error)}` });
   }
@@ -185,7 +191,11 @@ function Current({ run, row }: { run: Run; row: StageRow }) {
         </Row>
       ))}
       {decisionsFor(run).length > 0 ? (
-        <Decisions run={run} after={refresh} onPlan={() => void open(run.id, { tipo: "plan" })} />
+        <Decisions
+          run={run}
+          after={refresh}
+          onPlan={() => void open(run.id, { tipo: "plan" }, () => markPlanSeen(run))}
+        />
       ) : null}
       {said?.run === run.id ? (
         <Text size="xs" tone="danger">
@@ -215,7 +225,9 @@ function Stage({ run, row }: { run: Run; row: StageRow }) {
             </Text>
           )}
           {row.fase === "aprobar" && hasPlan(run) ? (
-            <Link onPress={() => open(run.id, { tipo: "plan" })}>{row.nombre}</Link>
+            <Link onPress={() => open(run.id, { tipo: "plan" }, () => markPlanSeen(run))}>
+              {row.nombre}
+            </Link>
           ) : pending ? (
             <Text muted>{row.nombre}</Text>
           ) : (

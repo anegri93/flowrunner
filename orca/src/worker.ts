@@ -103,17 +103,18 @@ function personText(value: unknown, falta: string, largo: string): string {
 /** La decisión como argumentos de un comando fijo de flowrunner; nada del panel llega sin validar. */
 export function decisionArgs(id: string, decision: Decision): string {
   switch (decision.accion) {
+    // Aprobar y pedir cambios también dicen que vinieron de Orca (ADR 0023).
     case "aprobar":
       return decision.aceptoCambios === true
-        ? `approve ${quote(id)} --acepto-cambios`
-        : `approve ${quote(id)}`;
+        ? `approve ${quote(id)} --acepto-cambios --origen orca`
+        : `approve ${quote(id)} --origen orca`;
     case "cambios": {
       const motivo = personText(
         decision.motivo,
         "falta el motivo de los cambios",
         "el motivo es demasiado largo",
       );
-      return `changes ${quote(id)} ${quote(motivo)}`;
+      return `changes ${quote(id)} ${quote(motivo)} --origen orca`;
     }
     case "reanudar":
       return `resume ${quote(id)}`;

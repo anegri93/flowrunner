@@ -306,13 +306,38 @@ test("cada decisión corre su comando fijo, con el motivo tal cual, y devuelve l
       { ok: true, mensaje: "abortado; las ramas quedan" },
     );
     assert.deepEqual(calls(), [
-      `approve ${id} --json`,
-      `changes ${id} ${motivo} --json`,
+      `approve ${id} --origen orca --json`,
+      `changes ${id} ${motivo} --origen orca --json`,
       `resume ${id} --json`,
       `learn ${id} --json`,
-      `approve ${id} --acepto-cambios --json`,
-      `approve ${id} --json`,
+      `approve ${id} --acepto-cambios --origen orca --json`,
+      `approve ${id} --origen orca --json`,
       `abort ${id} --json`,
+    ]);
+  } finally {
+    await worker.deactivate();
+  }
+});
+
+// Si regresiona, una aprobación del panel queda en el log como si viniera de la terminal, y no se
+// puede saber si salió del botón de Orca, como en VF-6.
+test("aprobar y cambios mandan --origen orca", async () => {
+  const { worker, calls } = await fakeWorker();
+  const id = "PIZ-3-20261109-010000";
+  try {
+    await worker.request("flowrunner.decidir", { run: id, decision: { accion: "aprobar" } });
+    await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "aprobar", aceptoCambios: true },
+    });
+    await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "cambios", motivo: "separá la validación" },
+    });
+    assert.deepEqual(calls(), [
+      `approve ${id} --origen orca --json`,
+      `approve ${id} --acepto-cambios --origen orca --json`,
+      `changes ${id} separá la validación --origen orca --json`,
     ]);
   } finally {
     await worker.deactivate();

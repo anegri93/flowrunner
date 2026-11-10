@@ -2,18 +2,36 @@
 // reanudar o rehacer un run detenido, o responder su pregunta: que una sub-task lo arregle, arreglarlo
 // a mano o seguir igual (ADR 0023). Las usan la pestaña de los runs y la del plan. Aprobar, reanudar,
 // rehacer y arreglarlo a mano piden confirmación; pedir cambios, arreglar y seguir igual, el texto.
+// Aprobar se habilita recién con el plan de ese run abierto en Orca (D3).
 // Aparte, al pie de la tarjeta, abortar el run entero, también con confirmación.
-import { atom, Button, Input, plugin, read, Row, set, Spinner, Stack, Text } from "orca";
+import { atom, Button, Input, plugin, read, Row, set, Spinner, Stack, Text, update } from "orca";
 import {
   canAbort,
   decisionsFor,
   describeExisting,
   existingChanges,
   fixUnits,
+  planVersion,
   rerunPhase,
   type Decision,
   type Run,
 } from "./runs";
+
+/** El plan que la persona abrió en Orca, por run: Aprobar se habilita recién con el plan visto (D3). */
+const plansSeen = atom("planesVistos", {} as Record<string, string>, { persist: "plugin" });
+
+export function markPlanSeen(run: Run): void {
+  update(plansSeen, (m) => ({ ...m, [run.id]: planVersion(run) }));
+}
+
+export const planSeen = (run: Run): boolean => read(plansSeen)[run.id] === planVersion(run);
+
+/** Los runs que ya no están activos no necesitan recordar su plan. Sin nada que olvidar, no escribe. */
+export function forgetPlans(activos: readonly string[]): void {
+  const seen = Object.entries(read(plansSeen));
+  const kept = seen.filter(([id]) => activos.includes(id));
+  if (kept.length < seen.length) set(plansSeen, Object.fromEntries(kept));
+}
 
 /** La decisión que espera confirmación, o el pedido de cambios que se está escribiendo. */
 const pending = atom<{ run: string; decision: Decision } | null>(null);
@@ -86,7 +104,12 @@ export function Decisions({
 }) {
   const offered = decisionsFor(run);
   const waiting = read(pending);
-  const mine = waiting?.run === run.id ? waiting.decision : undefined;
+  // Un Aprobar a medio confirmar no vale para un plan que la persona no abrió: el de un replan que
+  // llegó mientras tanto, por ejemplo.
+  const mine =
+    waiting?.run === run.id && (waiting.decision.accion !== "aprobar" || planSeen(run))
+      ? waiting.decision
+      : undefined;
   const message = read(said);
   const note =
     message?.run === run.id ? (
@@ -176,6 +199,7 @@ export function Decisions({
     );
   }
   const ask = (decision: Decision) => set(pending, { run: run.id, decision });
+  const seen = planSeen(run);
   const desde = rerunPhase(run);
   const units = offered.includes("arreglar") ? fixUnits(run) : [];
   return (
@@ -202,7 +226,13 @@ export function Decisions({
           </Button>
         ) : null}
         {offered.includes("aprobar") ? (
-          <Button size="sm" tone="success" icon="check" onPress={() => ask({ accion: "aprobar" })}>
+          <Button
+            size="sm"
+            tone="success"
+            icon="check"
+            disabled={!seen}
+            onPress={() => ask({ accion: "aprobar" })}
+          >
             Aprobar
           </Button>
         ) : null}
@@ -261,6 +291,11 @@ export function Decisions({
           </Button>
         ) : null}
       </Row>
+      {offered.includes("aprobar") && !seen ? (
+        <Text size="xs" muted>
+          Abrí el plan para poder aprobar.
+        </Text>
+      ) : null}
     </Stack>
   );
 }

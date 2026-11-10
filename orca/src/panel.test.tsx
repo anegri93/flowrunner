@@ -140,12 +140,14 @@ test("aprobar pide confirmación; Cambios manda el motivo escrito", async () => 
   const sent: { run: string; decision: Decision }[] = [];
   await withPanel(
     withRuns({
+      "flowrunner.abrir": () => ({ ok: true, mensaje: "abierto" }),
       "flowrunner.decidir": (input: { run: string; decision: Decision }) => {
         sent.push(input);
         return { ok: true, mensaje: "hecho" };
       },
     }),
     async (view) => {
+      await view.press({ role: "button", text: "Plan" });
       await view.press({ role: "button", text: "Aprobar" });
       assert.deepEqual(sent, []);
       await view.press({ text: "Sí, confirmar" });
@@ -254,6 +256,7 @@ test("aprobar un plan que cambia lo existente muestra los cambios y manda que se
     mockHost({
       requests: {
         "flowrunner.runs": () => ({ runs: withChanges, at: 0 }),
+        "flowrunner.abrir": () => ({ ok: true, mensaje: "abierto" }),
         "flowrunner.decidir": (input: { run: string; decision: Decision }) => {
           sent.push(input);
           return { ok: true, mensaje: "hecho" };
@@ -262,12 +265,163 @@ test("aprobar un plan que cambia lo existente muestra los cambios y manda que se
     }),
     async (view) => {
       assert.ok(view.find({ text: /^⚠ El plan cambia lo que ya existe \(1\): miralo/ }));
+      await view.press({ role: "button", text: "Plan" });
       await view.press({ role: "button", text: "Aprobar" });
       assert.ok(view.find({ text: "• el alta rechaza otro dominio (a.ts:42) ← AC-1" }));
       assert.equal(view.find({ text: "Sí, confirmar" }), null);
       assert.deepEqual(sent, []);
       await view.press({ role: "button", text: "Acepto los cambios y apruebo" });
       assert.deepEqual(sent, [{ run: PIZ3, decision: { accion: "aprobar", aceptoCambios: true } }]);
+    },
+  );
+});
+
+/** El botón Aprobar de la fila de decisiones, no el link de la etapa. */
+const approveButton = (view: View) => view.find({ role: "button", text: "Aprobar" });
+const disabled = (view: View) => approveButton(view)?.disabled === true;
+/** Los runs del fixture, con PIZ-3 replanificado: una sesión más de planificar. */
+const replanned = runs.map((r): Run =>
+  r.id === PIZ3
+    ? {
+        ...r,
+        fases: r.fases.map((p) =>
+          p.fase === "planificar" ? { ...p, sesiones: [...p.sesiones, ...p.sesiones] } : p,
+        ),
+      }
+    : r,
+);
+
+// Si regresiona, se aprueba desde Orca un plan que nadie abrió: en VF-6, cuatro aprobaciones a
+// segundos del plan listo, y la de las 01:08 costó unos US$ 6 (D3).
+test("Aprobar está deshabilitado hasta abrir el plan de ese run en Orca", async () => {
+  const sent: unknown[] = [];
+  await withPanel(
+    withRuns({
+      "flowrunner.abrir": () => ({ ok: true, mensaje: "abierto" }),
+      "flowrunner.decidir": (input: unknown) => {
+        sent.push(input);
+        return { ok: true, mensaje: "hecho" };
+      },
+    }),
+    async (view) => {
+      assert.ok(approveButton(view));
+      assert.equal(disabled(view), true);
+      assert.ok(view.find({ text: "Abrí el plan para poder aprobar." }));
+      await view.press({ role: "button", text: "Plan" });
+      assert.equal(disabled(view), false);
+      assert.equal(view.find({ text: "Abrí el plan para poder aprobar." }), null);
+      await view.press({ role: "button", text: "Aprobar" });
+      await view.press({ text: "Sí, confirmar" });
+      assert.deepEqual(sent, [{ run: PIZ3, decision: { accion: "aprobar" } }]);
+    },
+  );
+});
+
+test("si el plan no se pudo abrir, Aprobar sigue deshabilitado", async () => {
+  await withPanel(
+    withRuns({ "flowrunner.abrir": () => ({ ok: false, mensaje: "Orca no abrió el archivo" }) }),
+    async (view) => {
+      await view.press({ role: "button", text: "Plan" });
+      assert.ok(view.find({ text: "Orca no abrió el archivo" }));
+      assert.equal(disabled(view), true);
+    },
+  );
+});
+
+test("un plan nuevo después de pedir cambios hay que abrirlo de nuevo", async () => {
+  let current = runs;
+  await withPanel(
+    mockHost({
+      requests: {
+        "flowrunner.runs": () => ({ runs: current, at: 0 }),
+        "flowrunner.abrir": () => ({ ok: true, mensaje: "abierto" }),
+      },
+    }),
+    async (view) => {
+      // El link de la etapa Aprobar también abre el plan, y también cuenta.
+      const link = view.findAll({ type: "Link", text: "Aprobar" })[0];
+      if (link === undefined) throw new Error("sin el link de la etapa Aprobar");
+      await view.press(link);
+      assert.equal(disabled(view), false);
+      current = replanned;
+      await panel.refresh();
+      await view.settled();
+      assert.equal(disabled(view), true);
+      assert.ok(view.find({ text: "Abrí el plan para poder aprobar." }));
+    },
+  );
+});
+
+// Si regresiona, un «Aprobar» que se tocó sobre un plan y quedó sin confirmar aprueba el plan corregido
+// que llegó después, sin que nadie lo abra.
+test("una aprobación a medio confirmar no vale para el plan corregido que llegó después", async () => {
+  let current = runs;
+  const sent: unknown[] = [];
+  await withPanel(
+    mockHost({
+      requests: {
+        "flowrunner.runs": () => ({ runs: current, at: 0 }),
+        "flowrunner.abrir": () => ({ ok: true, mensaje: "abierto" }),
+        "flowrunner.decidir": (input: unknown) => {
+          sent.push(input);
+          return { ok: true, mensaje: "hecho" };
+        },
+      },
+    }),
+    async (view) => {
+      await view.press({ role: "button", text: "Plan" });
+      await view.press({ role: "button", text: "Aprobar" });
+      assert.ok(view.find({ text: "Sí, confirmar" }));
+      current = replanned;
+      await panel.refresh();
+      await view.settled();
+      assert.equal(view.find({ text: "Sí, confirmar" }), null);
+      assert.equal(disabled(view), true);
+      assert.deepEqual(sent, []);
+    },
+  );
+});
+
+// Si regresiona, recargar el panel o reiniciar Orca obliga a abrir de nuevo un plan ya abierto.
+test("después de recargar el panel, un plan ya abierto sigue habilitando Aprobar", async () => {
+  const host = withRuns({ "flowrunner.abrir": () => ({ ok: true, mensaje: "abierto" }) });
+  let persisted: View["persisted"] | undefined;
+  await withPanel(host, async (view) => {
+    assert.equal(disabled(view), true);
+    await view.press({ role: "button", text: "Plan" });
+    assert.equal(disabled(view), false);
+    persisted = view.persisted;
+  });
+  const again = await mount(panel, { host, persisted });
+  try {
+    assert.equal(disabled(again), false);
+  } finally {
+    await again.unmount();
+  }
+});
+
+// Si regresiona, lo que el panel guarda de los planes abiertos crece con cada run, o una lectura que
+// falla hace olvidar un plan ya abierto.
+test("el plan abierto de un run que ya no está activo se olvida; una lectura con error no olvida nada", async () => {
+  let current: { runs: Run[]; at: number; error?: string } = { runs, at: 0 };
+  await withPanel(
+    mockHost({
+      requests: {
+        "flowrunner.runs": () => current,
+        "flowrunner.abrir": () => ({ ok: true, mensaje: "abierto" }),
+      },
+    }),
+    async (view) => {
+      await view.press({ role: "button", text: "Plan" });
+      assert.deepEqual(view.persisted.plugin.planesVistos, { [PIZ3]: `${PIZ3}#1` });
+      current = { runs: [], at: 1, error: "timeout" };
+      await panel.refresh();
+      await view.settled();
+      assert.deepEqual(view.persisted.plugin.planesVistos, { [PIZ3]: `${PIZ3}#1` });
+      current = { runs: runs.filter((r) => r.id !== PIZ3), at: 2 };
+      await panel.refresh();
+      await view.settled();
+      assert.deepEqual(view.persisted.plugin.planesVistos, {});
     },
   );
 });

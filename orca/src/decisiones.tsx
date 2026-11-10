@@ -16,6 +16,7 @@ import {
   type Decision,
   type Run,
 } from "./runs";
+import type { Snapshot } from "./protocol";
 
 /** El plan que la persona abrió en Orca, por run: Aprobar se habilita recién con el plan visto (D3). */
 const plansSeen = atom("planesVistos", {} as Record<string, string>, { persist: "plugin" });
@@ -26,10 +27,17 @@ export function markPlanSeen(run: Run): void {
 
 export const planSeen = (run: Run): boolean => read(plansSeen)[run.id] === planVersion(run);
 
-/** Los runs que ya no están activos no necesitan recordar su plan. Sin nada que olvidar, no escribe. */
-export function forgetPlans(activos: readonly string[]): void {
+/**
+ * Los runs que ya no están activos no necesitan recordar su plan. Una lectura con runs activos en otros
+ * proyectos no los trae: entonces se olvidan solo los que dice cerrados. Sin nada que olvidar, no
+ * escribe.
+ */
+export function forgetPlans(snapshot: Snapshot): void {
+  const activos = snapshot.runs.map((r) => r.id);
+  const cerrados = (snapshot.cerrados ?? []).map((r) => r.id);
+  const complete = (snapshot.otros ?? 0) === 0;
   const seen = Object.entries(read(plansSeen));
-  const kept = seen.filter(([id]) => activos.includes(id));
+  const kept = seen.filter(([id]) => (complete ? activos.includes(id) : !cerrados.includes(id)));
   if (kept.length < seen.length) set(plansSeen, Object.fromEntries(kept));
 }
 
@@ -104,10 +112,12 @@ export function Decisions({
 }) {
   const offered = decisionsFor(run);
   const waiting = read(pending);
-  // Un Aprobar a medio confirmar no vale para un plan que la persona no abrió: el de un replan que
-  // llegó mientras tanto, por ejemplo.
+  // Un Aprobar a medio confirmar vale solo para el plan sobre el que se tocó, y abierto: no para el de
+  // un replan que llegó mientras tanto, aunque después se abra.
   const mine =
-    waiting?.run === run.id && (waiting.decision.accion !== "aprobar" || planSeen(run))
+    waiting?.run === run.id &&
+    (waiting.decision.accion !== "aprobar" ||
+      (waiting.decision.plan === planVersion(run) && planSeen(run)))
       ? waiting.decision
       : undefined;
   const message = read(said);
@@ -162,7 +172,9 @@ export function Decisions({
           <Button
             size="sm"
             tone="warning"
-            onPress={() => decide(run.id, { accion: "aprobar", aceptoCambios: true }, after)}
+            onPress={() =>
+              decide(run.id, { accion: "aprobar", plan: mine.plan, aceptoCambios: true }, after)
+            }
           >
             Acepto los cambios y apruebo
           </Button>
@@ -231,7 +243,7 @@ export function Decisions({
             tone="success"
             icon="check"
             disabled={!seen}
-            onPress={() => ask({ accion: "aprobar" })}
+            onPress={() => ask({ accion: "aprobar", plan: planVersion(run) })}
           >
             Aprobar
           </Button>

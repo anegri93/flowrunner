@@ -89,7 +89,7 @@ export async function refresh(): Promise<void> {
       prev !== null && JSON.stringify({ ...prev, at: 0 }) === JSON.stringify({ ...shown, at: 0 });
     if (!same) set(snapshot, shown);
     // Los runs que dejaron de estar activos no necesitan recordar qué plan se abrió.
-    if (next.error === undefined) forgetPlans(next.runs.map((r) => r.id));
+    if (next.error === undefined) forgetPlans(next);
   } catch (error) {
     if (asked !== generation) return;
     const prev = read(snapshot);

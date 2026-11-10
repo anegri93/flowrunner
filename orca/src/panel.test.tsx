@@ -151,7 +151,7 @@ test("aprobar pide confirmación; Cambios manda el motivo escrito", async () => 
       await view.press({ role: "button", text: "Aprobar" });
       assert.deepEqual(sent, []);
       await view.press({ text: "Sí, confirmar" });
-      assert.deepEqual(sent, [{ run: PIZ3, decision: { accion: "aprobar" } }]);
+      assert.deepEqual(sent, [{ run: PIZ3, decision: { accion: "aprobar", plan: `${PIZ3}#1` } }]);
       await view.press({ role: "button", text: "Cambios" });
       await view.type({ label: "Qué cambiar del plan" }, "separá la validación", { submit: true });
       assert.deepEqual(sent[1], {
@@ -271,7 +271,9 @@ test("aprobar un plan que cambia lo existente muestra los cambios y manda que se
       assert.equal(view.find({ text: "Sí, confirmar" }), null);
       assert.deepEqual(sent, []);
       await view.press({ role: "button", text: "Acepto los cambios y apruebo" });
-      assert.deepEqual(sent, [{ run: PIZ3, decision: { accion: "aprobar", aceptoCambios: true } }]);
+      assert.deepEqual(sent, [
+        { run: PIZ3, decision: { accion: "aprobar", aceptoCambios: true, plan: `${PIZ3}#1` } },
+      ]);
     },
   );
 });
@@ -312,7 +314,8 @@ test("Aprobar está deshabilitado hasta abrir el plan de ese run en Orca", async
       assert.equal(view.find({ text: "Abrí el plan para poder aprobar." }), null);
       await view.press({ role: "button", text: "Aprobar" });
       await view.press({ text: "Sí, confirmar" });
-      assert.deepEqual(sent, [{ run: PIZ3, decision: { accion: "aprobar" } }]);
+      // Manda la versión que abrió: el worker no aprueba si el plan cambió desde entonces.
+      assert.deepEqual(sent, [{ run: PIZ3, decision: { accion: "aprobar", plan: `${PIZ3}#1` } }]);
     },
   );
 });
@@ -377,6 +380,10 @@ test("una aprobación a medio confirmar no vale para el plan corregido que lleg�
       await view.settled();
       assert.equal(view.find({ text: "Sí, confirmar" }), null);
       assert.equal(disabled(view), true);
+      // Abrir el plan corregido no hace volver la confirmación del anterior: hay que tocar Aprobar.
+      await view.press({ role: "button", text: "Plan" });
+      assert.equal(view.find({ text: "Sí, confirmar" }), null);
+      assert.equal(disabled(view), false);
       assert.deepEqual(sent, []);
     },
   );
@@ -419,6 +426,44 @@ test("el plan abierto de un run que ya no está activo se olvida; una lectura co
       await view.settled();
       assert.deepEqual(view.persisted.plugin.planesVistos, { [PIZ3]: `${PIZ3}#1` });
       current = { runs: runs.filter((r) => r.id !== PIZ3), at: 2 };
+      await panel.refresh();
+      await view.settled();
+      assert.deepEqual(view.persisted.plugin.planesVistos, {});
+    },
+  );
+});
+
+// Si regresiona, cambiar de proyecto en Orca y volver obliga a abrir otra vez el plan de un run que
+// sigue esperando: la lectura filtrada por proyecto no trae los runs activos de los demás.
+test("al cambiar de proyecto, el plan abierto de un run del otro sigue recordado; uno cerrado se olvida", async () => {
+  let current: { runs: Run[]; at: number; proyecto: string; otros: number; cerrados?: Run[] } = {
+    runs,
+    at: 0,
+    proyecto: "pizarra",
+    otros: 0,
+  };
+  await withPanel(
+    mockHost({
+      requests: {
+        "flowrunner.runs": () => current,
+        "flowrunner.abrir": () => ({ ok: true, mensaje: "abierto" }),
+      },
+    }),
+    async (view) => {
+      await view.press({ role: "button", text: "Plan" });
+      current = { runs: [], at: 1, proyecto: "otro", otros: runs.length };
+      await panel.refresh();
+      await view.settled();
+      assert.deepEqual(view.persisted.plugin.planesVistos, { [PIZ3]: `${PIZ3}#1` });
+      // Con otros proyectos activos, lo que se olvida es lo que la lectura dice cerrado.
+      const piz3 = runs.find((r) => r.id === PIZ3) as Run;
+      current = {
+        runs: [],
+        at: 2,
+        proyecto: "pizarra",
+        otros: 2,
+        cerrados: [{ ...piz3, status: "abortado" }],
+      };
       await panel.refresh();
       await view.settled();
       assert.deepEqual(view.persisted.plugin.planesVistos, {});

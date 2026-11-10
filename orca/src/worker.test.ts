@@ -38,6 +38,9 @@ async function fakeWorker() {
   return { worker, calls, repo };
 }
 
+/** Las llamadas sin las lecturas de los runs. */
+const decided = (calls: string[]) => calls.filter((c) => !c.startsWith("watch "));
+
 // Si regresiona, el panel no recibe los runs de flowrunner.
 test("lee los runs con el comando de la config, también los cerrados", async () => {
   const { worker } = await fakeWorker();
@@ -268,9 +271,13 @@ test("abrir una etapa pide su detalle a flowrunner y lo abre como pestaña en el
 test("cada decisión corre su comando fijo, con el motivo tal cual, y devuelve lo que dijo flowrunner", async () => {
   const { worker, calls } = await fakeWorker();
   const id = "PIZ-3-20261109-010000";
+  const plan = `${id}#1`;
   try {
     assert.deepEqual(
-      await worker.request("flowrunner.decidir", { run: id, decision: { accion: "aprobar" } }),
+      await worker.request("flowrunner.decidir", {
+        run: id,
+        decision: { accion: "aprobar", plan },
+      }),
       { ok: true, mensaje: "aprobado: implementar arrancó" },
     );
     const motivo = "no toques el 'login' ni $(whoami)";
@@ -294,18 +301,19 @@ test("cada decisión corre su comando fijo, con el motivo tal cual, y devuelve l
     assert.deepEqual(learned, { ok: true, mensaje: "la PR sigue abierta" });
     await worker.request("flowrunner.decidir", {
       run: id,
-      decision: { accion: "aprobar", aceptoCambios: true },
+      decision: { accion: "aprobar", aceptoCambios: true, plan },
     });
     // Solo `true` acepta: cualquier otra cosa que llegue del panel aprueba sin aceptar nada.
     await worker.request("flowrunner.decidir", {
       run: id,
-      decision: { accion: "aprobar", aceptoCambios: "--force" as unknown as true },
+      decision: { accion: "aprobar", aceptoCambios: "--force" as unknown as true, plan },
     });
     assert.deepEqual(
       await worker.request("flowrunner.decidir", { run: id, decision: { accion: "abortar" } }),
       { ok: true, mensaje: "abortado; las ramas quedan" },
     );
-    assert.deepEqual(calls(), [
+    // Antes de aprobar lee los runs para comparar el plan: acá cuentan los comandos de cada decisión.
+    assert.deepEqual(decided(calls()), [
       `approve ${id} --origen orca --json`,
       `changes ${id} ${motivo} --origen orca --json`,
       `resume ${id} --json`,
@@ -319,22 +327,55 @@ test("cada decisión corre su comando fijo, con el motivo tal cual, y devuelve l
   }
 });
 
+// Si regresiona, el panel aprueba con una foto vieja un plan corregido que nadie abrió: el panel
+// estaba oculto, o la lectura fallaba, mientras se pedían cambios desde la terminal (D3).
+test("aprobar solo corre si el plan sigue en la versión que se abrió", async () => {
+  const { worker, calls } = await fakeWorker();
+  const id = "PIZ-3-20261109-010000";
+  try {
+    const stale = await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "aprobar", plan: `${id}#0` },
+    });
+    assert.equal(stale.ok, false);
+    assert.match(stale.mensaje, /el plan de PIZ-3 cambió desde que lo abriste/);
+    const missing = await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "aprobar" } as never,
+    });
+    assert.equal(missing.ok, false);
+    assert.equal(
+      calls().some((c) => c.startsWith("approve")),
+      false,
+    );
+    const fresh = await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "aprobar", plan: `${id}#1` },
+    });
+    assert.deepEqual(fresh, { ok: true, mensaje: "aprobado: implementar arrancó" });
+    assert.equal(calls().at(-1), `approve ${id} --origen orca --json`);
+  } finally {
+    await worker.deactivate();
+  }
+});
+
 // Si regresiona, una aprobación del panel queda en el log como si viniera de la terminal, y no se
 // puede saber si salió del botón de Orca, como en VF-6.
 test("aprobar y cambios mandan --origen orca", async () => {
   const { worker, calls } = await fakeWorker();
   const id = "PIZ-3-20261109-010000";
   try {
-    await worker.request("flowrunner.decidir", { run: id, decision: { accion: "aprobar" } });
+    const plan = `${id}#1`;
+    await worker.request("flowrunner.decidir", { run: id, decision: { accion: "aprobar", plan } });
     await worker.request("flowrunner.decidir", {
       run: id,
-      decision: { accion: "aprobar", aceptoCambios: true },
+      decision: { accion: "aprobar", aceptoCambios: true, plan },
     });
     await worker.request("flowrunner.decidir", {
       run: id,
       decision: { accion: "cambios", motivo: "separá la validación" },
     });
-    assert.deepEqual(calls(), [
+    assert.deepEqual(decided(calls()), [
       `approve ${id} --origen orca --json`,
       `approve ${id} --acepto-cambios --origen orca --json`,
       `changes ${id} separá la validación --origen orca --json`,

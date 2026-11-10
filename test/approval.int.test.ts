@@ -197,6 +197,12 @@ describe("aprobar un plan que cambia lo existente", () => {
     expect(plain.stderr).toContain("hoy el alta rechaza un correo de otro dominio");
     expect(plain.stderr).toContain("--acepto-cambios");
     expect(w.state(id).status).toBe("esperando_aprobacion");
+    // El comando que sugiere conserva el origen: si no, la aprobación de Claude queda como terminal.
+    const fromClaude = runCli(["approve", id, "--origen", "claude"], w.env);
+    expect(fromClaude.status).toBe(1);
+    expect(fromClaude.stderr).toContain(
+      `flowrunner approve ${id} --acepto-cambios --origen claude`,
+    );
 
     expect(runCli(["approve", id, "--acepto-cambios"], w.env).status).toBe(0);
   });

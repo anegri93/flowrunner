@@ -10,7 +10,7 @@ const run = promisify(execFile);
 
 export const GRAFT_ENV = { DO_NOT_TRACK: "1" } as const;
 
-function graftEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export function graftEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return { ...base, ...GRAFT_ENV };
 }
 

@@ -68,7 +68,8 @@ export function insideRoot(scope: Scope, path: string): string | undefined {
   return rel.split(sep).join("/");
 }
 
-const covers = (entry: string, rel: string) => {
+/** `entry` cubre `rel` si es la misma ruta o una carpeta que la contiene. */
+export const covers = (entry: string, rel: string) => {
   const clean = entry.replace(/\/+$/, "");
   return rel === clean || rel.startsWith(`${clean}/`);
 };

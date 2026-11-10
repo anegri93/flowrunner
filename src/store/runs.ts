@@ -22,6 +22,8 @@ export interface NewRun {
   readonly proyecto: string;
   readonly repo: string;
   readonly budgetUsd?: number | undefined;
+  /** Las vueltas automáticas de la config del repo; sin ellas, el run vale las de antes (2). */
+  readonly vueltas?: number | undefined;
   readonly featureText: string;
 }
 
@@ -40,6 +42,7 @@ export function createRun(home: string, run: NewRun, now: Date): RunPaths {
       proyecto: run.proyecto,
       repo: run.repo,
       ...(run.budgetUsd === undefined ? {} : { budget_usd: run.budgetUsd }),
+      ...(run.vueltas === undefined ? {} : { vueltas: run.vueltas }),
     },
     () => now,
   );

@@ -21,7 +21,16 @@ export const runSummarySchema = z.strictObject({
   ]),
   fase: phaseSchema,
   costo_usd: z.number(),
-  detenido: z.strictObject({ motivo: z.string(), siguiente: z.string() }).nullable(),
+  detenido: z
+    .strictObject({
+      motivo: z.string(),
+      siguiente: z.string(),
+      /** Las respuestas posibles, en orden; la primera es `siguiente` (ADR 0023). */
+      opciones: z.array(z.strictObject({ comando: z.string(), que: z.string() })).min(1),
+      /** Las sub-tasks a las que se atribuye el problema, si hay. */
+      unidades: z.array(z.string()).optional(),
+    })
+    .nullable(),
 });
 export type RunSummary = z.infer<typeof runSummarySchema>;
 
@@ -81,7 +90,8 @@ export function steps(events: readonly RunEvent[]): z.infer<typeof phaseStepSche
       };
       step.fin = event.at;
       step.resultado = r.tipo === "falla" ? `falla ${r.clase}` : r.tipo;
-      step.motivo = r.tipo === "falla" || r.tipo === "vuelve" ? r.motivo : null;
+      step.motivo =
+        r.tipo === "falla" || r.tipo === "vuelve" || r.tipo === "pregunta" ? r.motivo : null;
       if (open === undefined) out.push(step);
     }
   }

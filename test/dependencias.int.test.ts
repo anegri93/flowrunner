@@ -68,6 +68,8 @@ describe("dependencias nuevas en la integración", () => {
           setup: "cp deps.txt .instalado",
           tests_globs: ["tests/**"],
           manifests: ["deps.txt"],
+          // Fija el comportamiento de un repo que pide vueltas automáticas (ADR 0023).
+          vueltas: 2,
         },
       },
     });
@@ -110,6 +112,8 @@ describe("dependencias nuevas en la integración", () => {
           setup: "cp deps.txt .instalado && ! grep -q roto deps.txt",
           tests_globs: ["tests/**"],
           manifests: ["deps.txt"],
+          // Fija el comportamiento de un repo que pide vueltas automáticas (ADR 0023).
+          vueltas: 2,
         },
       },
     });

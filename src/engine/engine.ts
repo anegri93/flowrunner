@@ -29,8 +29,11 @@ export const MAX_ATTEMPTS: Record<Phase, number> = {
   aprender: 2,
 };
 export const MAX_INFRA_RETRIES = 2;
-/** Vueltas máximas a implementar desde verificar, desde revisar y desde probar. */
-export const MAX_ROUNDS = 2;
+/**
+ * Las vueltas automáticas de un run creado antes de que existiera `vueltas` en `run_creado`: era el
+ * máximo fijo de entonces, y un run en curso no cambia a mitad de camino (ADR 0023).
+ */
+const LEGACY_ROUNDS = 2;
 
 const NEXT: Partial<Record<Phase, Phase>> = {
   preparar: "planificar",
@@ -50,9 +53,22 @@ const NO_ROUNDS: Record<RoundPhase, number> = { verificar: 0, revisar: 0, probar
 const isRoundPhase = (fase: Phase): fase is RoundPhase =>
   (ROUND_PHASES as readonly Phase[]).includes(fase);
 
+/** Una respuesta posible a un run detenido. */
+export interface Opcion {
+  /** El comando tal cual, con <placeholders> para lo que escribe la persona. */
+  readonly comando: string;
+  /** Qué hace, en una frase, para el aviso, Orca y la skill. */
+  readonly que: string;
+}
+
 export interface Halt {
   readonly motivo: string;
+  /** El primer comando de `opciones`: lo que ya leían el aviso, el informe y watch. */
   readonly siguiente: string;
+  /** Las respuestas posibles, en orden de preferencia. Nunca vacía. */
+  readonly opciones: readonly Opcion[];
+  /** Las sub-tasks a las que se atribuye el problema, si hay. */
+  readonly unidades?: readonly string[];
 }
 
 export interface RunState {
@@ -68,6 +84,8 @@ export interface RunState {
   readonly infra: number;
   readonly ultimoMotivo: string | undefined;
   readonly vueltas: Record<RoundPhase, number>;
+  /** Vueltas automáticas por fase antes de preguntar; la config del repo al crear el run (ADR 0023). */
+  readonly vueltasMax: number;
   /** Lo que la fase anterior o tu pedido le dicen a la próxima ejecución de esta fase. */
   readonly instruccion: string | undefined;
   /** Las sub-tasks que verificar, revisar o probar devolvieron a implementar. */
@@ -82,6 +100,8 @@ export interface RunState {
    * entregar. Fuera de esa detención un `sin_probar_aceptado` no hace nada.
    */
   readonly sinProbar: boolean;
+  /** Detenido esperando que la persona arregle el worktree a mano y lo retome (`fix --yo`). */
+  readonly aMano: boolean;
 }
 
 export type Action =
@@ -94,11 +114,94 @@ export type Action =
     }
   | { readonly tipo: "fin"; readonly status: RunStatus };
 
-function halt(state: RunState, motivo: string, siguiente?: string): RunState {
+/** Qué hace un comando de la fila «cualquier otro» de `opcionesDe`, en palabras. */
+function queHace(comando: string, runId: string, fase: Phase): string {
+  if (comando === `flowrunner resume ${runId}`) return `retomar en ${fase}`;
+  const desde = /^flowrunner rerun \S+ --desde (\S+)$/.exec(comando)?.[1];
+  if (desde !== undefined) return `rehacer desde ${desde}`;
+  return "seguir";
+}
+
+/**
+ * Las respuestas a un run detenido, en orden de preferencia. Solo el engine arma comandos: el CLI
+ * acepta `fix` y `accept` solo si el halt actual los ofrece (ADR 0023). Nunca devuelve una lista vacía.
+ */
+export function opcionesDe(
+  state: RunState,
+  fase: Phase,
+  unidades: readonly string[] | undefined,
+): Opcion[] {
+  const R = state.runId;
+  const abort: Opcion = { comando: `flowrunner abort ${R}`, que: "cortar el run; la rama queda" };
+  const byHand: Opcion = {
+    comando: `flowrunner fix ${R} --yo`,
+    que: "lo arreglás vos en el worktree; `resume` lo commitea y vuelve a verificar",
+  };
+  const accept = (que: string): Opcion => ({ comando: `flowrunner accept ${R} "<por qué>"`, que });
+  const replan: Opcion = {
+    comando: `flowrunner rerun ${R} --desde planificar`,
+    que: "replanificar",
+  };
+  const fixes = (unidades ?? []).map((u): Opcion => ({
+    comando: `flowrunner fix ${R} --unidad ${u} "<qué cambiar>"`,
+    que: `que ${u} lo corrija con tu instrucción, sobre el código que ya está`,
+  }));
+  if (state.aMano) {
+    return [
+      {
+        comando: `flowrunner resume ${R}`,
+        que: "commitear tu cambio a mano y volver a verificar",
+      },
+      abort,
+    ];
+  }
+  if (state.sinProbar) {
+    return [
+      {
+        comando: `flowrunner rerun ${R} --desde probar`,
+        que: "rehacer probar después de arreglar lo que faltó",
+      },
+      accept("entregar igual; tu motivo queda en la PR"),
+      byHand,
+      abort,
+    ];
+  }
+  const next = NEXT[fase];
+  if (isRoundPhase(fase) && fixes.length > 0 && next !== undefined) {
+    return [
+      ...fixes,
+      byHand,
+      accept(`seguir a ${next} igual; tu motivo queda en la PR`),
+      replan,
+      abort,
+    ];
+  }
+  // Sin accept: no se entrega una sub-task sin hacer.
+  if (fase === "implementar" && fixes.length > 0) return [...fixes, byHand, replan, abort];
+  const siguiente = state.halt?.siguiente ?? `flowrunner resume ${R}`;
+  return [{ comando: siguiente, que: queHace(siguiente, R, fase) }, abort];
+}
+
+/** La única forma de dejar un run detenido: con su motivo y sus opciones, que nunca faltan. */
+function halt(
+  state: RunState,
+  motivo: string,
+  siguiente?: string,
+  unidades?: readonly string[],
+): RunState {
+  const base: Halt = {
+    motivo,
+    siguiente: siguiente ?? `flowrunner resume ${state.runId}`,
+    opciones: [],
+    ...(unidades === undefined ? {} : { unidades }),
+  };
+  const opciones = opcionesDe({ ...state, halt: base }, state.fase, unidades);
+  const first = opciones[0];
+  if (first === undefined) throw new Error("opcionesDe devolvió una lista vacía");
   return {
     ...state,
     status: "detenido",
-    halt: { motivo, siguiente: siguiente ?? `flowrunner resume ${state.runId}` },
+    halt: { ...base, siguiente: first.comando, opciones },
   };
 }
 
@@ -115,6 +218,7 @@ function enter(state: RunState, fase: Phase, extra: Partial<RunState> = {}): Run
     halt: undefined,
     pausaHasta: undefined,
     sinProbar: false,
+    aMano: false,
     ...extra,
   };
 }
@@ -141,10 +245,14 @@ function onOutcome(state: RunState, fase: Phase, outcome: Outcome): RunState {
         );
       }
       const vueltas = { ...state.vueltas, [fase]: state.vueltas[fase] + 1 };
-      if (vueltas[fase] > MAX_ROUNDS) {
+      if (vueltas[fase] > state.vueltasMax) {
         return halt(
           { ...state, vueltas },
-          `${fase} devolvió trabajo ${vueltas[fase]} veces; el máximo es ${MAX_ROUNDS}. Último motivo: ${outcome.motivo}`,
+          state.vueltasMax === 0
+            ? `${fase}: ${outcome.motivo}`
+            : `${fase} devolvió trabajo ${vueltas[fase]} veces; el máximo es ${state.vueltasMax}. Último motivo: ${outcome.motivo}`,
+          undefined,
+          outcome.unidades,
         );
       }
       return enter({ ...state, vueltas }, "implementar", {
@@ -152,18 +260,19 @@ function onOutcome(state: RunState, fase: Phase, outcome: Outcome): RunState {
         instruccion: outcome.motivo,
       });
     }
+    // La fase sabe que reintentar solo no sirve: pregunta sin gastar intentos ni vueltas.
+    case "pregunta":
+      return halt(state, `${fase}: ${outcome.motivo}`, undefined, outcome.unidades);
     case "falla": {
       // Reintentar no ayuda: lo que faltó para probar (una falla que simular, un dato) no lo arregla
-      // el modelo. Entregar con criterios que nadie probó lo decide la persona, no flowrunner.
+      // el modelo. Entregar con criterios que nadie probó lo decide la persona, no flowrunner. Se marca
+      // antes del halt para que sus opciones sean las de esta detención.
       if (outcome.clase === "sin_probar") {
-        return {
-          ...halt(
-            state,
-            `${fase}: ${outcome.motivo}\nArreglá lo que faltó y rehacé probar con el comando de abajo; para entregar igual, decilo con: flowrunner accept-untested ${state.runId} "<por qué>"`,
-            `flowrunner rerun ${state.runId} --desde ${fase}`,
-          ),
-          sinProbar: true,
-        };
+        return halt(
+          { ...state, sinProbar: true },
+          `${fase}: ${outcome.motivo}\nArreglá lo que faltó y rehacé probar con el comando de abajo; para entregar igual, decilo con: flowrunner accept-untested ${state.runId} "<por qué>"`,
+          `flowrunner rerun ${state.runId} --desde ${fase}`,
+        );
       }
       if (outcome.clase === "entorno" || outcome.clase === "invariante") {
         return halt(state, `${fase}: ${outcome.motivo}`);
@@ -211,6 +320,7 @@ export function initialState(): RunState {
     infra: 0,
     ultimoMotivo: undefined,
     vueltas: NO_ROUNDS,
+    vueltasMax: LEGACY_ROUNDS,
     instruccion: undefined,
     unidades: undefined,
     costoUsd: 0,
@@ -218,8 +328,14 @@ export function initialState(): RunState {
     pausaHasta: undefined,
     interrumpida: false,
     sinProbar: false,
+    aMano: false,
   };
 }
+
+/** Una respuesta de la persona que el halt actual ofrece: el CLI valida igual (ADR 0023). */
+const offers = (state: RunState, prefix: string): boolean =>
+  state.status === "detenido" &&
+  (state.halt?.opciones ?? []).some((o) => o.comando.startsWith(prefix));
 
 export function reduce(state: RunState, event: RunEvent): RunState {
   if (state.status === "abortado") return state;
@@ -232,6 +348,7 @@ export function reduce(state: RunState, event: RunEvent): RunState {
         proyecto: event.proyecto,
         repo: event.repo,
         budgetUsd: event.budget_usd,
+        vueltasMax: event.vueltas ?? LEGACY_ROUNDS,
       };
     case "accion_iniciada":
       return { ...state, interrumpida: true };
@@ -279,6 +396,39 @@ export function reduce(state: RunState, event: RunEvent): RunState {
       return state;
     case "sin_probar_aceptado":
       return state.status === "detenido" && state.sinProbar ? enter(state, "entregar") : state;
+    case "arreglo_pedido": {
+      if (!offers(state, `flowrunner fix ${state.runId} --unidad `)) return state;
+      // Desde una pregunta de implementar entran también las que quedaron bloqueadas por la que se
+      // arregla: si no, no arrancarían nunca. Las de verificar, revisar o probar ya están integradas.
+      if (state.fase === "implementar") {
+        return enter(state, "implementar", {
+          unidades: [...new Set([...event.unidades, ...(state.halt?.unidades ?? [])])],
+          instruccion: `Para ${event.unidades.join(", ")}: ${event.instruccion}`,
+        });
+      }
+      return enter(state, "implementar", {
+        unidades: event.unidades,
+        instruccion: event.instruccion,
+      });
+    }
+    case "arreglo_manual_iniciado":
+      return state.status === "detenido"
+        ? halt(
+            { ...state, aMano: true },
+            "Esperando tu arreglo a mano en el worktree de la feature. Cuando termines, retomá el run: flowrunner commitea tu cambio y vuelve a verificar.",
+          )
+        : state;
+    case "arreglo_manual":
+      return state.status === "detenido" && state.aMano ? enter(state, "verificar") : state;
+    case "aceptado": {
+      const next = NEXT[event.fase];
+      const applies =
+        state.status === "detenido" &&
+        event.fase === state.fase &&
+        isRoundPhase(event.fase) &&
+        next !== undefined;
+      return applies ? enter(state, next) : state;
+    }
     case "rehacer":
       return enter({ ...state, vueltas: NO_ROUNDS }, event.desde);
     case "abortado":

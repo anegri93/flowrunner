@@ -5,6 +5,8 @@ import { describe, expect, test } from "vitest";
 import { plannedRun } from "../../test/helpers/planned.ts";
 import { git as gitOut, repoWith } from "../../test/helpers/git.ts";
 import { contextFor, testDeps, writeFiles } from "../../test/helpers/project.ts";
+import { simQuery } from "../../test/helpers/sim-sdk.ts";
+import { appendEvent } from "../store/run-log.ts";
 import type { Plan } from "../gates/plan.ts";
 import { commitAll } from "../git/git.ts";
 import { verifyScript } from "../setup/infer.ts";
@@ -304,4 +306,42 @@ describe("namedFiles", () => {
       "src/carpeta.ts",
     ]);
   });
+});
+
+// Si regresiona, un repo con 0 vueltas paga una sesión de diagnóstico que nadie pidió (D5).
+test("con 0 vueltas no se diagnostica aunque la sub-task devuelta siga en rojo", async () => {
+  const sim = simQuery([{ output: { tipo: "codigo", unidad: "ST-2", explicacion: "x" } }]);
+  const deps = testDeps({ query: sim.query });
+  const { run, featureWt } = await plannedRun(plan, TESTS, deps);
+  writeFiles(featureWt, { "src/csv.js": "x", "src/permiso.js": "200" });
+  await commitAll(featureWt, "feat: implementado", {}, deps.env);
+  // La vuelta anterior ya devolvió AC-2 a ST-2, y ST-2 no encontró nada que cambiar.
+  appendEvent(run.dir, {
+    tipo: "accion_terminada",
+    fase: "implementar",
+    resultado: { tipo: "ok" },
+  });
+  appendEvent(run.dir, { tipo: "accion_iniciada", fase: "verificar" });
+  appendEvent(run.dir, {
+    tipo: "accion_terminada",
+    fase: "verificar",
+    resultado: { tipo: "vuelve", unidades: ["ST-2"], motivo: "AC-2 sigue en rojo: esperaba 403" },
+  });
+  appendEvent(run.dir, { tipo: "accion_iniciada", fase: "implementar" });
+  appendEvent(run.dir, {
+    tipo: "unidad",
+    fase: "implementar",
+    unidad: "ST-2",
+    estado: "sin_cambios",
+  });
+  appendEvent(run.dir, {
+    tipo: "accion_terminada",
+    fase: "implementar",
+    resultado: { tipo: "ok" },
+  });
+  appendEvent(run.dir, { tipo: "accion_iniciada", fase: "verificar" });
+  const ctx = contextFor(run, "verificar", deps);
+  const outcome = await verificar({ ...ctx, state: { ...ctx.state, vueltasMax: 0 } });
+  expect(outcome).toMatchObject({ tipo: "vuelve", unidades: ["ST-2"] });
+  expect(sim.records.filter((r) => r.prompt.includes("Sos el que diagnostica"))).toEqual([]);
 });

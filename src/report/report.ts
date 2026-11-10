@@ -130,6 +130,7 @@ export function buildReport(events: readonly RunEvent[], run: RunPaths): string 
   const lines = [
     ...header(events, run),
     ...(existing.length === 0 ? [] : ["", ...existing]),
+    ...accepted(events),
     ...tested(events, run, true),
     ...howToTest(run),
     ...decisions(events),
@@ -202,7 +203,14 @@ function tested(events: readonly RunEvent[], run: RunPaths, paths: boolean): str
   const dir = lastTestDir(run);
   if (dir === undefined) return [];
   // La última decisión manda: si el run se detuvo dos veces, vale el motivo de la que lo dejó seguir.
-  const aceptado = events.filter((e) => e.tipo === "sin_probar_aceptado").at(-1);
+  // `accept` en probar dice lo mismo que `accept-untested` (ADR 0023).
+  const aceptado = events
+    .flatMap((e) =>
+      e.tipo === "sin_probar_aceptado" || (e.tipo === "aceptado" && e.fase === "probar")
+        ? [{ motivo: e.motivo }]
+        : [],
+    )
+    .at(-1);
   return [
     "",
     "## Pruebas en el entorno",
@@ -215,6 +223,21 @@ function tested(events: readonly RunEvent[], run: RunPaths, paths: boolean): str
         ]),
     ...testResults(dir, paths),
   ];
+}
+
+/**
+ * Lo que la persona dejó pasar o arregló a mano al responder una pregunta del run (ADR 0023): va a la
+ * PR para que quien la revisa no lo apruebe sin verlo.
+ */
+function accepted(events: readonly RunEvent[]): string[] {
+  const lines = events.flatMap((e) =>
+    e.tipo === "aceptado"
+      ? [`- en ${e.fase}: ${plain(e.motivo)}`]
+      : e.tipo === "arreglo_manual" && e.sha !== null
+        ? [`- arreglo a mano: ${e.sha.slice(0, 7)}`]
+        : [],
+  );
+  return lines.length === 0 ? [] : ["", "## Lo que aceptaste al seguir", "", ...lines];
 }
 
 /** El paso a paso para probar la feature a mano, que escribe la última revisión. */
@@ -293,8 +316,11 @@ export function prBody(events: readonly RunEvent[], run: RunPaths): string {
         /## Criterios\n([\s\S]*?)(\n## |$)/.exec(readFileSync(featureFile, "utf8"))?.[1] ?? ""
       ).trim()
     : "";
+  const acceptedLines = accepted(events);
   return [
     ...existingChanges(events, run),
+    // `accepted` empieza con una línea en blanco, y la PR no empieza con una.
+    ...(acceptedLines.length === 0 ? [] : [...acceptedLines.slice(1), ""]),
     "## Criterios",
     "",
     criteria,

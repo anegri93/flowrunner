@@ -42,6 +42,8 @@ const tree: RunTree = {
   haceSegundos: undefined,
   motivo: undefined,
   siguiente: undefined,
+  opciones: undefined,
+  unidades: undefined,
   cambiaLoExistente: [],
   fases: [
     phase("planificar", {
@@ -109,7 +111,32 @@ const strip = (l: string) => l.replace(/\x1b\[[0-9;]*m/g, "");
 const rowOf = (lines: string[], text: string) => lines.find((l) => l.includes(text)) ?? "";
 const cols = (row: string) => row.trim().split(/ {2,}/);
 
+const asked: RunTree = {
+  ...tree,
+  id: "VF-6-x",
+  clave: "VF-6",
+  titulo: "Animados en la Mac",
+  status: "detenido",
+  motivo: "verificar: AC-12 sigue en rojo",
+  siguiente: 'flowrunner fix VF-6-x --unidad ST-6 "<qué cambiar>"',
+  opciones: [
+    { comando: 'flowrunner fix VF-6-x --unidad ST-6 "<qué cambiar>"', que: "que ST-6 lo corrija" },
+    { comando: "flowrunner fix VF-6-x --yo", que: "lo arreglás vos" },
+    { comando: "flowrunner abort VF-6-x", que: "cortar el run" },
+  ],
+  unidades: ["ST-6"],
+  fases: [phase("verificar", { estado: "vuelve", detalle: "AC-12 sigue en rojo" })],
+};
+
 describe("renderBoard", () => {
+  // Si regresiona, watch dice que el run se detuvo pero no cómo responderle.
+  test("un run detenido con opciones dice la primera y cuántas más hay", () => {
+    const { lines } = renderBoard([asked], { width: 200, color: false });
+    expect(rowOf(lines, "para seguir")).toContain(
+      'para seguir: flowrunner fix VF-6-x --unidad ST-6 "<qué cambiar>" (+2 opciones: flowrunner status VF-6-x)',
+    );
+  });
+
   // Si regresiona, la vista no dice de un vistazo quién te espera, quién trabaja y qué costó cada etapa.
   test("cabecera con resumen y columnas, proyectos agrupados con lo urgente primero, y cada fila con sus números", () => {
     const { lines } = renderBoard([tree, waiting], { width: 160, color: false });

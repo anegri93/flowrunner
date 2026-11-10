@@ -57,7 +57,8 @@ describe("Fase 6 ensamblada", () => {
         { output: { hallazgos: [], decisiones: [{ que: "aprobar", por_que: "cumple" }] } },
       ],
       feature: FEATURE,
-      project: { config: { setup: "true", tests_globs: ["tests/**"] } },
+      // Un repo que pide vueltas automáticas: sin ellas, la primera vuelta es una pregunta (ADR 0023).
+      project: { config: { setup: "true", tests_globs: ["tests/**"], vueltas: 2 } },
     });
     const id = w.launch();
     await waitFor(

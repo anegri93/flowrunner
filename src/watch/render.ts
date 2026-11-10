@@ -225,9 +225,7 @@ function runRows(tree: RunTree): Row[] {
           ? duration(tree.segundos)
           : `hace ${duration(tree.haceSegundos)}`,
       status: tree.status === "entregado" && tree.prMergeada ? "PR mergeada" : run.text,
-      note:
-        tree.motivo ??
-        (tree.siguiente === undefined ? undefined : `para seguir: ${tree.siguiente}`),
+      note: runNote(tree),
     },
   ];
   tree.fases.forEach((p, i) => {
@@ -305,6 +303,22 @@ function summaryOf(trees: readonly RunTree[]): string {
     .sort(([a], [b]) => RUN[a].urgency - RUN[b].urgency)
     .map(([status, n]) => `${KIND[RUN[status].kind].icon} ${String(n)} ${RUN[status].text}`)
     .join("  ");
+}
+
+/**
+ * La nota de un run: con una pregunta, la primera respuesta y cuántas más hay (ADR 0023); si no, el
+ * motivo o el comando para seguir.
+ */
+function runNote(tree: RunTree): string | undefined {
+  const [first, ...rest] = tree.opciones ?? [];
+  if (first !== undefined) {
+    const more =
+      rest.length === 0 ? "" : ` (+${String(rest.length)} opciones: flowrunner status ${tree.id})`;
+    return `para seguir: ${first.comando}${more}`;
+  }
+  return (
+    tree.motivo ?? (tree.siguiente === undefined ? undefined : `para seguir: ${tree.siguiente}`)
+  );
 }
 
 export function renderBoard(

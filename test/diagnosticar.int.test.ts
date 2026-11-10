@@ -47,7 +47,8 @@ async function run(opts: {
     feature: FEATURE,
     project: {
       files: { ".gitignore": ".setups\n", ...opts.files },
-      config: { setup: opts.setup ?? "true", tests_globs: ["tests/**"] },
+      // Diagnosticar corre solo si el repo pidió vueltas automáticas (D5, ADR 0023).
+      config: { setup: opts.setup ?? "true", tests_globs: ["tests/**"], vueltas: 2 },
     },
   });
   const id = w.launch();

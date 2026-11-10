@@ -57,6 +57,8 @@ export const repoConfigSchema = z
     max_parallel: z.int().min(1).max(16).default(3),
     /** Runs de este repo que avanzan a la vez; el resto espera en cola (ADR 0019). */
     max_runs: z.int().min(1).max(8).default(MAX_RUNS_DEFAULT),
+    /** Vueltas automáticas de verificar, revisar y probar antes de preguntar (ADR 0023). */
+    vueltas: z.int().min(0).max(3).default(0),
     /** Tope opcional en USD por run. Sin él, el run no se corta por gasto. */
     budget: z.strictObject({ run_usd: z.number().positive() }).optional(),
     models: z.partialRecord(z.enum(AGENT_PHASES), modelChoice).default({}),

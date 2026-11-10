@@ -1,15 +1,19 @@
-// Los comandos que lanzan y operan runs: run, status, resume, rerun, abort y el proceso `_run`.
+// Los comandos que lanzan y operan runs: run, status, resume, fix, accept, rerun, abort y el proceso
+// `_run`.
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, openSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { stateOf, type RunState } from "../engine/engine.ts";
+import { changesSince, commitAll, headSha } from "../git/git.ts";
 import { avisoDeEstado, cambiosDelPlan } from "../notify/estado.ts";
 import { notifyMac } from "../notify/notify.ts";
 import { productionRuntime } from "../runner/production.ts";
 import { writeReport } from "../report/report.ts";
 import { runUntilStop } from "../runner/runner.ts";
 import type { RunPaths } from "../runner/types.ts";
-import { PHASES, type Phase } from "../store/events.ts";
+import { prepared } from "../phases/inputs.ts";
+import { readPlan } from "../phases/planificar.ts";
+import { PHASES, type Origen, type Phase } from "../store/events.ts";
 import { loadRepoConfig } from "../config/load.ts";
 import { ConfigError, MAX_RUNS_DEFAULT } from "../config/schemas.ts";
 import { conTurnoGitSync } from "../git/git.ts";
@@ -27,6 +31,7 @@ import {
   summarize,
 } from "./contracts.ts";
 import { checkFeature } from "./feature-check.ts";
+import { manualChangeProblems } from "./manual.ts";
 import { UserError } from "./output.ts";
 
 export const BIN = join(import.meta.dirname, "..", "..", "bin", "flowrunner.js");
@@ -177,6 +182,7 @@ export function startRun(home: string, file: string, env: NodeJS.ProcessEnv, now
       proyecto: checked.project.name,
       repo: checked.project.path,
       budgetUsd: checked.repoConfig.budget?.run_usd,
+      vueltas: checked.repoConfig.vueltas,
       featureText,
     },
     now,
@@ -212,10 +218,11 @@ function loadOrExplain(home: string, id: string): RunState {
   }
 }
 
-export function resumeRun(home: string, id: string, env: NodeJS.ProcessEnv) {
+export async function resumeRun(home: string, id: string, env: NodeJS.ProcessEnv) {
   const state = loadOrExplain(home, id);
   if (isRunning(home, state))
     throw new UserError(`el run ${id} ya está corriendo`, `flowrunner status ${id}`);
+  if (state.aMano) return resumeByHand(home, id, env);
   const resumable =
     state.status === "detenido" ||
     state.status === "pausado_por_limite" ||
@@ -233,6 +240,157 @@ export function resumeRun(home: string, id: string, env: NodeJS.ProcessEnv) {
     `listo para retomar en ${state.fase}`,
     lanzarOEncolar(home, id, env),
   );
+}
+
+/**
+ * Retomar después de `fix --yo`: commitea lo que la persona cambió en el worktree de la feature y
+ * vuelve a verificar. Si el cambio toca `.git`, cambia un test bloqueado o agrega un secreto, no
+ * commitea ni escribe nada (ADR 0023).
+ */
+async function resumeByHand(home: string, id: string, env: NodeJS.ProcessEnv) {
+  const run = runPaths(home, id);
+  const { worktree } = prepared(readLog(run.dir).events);
+  const changes = await changesSince(worktree, await headSha(worktree, env), env);
+  const problems = manualChangeProblems(worktree, changes, readPlan(run).locked, id);
+  if (problems.length > 0) {
+    throw new UserError(
+      `tu arreglo a mano no se commitea:\n${problems.map((p) => `- ${p}`).join("\n")}`,
+      `corregilo en ${worktree} y volvé a correr: flowrunner resume ${id}`,
+    );
+  }
+  const sha =
+    changes.length === 0
+      ? null
+      : ((await commitAll(worktree, "fix: arreglo a mano", { "Flowrunner-Manual": id }, env)) ??
+        null);
+  appendEvent(run.dir, { tipo: "arreglo_manual", sha });
+  return launchAnswer(
+    home,
+    id,
+    sha === null
+      ? "sin cambios que commitear: verificar arrancó"
+      : "tu arreglo commiteado: verificar arrancó",
+    sha === null ? "sin cambios que commitear" : "tu arreglo commiteado",
+    env,
+  );
+}
+
+/**
+ * Lanza el run después de la respuesta de la persona. Si otra respuesta llegó antes, el engine ignora
+ * esta, y no hay nada que lanzar: se dice, en vez de contestar que arrancó.
+ */
+function launchAnswer(
+  home: string,
+  id: string,
+  arranco: string,
+  encolado: string,
+  env: NodeJS.ProcessEnv,
+) {
+  const after = loadState(home, id);
+  if (after.status !== "en_curso") {
+    throw new UserError(
+      `el run ${id} no tomó tu respuesta: otra llegó antes, y está ${after.status} en ${after.fase}`,
+      `flowrunner status ${id}`,
+    );
+  }
+  return lanzamiento(id, arranco, encolado, lanzarOEncolar(home, id, env));
+}
+
+/** El halt actual ofrece este comando: lo que valida `fix` y `accept` (ADR 0023). */
+function offered(state: RunState, prefix: string): boolean {
+  return (
+    state.status === "detenido" &&
+    (state.halt?.opciones ?? []).some((o) => o.comando.startsWith(prefix))
+  );
+}
+
+function requireOffered(state: RunState, id: string, prefix: string): void {
+  if (offered(state, prefix)) return;
+  const opciones = state.status === "detenido" ? (state.halt?.opciones ?? []) : [];
+  throw new UserError(
+    `el run ${id} no ofrece eso ahora (está ${state.status} en ${state.fase})${opciones.length === 0 ? "" : `. Ofrece:\n${opciones.map((o) => `  ${o.comando}`).join("\n")}`}`,
+    `flowrunner status ${id}`,
+  );
+}
+
+/**
+ * Una respuesta a la pregunta de un run detenido: que unas sub-tasks lo corrijan con tu instrucción,
+ * o, con `yo`, arreglarlo a mano en el worktree y retomarlo con `resume`.
+ */
+export function fixRun(
+  home: string,
+  id: string,
+  opts: {
+    readonly unidades: readonly string[];
+    readonly instruccion: string | undefined;
+    readonly yo: boolean;
+    readonly origen: Origen;
+  },
+  env: NodeJS.ProcessEnv,
+) {
+  const state = loadOrExplain(home, id);
+  const run = runPaths(home, id);
+  if (opts.yo && opts.unidades.length > 0)
+    throw new UserError("--yo y --unidad no van juntos: elegí una", `flowrunner status ${id}`);
+  if (opts.yo) {
+    requireOffered(state, id, `flowrunner fix ${id} --yo`);
+    const events = readLog(run.dir).events;
+    if (!events.some((e) => e.tipo === "preparado"))
+      throw new UserError("el run todavía no tiene worktree", `flowrunner status ${id}`);
+    const { worktree } = prepared(events);
+    appendEvent(run.dir, { tipo: "arreglo_manual_iniciado", origen: opts.origen });
+    return runStartedSchema.parse({
+      ok: true,
+      id,
+      accion: `editá ${worktree} y después: flowrunner resume ${id}`,
+    });
+  }
+  const unidades = [...new Set(opts.unidades)];
+  if (unidades.length === 0) {
+    throw new UserError(
+      "falta la sub-task: --unidad ST-n, o --yo para arreglarlo vos",
+      `flowrunner status ${id}`,
+    );
+  }
+  for (const u of unidades) requireOffered(state, id, `flowrunner fix ${id} --unidad ${u} `);
+  const instruccion = opts.instruccion?.trim() ?? "";
+  if (instruccion === "") {
+    throw new UserError(
+      "falta la instrucción: qué tiene que cambiar",
+      `flowrunner fix ${id} --unidad ${unidades[0] ?? "ST-n"} "<qué cambiar>"`,
+    );
+  }
+  if (isRunning(home, state))
+    throw new UserError(`el run ${id} ya está corriendo`, `flowrunner status ${id}`);
+  appendEvent(run.dir, { tipo: "arreglo_pedido", unidades, instruccion, origen: opts.origen });
+  return launchAnswer(home, id, `arreglando ${unidades.join(", ")}`, "arreglo pedido", env);
+}
+
+/**
+ * Seguir a la fase siguiente con la fase detenida en rojo. Es una decisión de la persona y queda en
+ * el informe y en la PR con su motivo: sin motivo no se acepta (ADR 0023).
+ */
+export function acceptRun(
+  home: string,
+  id: string,
+  motivo: string | undefined,
+  origen: Origen,
+  env: NodeJS.ProcessEnv,
+) {
+  const state = loadOrExplain(home, id);
+  requireOffered(state, id, `flowrunner accept ${id} `);
+  if (motivo === undefined || motivo.trim() === "") {
+    throw new UserError(
+      "falta el motivo: por qué seguir así",
+      `flowrunner accept ${id} "<por qué>"`,
+    );
+  }
+  if (isRunning(home, state))
+    throw new UserError(`el run ${id} ya está corriendo`, `flowrunner status ${id}`);
+  const run = runPaths(home, id);
+  appendEvent(run.dir, { tipo: "aceptado", fase: state.fase, motivo: motivo.trim(), origen });
+  const next = loadState(home, id).fase;
+  return launchAnswer(home, id, `aceptado: ${next} arrancó`, `aceptado: sigue en ${next}`, env);
 }
 
 /**

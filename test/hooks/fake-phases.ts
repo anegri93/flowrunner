@@ -3,7 +3,8 @@
 // FAKE_KEEP_REAL: fases separadas por comas que corren de verdad, como "preparar".
 // FAKE_ESPERA_APROBAR: aprobar espera la aprobación, como el de verdad.
 // FAKE_SEMAFORO: cada fase espera a que exista ese archivo, para que el test decida cuándo sigue.
-import { appendFileSync, existsSync } from "node:fs";
+// FAKE_VUELVE: una sub-task, como "ST-1": verificar se la devuelve a implementar solo la primera vez.
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PhaseFn, PhaseRegistry } from "../../src/runner/types.ts";
 import { PHASES } from "../../src/store/events.ts";
@@ -19,6 +20,13 @@ const fake: PhaseFn = async (ctx) => {
   }
   if (ctx.action.fase === "aprobar" && process.env.FAKE_ESPERA_APROBAR === "1") {
     return { tipo: "espera" };
+  }
+  const vuelve = process.env.FAKE_VUELVE;
+  if (ctx.action.fase === "verificar" && vuelve !== undefined && vuelve !== "") {
+    const ran = readFileSync(join(ctx.run.dir, "ejecuciones.txt"), "utf8").split("\n");
+    if (ran.filter((f) => f === "verificar").length === 1) {
+      return { tipo: "vuelve", unidades: [vuelve], motivo: "AC-1 sigue en rojo" };
+    }
   }
   // FAKE_SIN_PROBAR: probar deja un criterio sin probar, como cuando falta simular una falla.
   if (ctx.action.fase === "probar" && process.env.FAKE_SIN_PROBAR === "1") {

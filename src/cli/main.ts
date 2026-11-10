@@ -24,10 +24,13 @@ import { selfUpdate } from "../setup/app.ts";
 import { commandDir, describeInit, draftExistingBrain, init } from "../setup/init.ts";
 import { productionRuntime } from "../runner/production.ts";
 import { describeStats, describeStatsPorRun, stats, statsPorRun } from "../report/stats.ts";
+import { origenSchema, type Origen } from "../store/events.ts";
 import {
   abortRun,
+  acceptRun,
   acceptUntested,
   BIN,
+  fixRun,
   rerunRun,
   resumeRun,
   runProcess,
@@ -47,7 +50,14 @@ const USAGE = `uso: flowrunner <comando> [--json]
   status [run]                   lista los runs, o un run fase por fase
   watch [run] [--once|--json]    el árbol de un run, o de los activos, en vivo; run puede ser la clave
                                  --json --cerrados suma los últimos cerrados y abortados
-  resume <run>                   retoma un run detenido o interrumpido
+  resume <run>                   retoma un run detenido o interrumpido; después de fix --yo,
+                                 commitea tu arreglo y vuelve a verificar
+  fix <run> --unidad ST-n "<qué>"
+                                 que esa sub-task lo corrija sobre el código que ya está
+  fix <run> --yo                 lo arreglás vos en el worktree; después resume
+  accept <run> "<por qué>"       seguir a la fase siguiente igual
+                                 fix y accept, solo si el run detenido lo ofrece, con
+                                 [--origen terminal|claude|orca]; por defecto terminal
   rerun <run> --desde <fase>     rehace un run desde una fase
   accept-untested <run> "<por qué>"
                                  entrega aunque probar dejó criterios sin probar; el motivo
@@ -93,7 +103,14 @@ function describeRun(status: z.infer<typeof statusRunSchema>): string {
     lines.push(`  ${paso.fase}  ${fin}${paso.motivo === null ? "" : `: ${paso.motivo}`}`);
   }
   if (run.detenido !== null) {
-    lines.push(`Detenido: ${run.detenido.motivo}`, `Para seguir: ${run.detenido.siguiente}`);
+    lines.push(
+      `Detenido: ${run.detenido.motivo}`,
+      ...(run.detenido.unidades === undefined
+        ? []
+        : [`Parece ser de: ${run.detenido.unidades.join(", ")}`]),
+      "Opciones:",
+      ...run.detenido.opciones.map((o) => `  ${o.comando}  ·  ${o.que}`),
+    );
   }
   return lines.join("\n");
 }
@@ -122,6 +139,18 @@ async function reapuntar(env: NodeJS.ProcessEnv): Promise<{ ok: true; reapuntado
   return { ok: true, reapuntado };
 }
 
+/** De dónde viene la decisión: la skill pasa `claude`, el panel de Orca `orca` (ADR 0023). */
+function parseOrigen(value: unknown): Origen {
+  if (value === undefined) return "terminal";
+  const parsed = origenSchema.safeParse(value);
+  if (!parsed.success) throw new UserError("--origen tiene que ser terminal, claude u orca");
+  return parsed.data;
+}
+
+/** Un valor de `parseArgs` con `multiple`: siempre una lista de textos. */
+const strings = (value: unknown): string[] =>
+  (Array.isArray(value) ? value : [value]).filter((v): v is string => typeof v === "string");
+
 function need(value: string | undefined, what: string): string {
   if (value === undefined) throw new UserError(`falta ${what}`, USAGE);
   return value;
@@ -147,7 +176,9 @@ export async function main(
       desde: { type: "string" },
       nombre: { type: "string" },
       sesion: { type: "string" },
-      unidad: { type: "string" },
+      unidad: { type: "string", multiple: true },
+      yo: { type: "boolean", default: false },
+      origen: { type: "string" },
       fase: { type: "string" },
       confirmar: { type: "boolean", default: false },
       aplicar: { type: "boolean", default: false },
@@ -241,8 +272,34 @@ export async function main(
         return 0;
       }
       case "resume": {
-        const resumed = resumeRun(home, runArg(home, first), env);
+        const resumed = await resumeRun(home, runArg(home, first), env);
         print(resumed, `run ${resumed.id} ${resumed.accion}`);
+        return 0;
+      }
+      case "fix": {
+        const fixed = fixRun(
+          home,
+          runArg(home, first),
+          {
+            unidades: strings(values.unidad),
+            instruccion: rest.join(" "),
+            yo: values.yo === true,
+            origen: parseOrigen(values.origen),
+          },
+          env,
+        );
+        print(fixed, `run ${fixed.id} ${fixed.accion}`);
+        return 0;
+      }
+      case "accept": {
+        const accepted = acceptRun(
+          home,
+          runArg(home, first),
+          rest.join(" "),
+          parseOrigen(values.origen),
+          env,
+        );
+        print(accepted, `run ${accepted.id} ${accepted.accion}`);
         return 0;
       }
       case "accept-untested": {
@@ -283,14 +340,15 @@ export async function main(
       }
       case "report": {
         const id = runArg(home, first);
+        const unidad = strings(values.unidad)[0];
         if (typeof values.sesion === "string") {
           const session = showSession(home, id, values.sesion);
           print(session, session.texto);
         } else if (typeof values.fase === "string") {
           const phase = showPhase(home, id, values.fase);
           print(phase, phase.texto);
-        } else if (typeof values.unidad === "string") {
-          const unit = await showUnit(home, id, values.unidad, env);
+        } else if (unidad !== undefined) {
+          const unit = await showUnit(home, id, unidad, env);
           print(unit, unit.texto);
         } else {
           const report = showReport(home, id);

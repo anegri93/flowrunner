@@ -172,7 +172,10 @@ export const verificar: PhaseFn = async (ctx) => {
           previous.resultado.tipo === "vuelve" &&
           previous.resultado.motivo.includes(`${f.id} sigue en rojo`),
       );
-    const stalled = failing.some((f) => returned.includes(f.subtarea)) || repeated;
+    // Diagnosticar y reparar corren solos solo si el repo pidió vueltas: con 0, el primer rojo ya es
+    // una pregunta para la persona (D5, ADR 0023).
+    const stalled =
+      ctx.state.vueltasMax > 0 && (failing.some((f) => returned.includes(f.subtarea)) || repeated);
     if (stalled) {
       const diagnosed = await diagnose(ctx, {
         worktree,

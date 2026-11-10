@@ -1,5 +1,13 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import type { NewEvent, Outcome, Phase, RunEvent } from "../store/events.ts";
+import {
+  eventSchema,
+  type NewEvent,
+  type Outcome,
+  type Phase,
+  type RunEvent,
+} from "../store/events.ts";
 import { MAX_ATTEMPTS, nextAction, stateOf, type RunState } from "./engine.ts";
 
 const AT = "2026-11-07T10:00:00.000Z";
@@ -360,4 +368,320 @@ describe("reanudación", () => {
       }
     },
   );
+});
+
+describe("detenerse y preguntar (ADR 0023)", () => {
+  const R = "R1";
+  const withRounds = (vueltas: number): RunEvent => ({ ...created, vueltas });
+  const implemented = [...upTo("preparar", "planificar"), ...ok("aprobar"), ...ok("implementar")];
+  const back = (unidades: string[], motivo = "AC-1 sigue en rojo") =>
+    done("verificar", { tipo: "vuelve", unidades, motivo });
+  const commands = (s: RunState) => s.halt?.opciones.map((o) => o.comando);
+  const verifyQuestion = [withRounds(0), ...implemented, ...back(["ST-2"])];
+
+  // Si regresiona, el primer rojo dispara otra sesión de implementar sin que nadie la pida (VF-6).
+  test("con 0 vueltas, el primer rojo de verificar detiene con una pregunta", () => {
+    const s = stateOf(verifyQuestion);
+    expect(s.status).toBe("detenido");
+    expect(s.fase).toBe("verificar");
+    expect(s.halt?.unidades).toEqual(["ST-2"]);
+    expect(s.vueltas.verificar).toBe(1);
+    expect(s.halt?.motivo).toBe("verificar: AC-1 sigue en rojo");
+    expect(nextAction(s).tipo).toBe("fin");
+  });
+
+  // Si regresiona, las respuestas que ve la persona no son las que el CLI acepta.
+  test("las opciones de una pregunta de verificar salen en orden", () => {
+    const s = stateOf(verifyQuestion);
+    expect(commands(s)).toEqual([
+      `flowrunner fix ${R} --unidad ST-2 "<qué cambiar>"`,
+      `flowrunner fix ${R} --yo`,
+      `flowrunner accept ${R} "<por qué>"`,
+      `flowrunner rerun ${R} --desde planificar`,
+      `flowrunner abort ${R}`,
+    ]);
+    expect(s.halt?.siguiente).toBe(s.halt?.opciones[0]?.comando);
+    for (const o of s.halt?.opciones ?? []) expect(o.que).not.toBe("");
+  });
+
+  // Si regresiona, un run que ya corría cambia de comportamiento a mitad de camino.
+  test("un run viejo sin vueltas en run_creado sigue con dos vueltas", () => {
+    const old = [created, ...implemented];
+    const round = [...back(["ST-1"]), ...ok("implementar")];
+    const one = stateOf([...old, ...back(["ST-1"])]);
+    expect(one.vueltasMax).toBe(2);
+    expect(nextAction(one)).toMatchObject({ fase: "implementar", unidades: ["ST-1"] });
+    const two = stateOf([...old, ...round, ...back(["ST-1"])]);
+    expect(nextAction(two)).toMatchObject({ fase: "implementar", unidades: ["ST-1"] });
+    const three = stateOf([...old, ...round, ...round, ...back(["ST-1"])]);
+    expect(three.status).toBe("detenido");
+    expect(three.halt?.motivo).toMatch(/verificar devolvió trabajo 3 veces; el máximo es 2/);
+    expect(commands(three)?.[0]).toBe(`flowrunner fix ${R} --unidad ST-1 "<qué cambiar>"`);
+  });
+
+  // Si regresiona, arreglar lo que pidió la persona le gasta una vuelta, o pierde su instrucción.
+  test("arreglo_pedido vuelve a implementar con las sub-tasks y la instrucción, sin sumar vueltas", () => {
+    const s = stateOf([
+      ...verifyQuestion,
+      ev({
+        tipo: "arreglo_pedido",
+        unidades: ["ST-2"],
+        instruccion: "el CSV lleva BOM",
+        origen: "terminal",
+      }),
+    ]);
+    expect(s.status).toBe("en_curso");
+    expect(nextAction(s)).toMatchObject({
+      fase: "implementar",
+      unidades: ["ST-2"],
+      instruccion: "el CSV lleva BOM",
+    });
+    expect(s.vueltas.verificar).toBe(1);
+    expect(s.halt).toBeUndefined();
+  });
+
+  // Si regresiona, una sub-task bloqueada por la que se arregla no arranca nunca.
+  test("arreglo_pedido sobre una pregunta de implementar incluye las bloqueadas", () => {
+    const asked = [
+      withRounds(0),
+      ...upTo("preparar", "planificar"),
+      ...ok("aprobar"),
+      ...done("implementar", {
+        tipo: "pregunta",
+        motivo: "ST-2 no cambió ningún archivo",
+        unidades: ["ST-2", "ST-3"],
+      }),
+    ];
+    const halted = stateOf(asked);
+    expect(halted.status).toBe("detenido");
+    expect(commands(halted)).toEqual([
+      `flowrunner fix ${R} --unidad ST-2 "<qué cambiar>"`,
+      `flowrunner fix ${R} --unidad ST-3 "<qué cambiar>"`,
+      `flowrunner fix ${R} --yo`,
+      `flowrunner rerun ${R} --desde planificar`,
+      `flowrunner abort ${R}`,
+    ]);
+    const s = stateOf([
+      ...asked,
+      ev({ tipo: "arreglo_pedido", unidades: ["ST-2"], instruccion: "usá jsqr", origen: "orca" }),
+    ]);
+    expect(nextAction(s)).toMatchObject({
+      fase: "implementar",
+      unidades: ["ST-2", "ST-3"],
+      instruccion: "Para ST-2: usá jsqr",
+    });
+  });
+
+  // Si regresiona, un evento suelto manda a implementar un run que se detuvo por otra cosa.
+  test("arreglo_pedido que el halt no ofrece no cambia nada", () => {
+    const porEntorno = [
+      withRounds(0),
+      ...done("preparar", { tipo: "falla", clase: "entorno", motivo: "base roja" }),
+    ];
+    const fix = ev({
+      tipo: "arreglo_pedido",
+      unidades: ["ST-1"],
+      instruccion: "x",
+      origen: "terminal",
+    });
+    expect(stateOf([...porEntorno, fix])).toEqual(stateOf(porEntorno));
+    const running = [withRounds(0), ...ok("preparar")];
+    expect(stateOf([...running, fix])).toEqual(stateOf(running));
+  });
+
+  // Si regresiona, un arreglo a mano se pierde: el run sigue sin él o nunca vuelve a verificar.
+  test("fix a mano: espera tu resume y después vuelve a verificar", () => {
+    const waiting = stateOf([
+      ...verifyQuestion,
+      ev({ tipo: "arreglo_manual_iniciado", origen: "claude" }),
+    ]);
+    expect(waiting).toMatchObject({ status: "detenido", aMano: true, fase: "verificar" });
+    expect(waiting.halt?.motivo).toMatch(/arreglo a mano/);
+    expect(commands(waiting)).toEqual([`flowrunner resume ${R}`, `flowrunner abort ${R}`]);
+    expect(waiting.halt?.siguiente).toBe(`flowrunner resume ${R}`);
+    const after = stateOf([
+      ...verifyQuestion,
+      ev({ tipo: "arreglo_manual_iniciado", origen: "claude" }),
+      ev({ tipo: "arreglo_manual", sha: "abc1234" }),
+    ]);
+    expect(after).toMatchObject({ status: "en_curso", fase: "verificar", aMano: false });
+    expect(after.vueltas.verificar).toBe(1);
+    // Sin la espera a mano, el evento no hace nada.
+    expect(stateOf([...verifyQuestion, ev({ tipo: "arreglo_manual", sha: null })])).toEqual(
+      stateOf(verifyQuestion),
+    );
+  });
+
+  // Si regresiona, se entrega una sub-task sin hacer, o se saltea una fase que no se aceptó.
+  test("aceptado en verificar sigue a revisar; en implementar no hace nada", () => {
+    const accepted = stateOf([
+      ...verifyQuestion,
+      ev({ tipo: "aceptado", fase: "verificar", motivo: "AC-1 es flaky", origen: "terminal" }),
+    ]);
+    expect(nextAction(accepted)).toMatchObject({ fase: "revisar", intento: 1 });
+    const implementQuestion = [
+      withRounds(0),
+      ...upTo("preparar", "planificar"),
+      ...ok("aprobar"),
+      ...done("implementar", { tipo: "pregunta", motivo: "trabada", unidades: ["ST-1"] }),
+    ];
+    const inImplement = stateOf([
+      ...implementQuestion,
+      ev({ tipo: "aceptado", fase: "implementar", motivo: "x", origen: "terminal" }),
+    ]);
+    expect(inImplement).toEqual(stateOf(implementQuestion));
+    // Una fase que no es la del halt tampoco.
+    const otherPhase = stateOf([
+      ...verifyQuestion,
+      ev({ tipo: "aceptado", fase: "revisar", motivo: "x", origen: "terminal" }),
+    ]);
+    expect(otherPhase).toEqual(stateOf(verifyQuestion));
+  });
+
+  // Si regresiona, accept-untested deja de llevar a entregar, o su detención no dice cómo seguir.
+  test("sin_probar_aceptado sigue como antes, y su detención ofrece rerun, accept, fix --yo y abort", () => {
+    const hasta = [
+      withRounds(0),
+      ...upTo("preparar", "planificar"),
+      ...ok("aprobar"),
+      ...upTo("implementar", "verificar", "revisar"),
+      ...done("probar", { tipo: "falla", clase: "sin_probar", motivo: "AC-1 sin probar" }),
+    ];
+    const halted = stateOf(hasta);
+    expect(halted.sinProbar).toBe(true);
+    expect(commands(halted)).toEqual([
+      `flowrunner rerun ${R} --desde probar`,
+      `flowrunner accept ${R} "<por qué>"`,
+      `flowrunner fix ${R} --yo`,
+      `flowrunner abort ${R}`,
+    ]);
+    expect(halted.halt?.siguiente).toBe(`flowrunner rerun ${R} --desde probar`);
+    expect(halted.halt?.motivo).toContain(`flowrunner accept-untested ${R} "<por qué>"`);
+    const legacy = stateOf([...hasta, ev({ tipo: "sin_probar_aceptado", motivo: "backend" })]);
+    expect(nextAction(legacy)).toMatchObject({ fase: "entregar", intento: 1 });
+    const viaAccept = stateOf([
+      ...hasta,
+      ev({ tipo: "aceptado", fase: "probar", motivo: "backend", origen: "claude" }),
+    ]);
+    expect(nextAction(viaAccept)).toMatchObject({ fase: "entregar", intento: 1 });
+  });
+
+  // Si regresiona, alguna detención deja a la persona sin saber qué comando correr.
+  test("toda detención tiene opciones, y siguiente es la primera", () => {
+    const uso = (costo: number) =>
+      ev({
+        tipo: "uso",
+        fase: "planificar",
+        sesion: "s1",
+        modelo: "m",
+        costo_usd: costo,
+        tokens_entrada: 1,
+        tokens_salida: 1,
+        duracion_ms: 1,
+      });
+    const infra = done("entregar", { tipo: "falla", clase: "infra", motivo: "gh 502" });
+    const hastaRevisar = [
+      ...upTo("preparar", "planificar"),
+      ...ok("aprobar"),
+      ...upTo("implementar", "verificar", "revisar"),
+    ];
+    const cases: Record<string, RunEvent[]> = {
+      entorno: [created, ...done("preparar", { tipo: "falla", clase: "entorno", motivo: "x" })],
+      invariante: [
+        created,
+        ...done("preparar", { tipo: "falla", clase: "invariante", motivo: "x" }),
+      ],
+      "infra agotada": [created, ...hastaRevisar, ...ok("probar"), ...infra, ...infra, ...infra],
+      presupuesto: [
+        created,
+        ...ok("preparar"),
+        ev({ tipo: "accion_iniciada", fase: "planificar" }),
+        uso(11),
+      ],
+      "el mismo fallo dos veces": [
+        created,
+        ...ok("preparar"),
+        ...gate("planificar", "a"),
+        ...gate("planificar", "a"),
+      ],
+      sinProbar: [
+        created,
+        ...hastaRevisar,
+        ...done("probar", { tipo: "falla", clase: "sin_probar", motivo: "x" }),
+      ],
+      "vuelta agotada": [
+        withRounds(1),
+        ...implemented,
+        ...back(["ST-1"]),
+        ...ok("implementar"),
+        ...back(["ST-1"]),
+      ],
+      pregunta: [
+        created,
+        ...ok("preparar"),
+        ...done("planificar", { tipo: "pregunta", motivo: "falta un dato" }),
+      ],
+      "vuelve desde una fase que no puede": [
+        created,
+        ...ok("preparar"),
+        ...done("planificar", { tipo: "vuelve", unidades: ["ST-1"], motivo: "x" }),
+      ],
+    };
+    for (const [name, events] of Object.entries(cases)) {
+      const s = stateOf(events);
+      expect(s.status, name).toBe("detenido");
+      expect(s.halt?.opciones.length, name).toBeGreaterThan(0);
+      expect(s.halt?.siguiente, name).toBe(s.halt?.opciones[0]?.comando);
+      expect(s.halt?.opciones.at(-1)?.comando, name).toBe(`flowrunner abort ${R}`);
+    }
+    expect(commands(stateOf(cases.entorno ?? []))).toEqual([
+      `flowrunner resume ${R}`,
+      `flowrunner abort ${R}`,
+    ]);
+    expect(commands(stateOf(cases["el mismo fallo dos veces"] ?? []))).toEqual([
+      `flowrunner rerun ${R} --desde planificar`,
+      `flowrunner abort ${R}`,
+    ]);
+  });
+
+  // Si regresiona, VF-6 vuelve a dar nueve vueltas y 70 minutos por una traba de cinco.
+  test("la secuencia de VF-6 se detiene en la primera vuelta de verificar", () => {
+    const motivo = readFileSync(
+      join(import.meta.dirname, "fixtures", "vf6-verificar-ac12.txt"),
+      "utf8",
+    );
+    const s = stateOf([
+      withRounds(0),
+      ...ok("preparar"),
+      ...ok("planificar"),
+      ...done("aprobar", { tipo: "espera" }),
+      ev({ tipo: "aprobado" }),
+      ...ok("implementar"),
+      ...done("verificar", { tipo: "vuelve", unidades: ["ST-6"], motivo }),
+    ]);
+    expect(s.status).toBe("detenido");
+    expect(s.fase).toBe("verificar");
+    expect(s.halt?.opciones[0]?.comando).toBe(`flowrunner fix ${R} --unidad ST-6 "<qué cambiar>"`);
+    expect(s.halt?.motivo).toBe(`verificar: ${motivo}`);
+    expect(nextAction(s)).toEqual({ tipo: "fin", status: "detenido" });
+  });
+
+  // Si regresiona, un run de antes de esta versión no se puede leer, o cambia de estado al actualizar.
+  test("un log viejo, sin vueltas ni opciones, se lee y se reduce igual, y calcula sus opciones", () => {
+    const old = [
+      '{"tipo":"run_creado","at":"2026-11-09T10:00:00.000Z","run_id":"R1","clave":"SHOP-1","proyecto":"acme","repo":"/r"}',
+      ...["preparar", "planificar", "aprobar", "implementar"].flatMap((fase) => [
+        `{"tipo":"accion_iniciada","at":"2026-11-09T10:00:00.000Z","fase":"${fase}"}`,
+        `{"tipo":"accion_terminada","at":"2026-11-09T10:00:00.000Z","fase":"${fase}","resultado":{"tipo":"ok"}}`,
+      ]),
+      '{"tipo":"accion_iniciada","at":"2026-11-09T10:00:00.000Z","fase":"verificar"}',
+      '{"tipo":"accion_terminada","at":"2026-11-09T10:00:00.000Z","fase":"verificar","resultado":{"tipo":"falla","clase":"entorno","motivo":"falta jsqr"}}',
+      '{"tipo":"aprobado","at":"2026-11-09T10:00:00.000Z"}',
+    ].map((line) => eventSchema.parse(JSON.parse(line)));
+    const s = stateOf(old);
+    expect(s).toMatchObject({ status: "detenido", fase: "verificar", vueltasMax: 2, aMano: false });
+    expect(s.halt?.motivo).toBe("verificar: falta jsqr");
+    expect(commands(s)).toEqual([`flowrunner resume ${R}`, `flowrunner abort ${R}`]);
+    expect(s.halt?.siguiente).toBe(`flowrunner resume ${R}`);
+  });
 });

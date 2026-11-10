@@ -1,0 +1,21 @@
+AC-12 sigue en rojo: `./.flowrunner/verify.sh` salió 1:
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/marcas/marcas.test.ts[2m > [22midentidad visual de la marca[2m > [22muna marca que ya tenía la regla vieja la cambia al abrir la base, y sus otras reglas quedan
+[31m[1mError[22m: table lugar_produccion already exists[39m
+[36m [2m❯[22m migrar src/db/db.ts:[2m326:10[22m[39m
+    [90m324|[39m     db[33m.[39m[34mexec[39m([32m'BEGIN'[39m)[33m;[39m
+    [90m325|[39m     [35mtry[39m {
+    [90m326|[39m       db[33m.[39m[34mexec[39m([33mMIGRACIONES[39m[v] [33m??[39m [32m''[39m)[33m;[39m
+    [90m   |[39m          [31m^[39m
+    [90m327|[39m       db[33m.[39m[34mexec[39m([32m`PRAGMA user_version = [39m[36m${[39mv [33m+[39m [34m1[39m[36m}[39m[32m`[39m)[33m;[39m
+    [90m328|[39m       db[33m.[39m[34mexec[39m([32m'COMMIT'[39m)[33m;[39m
+[90m [2m❯[22m abrirDb src/db/db.ts:[2m316:3[22m[39m
+[90m [2m❯[22m src/marcas/marcas.test.ts:[2m125:10[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯[22m[39m
+
+[warn] src/marcas/carpeta.ts
+[warn] src/remoto/rutas.ts
+[warn] Code style issues found in 2 files. Run Prettier with --write to fix.

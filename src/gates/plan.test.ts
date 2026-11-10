@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { repoWith } from "../../test/helpers/git.ts";
 import type { Feature } from "../feature/feature.ts";
@@ -285,6 +286,32 @@ describe("los comandos de los criterios", () => {
     );
     expect(await checkCommandsFail(p, repo, process.env)).toEqual([
       "AC-1 ya pasa antes de implementar: `true` tiene que fallar",
+    ]);
+  });
+
+  // Regresión de PIZ-3: `vitest run <archivo> -t "<un nombre que no existe>"` saltea todos los tests y
+  // sale 0. El gate decía solo «ya pasa», y el planificador no sabía por qué.
+  test("un filtro que no coincide con ningún test se rechaza diciendo que no probó nada", async () => {
+    const vitest = fileURLToPath(new URL("../../node_modules/.bin/vitest", import.meta.url));
+    const dir = repoWith({
+      "tests/a.test.js": 'test("suma", () => { expect(1 + 1).toBe(2); });\n',
+    });
+    const filtrado = `${vitest} run tests/a.test.js --globals -t "importar un documento"`;
+    // La salida de jest con el mismo caso, que también sale 0.
+    const jest = "printf 'Tests:       2 skipped, 2 total\\n' >&2";
+    const p = plan(
+      [task("ST-1", ["a"]), task("ST-2", ["b"])],
+      [
+        { id: "AC-1", comando: filtrado, subtarea: "ST-1" },
+        { id: "AC-2", comando: jest, subtarea: "ST-2" },
+      ],
+    );
+    const env = Object.fromEntries(
+      Object.entries(process.env).filter(([k]) => !k.startsWith("VITEST")),
+    );
+    expect(await checkCommandsFail(p, dir, env)).toEqual([
+      'AC-1 ya pasa antes de implementar sin probar nada: ningún test coincide con `-t "importar un documento"`, y el comando da verde igual. El test del criterio va en el plan como test bloqueado, con un nombre que el filtro encuentre, o el comando apunta a su archivo de test',
+      `AC-2 ya pasa antes de implementar sin probar nada: todos los tests de \`${jest}\` salen salteados, y el comando da verde igual. El test del criterio va en el plan como test bloqueado, con un nombre que el filtro encuentre, o el comando apunta a su archivo de test`,
     ]);
   });
 

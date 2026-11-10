@@ -60,10 +60,13 @@ Si el repo tiene `.flowrunner/`, o el arranque de la sesión avisa que usa flowr
 
    Contexto es opcional, pero cada cita que comprobaste en el paso 2 va ahí, con la forma `ruta:línea — qué hace`. Solo código que ya existe: `feature check` frena una cita a un archivo que no está.
 
+   No pongas como criterio que el repo pase sus chequeos («`npm run check` pasa», «el build pasa»): eso lo corre verificar en cada vuelta y probar no lo puede probar. Si la feature autoriza una dependencia, decí con qué versión de Node tiene que andar: la mínima del repo.
+
 5. Corré `flowrunner feature check <archivo> --json` hasta que salga `ok`. Si trae `avisos`, mostráselos a la persona antes de lanzar:
    - un criterio sobre `CLAUDE.md` o `.claude/` lo tiene que hacer ella a mano, porque ningún agente del run puede escribirlos;
    - un criterio que usa un script que no existe en el `package.json` del repo: si la feature lo crea, está bien; si no, el criterio no se puede cumplir;
    - un criterio que se comprueba solo en documentación: proponele a la persona un criterio que ejecute lo documentado, como correr el comando o llamar al endpoint;
+   - un criterio que solo pide que el repo pase sus chequeos: sacalo; si al verify del repo le falta ese chequeo, proponé sumarlo en una PR del repo;
    - el repo no tiene `probar` en su config: la fase probar se va a saltear y nadie va a usar la feature en la app antes de la PR. Ofrecé armar esa sección en una PR del repo antes de lanzar, o lanzar igual si la persona lo elige.
 
    Después ofrecé lanzar.

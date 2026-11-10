@@ -85,7 +85,8 @@ export const EXPLORAR_TIMEOUT_MS = 15 * 60_000;
 
 /**
  * La marca de que el primer plan del run ya intentó explorar y falló: el próximo plan no vuelve a
- * explorar, como cuando hay informe. Un `limite` no la deja: la exploración no llegó a correr entera.
+ * explorar, como cuando hay informe. Un `limite` o una falla del entorno no la dejan: no son de la
+ * exploración, y el run no avanza hasta que se resuelven.
  */
 export const EXPLORACION_FALLIDA = "exploracion-fallida.txt";
 
@@ -130,7 +131,10 @@ export async function explorar(
       fase: "planificar",
       texto: `la exploración previa falló (${result.clase}): ${result.motivo}; se planifica sin informe`,
     });
-    writeFileSync(join(run.dir, EXPLORACION_FALLIDA), `${result.clase}: ${result.motivo}\n`);
+    // Una falla del entorno, como un login caído, no es de la exploración: el run se detiene igual en el
+    // planificador, y al retomarlo con el entorno arreglado, el primer plan explora.
+    if (result.clase !== "entorno")
+      writeFileSync(join(run.dir, EXPLORACION_FALLIDA), `${result.clase}: ${result.motivo}\n`);
     return { tipo: "sin_informe" };
   }
   const md = exploracionMd(result.output);

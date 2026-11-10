@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, test } from "vitest";
 import { git, tempDir } from "../../test/helpers/git.ts";
 import { contextFor, makeProject, newRun, testDeps } from "../../test/helpers/project.ts";
@@ -1159,6 +1160,39 @@ describe("planificar", () => {
       expect(avisosDe(run).filter((t) => t.startsWith("la exploración previa falló"))).toHaveLength(
         1,
       );
+    });
+
+    // Si regresiona, un login caído hace fallar la exploración, el run se detiene, y al retomarlo con el
+    // login arreglado el primer plan real del run ya no explora.
+    test("una exploración que falló por el entorno se vuelve a intentar", async () => {
+      const { run, deps, sim } = await conExplorar(() => plan);
+      let exploraciones = 0;
+      let loginCaido = true;
+      const query: typeof sim.query = (args) => {
+        if (!esExplorador(args.prompt)) return sim.query(args);
+        exploraciones++;
+        if (!loginCaido) return simQuery([{ output: informe }]).query(args);
+        // El SDK marca así un login rechazado: `runSession` lo devuelve como falla del entorno.
+        const caido = {
+          type: "assistant",
+          error: "authentication_failed",
+        } as unknown as SDKMessage;
+        return (async function* () {
+          yield await Promise.resolve(caido);
+        })();
+      };
+      const conLogin = { ...deps, query };
+      expect(await planificar(contextFor(run, "planificar", conLogin))).toEqual({ tipo: "ok" });
+      expect(avisosDe(run)).toEqual([
+        expect.stringMatching(/^la exploración previa falló \(entorno\)/),
+      ]);
+      loginCaido = false;
+      appendEvent(run.dir, { tipo: "cambios_pedidos", motivo: "renombrá el serializador" });
+      await planificar(
+        contextFor(run, "planificar", conLogin, { instruccion: "renombrá el serializador" }),
+      );
+      expect(exploraciones).toBe(2);
+      expect(existsSync(join(run.dir, "exploracion.md"))).toBe(true);
     });
 
     // Si regresiona, la opción apagada igual paga una sesión más, o el prompt queda con la marca sin

@@ -440,6 +440,41 @@ describe("runTree", () => {
     expect(tree.haceSegundos).toBeUndefined();
   });
 
+  // Si regresiona, durante la espera de un corte de red la sub-task se ve fallida, y la persona
+  // rehace o aborta un run que solo esperaba la red.
+  test("una sub-task cortada por la red se ve cortada, no fallida", () => {
+    const tree = runTree({
+      events: [
+        ...base,
+        { tipo: "accion_terminada", at: at(161), fase: "aprobar", resultado: { tipo: "ok" } },
+        { tipo: "aprobado", at: at(200) },
+        { tipo: "accion_iniciada", at: at(200), fase: "implementar" },
+        { tipo: "unidad", at: at(201), fase: "implementar", unidad: "ST-1", estado: "iniciada" },
+        {
+          tipo: "unidad",
+          at: at(210),
+          fase: "implementar",
+          unidad: "ST-1",
+          estado: "fallida",
+          motivo: "la sesión implementar-ST-1-1 falló: getaddrinfo ENOTFOUND api.anthropic.com",
+          corte_de_red: true,
+        },
+        {
+          tipo: "accion_terminada",
+          at: at(210),
+          fase: "implementar",
+          resultado: { tipo: "falla", clase: "infra", motivo: "getaddrinfo ENOTFOUND" },
+        },
+      ],
+      tasks,
+      titulo: "Cambios de un toque",
+      sessions: new Map(),
+      now: T0 + 220_000,
+    });
+    const impl = tree.fases.find((f) => f.fase === "implementar");
+    expect(impl?.unidades.find((u) => u.id === "ST-1")?.estado).toBe("cortada");
+  });
+
   // Si regresiona, watch muestra como fallado algo que el run ya resolvió y siguió adelante.
   test("una fase que falló pero que el run dejó atrás se ve resuelta, y su sub-task integrada también", () => {
     const tree = runTree({

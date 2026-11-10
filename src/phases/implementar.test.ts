@@ -22,6 +22,7 @@ import { appendEvent, readLog } from "../store/run-log.ts";
 import { repoConfigSchema } from "../config/schemas.ts";
 import { checkCommand } from "../tripwires/comandos.ts";
 import {
+  currentEntry,
   implementar,
   integradasText,
   prefersExact,
@@ -745,6 +746,90 @@ describe("cortes de red en implementar", () => {
     expect(final.status).toBe("entregado");
     expect(sessionsOf(sim.records, "ST-2")).toBe(1);
     expect(sessionsOf(sim.records, "ST-1")).toBe(6);
+  });
+
+  // Si regresiona, un corte esconde un límite (o un entorno, como la credencial): el run espera el
+  // backoff y vuelve a chocar, en vez de pausar hasta la hora del límite.
+  test("un límite que llega junto a un corte de red gana: pausa sin esperar el backoff", async () => {
+    const sim = simQuery(byUnit({ "ST-1": [cut], "ST-2": [{ limit: true, delayMs: 200 }] }));
+    const deps = testDeps({ query: sim.query });
+    const { run } = await plannedRun(pair, TESTS, deps);
+    const { final, waits } = await runAll(run, deps);
+    expect(waits).toEqual([]);
+    expect(final.status).toBe("pausado_por_limite");
+  });
+
+  // Si regresiona, retomar la misma entrada después de varios límites inventa una sub-task fallida,
+  // «no salió en 3 intentos. Último motivo: sin motivo», sin que haya fallado nunca.
+  test("un intento que cortó un límite no cuenta al retomar la misma entrada", async () => {
+    const limit: SimScript = { limit: true };
+    // Cada vuelta: un corte, que deja la entrada con reintentos de infraestructura, y un límite.
+    const sim = simQuery(
+      byUnit({ "ST-1": [cut, limit, cut, limit, cut, limit, done("src/a/uno.js")] }),
+    );
+    const deps = testDeps({ query: sim.query });
+    const { run } = await plannedRun(planWith([st("ST-1", ["src/a/"])]), TESTS, deps);
+    expect((await runAll(run, deps)).final.status).toBe("pausado_por_limite");
+    for (let i = 0; i < 2; i++) {
+      appendEvent(run.dir, { tipo: "reanudado" });
+      expect((await runAll(run, deps)).final.status).toBe("pausado_por_limite");
+    }
+    appendEvent(run.dir, { tipo: "reanudado" });
+    const { final } = await runAll(run, deps);
+    expect(final.status).toBe("entregado");
+    expect(of(run.dir, "ST-1").at(-1)).toBe("integrada");
+  });
+
+  // Si regresiona, una espera en la cola rehace lo integrado, o un fix o un rerun después de un corte
+  // siguen contando los intentos de antes; y un run viejo cambia lo que ve implementar.
+  test("la entrada sigue a través de la cola y se abre de nuevo con un fix o un rerun", () => {
+    const AT = "2026-11-07T10:00:00.000Z";
+    const created: RunEvent = {
+      tipo: "run_creado",
+      at: AT,
+      run_id: "R1",
+      clave: "SHOP-1",
+      proyecto: "acme",
+      repo: "/r",
+      reintentos_red: 3,
+    };
+    const e = (event: Parameters<typeof appendEvent>[1]): RunEvent => ({ ...event, at: AT });
+    const start = e({ tipo: "accion_iniciada", fase: "implementar" });
+    const unit = e({ tipo: "unidad", fase: "implementar", unidad: "ST-1", estado: "integrada" });
+    const red = e({
+      tipo: "accion_terminada",
+      fase: "implementar",
+      resultado: { tipo: "falla", clase: "infra", motivo: CUT },
+    });
+    const before = [
+      created,
+      ...(["preparar", "planificar", "aprobar"] as const).flatMap((fase) => [
+        e({ tipo: "accion_iniciada", fase }),
+        e({ tipo: "accion_terminada", fase, resultado: { tipo: "ok" } }),
+      ]),
+      start,
+      unit,
+      red,
+      red,
+      red,
+      red,
+    ];
+    // Cuatro cortes: detenido. Retomar pasa por la cola y sigue la entrada.
+    const queued = [
+      ...before,
+      e({ tipo: "reanudado" }),
+      e({ tipo: "encolado" }),
+      e({ tipo: "reanudado" }),
+      start,
+    ];
+    expect(currentEntry(queued)).toContainEqual(unit);
+    // Un rerun desde implementar abre una entrada nueva.
+    const redo = [...before, e({ tipo: "rehacer", desde: "implementar" }), start];
+    expect(currentEntry(redo)).toEqual([]);
+    // Un run viejo, sin reintentos_red: cada acción abre su entrada, como antes.
+    const { reintentos_red: _, ...old } = created;
+    expect(currentEntry([old, ...queued.slice(1)])).toEqual([]);
+    expect(currentEntry([old, ...before.slice(1), start])).toEqual([]);
   });
 
   // Fija lo que no cambia: un run creado antes de distinguir los cortes de red los reintenta dentro de

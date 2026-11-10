@@ -131,7 +131,15 @@ reintentos de infraestructura esperaban 5 y 20 s.
   y un run creado antes de `reintentos_red` también.
 - **El reintento sigue la misma entrada a implementar,** como en el engine: lo integrado antes del
   corte no se rehace, y un intento cortado no cuenta para `MAX_UNIT_ATTEMPTS`. Retomar una detención a
-  la que se llegó con reintentos de infraestructura, como la de cuatro cortes, también la sigue.
+  la que se llegó con reintentos de infraestructura, como la de cuatro cortes, también la sigue. Un
+  run creado antes de `reintentos_red` abre una entrada en cada acción, como antes.
+- **Un intento que terminó con la acción sin cerrarse** (un corte, un límite, el entorno) no cuenta
+  para `MAX_UNIT_ATTEMPTS`: cuentan los que la sub-task reintentó en la misma acción, y el que dejó
+  abierto un proceso que murió.
+- **Una detención le gana a un corte:** si en la misma vuelta una sub-task se corta y otra choca con
+  el límite o el entorno, la fase devuelve la detención, con su hora o su motivo, y no el corte.
+- **watch y Orca muestran la sub-task cortada como «cortada»**, y `flowrunner etapa`, como pendiente,
+  sin contar sus cortes como intentos.
 
 Detalle en `docs/plan-de-raiz/pr-07-reintentos-de-red.md`.
 
@@ -174,4 +182,5 @@ Detalle en `docs/plan-de-raiz/pr-07-reintentos-de-red.md`.
   reintentos de red con sus esperas, dos para el resto, y `doctor` primero ante una credencial.
 - `src/phases/implementar.test.ts`, «cortes de red en implementar»: la sub-task cortada espera sin
   gastar sus intentos, cuatro cortes detienen con `resume`, lo integrado no se rehace al reintentar ni
-  al retomar, y un run viejo reintenta como antes.
+  al retomar, un límite le gana a un corte, un límite no gasta intentos, la entrada sigue a través de
+  la cola, y un run viejo reintenta como antes.

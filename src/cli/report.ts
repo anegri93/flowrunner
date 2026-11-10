@@ -74,9 +74,13 @@ export function unitHistory(events: readonly RunEvent[], unidad: string) {
   const own = events
     .slice(since + 1)
     .filter((e): e is UnitEvent => e.tipo === "unidad" && e.unidad === unidad);
+  const last = own.at(-1);
   return {
-    estado: own.at(-1)?.estado ?? ("pendiente" as const),
-    intentos: own.filter((e) => e.estado === "iniciada").length,
+    // Cortada por la red: el engine la reintenta, o espera tu `resume`. Sus cortes no son intentos.
+    estado: last?.corte_de_red === true ? ("pendiente" as const) : (last?.estado ?? "pendiente"),
+    intentos:
+      own.filter((e) => e.estado === "iniciada").length -
+      own.filter((e) => e.corte_de_red === true).length,
     shas: own.flatMap((e) => (e.estado === "integrada" && e.sha !== undefined ? [e.sha] : [])),
   };
 }

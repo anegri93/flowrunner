@@ -26,6 +26,8 @@ export interface SimScript {
   readonly match?: string;
   /** La sesión se corta con este error después del init, como un corte de red del SDK. */
   readonly throws?: string;
+  /** La sesión choca con el límite de la suscripción: un `rate_limit_event` rechazado. */
+  readonly limit?: true;
 }
 
 export interface SimRecord {
@@ -95,6 +97,12 @@ export function simQuery(
       if (script.throws !== undefined) {
         concurrency.active--;
         throw new Error(script.throws);
+      }
+      if (script.limit === true) {
+        yield {
+          type: "rate_limit_event",
+          rate_limit_info: { status: "rejected", resetsAt: 1_794_042_000 },
+        } as unknown as SDKMessage;
       }
       for (const [i, call] of (script.calls ?? []).entries()) {
         const id = `toolu_sim_${n}_${i}`;

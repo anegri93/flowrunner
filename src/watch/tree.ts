@@ -34,7 +34,10 @@ export interface SessionNode {
   readonly ultimo: string | undefined;
 }
 
-/** `cortada`: estaba corriendo cuando el run terminó (un abort), y ya no corre nada. */
+/**
+ * `cortada`: estaba corriendo cuando el run terminó (un abort), y ya no corre nada; o la cortó la red,
+ * y el engine la reintenta o espera tu `resume`.
+ */
 export type UnitState =
   "pendiente" | "corriendo" | "cortada" | "commiteada" | "integrada" | "fallida" | "sin_cambios";
 
@@ -267,7 +270,9 @@ export function runTree(input: TreeInput): RunTree {
   const unitStates = new Map<string, UnitState>();
   for (const e of events) {
     if (redoesFrom(e, IMPLEMENTAR)) unitStates.clear();
-    else if (e.tipo === "unidad") unitStates.set(e.unidad, UNIT_STATE[e.estado]);
+    // Cortada por la red no es fallida: el engine la reintenta, o espera tu `resume`.
+    else if (e.tipo === "unidad")
+      unitStates.set(e.unidad, e.corte_de_red === true ? "cortada" : UNIT_STATE[e.estado]);
   }
 
   /** Cuándo empezó por última vez cada fase: lo que dice si el run dejó atrás una falla. */

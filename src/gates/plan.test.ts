@@ -25,7 +25,11 @@ const feature = {
   fueraDeAlcance: [],
 } satisfies Feature;
 
-const rules = { lockfiles: ["pnpm-lock.yaml"], manifests: ["package.json"] };
+const rules = {
+  lockfiles: ["pnpm-lock.yaml"],
+  manifests: ["package.json"],
+  verify: ".flowrunner/verify.sh",
+};
 
 const task = (id: string, alcance: string[], extra: Partial<Subtask> = {}): Subtask => ({
   id,
@@ -142,7 +146,7 @@ describe("forma del plan", () => {
       ],
     );
     expect(checkPlanShape(p, feature, repo, rules, esVerify)).toEqual([
-      "AC-1 es del run, pero solo un criterio cuyo comando es el verify del repo puede serlo: asignalo a la sub-task que lo cubre",
+      "AC-1 es del run, pero `node tests/ac1.mjs` no es el verify del repo. Si el criterio pide el repo en verde, su comando es `./.flowrunner/verify.sh` tal cual, sin nada antes ni después; si no, asignalo a la sub-task que lo cubre",
     ]);
   });
 

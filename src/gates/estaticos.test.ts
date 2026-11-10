@@ -80,7 +80,7 @@ describe("chequeos estáticos", () => {
       await chequeosEstaticos(input({ plan: delRun, esVerify: (c) => c.endsWith("verify.sh") })),
     ).toEqual([]);
     expect(await chequeosEstaticos(input({ plan: delRun }))).toEqual([
-      "AC-1 es del run, pero solo un criterio cuyo comando es el verify del repo puede serlo: asignalo a la sub-task que lo cubre",
+      "AC-1 es del run, pero `./.flowrunner/verify.sh` no es el verify del repo. Si el criterio pide el repo en verde, su comando es `./.flowrunner/verify.sh` tal cual, sin nada antes ni después; si no, asignalo a la sub-task que lo cubre",
     ]);
   });
 

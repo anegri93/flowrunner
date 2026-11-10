@@ -49,41 +49,50 @@ function seccion(titulo: string, items: readonly string[]): string {
   return [`## ${titulo}`, "", ...(items.length === 0 ? ["(ninguno)"] : items)].join("\n");
 }
 
+/**
+ * Un texto del modelo en una sola línea: con saltos, un ítem podría armar encabezados propios dentro de
+ * la sección de datos del prompt del planificador.
+ */
+const unaLinea = (texto: string) => texto.replace(/\s*\n\s*/g, " ").trim();
+
 /** El informe en Markdown, para el prompt del planificador y para runs/<id>/exploracion.md. */
 export function exploracionMd(e: Exploracion): string {
+  const items = (lista: readonly string[]) => lista.map((t) => `- ${unaLinea(t)}`);
   return `${[
     seccion(
       "Archivos",
-      e.archivos.map((a) => `- ${a.ruta}${a.lineas === "" ? "" : `:${a.lineas}`} — ${a.que}`),
+      items(e.archivos.map((a) => `${a.ruta}${a.lineas === "" ? "" : `:${a.lineas}`} — ${a.que}`)),
     ),
     seccion(
       "Funciones",
-      e.funciones.map(
-        (f) =>
-          `- \`${f.simbolo}\` (${f.donde}) — ${f.que}. Llamadores: ${f.llamadores.length === 0 ? "(ninguno)" : f.llamadores.join(", ")}`,
+      items(
+        e.funciones.map(
+          (f) =>
+            `\`${f.simbolo}\` (${f.donde}) — ${f.que}. Llamadores: ${f.llamadores.length === 0 ? "(ninguno)" : f.llamadores.join(", ")}`,
+        ),
       ),
     ),
     seccion(
       "Tests que ya existen",
-      e.tests_existentes.map((t) => `- ${t.ruta} — ${t.que_fija}`),
+      items(e.tests_existentes.map((t) => `${t.ruta} — ${t.que_fija}`)),
     ),
-    seccion(
-      "Riesgos",
-      e.riesgos.map((r) => `- ${r}`),
-    ),
-    seccion(
-      "Dudas",
-      e.dudas.map((d) => `- ${d}`),
-    ),
+    seccion("Riesgos", items(e.riesgos)),
+    seccion("Dudas", items(e.dudas)),
   ].join("\n\n")}\n`;
 }
 
 export const EXPLORAR_TIMEOUT_MS = 15 * 60_000;
 
 /**
+ * La marca de que el primer plan del run ya intentó explorar y falló: el próximo plan no vuelve a
+ * explorar, como cuando hay informe. Un `limite` no la deja: la exploración no llegó a correr entera.
+ */
+export const EXPLORACION_FALLIDA = "exploracion-fallida.txt";
+
+/**
  * Corre la sesión de exploración y escribe runs/<id>/exploracion.md. Devuelve el Markdown, o
- * `sin_informe` si la sesión falló (deja un aviso), o el outcome `limite` para que planificar lo
- * devuelva.
+ * `sin_informe` si la sesión falló (deja un aviso y la marca `EXPLORACION_FALLIDA`), o el outcome
+ * `limite` para que planificar lo devuelva.
  */
 export async function explorar(
   ctx: PhaseContext,
@@ -121,6 +130,7 @@ export async function explorar(
       fase: "planificar",
       texto: `la exploración previa falló (${result.clase}): ${result.motivo}; se planifica sin informe`,
     });
+    writeFileSync(join(run.dir, EXPLORACION_FALLIDA), `${result.clase}: ${result.motivo}\n`);
     return { tipo: "sin_informe" };
   }
   const md = exploracionMd(result.output);

@@ -42,7 +42,7 @@ import { SIN_COMANDOS } from "../tripwires/comandos.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
 import { isTestFile } from "../tripwires/rules.ts";
 import { copyEnvFiles } from "./env-files.ts";
-import { explorar } from "./explorar.ts";
+import { EXPLORACION_FALLIDA, explorar } from "./explorar.ts";
 import { runFixers } from "./fixers.ts";
 import { reinstalarSiCambiaron } from "./reinstalar.ts";
 import { conEntorno } from "./turno-entorno.ts";
@@ -435,7 +435,7 @@ function textosDeConserva(events: readonly RunEvent[], replan: Replan): string[]
 /**
  * El informe del explorador previo, si lo hay. Solo el primer plan del run explora: si
  * `exploracion.md` ya existe, un replan, un pedido de cambios o un reintento lo reusan. Una exploración
- * que falla deja planificar sin informe; un `limite` se devuelve tal cual, y si lo que gastó detuvo el
+ * que falla deja planificar sin informe, también en los planes que siguen; un `limite` se devuelve tal cual, y si lo que gastó detuvo el
  * run por su tope, la sesión del planificador no se abre: lo pasaría más.
  */
 async function informePrevio(
@@ -448,7 +448,9 @@ async function informePrevio(
 > {
   const file = join(ctx.run.dir, "exploracion.md");
   if (existsSync(file)) return { tipo: "seguir", md: readFileSync(file, "utf8") };
-  if (!comun.config.explorar_antes) return { tipo: "seguir", md: undefined };
+  // El primer plan ya intentó explorar y falló: los que siguen tampoco tienen informe.
+  if (!comun.config.explorar_antes || existsSync(join(ctx.run.dir, EXPLORACION_FALLIDA)))
+    return { tipo: "seguir", md: undefined };
   const { worktree, config, feature } = comun;
   const e = await explorar(ctx, { worktree, config, feature, codigo });
   if (e.tipo === "limite") return { tipo: "cortar", result: e };

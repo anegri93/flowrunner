@@ -1132,6 +1132,35 @@ describe("planificar", () => {
       expect(sim.records[1]?.prompt).toContain("(no hubo exploración previa)");
     });
 
+    // Si regresiona, una exploración que falla siempre igual se vuelve a pagar en cada replan, pedido de
+    // cambios o reintento: solo el primer plan del run explora (decisión 4).
+    test("una exploración que falló no se repite en el próximo plan", async () => {
+      const { run, deps, sim } = await conExplorar((prompt, n) =>
+        esExplorador(prompt)
+          ? { output: { archivos: "todo" } }
+          : n === 1
+            ? plan
+            : { output: goodPlan },
+      );
+      appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+      const first = await planificar(contextFor(run, "planificar", deps));
+      expect(first).toEqual({ tipo: "ok" });
+      appendEvent(run.dir, { tipo: "accion_terminada", fase: "planificar", resultado: first });
+      appendEvent(run.dir, { tipo: "cambios_pedidos", motivo: "renombrá el serializador" });
+      appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+      expect(
+        await planificar(
+          contextFor(run, "planificar", deps, { instruccion: "renombrá el serializador" }),
+        ),
+      ).toEqual({ tipo: "ok" });
+      expect(sim.records.filter((r) => esExplorador(r.prompt))).toHaveLength(1);
+      expect(sim.records).toHaveLength(3);
+      expect(sim.records[2]?.prompt).toContain("(no hubo exploración previa)");
+      expect(avisosDe(run).filter((t) => t.startsWith("la exploración previa falló"))).toHaveLength(
+        1,
+      );
+    });
+
     // Si regresiona, la opción apagada igual paga una sesión más, o el prompt queda con la marca sin
     // reemplazar.
     test("sin explorar_antes no hay sesión de exploración", async () => {

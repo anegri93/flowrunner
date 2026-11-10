@@ -161,8 +161,8 @@ Conviene en features grandes, donde Opus lee mucho: en una chica, dos sesiones p
 explorar_antes: true # experimento: Sonnet explora antes del primer plan
 ```
 
-El modelo es el de `models.explorar`, que también usa el subagente `explorador` del planificador. Por
-defecto es Sonnet con esfuerzo `medium`; un repo que quiera Haiku lo pone ahí.
+La sesión usa `models.explorar`, por defecto Sonnet con esfuerzo `medium`; un repo que quiera Haiku lo
+pone ahí. El subagente `explorador` del planificador toma de esa clave el modelo, no el esfuerzo.
 
 ### Probar la feature en el entorno
 

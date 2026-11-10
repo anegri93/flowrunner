@@ -160,6 +160,59 @@ test("aprobar pide confirmación; Cambios manda el motivo escrito", async () => 
   );
 });
 
+// Si regresiona, un run que se detuvo con una pregunta no se puede responder desde el panel.
+test("un run detenido muestra Arreglar ST-n, que pide qué corregir y lo manda", async () => {
+  const sent: { run: string; decision: Decision }[] = [];
+  const id = "VF-2-20261109-001527";
+  const asked = runs.map((r): Run =>
+    r.id === id
+      ? {
+          ...r,
+          status: "detenido",
+          motivo: "verificar: AC-2 sigue en rojo",
+          siguiente: `flowrunner fix ${id} --unidad ST-2 "<qué cambiar>"`,
+          unidades: ["ST-2"],
+          opciones: [
+            {
+              comando: `flowrunner fix ${id} --unidad ST-2 "<qué cambiar>"`,
+              que: "que ST-2 lo corrija",
+            },
+            { comando: `flowrunner fix ${id} --yo`, que: "lo arreglás vos" },
+            { comando: `flowrunner accept ${id} "<por qué>"`, que: "seguir igual" },
+            { comando: `flowrunner abort ${id}`, que: "cortar el run" },
+          ],
+        }
+      : r,
+  );
+  await withPanel(
+    mockHost({
+      requests: {
+        "flowrunner.runs": () => ({ runs: asked, at: 0 }),
+        "flowrunner.decidir": (input: { run: string; decision: Decision }) => {
+          sent.push(input);
+          return { ok: true, mensaje: "arreglando ST-2" };
+        },
+      },
+    }),
+    async (view) => {
+      assert.ok(view.find({ text: "Parece ser de: ST-2" }));
+      assert.ok(view.find({ role: "button", text: "Lo arreglo yo" }));
+      assert.ok(view.find({ role: "button", text: "Seguir igual" }));
+      await view.press({ role: "button", text: "Arreglar ST-2" });
+      assert.deepEqual(sent, []);
+      await view.type({ label: "Qué tiene que corregir ST-2" }, "el CSV lleva BOM", {
+        submit: true,
+      });
+      assert.deepEqual(sent, [
+        {
+          run: id,
+          decision: { accion: "arreglar", unidad: "ST-2", instruccion: "el CSV lleva BOM" },
+        },
+      ]);
+    },
+  );
+});
+
 // Si regresiona, un run vivo no se puede abortar desde el panel, o se aborta sin confirmar.
 test("cada run vivo tiene «Abortar el run» al pie, que pide confirmación antes de mandarlo", async () => {
   const sent: { run: string; decision: Decision }[] = [];

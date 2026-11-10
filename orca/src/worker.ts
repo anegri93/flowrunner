@@ -92,6 +92,14 @@ function runId(id: unknown): string {
   return id;
 }
 
+/** Un texto de la persona para flowrunner: no vacío y de un largo razonable. */
+function personText(value: unknown, falta: string, largo: string): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (text === "") throw new Error(falta);
+  if (text.length > MAX_MOTIVO) throw new Error(largo);
+  return text;
+}
+
 /** La decisión como argumentos de un comando fijo de flowrunner; nada del panel llega sin validar. */
 export function decisionArgs(id: string, decision: Decision): string {
   switch (decision.accion) {
@@ -100,9 +108,11 @@ export function decisionArgs(id: string, decision: Decision): string {
         ? `approve ${quote(id)} --acepto-cambios`
         : `approve ${quote(id)}`;
     case "cambios": {
-      const motivo = typeof decision.motivo === "string" ? decision.motivo.trim() : "";
-      if (motivo === "") throw new Error("falta el motivo de los cambios");
-      if (motivo.length > MAX_MOTIVO) throw new Error("el motivo es demasiado largo");
+      const motivo = personText(
+        decision.motivo,
+        "falta el motivo de los cambios",
+        "el motivo es demasiado largo",
+      );
       return `changes ${quote(id)} ${quote(motivo)}`;
     }
     case "reanudar":
@@ -115,6 +125,27 @@ export function decisionArgs(id: string, decision: Decision): string {
       return `learn ${quote(id)}`;
     case "abortar":
       return `abort ${quote(id)}`;
+    // Las respuestas a un run detenido dicen que vinieron de Orca (ADR 0023).
+    case "arreglar": {
+      if (typeof decision.unidad !== "string" || !UNIT_ID.test(decision.unidad))
+        throw new Error(`sub-task inválida: ${String(decision.unidad)}`);
+      const instruccion = personText(
+        decision.instruccion,
+        "falta la instrucción del arreglo",
+        "la instrucción es demasiado larga",
+      );
+      return `fix ${quote(id)} --unidad ${decision.unidad} ${quote(instruccion)} --origen orca`;
+    }
+    case "aMano":
+      return `fix ${quote(id)} --yo --origen orca`;
+    case "aceptar": {
+      const motivo = personText(
+        decision.motivo,
+        "falta el motivo para seguir igual",
+        "el motivo es demasiado largo",
+      );
+      return `accept ${quote(id)} ${quote(motivo)} --origen orca`;
+    }
     default:
       throw new Error("decisión desconocida");
   }

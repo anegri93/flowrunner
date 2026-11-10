@@ -5,9 +5,11 @@ import {
   canAbort,
   decisionsFor,
   duration,
+  fixUnits,
   headlineOf,
   isFinished,
   nowOf,
+  offers,
   parseWatch,
   planMarkdown,
   stepsMarkdown,
@@ -163,6 +165,53 @@ test("las decisiones dependen del estado del run", () => {
     rerunPhase({ ...stopped, siguiente: "flowrunner rerun X --desde `rm -rf`" }),
     undefined,
   );
+});
+
+const ID = "VF-2-20261109-001527";
+const asked: Run = {
+  ...byKey("VF-2"),
+  status: "detenido",
+  motivo: "verificar: AC-2 sigue en rojo",
+  siguiente: `flowrunner fix ${ID} --unidad ST-2 "<qué cambiar>"`,
+  unidades: ["ST-2", "ST-10"],
+  opciones: [
+    { comando: `flowrunner fix ${ID} --unidad ST-2 "<qué cambiar>"`, que: "que ST-2 lo corrija" },
+    { comando: `flowrunner fix ${ID} --unidad ST-10 "<qué cambiar>"`, que: "que ST-10 lo corrija" },
+    { comando: `flowrunner fix ${ID} --yo`, que: "lo arreglás vos" },
+    { comando: `flowrunner accept ${ID} "<por qué>"`, que: "seguir a revisar igual" },
+    { comando: `flowrunner rerun ${ID} --desde planificar`, que: "replanificar" },
+    { comando: `flowrunner abort ${ID}`, que: "cortar el run" },
+  ],
+};
+
+// Si regresiona, el panel no ofrece las respuestas que el run espera, u ofrece una que rechaza.
+test("un run detenido con opciones ofrece arreglar por sub-task, a mano y seguir igual", () => {
+  assert.deepEqual(decisionsFor(asked), ["arreglar", "aMano", "aceptar", "rehacer"]);
+  assert.equal(rerunPhase(asked), "planificar");
+  assert.equal(offers(asked, "fix --yo"), true);
+  assert.equal(offers(asked, "accept"), true);
+  assert.equal(offers(asked, "resume"), false);
+  // Esperando el arreglo a mano: solo retomar.
+  const byHand: Run = {
+    ...asked,
+    siguiente: `flowrunner resume ${ID}`,
+    opciones: [
+      { comando: `flowrunner resume ${ID}`, que: "commitear tu cambio a mano" },
+      { comando: `flowrunner abort ${ID}`, que: "cortar el run" },
+    ],
+  };
+  assert.deepEqual(decisionsFor(byHand), ["reanudar"]);
+  // Un snapshot de un flowrunner anterior, sin opciones: lo de antes.
+  const { opciones: _sin, ...old } = asked;
+  assert.deepEqual(decisionsFor({ ...old, siguiente: `flowrunner resume ${ID}` }), ["reanudar"]);
+});
+
+// Si regresiona, el panel arma un botón por una sub-task que el run no ofrece, o pierde una.
+test("fixUnits saca las sub-tasks de las opciones", () => {
+  assert.deepEqual(fixUnits(asked), ["ST-2", "ST-10"]);
+  assert.deepEqual(fixUnits({ ...asked, opciones: [] }), []);
+  const { opciones: _sin, ...old } = asked;
+  assert.deepEqual(fixUnits(old), []);
 });
 
 // Si regresiona, un run vivo no se puede abortar desde el panel, o se ofrece abortar uno terminado.

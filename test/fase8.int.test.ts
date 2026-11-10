@@ -49,5 +49,21 @@ describe("Fase 8 ensamblada", () => {
     expect(s.fases.find((f) => f.fase === "planificar")?.costoUsd).toBeCloseTo(0.5);
     expect(s.motivos[0]?.motivo).toMatch(/^verificar · vuelta: <id> sigue en rojo/);
     expect(runCli(["stats"], w.env).stdout).toMatch(/1 runs · 0 lecciones/);
+    // Con --runs, la línea de base del plan de raíz: un renglón por run.
+    const porRun = JSON.parse(runCli(["stats", "--runs", "acme-api", "--json"], w.env).stdout) as {
+      runs: {
+        id: string;
+        planes: number;
+        vueltas: number;
+        derecho: boolean;
+        costoPorFase: { planificar?: number };
+      }[];
+      resumen: { runs: number; derechos: number };
+    };
+    expect(porRun.runs).toHaveLength(1);
+    expect(porRun.runs[0]).toMatchObject({ id, planes: 1, vueltas: 1, derecho: false });
+    expect(porRun.runs[0]?.costoPorFase.planificar).toBeCloseTo(0.5);
+    expect(porRun.resumen).toMatchObject({ runs: 1, derechos: 0 });
+    expect(runCli(["stats", "--runs"], w.env).stdout).toMatch(/^\| id +\| activo /);
   }, 180_000);
 });

@@ -23,7 +23,7 @@ import { renderRuns, watchLive, watchTargets } from "./watch.ts";
 import { selfUpdate } from "../setup/app.ts";
 import { commandDir, describeInit, draftExistingBrain, init } from "../setup/init.ts";
 import { productionRuntime } from "../runner/production.ts";
-import { describeStats, stats } from "../report/stats.ts";
+import { describeStats, describeStatsPorRun, stats, statsPorRun } from "../report/stats.ts";
 import {
   abortRun,
   acceptUntested,
@@ -69,7 +69,8 @@ const USAGE = `uso: flowrunner <comando> [--json]
   skill install [--confirmar]    instala la skill de Claude Code; con --confirmar, las reglas ask y el hook
   orca install [--approve fp]    carga en Orca el plugin de este flowrunner, esté donde esté clonado
   hook session-start             el hook de Claude Code: avisa a la sesión si el repo usa flowrunner
-  stats [proyecto]               qué fase reintenta más, motivos, costo y lecciones
+  stats [--runs] [proyecto]      qué fase reintenta más, motivos, costo y lecciones; con --runs,
+                                 tiempo activo, costo, planes y rechazos de cada run
   project add <ruta>             registra un repo [--nombre n] [--github-user u]
   brain init <ruta>              escribe las plantillas de .flowrunner/ sin pisar nada; una
                                  plantilla vieja que nadie editó pasa a la de hoy
@@ -153,6 +154,7 @@ export async function main(
       reemplazar: { type: "boolean", default: false },
       once: { type: "boolean", default: false },
       cerrados: { type: "boolean", default: false },
+      runs: { type: "boolean", default: false },
       "github-user": { type: "string" },
       approve: { type: "string" },
       "acepto-cambios": { type: "boolean", default: false },
@@ -362,6 +364,11 @@ export async function main(
         return done.ok ? 0 : 1;
       }
       case "stats": {
+        if (values.runs === true) {
+          const perRun = statsPorRun(home, first);
+          print(perRun, describeStatsPorRun(perRun));
+          return 0;
+        }
         const result = stats(home, first);
         print(result, describeStats(result));
         return 0;

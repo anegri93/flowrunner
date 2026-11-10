@@ -203,9 +203,15 @@ export async function changesSince(
   env?: NodeJS.ProcessEnv,
 ): Promise<FileChange[]> {
   const changes: FileChange[] = [];
-  const tracked = await git(worktree, ["diff", "--name-status", "--no-renames", base], env);
-  for (const line of tracked.split("\n").filter((l) => l !== "")) {
-    const [code = "", path = ""] = line.split("\t");
+  // Con -z, git da las rutas tal cual: sin él, escapa entre comillas las que tienen tildes, comillas o
+  // caracteres de control, y esas no se podían leer ni chequear.
+  const fields = (out: string) => out.split("\0").filter((f) => f !== "");
+  const tracked = fields(
+    await git(worktree, ["diff", "--name-status", "--no-renames", "-z", base], env),
+  );
+  for (let i = 0; i + 1 < tracked.length; i += 2) {
+    const code = tracked[i] ?? "";
+    const path = tracked[i + 1] ?? "";
     const status = code === "A" ? "agregado" : code === "D" ? "borrado" : "modificado";
     const patch =
       status === "borrado"
@@ -217,8 +223,10 @@ export async function changesSince(
       .map((l) => l.slice(1));
     changes.push({ path, status, added });
   }
-  const untracked = await git(worktree, ["ls-files", "--others", "--exclude-standard"], env);
-  for (const path of untracked.split("\n").filter((l) => l !== "")) {
+  const untracked = fields(
+    await git(worktree, ["ls-files", "--others", "--exclude-standard", "-z"], env),
+  );
+  for (const path of untracked) {
     let added: string[] = [];
     try {
       added = readFileSync(join(worktree, path), "utf8").split("\n");

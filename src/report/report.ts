@@ -3,13 +3,13 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { initialState, reduce, stateOf } from "../engine/engine.ts";
+import { initialState, reduce, stateOf, type RunState } from "../engine/engine.ts";
 import { AVISO_TEST_EXISTENTE } from "../gates/existente.ts";
 import type { CambioExistente } from "../gates/plan.ts";
 import { lastTestDir, readTests } from "../phases/probar.ts";
 import { reviewSchema } from "../phases/revisar.ts";
 import type { RunPaths } from "../runner/types.ts";
-import { PHASES, type Phase, type RunEvent } from "../store/events.ts";
+import { PHASES, type Origen, type Phase, type RunEvent } from "../store/events.ts";
 
 /** Texto de un modelo o de un comando, seguro para Markdown: sin HTML. */
 export const plain = (text: string) =>
@@ -109,6 +109,112 @@ function header(events: readonly RunEvent[], run: RunPaths): string[] {
   return lines;
 }
 
+const two = (n: number) => String(n).padStart(2, "0");
+/** La hora de un evento, en la hora local, como la ve la persona. */
+function hour(at: string): string {
+  const d = new Date(at);
+  return `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
+}
+
+/** Cuánto tardó la persona en contestar: segundos, minutos o horas. */
+function waited(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  if (total < 60) return `${String(total)} s`;
+  const minutes = Math.floor(total / 60);
+  if (minutes < 60) {
+    const seconds = total % 60;
+    return seconds === 0 ? `${String(minutes)} min` : `${String(minutes)} min ${String(seconds)} s`;
+  }
+  const rest = minutes % 60;
+  const hours = String(Math.floor(minutes / 60));
+  return rest === 0 ? `${hours} h` : `${hours} h ${String(rest)} min`;
+}
+
+const MAX_CITA = 80;
+/** Lo que escribió la persona, en una línea y corto: el texto entero está en el log. */
+function quote(text: string): string {
+  const one = text.replaceAll(/\s+/g, " ").trim();
+  return `«${plain(one.length > MAX_CITA ? `${one.slice(0, MAX_CITA - 1)}…` : one)}»`;
+}
+
+/** Una decisión de la persona: qué decidió, de dónde vino, desde qué espera se mide y lo que va al final. */
+interface Decided {
+  readonly que: string;
+  readonly origen: Origen | undefined;
+  /** Aprobar y pedir cambios se miden desde que el plan esperó; lo demás, desde que el run se detuvo. */
+  readonly alPlan: boolean;
+  readonly cola: string;
+}
+
+function decided(e: RunEvent): Decided | undefined {
+  switch (e.tipo) {
+    case "aprobado": {
+      const n = e.cambios_aceptados ?? 0;
+      return {
+        que: "aprobaste el plan",
+        origen: e.origen,
+        alPlan: true,
+        cola: n === 0 ? "" : ` (${String(n)} ${n === 1 ? "cambio aceptado" : "cambios aceptados"})`,
+      };
+    }
+    case "cambios_pedidos":
+      return {
+        que: "pediste cambios",
+        origen: e.origen,
+        alPlan: true,
+        cola: `: ${quote(e.motivo)}`,
+      };
+    case "arreglo_pedido":
+      return {
+        que: `pediste que ${e.unidades.join(", ")} lo ${e.unidades.length === 1 ? "corrija" : "corrijan"}`,
+        origen: e.origen,
+        alPlan: false,
+        cola: `: ${quote(e.instruccion)}`,
+      };
+    case "arreglo_manual_iniciado":
+      return { que: "elegiste arreglarlo a mano", origen: e.origen, alPlan: false, cola: "" };
+    case "aceptado":
+      return {
+        que: `aceptaste seguir con ${e.fase} en rojo`,
+        origen: e.origen,
+        alPlan: false,
+        cola: `: ${quote(e.motivo)}`,
+      };
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Cada decisión que el run tomó, con su hora, de dónde vino y cuánto tardó desde que el run te esperó:
+ * aprobar o pedir cambios, desde el último `aprobar` que terminó en espera; responder una pregunta,
+ * desde la última acción que dejó el run detenido. Solo las que el engine aplicó (ADR 0023). Es para
+ * la persona: no va a la PR.
+ */
+function personDecisions(events: readonly RunEvent[]): string[] {
+  const lines: string[] = [];
+  let planWaiting: string | undefined;
+  let stopped: string | undefined;
+  replay(events, (e, before, after) => {
+    if (e.tipo === "accion_terminada") {
+      if (e.fase === "aprobar" && e.resultado.tipo === "espera") planWaiting = e.at;
+      if (after.status === "detenido") stopped = e.at;
+      return;
+    }
+    const decision = decided(e);
+    if (decision === undefined || after === before) return;
+    const since = decision.alPlan ? planWaiting : stopped;
+    const origen =
+      decision.origen === undefined ? "desde un origen desconocido" : `desde ${decision.origen}`;
+    const demora =
+      since === undefined
+        ? ""
+        : `, ${waited(Date.parse(e.at) - Date.parse(since))} después de que te esperó`;
+    lines.push(`- ${hour(e.at)} · ${decision.que} ${origen}${demora}${decision.cola}`);
+  });
+  return lines.length === 0 ? [] : ["", "## Tus decisiones", "", ...lines];
+}
+
 function decisions(events: readonly RunEvent[]): string[] {
   const byPhase = new Map<string, string[]>();
   for (const e of events) {
@@ -129,6 +235,7 @@ export function buildReport(events: readonly RunEvent[], run: RunPaths): string 
   const existing = existingChanges(events, run);
   const lines = [
     ...header(events, run),
+    ...personDecisions(events),
     ...(existing.length === 0 ? [] : ["", ...existing]),
     ...accepted(events),
     ...tested(events, run, true),
@@ -228,17 +335,30 @@ function tested(events: readonly RunEvent[], run: RunPaths, paths: boolean): str
 }
 
 /**
+ * Recorre el log como el engine: cada evento con el estado de antes y el de después. Un evento que el
+ * engine ignoró deja el mismo estado, el mismo objeto.
+ */
+function replay(
+  events: readonly RunEvent[],
+  visit: (e: RunEvent, before: RunState, after: RunState) => void,
+): void {
+  let state = initialState();
+  for (const e of events) {
+    const next = reduce(state, e);
+    visit(e, state, next);
+    state = next;
+  }
+}
+
+/**
  * Las respuestas de la persona que el run tomó: una que llegó cuando otra ya lo había hecho seguir
  * queda en el log, pero el engine la ignoró, y no va a la PR.
  */
 function applied(events: readonly RunEvent[]): RunEvent[] {
   const out: RunEvent[] = [];
-  let state = initialState();
-  for (const e of events) {
-    const next = reduce(state, e);
-    if ((e.tipo === "aceptado" || e.tipo === "arreglo_manual") && next !== state) out.push(e);
-    state = next;
-  }
+  replay(events, (e, before, after) => {
+    if ((e.tipo === "aceptado" || e.tipo === "arreglo_manual") && after !== before) out.push(e);
+  });
   return out;
 }
 

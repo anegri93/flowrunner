@@ -64,10 +64,11 @@ const USAGE = `uso: flowrunner <comando> [--json]
                                  queda en el informe y en la PR
   abort <run>                    cancela un run y borra sus worktrees; las ramas quedan
   plan <run>                     muestra el plan que espera aprobación
-  approve <run> [--acepto-cambios]
+  approve <run> [--acepto-cambios] [--origen terminal|claude|orca]
                                  aprueba el plan y sigue a implementar; si el plan cambia
                                  lo que ya existe, pide --acepto-cambios
-  changes <run> "<motivo>"       vuelve a planificar con tu instrucción
+  changes <run> "<motivo>" [--origen terminal|claude|orca]
+                                 vuelve a planificar con tu instrucción
   report <run> [--sesion s]      el informe del run, o el transcript de una sesión
   report <run> --unidad ST-n     una sub-task: qué tenía que hacer, qué dice que hizo y su diff
   report <run> --fase <fase>     una etapa: intentos, lo propio de la etapa, decisiones y sesiones
@@ -329,12 +330,19 @@ export async function main(
           runArg(home, first),
           env,
           values["acepto-cambios"] === true,
+          parseOrigen(values.origen),
         );
         print(approved, `run ${approved.id} ${approved.accion}`);
         return 0;
       }
       case "changes": {
-        const changed = requestChanges(home, runArg(home, first), rest.join(" "), env);
+        const changed = requestChanges(
+          home,
+          runArg(home, first),
+          rest.join(" "),
+          env,
+          parseOrigen(values.origen),
+        );
         print(changed, `run ${changed.id} ${changed.accion}`);
         return 0;
       }

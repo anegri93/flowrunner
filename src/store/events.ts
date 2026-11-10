@@ -136,8 +136,16 @@ export const eventSchema = z.discriminatedUnion("tipo", [
     at,
     /** Cuántos cambios a lo existente aceptó la persona al aprobar; falta en runs anteriores. */
     cambios_aceptados: z.int().nonnegative().optional(),
+    /** De dónde vino la aprobación; falta en runs anteriores (ADR 0023). */
+    origen: origenSchema.optional(),
   }),
-  z.strictObject({ tipo: z.literal("cambios_pedidos"), at, motivo: z.string().min(1) }),
+  z.strictObject({
+    tipo: z.literal("cambios_pedidos"),
+    at,
+    motivo: z.string().min(1),
+    /** De dónde vino el pedido; falta en runs anteriores (ADR 0023). */
+    origen: origenSchema.optional(),
+  }),
   z.strictObject({ tipo: z.literal("reanudado"), at }),
   /** No había lugar en el repo (`max_runs`): espera sin proceso hasta que se libere uno. */
   z.strictObject({ tipo: z.literal("encolado"), at }),

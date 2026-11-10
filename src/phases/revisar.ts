@@ -11,6 +11,7 @@ import { git } from "../git/git.ts";
 import { blastRadius, buildIndex, graftMcpServer } from "../graft/graft.ts";
 import { featureText, render } from "../prompts/render.ts";
 import type { PhaseFn } from "../runner/types.ts";
+import { SIN_COMANDOS } from "../tripwires/comandos.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
 import { WRITE_TOOLS } from "../tripwires/rules.ts";
 import type { RunEvent } from "../store/events.ts";
@@ -103,7 +104,7 @@ export const revisar: PhaseFn = async (ctx) => {
             manifests: [],
             depsDeclared: false,
             testGlobs: config.tests_globs,
-            bash: [],
+            comandos: SIN_COMANDOS,
           },
           fase: "revisar",
           write: false,

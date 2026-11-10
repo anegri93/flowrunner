@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 import { git, repoWithRemote, tempDir } from "../../test/helpers/git.ts";
 import { writeFiles } from "../../test/helpers/project.ts";
 import { addWorktree, changesSince } from "../git/git.ts";
+import { SIN_COMANDOS } from "./comandos.ts";
 import { checkChanges } from "./diff.ts";
 import type { Scope } from "./rules.ts";
 
@@ -33,7 +34,7 @@ async function worktree() {
     manifests: [],
     depsDeclared: false,
     testGlobs: ["tests/**"],
-    bash: [],
+    comandos: SIN_COMANDOS,
   };
   return { wt, base, scope };
 }

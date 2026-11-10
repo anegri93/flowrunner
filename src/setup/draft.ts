@@ -10,6 +10,7 @@ import type { RepoConfig } from "../config/schemas.ts";
 import { git } from "../git/git.ts";
 import { render } from "../prompts/render.ts";
 import type { Deps, QueryFn, RunPaths } from "../runner/types.ts";
+import { SIN_COMANDOS } from "../tripwires/comandos.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
 
 export { DRAFT_HEADING };
@@ -235,7 +236,7 @@ export async function draftBrain(input: DraftInput): Promise<DraftResult> {
             manifests: [],
             depsDeclared: false,
             testGlobs: [],
-            bash: [],
+            comandos: SIN_COMANDOS,
           },
           fase: "planificar",
           write: false,

@@ -10,7 +10,8 @@ import { simQuery, type SimScript } from "../../test/helpers/sim-sdk.ts";
 import type { Plan, Subtask } from "../gates/plan.ts";
 import { readLog } from "../store/run-log.ts";
 import { repoConfigSchema } from "../config/schemas.ts";
-import { implementar, prefersExact, unitCommands } from "./implementar.ts";
+import { checkCommand } from "../tripwires/comandos.ts";
+import { implementar, prefersExact, unitComandos, unitScope } from "./implementar.ts";
 
 const st = (id: string, alcance: string[], extra: Partial<Subtask> = {}): Subtask => ({
   id,
@@ -62,12 +63,14 @@ describe("instalar dependencias", () => {
 
   // Si regresiona, una dependencia de desarrollo entra como de producción, o sin la versión exacta que usa el repo.
   test("las de desarrollo van con -D y, si el repo fija versiones, todas con -E", () => {
-    expect(unitCommands(config("package-lock.json"), task, [], true)).toEqual(
-      expect.arrayContaining(["npm install -E uqr", "npm install -D -E jsqr"]),
-    );
-    expect(unitCommands(config("pnpm-lock.yaml"), task, [], false)).toEqual(
-      expect.arrayContaining(["pnpm add uqr", "pnpm add -D jsqr"]),
-    );
+    expect(unitComandos(config("package-lock.json"), task, [], true).exactos).toEqual([
+      "npm install -E uqr",
+      "npm install -D -E jsqr",
+    ]);
+    expect(unitComandos(config("pnpm-lock.yaml"), task, [], false).exactos).toEqual([
+      "pnpm add uqr",
+      "pnpm add -D jsqr",
+    ]);
   });
 
   // Regresión: en CUENTAS-1, ST-2 corrió el verify completo del repo en su worktree, antes de que ST-3
@@ -79,13 +82,11 @@ describe("instalar dependencias", () => {
       lint_fix: "npx eslint --fix",
     });
     const own = st("ST-2", ["src/seeds/a.ts", "src/seeds/b.ts"]);
-    expect(unitCommands(repo, own, ["npx jest seeds"], false)).toEqual([
-      "npx jest seeds",
-      "npx eslint --fix 'src/seeds/a.ts' 'src/seeds/b.ts'",
-      "git status",
-      "git diff",
-      "git log --oneline -10",
-    ]);
+    expect(unitComandos(repo, own, ["npx jest seeds"], false)).toEqual({
+      ampliables: ["npx jest seeds"],
+      exactos: [],
+      fixers: ["npx eslint --fix"],
+    });
   });
 
   // Regresión de VF-6: 12 rechazos de `prettier --write`, y ST-3 formateó a mano y rompió el typecheck.
@@ -96,13 +97,10 @@ describe("instalar dependencias", () => {
       format: "npx prettier --write",
       typecheck: "pnpm run typecheck",
     });
-    expect(unitCommands(repo, st("ST-3", ["src/carpeta.ts"]), [], false)).toEqual([
-      "npx prettier --write 'src/carpeta.ts'",
-      "pnpm run typecheck",
-      "git status",
-      "git diff",
-      "git log --oneline -10",
-    ]);
+    expect(unitComandos(repo, st("ST-3", ["src/carpeta.ts"]), [], false)).toMatchObject({
+      ampliables: ["pnpm run typecheck"],
+      fixers: ["npx prettier --write"],
+    });
   });
 
   // Regresión: con el alcance de una ruta de Next sin comillas, el lint de la sub-task se rompía en el
@@ -119,10 +117,22 @@ describe("instalar dependencias", () => {
       tests_globs: ["tests/**"],
       lint_fix: "ls",
     });
-    const lint = unitCommands(repo, st("ST-1", files), [], false).find((c) => c.startsWith("ls "));
-    expect(lint).toBeDefined();
+    const task = st("ST-1", files);
+    const scope = unitScope(dir, repo, task, [], unitComandos(repo, task, [], false));
+    const lint = "ls 'src/app/o/[publicId]/page.tsx' 'src/app/(comprador)/page.tsx'";
+    expect(checkCommand(scope, lint)).toEqual({ ok: true });
+    // `ls` también es lectura: con un formateador, la política pasa por el fixer y por el alcance.
+    const conFormato = repoConfigSchema.parse({
+      setup: "true",
+      tests_globs: ["tests/**"],
+      format: "npx prettier --write",
+    });
+    const formato = unitScope(dir, conFormato, task, [], unitComandos(conFormato, task, [], false));
+    const citados = "'src/app/o/[publicId]/page.tsx' 'src/app/(comprador)/page.tsx'";
+    expect(checkCommand(formato, `npx prettier --write ${citados}`)).toEqual({ ok: true });
+    expect(checkCommand(formato, "npx prettier --write src/otro.ts").ok).toBe(false);
     for (const shell of ["sh", "zsh"]) {
-      const listed = execFileSync(shell, ["-c", lint ?? ""], { cwd: dir, encoding: "utf8" });
+      const listed = execFileSync(shell, ["-c", lint], { cwd: dir, encoding: "utf8" });
       expect(listed.trim().split("\n").sort()).toEqual([...files].sort());
     }
   });
@@ -138,11 +148,8 @@ describe("instalar dependencias", () => {
       "bash .flowrunner/verify.sh",
       " sh ./.flowrunner/verify.sh ",
     ]) {
-      expect(unitCommands(repo, own, ["npx jest conexiones", verify], false)).toEqual([
+      expect(unitComandos(repo, own, ["npx jest conexiones", verify], false).ampliables).toEqual([
         "npx jest conexiones",
-        "git status",
-        "git diff",
-        "git log --oneline -10",
       ]);
     }
   });

@@ -2,7 +2,6 @@
 // flowrunner hace un commit por sub-task y lo integra por cherry-pick sobre la rama de la feature.
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
-import { shellQuote } from "../agent/env.ts";
 import { runSession } from "../agent/session.ts";
 import { loadBrain } from "../brain/brain.ts";
 import { isVerifyCommand, loadRepoConfig } from "../config/load.ts";
@@ -24,6 +23,7 @@ import { runShell, tail } from "../proc/proc.ts";
 import { featureText, render } from "../prompts/render.ts";
 import type { PhaseFn } from "../runner/types.ts";
 import type { Outcome, RunEvent } from "../store/events.ts";
+import { describeComandos, type Comandos } from "../tripwires/comandos.ts";
 import { checkChanges, type Violation } from "../tripwires/diff.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
 import { dependencySectionsChanged, WRITE_TOOLS, type Scope } from "../tripwires/rules.ts";
@@ -92,31 +92,30 @@ export function installCommands(config: RepoConfig, task: Subtask, exact: boolea
   ];
 }
 
-export function unitCommands(
+export function unitComandos(
   config: RepoConfig,
   task: Subtask,
   acCommands: readonly string[],
   exact: boolean,
-): string[] {
+): Comandos {
   // Sin el verify del repo: corre en verificar, sobre la rama con todas las sub-tasks integradas. En el
   // worktree de una, antes de que las demás se integren, daba rojos que no eran suyos y costaba minutos.
   // Tampoco entra como comando de un criterio de «verify en verde»: ese criterio lo corre verificar.
-  // Rutas citadas: `[id]` y `(grupo)` de Next son patrón y sintaxis para el shell.
+  // Rutas citadas: `[id]` y `(grupo)` de Next son patrón y sintaxis para el shell, y la política de
+  // comandos pide citarlas para pasarlas por el lint o el formato.
   // El lint y el formato van sobre su alcance; el typecheck, del repo entero, porque los tipos no se
   // ven por archivo. Sin poder correrlos, en VF-6 una sub-task formateó a mano y rompió el typecheck.
-  const paths = task.alcance.map(shellQuote).join(" ");
-  const tools = [
-    ...(config.lint_fix === undefined ? [] : [`${config.lint_fix} ${paths}`]),
-    ...(config.format === undefined ? [] : [`${config.format} ${paths}`]),
-    ...(config.typecheck === undefined ? [] : [config.typecheck]),
-  ];
-  return [
-    ...new Set([...acCommands.filter((c) => !isVerifyCommand(config, c)), ...tools]),
-    "git status",
-    "git diff",
-    "git log --oneline -10",
-    ...installCommands(config, task, exact),
-  ];
+  // Mirar (git status, ls, cat…) no está acá: lo permite la política como lectura.
+  return {
+    ampliables: [
+      ...new Set([
+        ...acCommands.filter((c) => !isVerifyCommand(config, c)),
+        ...(config.typecheck === undefined ? [] : [config.typecheck]),
+      ]),
+    ],
+    exactos: installCommands(config, task, exact),
+    fixers: [config.lint_fix, config.format].filter((c): c is string => c !== undefined),
+  };
 }
 
 export function unitScope(
@@ -124,7 +123,7 @@ export function unitScope(
   config: RepoConfig,
   task: Subtask,
   locked: readonly string[],
-  bash: string[],
+  comandos: Comandos,
 ): Scope {
   return {
     root: realpathSync(root),
@@ -137,7 +136,7 @@ export function unitScope(
     manifests: config.manifests,
     depsDeclared: allDependencies(task).length > 0,
     testGlobs: config.tests_globs,
-    bash,
+    comandos,
     unreadable: config.env_files,
   };
 }
@@ -198,7 +197,7 @@ export const implementar: PhaseFn = async (ctx) => {
     const wt = unitWorktree(run, task.id);
     const branch = `feat/${feature.clave}/${task.id}`;
     const acs = plan.criterios.filter((c) => c.subtarea === task.id);
-    const bash = unitCommands(
+    const comandos = unitComandos(
       config,
       task,
       acs.map((c) => c.comando),
@@ -252,7 +251,7 @@ export const implementar: PhaseFn = async (ctx) => {
           fatal: { tipo: "falla", clase: "entorno", motivo: env.motivo },
         };
       }
-      const scope = unitScope(wt, config, task, locked, bash);
+      const scope = unitScope(wt, config, task, locked, comandos);
       // Lo que el bloqueo no le dejó escribir en esta sesión. Una sub-task devuelta que termina sin
       // cambios por eso no está «sin cambios» (VF-6: ST-6, cuatro veces, sobre CLAUDE.md).
       const rejectedWrites: string[] = [];
@@ -283,7 +282,7 @@ export const implementar: PhaseFn = async (ctx) => {
                     .join(", "),
             dependencias: dependencyText(task),
             bloqueados: locked.join(", "),
-            comandos: bash.map((c) => `\`${c}\``).join(", "),
+            comandos: describeComandos(comandos),
             instruccion:
               motivo === undefined
                 ? ""

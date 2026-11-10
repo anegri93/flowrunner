@@ -45,7 +45,7 @@ test("una sesión real con un comando que no termina vuelve sola y no deja el pr
       manifests: [],
       depsDeclared: false,
       testGlobs: [],
-      bash: [`node ${script}`],
+      comandos: { ampliables: [`node ${script}`], exactos: [], fixers: [] },
     },
     fase: "implementar",
     unidad: "ST-1",

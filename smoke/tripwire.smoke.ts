@@ -6,6 +6,7 @@ import { expect, test } from "vitest";
 import { runSession } from "../src/agent/session.ts";
 import type { QueryFn } from "../src/runner/types.ts";
 import type { NewEvent } from "../src/store/events.ts";
+import { SIN_COMANDOS } from "../src/tripwires/comandos.ts";
 import { tripwireHook, type HookPolicy } from "../src/tripwires/hook.ts";
 import { newRun, testDeps } from "../test/helpers/project.ts";
 import { copyToyRepo } from "./helpers.ts";
@@ -27,7 +28,7 @@ test("una sesión real que intenta escribir fuera del alcance termina sin el arc
       manifests: [],
       depsDeclared: false,
       testGlobs: ["test/**"],
-      bash: [],
+      comandos: SIN_COMANDOS,
     },
     fase: "implementar",
     unidad: "ST-1",

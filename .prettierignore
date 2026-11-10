@@ -5,3 +5,4 @@ test/fixtures
 test/toy-repo
 .claude/settings.local.json
 orca/.orca
+src/tripwires/fixtures

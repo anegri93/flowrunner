@@ -1,0 +1,2994 @@
+[
+ {
+  "id": 1,
+  "run": "ML-1-20261109-224722",
+  "sesion": "implementar-ST-1-1",
+  "comando": "sed -n 1,30p app/src/feed/challenges.ts; ls app/src/scroll app/src/motion; cat app/src/motion/ParticleBurst.tsx | head -30",
+  "alcance": [
+   "supabase/functions/_shared/domain/card-layout.ts",
+   "supabase/functions/_shared/domain/bottom-fade.ts",
+   "supabase/functions/_shared/domain/reveal-scroll.ts",
+   "app/src/scroll/contentLayout.ts",
+   "app/src/scroll/bottomFade.ts",
+   "app/src/scroll/revealScroll.ts",
+   "app/src/scroll/BottomFade.tsx",
+   "app/src/scroll/handoff.ts",
+   "app/src/scroll/CardScroll.tsx"
+  ],
+  "criterios": [
+   "npx vitest run supabase/functions/_shared/domain/card-layout.test.ts",
+   "npx vitest run supabase/functions/_shared/domain/bottom-fade.test.ts",
+   "npx vitest run supabase/functions/_shared/domain/reveal-scroll.test.ts"
+  ],
+  "fixers": [],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 2,
+  "run": "ML-1-20261109-224722",
+  "sesion": "implementar-ST-1-2",
+  "comando": "git status && ls app/src/scroll && git log --oneline -10",
+  "alcance": [
+   "supabase/functions/_shared/domain/card-layout.ts",
+   "supabase/functions/_shared/domain/bottom-fade.ts",
+   "supabase/functions/_shared/domain/reveal-scroll.ts",
+   "app/src/scroll/contentLayout.ts",
+   "app/src/scroll/bottomFade.ts",
+   "app/src/scroll/revealScroll.ts",
+   "app/src/scroll/BottomFade.tsx",
+   "app/src/scroll/handoff.ts",
+   "app/src/scroll/CardScroll.tsx"
+  ],
+  "criterios": [
+   "npx vitest run supabase/functions/_shared/domain/card-layout.test.ts",
+   "npx vitest run supabase/functions/_shared/domain/bottom-fade.test.ts",
+   "npx vitest run supabase/functions/_shared/domain/reveal-scroll.test.ts"
+  ],
+  "fixers": [],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 3,
+  "run": "ML-1-20261109-224722",
+  "sesion": "implementar-ST-2-1",
+  "comando": "ls app/src/scroll; git status --short",
+  "alcance": [
+   "app/src/components/cards/CardFrame.tsx",
+   "app/src/components/cards/HookCard.tsx",
+   "app/src/components/cards/DeepCard.tsx",
+   "app/src/components/cards/FeedCard.tsx"
+  ],
+  "criterios": [
+   "sh -c 'f=app/src/components/cards/CardFrame.tsx; c=app/src/components/cards/ClosureCard.tsx; r=0; for s in \"contentLayout(\" \"showsBottomFade(\" \"revealScrollTarget(\" \"ScrollView\"; do grep -qF \"$s\" \"$f\" || { echo \"CardFrame.tsx no usa $s\"; r=1; }; done; if grep -qE \"body: \\{ flex: 1, justifyContent: .center.\" \"$f\"; then echo \"CardFrame.tsx sigue centrando en una altura fija\"; r=1; fi; grep -qF \"showsBottomFade(\" \"$c\" || { echo \"ClosureCard.tsx no usa showsBottomFade\"; r=1; }; n=$(grep -cE \"<(Animated\\.)?ScrollView([ >]|$)\" \"$c\"); o=$(grep -nE \"<(Animated\\.)?ScrollView([ >]|$)\" \"$c\" | head -1 | cut -d: -f1); e=$(grep -nE \"</(Animated\\.)?ScrollView>\" \"$c\" | tail -1 | cut -d: -f1); b=$(grep -nF \"Por hoy está bien\" \"$c\" | tail -1 | cut -d: -f1); if [ \"$n\" != 1 ] || [ -z \"$o\" ] || [ -z \"$e\" ] || [ -z \"$b\" ] || [ \"$b\" -le \"$o\" ] || [ \"$b\" -ge \"$e\" ]; then echo \"ClosureCard.tsx deja botones fuera del scroll\"; r=1; fi; exit $r'"
+  ],
+  "fixers": [],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 4,
+  "run": "ML-1-20261109-224722",
+  "sesion": "implementar-ST-2-1",
+  "comando": "git log --oneline -3",
+  "alcance": [
+   "app/src/components/cards/CardFrame.tsx",
+   "app/src/components/cards/HookCard.tsx",
+   "app/src/components/cards/DeepCard.tsx",
+   "app/src/components/cards/FeedCard.tsx"
+  ],
+  "criterios": [
+   "sh -c 'f=app/src/components/cards/CardFrame.tsx; c=app/src/components/cards/ClosureCard.tsx; r=0; for s in \"contentLayout(\" \"showsBottomFade(\" \"revealScrollTarget(\" \"ScrollView\"; do grep -qF \"$s\" \"$f\" || { echo \"CardFrame.tsx no usa $s\"; r=1; }; done; if grep -qE \"body: \\{ flex: 1, justifyContent: .center.\" \"$f\"; then echo \"CardFrame.tsx sigue centrando en una altura fija\"; r=1; fi; grep -qF \"showsBottomFade(\" \"$c\" || { echo \"ClosureCard.tsx no usa showsBottomFade\"; r=1; }; n=$(grep -cE \"<(Animated\\.)?ScrollView([ >]|$)\" \"$c\"); o=$(grep -nE \"<(Animated\\.)?ScrollView([ >]|$)\" \"$c\" | head -1 | cut -d: -f1); e=$(grep -nE \"</(Animated\\.)?ScrollView>\" \"$c\" | tail -1 | cut -d: -f1); b=$(grep -nF \"Por hoy está bien\" \"$c\" | tail -1 | cut -d: -f1); if [ \"$n\" != 1 ] || [ -z \"$o\" ] || [ -z \"$e\" ] || [ -z \"$b\" ] || [ \"$b\" -le \"$o\" ] || [ \"$b\" -ge \"$e\" ]; then echo \"ClosureCard.tsx deja botones fuera del scroll\"; r=1; fi; exit $r'"
+  ],
+  "fixers": [],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 5,
+  "run": "ML-1-20261109-224722",
+  "sesion": "implementar-ST-2-1",
+  "comando": "cat app/src/motion/Reveal.tsx; grep -n \"spacing\" -A8 app/src/theme/index.ts | head -30; grep -n \"flex:\\|scroll:\" app/src/components/cards/DeepCard.tsx",
+  "alcance": [
+   "app/src/components/cards/CardFrame.tsx",
+   "app/src/components/cards/HookCard.tsx",
+   "app/src/components/cards/DeepCard.tsx",
+   "app/src/components/cards/FeedCard.tsx"
+  ],
+  "criterios": [
+   "sh -c 'f=app/src/components/cards/CardFrame.tsx; c=app/src/components/cards/ClosureCard.tsx; r=0; for s in \"contentLayout(\" \"showsBottomFade(\" \"revealScrollTarget(\" \"ScrollView\"; do grep -qF \"$s\" \"$f\" || { echo \"CardFrame.tsx no usa $s\"; r=1; }; done; if grep -qE \"body: \\{ flex: 1, justifyContent: .center.\" \"$f\"; then echo \"CardFrame.tsx sigue centrando en una altura fija\"; r=1; fi; grep -qF \"showsBottomFade(\" \"$c\" || { echo \"ClosureCard.tsx no usa showsBottomFade\"; r=1; }; n=$(grep -cE \"<(Animated\\.)?ScrollView([ >]|$)\" \"$c\"); o=$(grep -nE \"<(Animated\\.)?ScrollView([ >]|$)\" \"$c\" | head -1 | cut -d: -f1); e=$(grep -nE \"</(Animated\\.)?ScrollView>\" \"$c\" | tail -1 | cut -d: -f1); b=$(grep -nF \"Por hoy está bien\" \"$c\" | tail -1 | cut -d: -f1); if [ \"$n\" != 1 ] || [ -z \"$o\" ] || [ -z \"$e\" ] || [ -z \"$b\" ] || [ \"$b\" -le \"$o\" ] || [ \"$b\" -ge \"$e\" ]; then echo \"ClosureCard.tsx deja botones fuera del scroll\"; r=1; fi; exit $r'"
+  ],
+  "fixers": [],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 6,
+  "run": "ML-1-20261109-224722",
+  "sesion": "implementar-ST-2-1",
+  "comando": "git status --short",
+  "alcance": [
+   "app/src/components/cards/CardFrame.tsx",
+   "app/src/components/cards/HookCard.tsx",
+   "app/src/components/cards/DeepCard.tsx",
+   "app/src/components/cards/FeedCard.tsx"
+  ],
+  "criterios": [
+   "sh -c 'f=app/src/components/cards/CardFrame.tsx; c=app/src/components/cards/ClosureCard.tsx; r=0; for s in \"contentLayout(\" \"showsBottomFade(\" \"revealScrollTarget(\" \"ScrollView\"; do grep -qF \"$s\" \"$f\" || { echo \"CardFrame.tsx no usa $s\"; r=1; }; done; if grep -qE \"body: \\{ flex: 1, justifyContent: .center.\" \"$f\"; then echo \"CardFrame.tsx sigue centrando en una altura fija\"; r=1; fi; grep -qF \"showsBottomFade(\" \"$c\" || { echo \"ClosureCard.tsx no usa showsBottomFade\"; r=1; }; n=$(grep -cE \"<(Animated\\.)?ScrollView([ >]|$)\" \"$c\"); o=$(grep -nE \"<(Animated\\.)?ScrollView([ >]|$)\" \"$c\" | head -1 | cut -d: -f1); e=$(grep -nE \"</(Animated\\.)?ScrollView>\" \"$c\" | tail -1 | cut -d: -f1); b=$(grep -nF \"Por hoy está bien\" \"$c\" | tail -1 | cut -d: -f1); if [ \"$n\" != 1 ] || [ -z \"$o\" ] || [ -z \"$e\" ] || [ -z \"$b\" ] || [ \"$b\" -le \"$o\" ] || [ \"$b\" -ge \"$e\" ]; then echo \"ClosureCard.tsx deja botones fuera del scroll\"; r=1; fi; exit $r'"
+  ],
+  "fixers": [],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 7,
+  "run": "ML-1-20261109-224722",
+  "sesion": "implementar-ST-2-2",
+  "comando": "git status --short; git log --oneline -3",
+  "alcance": [
+   "app/src/components/cards/CardFrame.tsx",
+   "app/src/components/cards/HookCard.tsx",
+   "app/src/components/cards/DeepCard.tsx",
+   "app/src/components/cards/FeedCard.tsx"
+  ],
+  "criterios": [
+   "sh -c 'f=app/src/components/cards/CardFrame.tsx; c=app/src/components/cards/ClosureCard.tsx; r=0; for s in \"contentLayout(\" \"showsBottomFade(\" \"revealScrollTarget(\" \"ScrollView\"; do grep -qF \"$s\" \"$f\" || { echo \"CardFrame.tsx no usa $s\"; r=1; }; done; if grep -qE \"body: \\{ flex: 1, justifyContent: .center.\" \"$f\"; then echo \"CardFrame.tsx sigue centrando en una altura fija\"; r=1; fi; grep -qF \"showsBottomFade(\" \"$c\" || { echo \"ClosureCard.tsx no usa showsBottomFade\"; r=1; }; n=$(grep -cE \"<(Animated\\.)?ScrollView([ >]|$)\" \"$c\"); o=$(grep -nE \"<(Animated\\.)?ScrollView([ >]|$)\" \"$c\" | head -1 | cut -d: -f1); e=$(grep -nE \"</(Animated\\.)?ScrollView>\" \"$c\" | tail -1 | cut -d: -f1); b=$(grep -nF \"Por hoy está bien\" \"$c\" | tail -1 | cut -d: -f1); if [ \"$n\" != 1 ] || [ -z \"$o\" ] || [ -z \"$e\" ] || [ -z \"$b\" ] || [ \"$b\" -le \"$o\" ] || [ \"$b\" -ge \"$e\" ]; then echo \"ClosureCard.tsx deja botones fuera del scroll\"; r=1; fi; exit $r'"
+  ],
+  "fixers": [],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 8,
+  "run": "ML-1-20261109-224722",
+  "sesion": "implementar-ST-2-2",
+  "comando": "sh -c 'f=app/src/components/cards/CardFrame.tsx; c=app/src/components/cards/ClosureCard.tsx; r=0; for s in \"contentLayout(\" \"showsBottomFade(\" \"revealScrollTarget(\" \"ScrollView\"; do grep -qF \"$s\" \"$f\" || { echo \"CardFrame.tsx no usa $s\"; r=1; }; done; if grep -qE \"body: \\{ flex: 1, justifyContent: .center.\" \"$f\"; then echo \"CardFrame.tsx sigue centrando en una altura fija\"; r=1; fi; grep -qF \"showsBottomFade(\" \"$c\" || { echo \"ClosureCard.tsx no usa showsBottomFade\"; r=1; }; n=$(grep -cE \"<(Animated\\.)?ScrollView([ >]|$)\" \"$c\"); o=$(grep -nE \"<(Animated\\.)?ScrollView([ >]|$)\" \"$c\" | head -1 | cut -d: -f1); e=$(grep -nE \"</(Animated\\.)?ScrollView>\" \"$c\" | tail -1 | cut -d: -f1); b=$(grep -nF \"Por hoy está bien\" \"$c\" | tail -1 | cut -d: -f1); if [ \"$n\" != 1 ] || [ -z \"$o\" ] || [ -z \"$e\" ] || [ -z \"$b\" ] || [ \"$b\" -le \"$o\" ] || [ \"$b\" -ge \"$e\" ]; then echo \"ClosureCard.tsx deja botones fuera del scroll\"; r=1; fi; exit $r'; echo \"exit=$?\"",
+  "alcance": [
+   "app/src/components/cards/CardFrame.tsx",
+   "app/src/components/cards/HookCard.tsx",
+   "app/src/components/cards/DeepCard.tsx",
+   "app/src/components/cards/FeedCard.tsx"
+  ],
+  "criterios": [
+   "sh -c 'f=app/src/components/cards/CardFrame.tsx; c=app/src/components/cards/ClosureCard.tsx; r=0; for s in \"contentLayout(\" \"showsBottomFade(\" \"revealScrollTarget(\" \"ScrollView\"; do grep -qF \"$s\" \"$f\" || { echo \"CardFrame.tsx no usa $s\"; r=1; }; done; if grep -qE \"body: \\{ flex: 1, justifyContent: .center.\" \"$f\"; then echo \"CardFrame.tsx sigue centrando en una altura fija\"; r=1; fi; grep -qF \"showsBottomFade(\" \"$c\" || { echo \"ClosureCard.tsx no usa showsBottomFade\"; r=1; }; n=$(grep -cE \"<(Animated\\.)?ScrollView([ >]|$)\" \"$c\"); o=$(grep -nE \"<(Animated\\.)?ScrollView([ >]|$)\" \"$c\" | head -1 | cut -d: -f1); e=$(grep -nE \"</(Animated\\.)?ScrollView>\" \"$c\" | tail -1 | cut -d: -f1); b=$(grep -nF \"Por hoy está bien\" \"$c\" | tail -1 | cut -d: -f1); if [ \"$n\" != 1 ] || [ -z \"$o\" ] || [ -z \"$e\" ] || [ -z \"$b\" ] || [ \"$b\" -le \"$o\" ] || [ \"$b\" -ge \"$e\" ]; then echo \"ClosureCard.tsx deja botones fuera del scroll\"; r=1; fi; exit $r'"
+  ],
+  "fixers": [],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "rechazado",
+  "porque": "usa variables o bucles de shell: script ad hoc"
+ },
+ {
+  "id": 9,
+  "run": "ML-1-20261109-224722",
+  "sesion": "implementar-ST-3-1",
+  "comando": "git status --short",
+  "alcance": [
+   "app/src/components/cards/ClosureCard.tsx"
+  ],
+  "criterios": [],
+  "fixers": [],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 10,
+  "run": "ML-1-20261109-224722",
+  "sesion": "implementar-ST-3-2",
+  "comando": "git diff --stat",
+  "alcance": [
+   "app/src/components/cards/ClosureCard.tsx"
+  ],
+  "criterios": [],
+  "fixers": [],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 11,
+  "run": "PIZ-1-20261107-123947",
+  "sesion": "implementar-ST-2-1",
+  "comando": "git status && ls compartido | head -50",
+  "alcance": [
+   "src/Crear.tsx",
+   "src/estilos.css",
+   "docs/diseno.md"
+  ],
+  "criterios": [
+   "npm run check"
+  ],
+  "fixers": [],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 12,
+  "run": "PIZ-1-20261107-123947",
+  "sesion": "implementar-ST-2-1",
+  "comando": "git status --short",
+  "alcance": [
+   "src/Crear.tsx",
+   "src/estilos.css",
+   "docs/diseno.md"
+  ],
+  "criterios": [
+   "npm run check"
+  ],
+  "fixers": [],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 13,
+  "run": "PIZ-1-20261107-123947",
+  "sesion": "implementar-ST-2-2",
+  "comando": "git status; git diff",
+  "alcance": [
+   "src/Crear.tsx",
+   "src/estilos.css",
+   "docs/diseno.md"
+  ],
+  "criterios": [
+   "npm run check"
+  ],
+  "fixers": [],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 14,
+  "run": "PIZ-1-20261107-123947",
+  "sesion": "implementar-ST-2-2",
+  "comando": "git diff docs/diseno.md",
+  "alcance": [
+   "src/Crear.tsx",
+   "src/estilos.css",
+   "docs/diseno.md"
+  ],
+  "criterios": [
+   "npm run check"
+  ],
+  "fixers": [],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 15,
+  "run": "PIZ-2-20261107-141033",
+  "sesion": "implementar-ST-1-1",
+  "comando": "git diff package.json; git status --short",
+  "alcance": [
+   "compartido/qr.ts",
+   "compartido/qr.test.ts",
+   "package.json",
+   "package-lock.json"
+  ],
+  "criterios": [
+   "npx vitest run compartido/qr.test.ts"
+  ],
+  "fixers": [],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 16,
+  "run": "PIZ-2-20261107-141033",
+  "sesion": "implementar-ST-1-1",
+  "comando": "git diff package.json",
+  "alcance": [
+   "compartido/qr.ts",
+   "compartido/qr.test.ts",
+   "package.json",
+   "package-lock.json"
+  ],
+  "criterios": [
+   "npx vitest run compartido/qr.test.ts"
+  ],
+  "fixers": [],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 17,
+  "run": "PIZ-2-20261107-141033",
+  "sesion": "implementar-ST-1-2",
+  "comando": "npx vitest run compartido/qr.test.ts 2>&1 | tail -20",
+  "alcance": [
+   "compartido/qr.ts",
+   "compartido/qr.test.ts",
+   "package.json",
+   "package-lock.json"
+  ],
+  "criterios": [
+   "npx vitest run compartido/qr.test.ts"
+  ],
+  "fixers": [],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 18,
+  "run": "PIZ-2-20261107-141033",
+  "sesion": "implementar-ST-1-3",
+  "comando": "ls compartido/qr.ts; git log --oneline -10; ls node_modules/qrcode node_modules/jsqr 2>&1 | head -5; grep -n '\"node_modules/qrcode\"\\|\"node_modules/jsqr\"\\|\"node_modules/@types/qrcode\"' package-lock.json",
+  "alcance": [
+   "compartido/qr.ts",
+   "compartido/qr.test.ts",
+   "package.json",
+   "package-lock.json"
+  ],
+  "criterios": [
+   "npx vitest run compartido/qr.test.ts"
+  ],
+  "fixers": [],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 19,
+  "run": "PIZ-2-20261107-141033",
+  "sesion": "implementar-ST-1-4",
+  "comando": "git log --oneline -10; ls compartido | grep -i qr; ls node_modules | grep -E \"^(qrcode|jsqr)$\"; ls node_modules/@types | grep qrcode",
+  "alcance": [
+   "compartido/qr.ts",
+   "compartido/qr.test.ts",
+   "package.json",
+   "package-lock.json"
+  ],
+  "criterios": [
+   "npx vitest run compartido/qr.test.ts"
+  ],
+  "fixers": [],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 20,
+  "run": "PIZ-2-20261107-141033",
+  "sesion": "implementar-ST-2-1",
+  "comando": "true",
+  "alcance": [
+   "src/Fichas.tsx",
+   "src/tienda.ts",
+   "src/Qr.tsx",
+   "src/App.tsx",
+   "src/estilos.css"
+  ],
+  "criterios": [
+   "npm run check"
+  ],
+  "fixers": [],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 21,
+  "run": "PIZ-2-20261107-141033",
+  "sesion": "implementar-ST-2-1",
+  "comando": "npm run check 2>&1 | tail -40",
+  "alcance": [
+   "src/Fichas.tsx",
+   "src/tienda.ts",
+   "src/Qr.tsx",
+   "src/App.tsx",
+   "src/estilos.css"
+  ],
+  "criterios": [
+   "npm run check"
+  ],
+  "fixers": [],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 22,
+  "run": "VF-1-20261108-211454",
+  "sesion": "implementar-ST-1-1",
+  "comando": "git status --short; git log --oneline -3; ls src src/costos src/config src/test-utils; wc -l src/db/db.ts src/config/env.ts src/config/verificar.ts src/contexto.ts src/app.ts src/claude/claude.ts src/test-utils/falsos.ts",
+  "alcance": [
+   "src/db/db.ts",
+   "src/costos/costos.ts",
+   "src/costos/atribucion.ts",
+   "src/contexto.ts",
+   "src/config/env.ts",
+   "src/config/verificar.ts",
+   ".env.example",
+   "src/app.ts",
+   "src/claude/claude.ts",
+   "src/test-utils/falsos.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/config/env.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 23,
+  "run": "VF-1-20261108-211454",
+  "sesion": "implementar-ST-1-1",
+  "comando": "cat .env.example",
+  "alcance": [
+   "src/db/db.ts",
+   "src/costos/costos.ts",
+   "src/costos/atribucion.ts",
+   "src/contexto.ts",
+   "src/config/env.ts",
+   "src/config/verificar.ts",
+   ".env.example",
+   "src/app.ts",
+   "src/claude/claude.ts",
+   "src/test-utils/falsos.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/config/env.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 24,
+  "run": "VF-1-20261108-211454",
+  "sesion": "implementar-ST-1-1",
+  "comando": "git status --short",
+  "alcance": [
+   "src/db/db.ts",
+   "src/costos/costos.ts",
+   "src/costos/atribucion.ts",
+   "src/contexto.ts",
+   "src/config/env.ts",
+   "src/config/verificar.ts",
+   ".env.example",
+   "src/app.ts",
+   "src/claude/claude.ts",
+   "src/test-utils/falsos.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/config/env.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 25,
+  "run": "VF-1-20261108-211454",
+  "sesion": "implementar-ST-1-1",
+  "comando": "./.flowrunner/verify.sh 2>&1 | tail -5",
+  "alcance": [
+   "src/db/db.ts",
+   "src/costos/costos.ts",
+   "src/costos/atribucion.ts",
+   "src/contexto.ts",
+   "src/config/env.ts",
+   "src/config/verificar.ts",
+   ".env.example",
+   "src/app.ts",
+   "src/claude/claude.ts",
+   "src/test-utils/falsos.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/config/env.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "rechazado",
+  "porque": "el verify del repo lo corre verificar, no la sub-task"
+ },
+ {
+  "id": 26,
+  "run": "VF-1-20261108-211454",
+  "sesion": "implementar-ST-1-2",
+  "comando": "git status --short | head; git log --oneline -3; ls; ls src src/config src/claude src/costos src/test-utils 2>&1 | head -80",
+  "alcance": [
+   "src/db/db.ts",
+   "src/costos/costos.ts",
+   "src/costos/atribucion.ts",
+   "src/contexto.ts",
+   "src/config/env.ts",
+   "src/config/verificar.ts",
+   ".env.example",
+   "src/app.ts",
+   "src/claude/claude.ts",
+   "src/test-utils/falsos.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/config/env.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 27,
+  "run": "VF-1-20261108-211454",
+  "sesion": "implementar-ST-2-1",
+  "comando": "true",
+  "alcance": [
+   "src/costos/medir.ts",
+   "src/app.ts",
+   "src/trabajos/trabajador.ts",
+   "src/diagnostico/diagnostico.ts",
+   "src/plan/plan.ts",
+   "src/produccion/produccion.ts",
+   "src/aprendizaje/aprendizaje.ts",
+   "src/publicacion/publicar.ts",
+   "src/medicion/temprano.ts",
+   "src/voz/voz.ts",
+   "src/piezas/piezas.ts",
+   "fabrica/motor/voz.mjs",
+   "fabrica/CAMBIOS.md"
+  ],
+  "criterios": [
+   "npx vitest run src/claude/costo.test.ts src/costos/claude.test.ts",
+   "npx vitest run src/costos/proveedores.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 28,
+  "run": "VF-1-20261108-211454",
+  "sesion": "implementar-ST-2-2",
+  "comando": "git status && git log --oneline -10 && ls src src/costos src/claude",
+  "alcance": [
+   "src/costos/medir.ts",
+   "src/app.ts",
+   "src/trabajos/trabajador.ts",
+   "src/diagnostico/diagnostico.ts",
+   "src/plan/plan.ts",
+   "src/produccion/produccion.ts",
+   "src/aprendizaje/aprendizaje.ts",
+   "src/publicacion/publicar.ts",
+   "src/medicion/temprano.ts",
+   "src/voz/voz.ts",
+   "src/piezas/piezas.ts",
+   "fabrica/motor/voz.mjs",
+   "fabrica/CAMBIOS.md"
+  ],
+  "criterios": [
+   "npx vitest run src/claude/costo.test.ts src/costos/claude.test.ts",
+   "npx vitest run src/costos/proveedores.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 29,
+  "run": "VF-1-20261108-211454",
+  "sesion": "implementar-ST-2-2",
+  "comando": "cat src/diagnostico/fuente.ts | head -80",
+  "alcance": [
+   "src/costos/medir.ts",
+   "src/app.ts",
+   "src/trabajos/trabajador.ts",
+   "src/diagnostico/diagnostico.ts",
+   "src/plan/plan.ts",
+   "src/produccion/produccion.ts",
+   "src/aprendizaje/aprendizaje.ts",
+   "src/publicacion/publicar.ts",
+   "src/medicion/temprano.ts",
+   "src/voz/voz.ts",
+   "src/piezas/piezas.ts",
+   "fabrica/motor/voz.mjs",
+   "fabrica/CAMBIOS.md"
+  ],
+  "criterios": [
+   "npx vitest run src/claude/costo.test.ts src/costos/claude.test.ts",
+   "npx vitest run src/costos/proveedores.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 30,
+  "run": "VF-1-20261108-211454",
+  "sesion": "implementar-ST-2-2",
+  "comando": "ls",
+  "alcance": [
+   "src/costos/medir.ts",
+   "src/app.ts",
+   "src/trabajos/trabajador.ts",
+   "src/diagnostico/diagnostico.ts",
+   "src/plan/plan.ts",
+   "src/produccion/produccion.ts",
+   "src/aprendizaje/aprendizaje.ts",
+   "src/publicacion/publicar.ts",
+   "src/medicion/temprano.ts",
+   "src/voz/voz.ts",
+   "src/piezas/piezas.ts",
+   "fabrica/motor/voz.mjs",
+   "fabrica/CAMBIOS.md"
+  ],
+  "criterios": [
+   "npx vitest run src/claude/costo.test.ts src/costos/claude.test.ts",
+   "npx vitest run src/costos/proveedores.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 31,
+  "run": "VF-1-20261108-211454",
+  "sesion": "implementar-ST-3-1",
+  "comando": "git status && git log --oneline -10 && ls src src/costos",
+  "alcance": [
+   "src/costos/linea.ts",
+   "src/diagnostico/diagnostico.ts",
+   "src/plan/plan.ts",
+   "src/produccion/produccion.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/costos/linea.test.ts",
+   "npx vitest run src/costos/sin-dato.test.ts",
+   "npx vitest run src/costos/robustez.test.ts",
+   "npm run typecheck && npm run lint && npm run format:check && npm test"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 32,
+  "run": "VF-1-20261108-211454",
+  "sesion": "implementar-ST-3-1",
+  "comando": "git diff --stat",
+  "alcance": [
+   "src/costos/linea.ts",
+   "src/diagnostico/diagnostico.ts",
+   "src/plan/plan.ts",
+   "src/produccion/produccion.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/costos/linea.test.ts",
+   "npx vitest run src/costos/sin-dato.test.ts",
+   "npx vitest run src/costos/robustez.test.ts",
+   "npm run typecheck && npm run lint && npm run format:check && npm test"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 33,
+  "run": "VF-1-20261108-211454",
+  "sesion": "implementar-ST-3-1",
+  "comando": "sed -i '' -e '247,261s/^/  /' src/plan/plan.ts && sed -n '245,264p' src/plan/plan.ts | cut -c1-90",
+  "alcance": [
+   "src/costos/linea.ts",
+   "src/diagnostico/diagnostico.ts",
+   "src/plan/plan.ts",
+   "src/produccion/produccion.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/costos/linea.test.ts",
+   "npx vitest run src/costos/sin-dato.test.ts",
+   "npx vitest run src/costos/robustez.test.ts",
+   "npm run typecheck && npm run lint && npm run format:check && npm test"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "rechazado",
+  "porque": "sed -i edita archivos: se usa Edit"
+ },
+ {
+  "id": 34,
+  "run": "VF-1-20261108-211454",
+  "sesion": "implementar-ST-3-2",
+  "comando": "git status && git log --oneline -10 && ls src src/costos src/diagnostico src/plan src/produccion",
+  "alcance": [
+   "src/costos/linea.ts",
+   "src/diagnostico/diagnostico.ts",
+   "src/plan/plan.ts",
+   "src/produccion/produccion.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/costos/linea.test.ts",
+   "npx vitest run src/costos/sin-dato.test.ts",
+   "npx vitest run src/costos/robustez.test.ts",
+   "npm run typecheck && npm run lint && npm run format:check && npm test"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 35,
+  "run": "VF-1-20261108-211454",
+  "sesion": "implementar-ST-3-3",
+  "comando": "git status && git log --oneline -10 && ls src/costos",
+  "alcance": [
+   "src/costos/linea.ts",
+   "src/diagnostico/diagnostico.ts",
+   "src/plan/plan.ts",
+   "src/produccion/produccion.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/costos/linea.test.ts",
+   "npx vitest run src/costos/sin-dato.test.ts",
+   "npx vitest run src/costos/robustez.test.ts",
+   "npm run typecheck && npm run lint && npm run format:check && npm test"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 36,
+  "run": "VF-1-20261108-211454",
+  "sesion": "implementar-ST-4-1",
+  "comando": "git status; git log --oneline -5; ls src src/costos src/operador",
+  "alcance": [
+   "src/costos/resumen.ts",
+   "src/operador/bot.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/operador/costos.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 37,
+  "run": "VF-1-20261108-211454",
+  "sesion": "implementar-ST-4-1",
+  "comando": "git diff --stat",
+  "alcance": [
+   "src/costos/resumen.ts",
+   "src/operador/bot.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/operador/costos.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 38,
+  "run": "VF-1-20261108-211454",
+  "sesion": "implementar-ST-4-1",
+  "comando": "cat .prettierrc",
+  "alcance": [
+   "src/costos/resumen.ts",
+   "src/operador/bot.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/operador/costos.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 39,
+  "run": "VF-1-20261108-211454",
+  "sesion": "implementar-ST-4-2",
+  "comando": "git status; git log --oneline -10; ls src src/costos src/operador",
+  "alcance": [
+   "src/costos/resumen.ts",
+   "src/operador/bot.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/operador/costos.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 40,
+  "run": "VF-1-20261108-211454",
+  "sesion": "implementar-ST-5-1",
+  "comando": "cat .prettierrc* 2>/dev/null; git log --oneline -10",
+  "alcance": [],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 41,
+  "run": "VF-1-20261108-211454",
+  "sesion": "implementar-ST-5-2",
+  "comando": "cat .prettierrc* 2>/dev/null; git status --short",
+  "alcance": [],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 42,
+  "run": "VF-1-20261108-211454",
+  "sesion": "verificar-diagnostico-1",
+  "comando": "git status --short; git log --oneline -10; npx prettier --check src/costos/*.test.ts src/operador/costos.test.ts; for f in src/costos/claude.test.ts src/operador/costos.test.ts; do npx prettier \"$f\" | diff \"$f\" - | head -20; done",
+  "alcance": [],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "rechazado",
+  "porque": "usa variables o bucles de shell: script ad hoc"
+ },
+ {
+  "id": 43,
+  "run": "VF-1-20261108-211454",
+  "sesion": "verificar-diagnostico-1",
+  "comando": "git diff 9fc13d4 HEAD --stat",
+  "alcance": [],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 44,
+  "run": "VF-2-20261109-001527",
+  "sesion": "implementar-ST-1-1",
+  "comando": "python3 - <<'EOF'\n…\nEOF",
+  "alcance": [
+   "src/costos/precios.ts",
+   "src/db/db.ts",
+   "src/contexto.ts",
+   "src/app.ts",
+   "src/costos/medir.ts",
+   "src/costos/resumen.ts",
+   "src/produccion/produccion.ts",
+   "src/config/env.ts",
+   "src/config/verificar.ts",
+   ".env.example",
+   "src/test-utils/falsos.ts",
+   "src/config/env.test.ts",
+   "src/marcas/marcas.test.ts",
+   "src/costos/claude.test.ts",
+   "src/costos/linea.test.ts",
+   "src/costos/proveedores.test.ts",
+   "src/costos/revision.test.ts",
+   "src/costos/robustez.test.ts",
+   "src/costos/sin-dato.test.ts",
+   "src/operador/costos.test.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/costos/precios.test.ts",
+   "npx vitest run src/config/sin-variables-costo.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "rechazado",
+  "porque": "script ad hoc con heredoc: se escribe con Write o Edit"
+ },
+ {
+  "id": 45,
+  "run": "VF-2-20261109-001527",
+  "sesion": "implementar-ST-2-1",
+  "comando": "ls src/costos src/operador; git log --oneline -5",
+  "alcance": [
+   "src/operador/bot.ts",
+   "src/operador/precio.ts",
+   "src/costos/precios.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/operador/precio.test.ts -t \"el listado\"",
+   "npx vitest run src/operador/precio.test.ts -t \"cambiar uno\"",
+   "npx vitest run src/operador/precio.test.ts -t \"desde una clínica\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 46,
+  "run": "VF-2-20261109-001527",
+  "sesion": "implementar-ST-2-1",
+  "comando": "cat .prettierrc",
+  "alcance": [
+   "src/operador/bot.ts",
+   "src/operador/precio.ts",
+   "src/costos/precios.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/operador/precio.test.ts -t \"el listado\"",
+   "npx vitest run src/operador/precio.test.ts -t \"cambiar uno\"",
+   "npx vitest run src/operador/precio.test.ts -t \"desde una clínica\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 47,
+  "run": "VF-3-20261109-004203",
+  "sesion": "implementar-ST-1-2",
+  "comando": "ls src/panel; grep -n \"panel\\|admin\" src/panel/pantallas.test.ts | head -40",
+  "alcance": [
+   "src/config/env.ts",
+   ".env.example",
+   "src/contexto.ts",
+   "src/app.ts",
+   "src/acceso/acceso.ts",
+   "src/http/servidor.ts",
+   "src/panel/sesion.ts",
+   "src/panel/marco.ts",
+   "src/panel/rutas.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/panel/acceso.test.ts -t \"AC-1\"",
+   "npx vitest run src/panel/acceso.test.ts -t \"AC-2\"",
+   "npx vitest run src/panel/acceso.test.ts -t \"AC-3\"",
+   "npx vitest run src/panel/acceso.test.ts -t \"AC-4\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 48,
+  "run": "VF-3-20261109-004203",
+  "sesion": "implementar-ST-1-2",
+  "comando": "mkdir -p src/panel",
+  "alcance": [
+   "src/config/env.ts",
+   ".env.example",
+   "src/contexto.ts",
+   "src/app.ts",
+   "src/acceso/acceso.ts",
+   "src/http/servidor.ts",
+   "src/panel/sesion.ts",
+   "src/panel/marco.ts",
+   "src/panel/rutas.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/panel/acceso.test.ts -t \"AC-1\"",
+   "npx vitest run src/panel/acceso.test.ts -t \"AC-2\"",
+   "npx vitest run src/panel/acceso.test.ts -t \"AC-3\"",
+   "npx vitest run src/panel/acceso.test.ts -t \"AC-4\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "rechazado",
+  "porque": "escribe fuera del alcance de la sub-task (o en una ruta protegida)"
+ },
+ {
+  "id": 49,
+  "run": "VF-3-20261109-004203",
+  "sesion": "implementar-ST-1-3",
+  "comando": "cat .prettierrc",
+  "alcance": [
+   "src/config/env.ts",
+   ".env.example",
+   "src/contexto.ts",
+   "src/app.ts",
+   "src/acceso/acceso.ts",
+   "src/http/servidor.ts",
+   "src/panel/sesion.ts",
+   "src/panel/marco.ts",
+   "src/panel/rutas.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/panel/acceso.test.ts -t \"AC-1\"",
+   "npx vitest run src/panel/acceso.test.ts -t \"AC-2\"",
+   "npx vitest run src/panel/acceso.test.ts -t \"AC-3\"",
+   "npx vitest run src/panel/acceso.test.ts -t \"AC-4\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 50,
+  "run": "VF-3-20261109-004203",
+  "sesion": "implementar-ST-1-3",
+  "comando": "./.flowrunner/verify.sh 2>&1 | tail -40",
+  "alcance": [
+   "src/config/env.ts",
+   ".env.example",
+   "src/contexto.ts",
+   "src/app.ts",
+   "src/acceso/acceso.ts",
+   "src/http/servidor.ts",
+   "src/panel/sesion.ts",
+   "src/panel/marco.ts",
+   "src/panel/rutas.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/panel/acceso.test.ts -t \"AC-1\"",
+   "npx vitest run src/panel/acceso.test.ts -t \"AC-2\"",
+   "npx vitest run src/panel/acceso.test.ts -t \"AC-3\"",
+   "npx vitest run src/panel/acceso.test.ts -t \"AC-4\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "rechazado",
+  "porque": "el verify del repo lo corre verificar, no la sub-task"
+ },
+ {
+  "id": 51,
+  "run": "VF-3-20261109-004203",
+  "sesion": "implementar-ST-2-2",
+  "comando": "python3 - <<'EOF'\n…\nEOF",
+  "alcance": [
+   "src/costos/resumen.ts"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "rechazado",
+  "porque": "script ad hoc con heredoc: se escribe con Write o Edit"
+ },
+ {
+  "id": 52,
+  "run": "VF-3-20261109-004203",
+  "sesion": "implementar-ST-3-2",
+  "comando": "./.flowrunner/verify.sh 2>&1 | tail -40",
+  "alcance": [
+   "src/trabajos/reloj.ts",
+   "src/trabajos/cola.ts",
+   "src/avisos/avisos.ts"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "rechazado",
+  "porque": "el verify del repo lo corre verificar, no la sub-task"
+ },
+ {
+  "id": 53,
+  "run": "VF-3-20261109-004203",
+  "sesion": "implementar-ST-4-1",
+  "comando": "git status; git log --oneline -10; ls src src/panel src/lib; cat src/panel/rutas.ts",
+  "alcance": [
+   "src/panel/rutas.ts",
+   "src/panel/datos.ts",
+   "src/panel/pantallas.ts",
+   "src/panel/secretos.ts",
+   "src/lib/html.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/panel/pantallas.test.ts -t \"AC-5\"",
+   "npx vitest run src/panel/pantallas.test.ts -t \"AC-6\"",
+   "npx vitest run src/panel/pantallas.test.ts -t \"AC-7\"",
+   "npx vitest run src/panel/pantallas.test.ts -t \"AC-8\"",
+   "npx vitest run src/panel/pantallas.test.ts -t \"AC-9\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 54,
+  "run": "VF-3-20261109-004203",
+  "sesion": "implementar-ST-4-1",
+  "comando": "grep -n \"export\" src/trabajos/reloj.ts src/trabajos/cola.ts src/avisos/avisos.ts src/lib/tiempo.ts src/lib/html.ts src/operador/marcas.ts src/operador/configurar.ts",
+  "alcance": [
+   "src/panel/rutas.ts",
+   "src/panel/datos.ts",
+   "src/panel/pantallas.ts",
+   "src/panel/secretos.ts",
+   "src/lib/html.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/panel/pantallas.test.ts -t \"AC-5\"",
+   "npx vitest run src/panel/pantallas.test.ts -t \"AC-6\"",
+   "npx vitest run src/panel/pantallas.test.ts -t \"AC-7\"",
+   "npx vitest run src/panel/pantallas.test.ts -t \"AC-8\"",
+   "npx vitest run src/panel/pantallas.test.ts -t \"AC-9\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 55,
+  "run": "VF-3-20261109-004203",
+  "sesion": "implementar-ST-4-1",
+  "comando": "python3 - <<'EOF'\n…\nEOF",
+  "alcance": [
+   "src/panel/rutas.ts",
+   "src/panel/datos.ts",
+   "src/panel/pantallas.ts",
+   "src/panel/secretos.ts",
+   "src/lib/html.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/panel/pantallas.test.ts -t \"AC-5\"",
+   "npx vitest run src/panel/pantallas.test.ts -t \"AC-6\"",
+   "npx vitest run src/panel/pantallas.test.ts -t \"AC-7\"",
+   "npx vitest run src/panel/pantallas.test.ts -t \"AC-8\"",
+   "npx vitest run src/panel/pantallas.test.ts -t \"AC-9\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "rechazado",
+  "porque": "script ad hoc con heredoc: se escribe con Write o Edit"
+ },
+ {
+  "id": 56,
+  "run": "VF-3-20261109-004203",
+  "sesion": "implementar-ST-4-2",
+  "comando": "git status --short; git log --oneline -5; ls src/panel",
+  "alcance": [
+   "src/panel/rutas.ts",
+   "src/panel/datos.ts",
+   "src/panel/pantallas.ts",
+   "src/panel/secretos.ts",
+   "src/lib/html.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/panel/pantallas.test.ts -t \"AC-5\"",
+   "npx vitest run src/panel/pantallas.test.ts -t \"AC-6\"",
+   "npx vitest run src/panel/pantallas.test.ts -t \"AC-7\"",
+   "npx vitest run src/panel/pantallas.test.ts -t \"AC-8\"",
+   "npx vitest run src/panel/pantallas.test.ts -t \"AC-9\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 57,
+  "run": "VF-3-20261109-004203",
+  "sesion": "verificar-diagnostico-1",
+  "comando": "git status --short; git log --oneline -10; npx prettier --check src/panel/marco.ts; cp src/panel/marco.ts /tmp/marco_check.ts && npx prettier src/panel/marco.ts | diff src/panel/marco.ts - ; git log --oneline -- src/panel/marco.ts",
+  "alcance": [],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "rechazado",
+  "porque": "escribe fuera del alcance de la sub-task (o en una ruta protegida)"
+ },
+ {
+  "id": 58,
+  "run": "VF-3-20261109-004203",
+  "sesion": "verificar-diagnostico-1",
+  "comando": "git diff 2c606ff 2f7ccc3 --stat",
+  "alcance": [],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 59,
+  "run": "VF-4-20261109-012959",
+  "sesion": "implementar-ST-1-3",
+  "comando": "grep -n \"enTransaccion\" -A12 src/db/db.ts | head -30",
+  "alcance": [
+   "src/operador/acciones.ts",
+   "src/operador/bot.ts"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 60,
+  "run": "VF-4-20261109-012959",
+  "sesion": "implementar-ST-2-3",
+  "comando": "tail -n +285 src/db/db.ts | head -5; grep -n \"^\\];\" src/db/db.ts; sed -n 285,300p src/db/db.ts",
+  "alcance": [
+   "src/db/db.ts",
+   "src/trabajos/cola.ts",
+   "src/avisos/avisos.ts"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 61,
+  "run": "VF-4-20261109-012959",
+  "sesion": "implementar-ST-3-3",
+  "comando": "./.flowrunner/verify.sh 2>&1 | tail -40",
+  "alcance": [
+   "src/costos/resumen.ts"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "rechazado",
+  "porque": "el verify del repo lo corre verificar, no la sub-task"
+ },
+ {
+  "id": 62,
+  "run": "VF-4-20261109-012959",
+  "sesion": "implementar-ST-4-1",
+  "comando": "git status && git log --oneline -10 && ls src src/panel src/operador",
+  "alcance": [
+   "src/panel/rutas.ts",
+   "src/panel/acciones.ts",
+   "src/panel/pantallas.ts",
+   "src/panel/datos.ts",
+   "src/panel/marco.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/panel/acciones.test.ts -t \"AC-1\"",
+   "npx vitest run src/panel/acciones.test.ts -t \"AC-2\"",
+   "npx vitest run src/panel/acciones.test.ts -t \"AC-3\"",
+   "npx vitest run src/panel/vistos.test.ts -t \"AC-4\"",
+   "npx vitest run src/panel/vistos.test.ts -t \"AC-5\"",
+   "npx vitest run src/panel/acciones.test.ts src/panel/pantallas.test.ts -t \"AC-6|AC-9\"",
+   "npx vitest run src/panel/sin-gastos.test.ts",
+   "npx vitest run src/panel/vistos.test.ts -t \"AC-8\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 63,
+  "run": "VF-4-20261109-012959",
+  "sesion": "implementar-ST-4-1",
+  "comando": "git diff --stat",
+  "alcance": [
+   "src/panel/rutas.ts",
+   "src/panel/acciones.ts",
+   "src/panel/pantallas.ts",
+   "src/panel/datos.ts",
+   "src/panel/marco.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/panel/acciones.test.ts -t \"AC-1\"",
+   "npx vitest run src/panel/acciones.test.ts -t \"AC-2\"",
+   "npx vitest run src/panel/acciones.test.ts -t \"AC-3\"",
+   "npx vitest run src/panel/vistos.test.ts -t \"AC-4\"",
+   "npx vitest run src/panel/vistos.test.ts -t \"AC-5\"",
+   "npx vitest run src/panel/acciones.test.ts src/panel/pantallas.test.ts -t \"AC-6|AC-9\"",
+   "npx vitest run src/panel/sin-gastos.test.ts",
+   "npx vitest run src/panel/vistos.test.ts -t \"AC-8\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 64,
+  "run": "VF-4-20261109-012959",
+  "sesion": "implementar-ST-4-1",
+  "comando": "./.flowrunner/verify.sh 2>&1 | grep -vE '^\\+ |^- ' | head -80",
+  "alcance": [
+   "src/panel/rutas.ts",
+   "src/panel/acciones.ts",
+   "src/panel/pantallas.ts",
+   "src/panel/datos.ts",
+   "src/panel/marco.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/panel/acciones.test.ts -t \"AC-1\"",
+   "npx vitest run src/panel/acciones.test.ts -t \"AC-2\"",
+   "npx vitest run src/panel/acciones.test.ts -t \"AC-3\"",
+   "npx vitest run src/panel/vistos.test.ts -t \"AC-4\"",
+   "npx vitest run src/panel/vistos.test.ts -t \"AC-5\"",
+   "npx vitest run src/panel/acciones.test.ts src/panel/pantallas.test.ts -t \"AC-6|AC-9\"",
+   "npx vitest run src/panel/sin-gastos.test.ts",
+   "npx vitest run src/panel/vistos.test.ts -t \"AC-8\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "rechazado",
+  "porque": "el verify del repo lo corre verificar, no la sub-task"
+ },
+ {
+  "id": 65,
+  "run": "VF-4-20261109-012959",
+  "sesion": "implementar-ST-4-2",
+  "comando": "git status --short; git log --oneline -5; ls src/panel; sed -n 60,85p src/panel/acciones.test.ts",
+  "alcance": [
+   "src/panel/rutas.ts",
+   "src/panel/acciones.ts",
+   "src/panel/pantallas.ts",
+   "src/panel/datos.ts",
+   "src/panel/marco.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/panel/acciones.test.ts -t \"AC-1\"",
+   "npx vitest run src/panel/acciones.test.ts -t \"AC-2\"",
+   "npx vitest run src/panel/acciones.test.ts -t \"AC-3\"",
+   "npx vitest run src/panel/vistos.test.ts -t \"AC-4\"",
+   "npx vitest run src/panel/vistos.test.ts -t \"AC-5\"",
+   "npx vitest run src/panel/acciones.test.ts src/panel/pantallas.test.ts -t \"AC-6|AC-9\"",
+   "npx vitest run src/panel/sin-gastos.test.ts",
+   "npx vitest run src/panel/vistos.test.ts -t \"AC-8\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 66,
+  "run": "VF-4-20261109-012959",
+  "sesion": "verificar-diagnostico-1",
+  "comando": "git log --oneline -10; git status --short; git log --format='%h %s' -- src/panel/acciones.test.ts; sed -n 60,85p src/panel/acciones.test.ts",
+  "alcance": [],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 67,
+  "run": "VF-4-20261109-012959",
+  "sesion": "verificar-diagnostico-1",
+  "comando": "git diff dfa8e03 HEAD --stat",
+  "alcance": [],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 68,
+  "run": "VF-4-20261109-012959",
+  "sesion": "verificar-diagnostico-2",
+  "comando": "git log --oneline -10; git status --short; git log --format='%h %s' -- src/panel/acciones.test.ts; sed -n 60,90p src/panel/acciones.test.ts",
+  "alcance": [],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 69,
+  "run": "VF-4-20261109-012959",
+  "sesion": "verificar-diagnostico-3",
+  "comando": "git status --short && git log --oneline -10 && git log --oneline --format='%h %s' -- src/panel/acciones.test.ts && sed -n 65,80p src/panel/acciones.test.ts",
+  "alcance": [],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 70,
+  "run": "VF-4-20261109-012959",
+  "sesion": "verificar-diagnostico-4",
+  "comando": "git log --oneline -10 -- src/panel/acciones.test.ts; git log --oneline -10; git status --short; sed -n 60,85p src/panel/acciones.test.ts",
+  "alcance": [],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 71,
+  "run": "VF-4-20261109-012959",
+  "sesion": "verificar-diagnostico-5",
+  "comando": "git log --oneline -10; git status --short; git log --format='%h %s' -- src/panel/acciones.test.ts; sed -n 60,85p src/panel/acciones.test.ts",
+  "alcance": [],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 72,
+  "run": "VF-5-20261109-203402",
+  "sesion": "implementar-ST-1-1",
+  "comando": "grep -n \"voces\\|^import\" src/produccion/produccion.ts | head -40; grep -n \"voces\" src/contexto.ts; sed -n 55,75p src/voz/clon.ts",
+  "alcance": [
+   "src/produccion/produccion.ts",
+   "src/marcas/carpeta.ts",
+   "src/piezas/piezas.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/produccion/voz-antes-de-gastar.test.ts",
+   "npx vitest run src/produccion/error-entero.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 73,
+  "run": "VF-5-20261109-203402",
+  "sesion": "implementar-ST-2-1",
+  "comando": "python3 - <<'EOF'\n…\nEOF",
+  "alcance": [
+   "src/voz/clon.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/voz/borrar-voz-que-no-esta.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "rechazado",
+  "porque": "script ad hoc con heredoc: se escribe con Write o Edit"
+ },
+ {
+  "id": 74,
+  "run": "VF-5-20261109-203402",
+  "sesion": "implementar-ST-3-1",
+  "comando": "npx eslint --fix 'src/plan/plan.ts'; npx vitest run src/operador/idea-de-prueba.test.ts; npx vitest run src/operador/idea-demasiado-larga.test.ts",
+  "alcance": [
+   "src/plan/plan.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/operador/idea-de-prueba.test.ts",
+   "npx vitest run src/operador/idea-demasiado-larga.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 75,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-1-1",
+  "comando": "ls src/remoto 2>&1; grep -n \"export function textoFecha\" -A3 src/lib/tiempo.ts",
+  "alcance": [
+   "src/db/db.ts",
+   "src/remoto/lugar.ts",
+   "src/operador/bot.ts",
+   "src/marcas/marcas.test.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/produccion/lugar.test.ts -t \"AC-1\"",
+   "npx vitest run src/operador/lugar.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 76,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-1-1",
+  "comando": "git diff src/operador/bot.ts",
+  "alcance": [
+   "src/db/db.ts",
+   "src/remoto/lugar.ts",
+   "src/operador/bot.ts",
+   "src/marcas/marcas.test.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/produccion/lugar.test.ts -t \"AC-1\"",
+   "npx vitest run src/operador/lugar.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 77,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-1-2",
+  "comando": "git diff --stat; awk 'length > 150 {print FILENAME\": \"FNR\": \"length}' src/operador/bot.ts src/remoto/lugar.ts src/marcas/marcas.test.ts | head",
+  "alcance": [
+   "src/db/db.ts",
+   "src/remoto/lugar.ts",
+   "src/operador/bot.ts",
+   "src/marcas/marcas.test.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/produccion/lugar.test.ts -t \"AC-1\"",
+   "npx vitest run src/operador/lugar.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 78,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-1-3",
+  "comando": "cat >> /dev/null <<'EOF'\n…\nEOF",
+  "alcance": [
+   "src/db/db.ts",
+   "src/remoto/lugar.ts",
+   "src/operador/bot.ts",
+   "src/marcas/marcas.test.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/produccion/lugar.test.ts -t \"AC-1\"",
+   "npx vitest run src/operador/lugar.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "rechazado",
+  "porque": "script ad hoc con heredoc: se escribe con Write o Edit"
+ },
+ {
+  "id": 79,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-1-4",
+  "comando": "ls src/remoto 2>&1; sed -n 1,12p src/trabajos/cola.ts; grep -n \"Db\\b\" src/db/db.ts | head -5",
+  "alcance": [
+   "src/db/db.ts",
+   "src/remoto/lugar.ts",
+   "src/operador/bot.ts",
+   "src/marcas/marcas.test.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/produccion/lugar.test.ts -t \"AC-1\"",
+   "npx vitest run src/operador/lugar.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 80,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-1-4",
+  "comando": "npx prettier --write src/db/db.ts src/remoto/lugar.ts src/operador/bot.ts src/marcas/marcas.test.ts",
+  "alcance": [
+   "src/db/db.ts",
+   "src/remoto/lugar.ts",
+   "src/operador/bot.ts",
+   "src/marcas/marcas.test.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/produccion/lugar.test.ts -t \"AC-1\"",
+   "npx vitest run src/operador/lugar.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 81,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-2-1",
+  "comando": "git grep -n \"en_produccion\" -- src/piezas/estados.ts | head -3; git grep -n \"estado\" -- src/db/db.ts | sed -n 1,10p",
+  "alcance": [
+   "src/trabajos/cola.ts",
+   "src/trabajos/trabajador.ts",
+   "src/trabajos/cola.test.ts",
+   "src/costos/revision.test.ts"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 82,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-2-2",
+  "comando": "git status --short",
+  "alcance": [
+   "src/trabajos/cola.ts",
+   "src/trabajos/trabajador.ts",
+   "src/trabajos/cola.test.ts",
+   "src/costos/revision.test.ts"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 83,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-2-3",
+  "comando": "npx prettier --write src/trabajos/cola.ts src/trabajos/trabajador.ts && npx prettier --check src/trabajos/cola.ts src/trabajos/trabajador.ts",
+  "alcance": [
+   "src/trabajos/cola.ts",
+   "src/trabajos/trabajador.ts",
+   "src/trabajos/cola.test.ts",
+   "src/costos/revision.test.ts"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 84,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-2-3",
+  "comando": "npx prettier --write src/trabajos/cola.ts src/trabajos/trabajador.ts",
+  "alcance": [
+   "src/trabajos/cola.ts",
+   "src/trabajos/trabajador.ts",
+   "src/trabajos/cola.test.ts",
+   "src/costos/revision.test.ts"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 85,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-2-4",
+  "comando": "npx prettier --write src/trabajos/cola.ts src/trabajos/trabajador.ts && npx prettier --check src/trabajos/cola.ts src/trabajos/trabajador.ts && git diff --stat",
+  "alcance": [
+   "src/trabajos/cola.ts",
+   "src/trabajos/trabajador.ts",
+   "src/trabajos/cola.test.ts",
+   "src/costos/revision.test.ts"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 86,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-2-4",
+  "comando": "npx prettier --write src/trabajos/cola.ts src/trabajos/trabajador.ts",
+  "alcance": [
+   "src/trabajos/cola.ts",
+   "src/trabajos/trabajador.ts",
+   "src/trabajos/cola.test.ts",
+   "src/costos/revision.test.ts"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 87,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-3-1",
+  "comando": "echo skip",
+  "alcance": [
+   "src/produccion/produccion.ts",
+   "src/marcas/carpeta.ts",
+   "src/remoto/protocolo.ts"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 88,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-3-2",
+  "comando": "git status --short; ls src/mac src/remoto src/produccion",
+  "alcance": [
+   "src/produccion/produccion.ts",
+   "src/marcas/carpeta.ts",
+   "src/remoto/protocolo.ts"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 89,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-3-2",
+  "comando": "git diff --stat",
+  "alcance": [
+   "src/produccion/produccion.ts",
+   "src/marcas/carpeta.ts",
+   "src/remoto/protocolo.ts"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 90,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-3-2",
+  "comando": "true",
+  "alcance": [
+   "src/produccion/produccion.ts",
+   "src/marcas/carpeta.ts",
+   "src/remoto/protocolo.ts"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 91,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-3-3",
+  "comando": "git status --short | head; git log --oneline -3",
+  "alcance": [
+   "src/produccion/produccion.ts",
+   "src/marcas/carpeta.ts",
+   "src/remoto/protocolo.ts"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 92,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-3-3",
+  "comando": "true",
+  "alcance": [
+   "src/produccion/produccion.ts",
+   "src/marcas/carpeta.ts",
+   "src/remoto/protocolo.ts"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 93,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-3-3",
+  "comando": "cat .prettierrc",
+  "alcance": [
+   "src/produccion/produccion.ts",
+   "src/marcas/carpeta.ts",
+   "src/remoto/protocolo.ts"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 94,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-3-3",
+  "comando": "npx prettier --write src/remoto/protocolo.ts src/marcas/carpeta.ts src/produccion/produccion.ts",
+  "alcance": [
+   "src/produccion/produccion.ts",
+   "src/marcas/carpeta.ts",
+   "src/remoto/protocolo.ts"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 95,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-3-4",
+  "comando": "cat > /tmp/st3-nuevo.txt <<'EOF'\n…\nEOF",
+  "alcance": [
+   "src/produccion/produccion.ts",
+   "src/marcas/carpeta.ts",
+   "src/remoto/protocolo.ts"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "rechazado",
+  "porque": "script ad hoc con heredoc: se escribe con Write o Edit"
+ },
+ {
+  "id": 96,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-3-4",
+  "comando": "npx prettier --write src/remoto/protocolo.ts src/marcas/carpeta.ts src/produccion/produccion.ts",
+  "alcance": [
+   "src/produccion/produccion.ts",
+   "src/marcas/carpeta.ts",
+   "src/remoto/protocolo.ts"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 97,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-3-5",
+  "comando": "npx prettier --write src/remoto/protocolo.ts src/marcas/carpeta.ts src/produccion/produccion.ts && npx prettier --check src/remoto/protocolo.ts src/marcas/carpeta.ts src/produccion/produccion.ts",
+  "alcance": [
+   "src/produccion/produccion.ts",
+   "src/marcas/carpeta.ts",
+   "src/remoto/protocolo.ts"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 98,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-4-1",
+  "comando": "git status --short; git log --oneline -5; ls src src/remoto src/mac src/produccion src/trabajos 2>&1",
+  "alcance": [
+   "src/remoto/remoto.ts",
+   "src/remoto/rutas.ts",
+   "src/mac/cliente.ts",
+   "src/http/servidor.ts",
+   "src/app.ts",
+   "src/contexto.ts",
+   "src/config/env.ts",
+   "src/config/verificar.ts",
+   "src/trabajos/reloj.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/produccion/lugar.test.ts -t \"AC-3\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-4\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-5\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-6\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-7\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-8\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-9\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-10\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 99,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-4-1",
+  "comando": "cat tsconfig.json; grep -rn \"FormData\" src --include=*.ts | grep -v test | head",
+  "alcance": [
+   "src/remoto/remoto.ts",
+   "src/remoto/rutas.ts",
+   "src/mac/cliente.ts",
+   "src/http/servidor.ts",
+   "src/app.ts",
+   "src/contexto.ts",
+   "src/config/env.ts",
+   "src/config/verificar.ts",
+   "src/trabajos/reloj.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/produccion/lugar.test.ts -t \"AC-3\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-4\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-5\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-6\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-7\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-8\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-9\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-10\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 100,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-4-1",
+  "comando": "grep -n \"Limit\" node_modules/busboy/lib/types/multipart.js | head -30",
+  "alcance": [
+   "src/remoto/remoto.ts",
+   "src/remoto/rutas.ts",
+   "src/mac/cliente.ts",
+   "src/http/servidor.ts",
+   "src/app.ts",
+   "src/contexto.ts",
+   "src/config/env.ts",
+   "src/config/verificar.ts",
+   "src/trabajos/reloj.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/produccion/lugar.test.ts -t \"AC-3\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-4\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-5\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-6\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-7\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-8\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-9\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-10\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 101,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-4-1",
+  "comando": "git diff --stat",
+  "alcance": [
+   "src/remoto/remoto.ts",
+   "src/remoto/rutas.ts",
+   "src/mac/cliente.ts",
+   "src/http/servidor.ts",
+   "src/app.ts",
+   "src/contexto.ts",
+   "src/config/env.ts",
+   "src/config/verificar.ts",
+   "src/trabajos/reloj.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/produccion/lugar.test.ts -t \"AC-3\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-4\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-5\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-6\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-7\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-8\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-9\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-10\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 102,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-4-2",
+  "comando": "git status --short; git log --oneline -5; ls src src/remoto src/mac src/produccion src/trabajos 2>&1 | head -80",
+  "alcance": [
+   "src/remoto/remoto.ts",
+   "src/remoto/rutas.ts",
+   "src/mac/cliente.ts",
+   "src/http/servidor.ts",
+   "src/app.ts",
+   "src/contexto.ts",
+   "src/config/env.ts",
+   "src/config/verificar.ts",
+   "src/trabajos/reloj.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/produccion/lugar.test.ts -t \"AC-3\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-4\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-5\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-6\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-7\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-8\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-9\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-10\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 103,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-4-2",
+  "comando": "git diff --stat",
+  "alcance": [
+   "src/remoto/remoto.ts",
+   "src/remoto/rutas.ts",
+   "src/mac/cliente.ts",
+   "src/http/servidor.ts",
+   "src/app.ts",
+   "src/contexto.ts",
+   "src/config/env.ts",
+   "src/config/verificar.ts",
+   "src/trabajos/reloj.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/produccion/lugar.test.ts -t \"AC-3\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-4\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-5\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-6\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-7\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-8\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-9\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-10\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 104,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-4-3",
+  "comando": "git status --short; git log --oneline -5; ls src src/remoto src/mac src/produccion src/trabajos 2>&1",
+  "alcance": [
+   "src/remoto/remoto.ts",
+   "src/remoto/rutas.ts",
+   "src/mac/cliente.ts",
+   "src/http/servidor.ts",
+   "src/app.ts",
+   "src/contexto.ts",
+   "src/config/env.ts",
+   "src/config/verificar.ts",
+   "src/trabajos/reloj.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/produccion/lugar.test.ts -t \"AC-3\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-4\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-5\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-6\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-7\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-8\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-9\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-10\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 105,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-4-3",
+  "comando": "npx prettier --write src/remoto/remoto.ts src/remoto/rutas.ts src/mac/cliente.ts src/http/servidor.ts src/app.ts src/contexto.ts src/config/env.ts src/config/verificar.ts src/trabajos/reloj.ts",
+  "alcance": [
+   "src/remoto/remoto.ts",
+   "src/remoto/rutas.ts",
+   "src/mac/cliente.ts",
+   "src/http/servidor.ts",
+   "src/app.ts",
+   "src/contexto.ts",
+   "src/config/env.ts",
+   "src/config/verificar.ts",
+   "src/trabajos/reloj.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/produccion/lugar.test.ts -t \"AC-3\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-4\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-5\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-6\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-7\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-8\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-9\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-10\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 106,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-4-4",
+  "comando": "git status --short | head -30; git log --oneline -5; ls src src/remoto src/mac src/produccion src/trabajos 2>&1 | head -80",
+  "alcance": [
+   "src/remoto/remoto.ts",
+   "src/remoto/rutas.ts",
+   "src/mac/cliente.ts",
+   "src/http/servidor.ts",
+   "src/app.ts",
+   "src/contexto.ts",
+   "src/config/env.ts",
+   "src/config/verificar.ts",
+   "src/trabajos/reloj.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/produccion/lugar.test.ts -t \"AC-3\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-4\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-5\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-6\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-7\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-8\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-9\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-10\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 107,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-4-4",
+  "comando": "cat tsconfig.json package.json .prettierrc",
+  "alcance": [
+   "src/remoto/remoto.ts",
+   "src/remoto/rutas.ts",
+   "src/mac/cliente.ts",
+   "src/http/servidor.ts",
+   "src/app.ts",
+   "src/contexto.ts",
+   "src/config/env.ts",
+   "src/config/verificar.ts",
+   "src/trabajos/reloj.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/produccion/lugar.test.ts -t \"AC-3\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-4\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-5\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-6\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-7\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-8\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-9\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-10\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 108,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-4-4",
+  "comando": "npx prettier --write src/remoto/remoto.ts src/remoto/rutas.ts src/mac/cliente.ts src/http/servidor.ts src/app.ts src/contexto.ts src/config/env.ts src/config/verificar.ts src/trabajos/reloj.ts",
+  "alcance": [
+   "src/remoto/remoto.ts",
+   "src/remoto/rutas.ts",
+   "src/mac/cliente.ts",
+   "src/http/servidor.ts",
+   "src/app.ts",
+   "src/contexto.ts",
+   "src/config/env.ts",
+   "src/config/verificar.ts",
+   "src/trabajos/reloj.ts"
+  ],
+  "criterios": [
+   "npx vitest run src/produccion/lugar.test.ts -t \"AC-3\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-4\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-5\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-6\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-7\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-8\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-9\"",
+   "npx vitest run src/remoto/remoto.test.ts -t \"AC-10\""
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 109,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-5-1",
+  "comando": "git status --short; git log --oneline -5; ls src src/mac src/remoto 2>&1 | head -60",
+  "alcance": [
+   "src/mac/config.ts",
+   "src/mac/trabajador.ts",
+   "src/mac/index.ts",
+   "package.json"
+  ],
+  "criterios": [
+   "npx vitest run src/mac/trabajador.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 110,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-5-2",
+  "comando": "git status; git log --oneline -10; ls src src/mac src/remoto src/produccion",
+  "alcance": [
+   "src/mac/config.ts",
+   "src/mac/trabajador.ts",
+   "src/mac/index.ts",
+   "package.json"
+  ],
+  "criterios": [
+   "npx vitest run src/mac/trabajador.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 111,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-5-2",
+  "comando": "git diff HEAD --stat",
+  "alcance": [
+   "src/mac/config.ts",
+   "src/mac/trabajador.ts",
+   "src/mac/index.ts",
+   "package.json"
+  ],
+  "criterios": [
+   "npx vitest run src/mac/trabajador.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 112,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-5-3",
+  "comando": "git status && git log --oneline -10 && ls src src/mac src/remoto 2>&1",
+  "alcance": [
+   "src/mac/config.ts",
+   "src/mac/trabajador.ts",
+   "src/mac/index.ts",
+   "package.json"
+  ],
+  "criterios": [
+   "npx vitest run src/mac/trabajador.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 113,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-5-4",
+  "comando": "git status; git log --oneline -10; ls src/mac src/remoto src/produccion",
+  "alcance": [
+   "src/mac/config.ts",
+   "src/mac/trabajador.ts",
+   "src/mac/index.ts",
+   "package.json"
+  ],
+  "criterios": [
+   "npx vitest run src/mac/trabajador.test.ts"
+  ],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 114,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-6-2",
+  "comando": "git status && git log --oneline -10 && git diff --stat",
+  "alcance": [
+   "docs/despliegue.md",
+   ".env.example",
+   ".env.mac.example",
+   ".gitignore"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 115,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-6-2",
+  "comando": "git diff d65bf84~1 d65bf84 --stat",
+  "alcance": [
+   "docs/despliegue.md",
+   ".env.example",
+   ".env.mac.example",
+   ".gitignore"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 116,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-6-3",
+  "comando": "git log --oneline -10 && git diff HEAD --stat && git show --stat HEAD | head -20",
+  "alcance": [
+   "docs/despliegue.md",
+   ".env.example",
+   ".env.mac.example",
+   ".gitignore"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 117,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-6-4",
+  "comando": "git status --short; git log --oneline -5; ls -a | head -40",
+  "alcance": [
+   "docs/despliegue.md",
+   ".env.example",
+   ".env.mac.example",
+   ".gitignore"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 118,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-6-5",
+  "comando": "git status --short",
+  "alcance": [
+   "docs/despliegue.md",
+   ".env.example",
+   ".env.mac.example",
+   ".gitignore"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 119,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-6-6",
+  "comando": "git status --short; git log --oneline -3; cat .gitignore; echo ---; cat .env.example; echo ---; cat .env.mac.example",
+  "alcance": [
+   "docs/despliegue.md",
+   ".env.example",
+   ".env.mac.example",
+   ".gitignore"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 120,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-6-6",
+  "comando": "npx prettier --write docs/despliegue.md",
+  "alcance": [
+   "docs/despliegue.md",
+   ".env.example",
+   ".env.mac.example",
+   ".gitignore"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 121,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-6-7",
+  "comando": "npx prettier --write docs/despliegue.md && npx prettier --check docs/despliegue.md",
+  "alcance": [
+   "docs/despliegue.md",
+   ".env.example",
+   ".env.mac.example",
+   ".gitignore"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 122,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-6-7",
+  "comando": "npx prettier --write docs/despliegue.md",
+  "alcance": [
+   "docs/despliegue.md",
+   ".env.example",
+   ".env.mac.example",
+   ".gitignore"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 123,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-6-8",
+  "comando": "npx prettier --write docs/despliegue.md && npx prettier --check docs/despliegue.md",
+  "alcance": [
+   "docs/despliegue.md",
+   ".env.example",
+   ".env.mac.example",
+   ".gitignore"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 124,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-6-8",
+  "comando": "npx prettier --check docs/despliegue.md",
+  "alcance": [
+   "docs/despliegue.md",
+   ".env.example",
+   ".env.mac.example",
+   ".gitignore"
+  ],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 125,
+  "run": "VF-6-20261109-210621",
+  "sesion": "implementar-ST-7-1",
+  "comando": "grep -c 'src/remoto/' CLAUDE.md",
+  "alcance": [],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 126,
+  "run": "VF-6-20261109-210621",
+  "sesion": "verificar-diagnostico-1",
+  "comando": "git status --short && git log --oneline -10 && cat .flowrunner/verify.sh && cat src/mac/documentacion.test.ts",
+  "alcance": [],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 127,
+  "run": "VF-6-20261109-210621",
+  "sesion": "verificar-diagnostico-1",
+  "comando": "git diff 8057597 d65bf84 --stat",
+  "alcance": [],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 128,
+  "run": "VF-6-20261109-210621",
+  "sesion": "verificar-diagnostico-2",
+  "comando": "git log --oneline -10; git status --short; sed -n 95,140p src/marcas/marcas.test.ts; npx prettier --check src/marcas/carpeta.ts src/remoto/rutas.ts CLAUDE.md",
+  "alcance": [],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "rechazado",
+  "porque": "escribe fuera del alcance de la sub-task (o en una ruta protegida)"
+ },
+ {
+  "id": 129,
+  "run": "VF-6-20261109-210621",
+  "sesion": "verificar-diagnostico-2",
+  "comando": "git diff --stat 8057597 d65bf84",
+  "alcance": [],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 130,
+  "run": "VF-6-20261109-210621",
+  "sesion": "verificar-diagnostico-3",
+  "comando": "git log --oneline -10; git status --short; sed -n 95,140p src/marcas/marcas.test.ts",
+  "alcance": [],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 131,
+  "run": "VF-6-20261109-210621",
+  "sesion": "verificar-diagnostico-4",
+  "comando": "git log --oneline -10; git status --short; grep -n -E 'src/remoto/|src/mac/|TRABAJADOR_REMOTO_TOKEN|/produccion' CLAUDE.md; cat src/mac/documentacion.test.ts",
+  "alcance": [],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 132,
+  "run": "VF-6-20261109-210621",
+  "sesion": "verificar-diagnostico-4",
+  "comando": "git diff aa08f9f 8f9dcf2 --stat",
+  "alcance": [],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 133,
+  "run": "VF-6-20261109-210621",
+  "sesion": "verificar-diagnostico-5",
+  "comando": "git status --short; git log --oneline -10",
+  "alcance": [],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ },
+ {
+  "id": 134,
+  "run": "VF-6-20261109-210621",
+  "sesion": "verificar-diagnostico-6",
+  "comando": "npx prettier --check src/marcas/carpeta.ts; git log --oneline -10; git status --short; cp src/marcas/carpeta.ts /tmp/c.ts && npx prettier /tmp/c.ts --stdin-filepath src/marcas/carpeta.ts < src/marcas/carpeta.ts | diff src/marcas/carpeta.ts - | head -40",
+  "alcance": [],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "rechazado",
+  "porque": "escribe fuera del alcance de la sub-task (o en una ruta protegida)"
+ },
+ {
+  "id": 135,
+  "run": "VF-6-20261109-210621",
+  "sesion": "verificar-diagnostico-6",
+  "comando": "git diff 96596a8 HEAD -- src/marcas/carpeta.ts",
+  "alcance": [],
+  "criterios": [],
+  "fixers": [
+   "npx eslint --fix",
+   "npx prettier --write --ignore-unknown"
+  ],
+  "typecheck": null,
+  "env_files": [],
+  "esperado": "permitido"
+ }
+]

@@ -2,6 +2,7 @@
 // momento de cada herramienta, y el doble control, sobre el diff real.
 import { existsSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, matchesGlob, relative, resolve, sep } from "node:path";
+import type { Comandos } from "./comandos.ts";
 
 export type Verdict = { readonly ok: true } | { readonly ok: false; readonly motivo: string };
 const OK: Verdict = { ok: true };
@@ -39,8 +40,8 @@ export interface Scope {
   readonly manifests: readonly string[];
   readonly depsDeclared: boolean;
   readonly testGlobs: readonly string[];
-  /** Comandos de Bash permitidos tal cual. */
-  readonly bash: readonly string[];
+  /** Lo que una sesión con Bash puede correr; ver `checkCommand`. */
+  readonly comandos: Comandos;
   /** Archivos con secretos que no se leen ni se buscan, como los `.env` que copia probar. */
   readonly unreadable?: readonly string[];
 }
@@ -55,13 +56,14 @@ function realish(path: string): string {
     missing.unshift(current.slice(parent.length + 1));
     current = parent;
   }
-  return resolve(realpathSync(current), ...missing);
+  // La versión nativa devuelve las mayúsculas del disco: en APFS, `.ENV.LOCAL` es `.env.local`.
+  return resolve(realpathSync.native(current), ...missing);
 }
 
 /** La ruta relativa al worktree, o undefined si queda afuera después de resolver links y `..`. */
 export function insideRoot(scope: Scope, path: string): string | undefined {
   const absolute = realish(isAbsolute(path) ? path : resolve(scope.root, path));
-  const rel = relative(scope.root, absolute);
+  const rel = relative(realish(scope.root), absolute);
   if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return rel === "" ? "" : undefined;
   return rel.split(sep).join("/");
 }
@@ -189,21 +191,4 @@ export function checkContent(scope: Scope, rel: string, added: readonly string[]
     }
   }
   return OK;
-}
-
-const COMPOSITION = /[;&|`]|\$\(|>|</;
-
-export function checkBash(scope: Scope, command: string): Verdict {
-  const trimmed = command.trim();
-  if (scope.bash.includes(trimmed)) return OK;
-  const allowed =
-    scope.bash.length === 0 ? "ninguno" : scope.bash.map((c) => `\`${c}\``).join(", ");
-  if (COMPOSITION.test(trimmed)) {
-    return no(
-      `el comando compone otros comandos y no está en la lista permitida tal cual. Permitidos: ${allowed}`,
-    );
-  }
-  return no(
-    `\`${trimmed}\` no está en la lista permitida de ${scope.owner}. Permitidos: ${allowed}`,
-  );
 }

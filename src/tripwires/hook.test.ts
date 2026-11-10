@@ -18,7 +18,7 @@ function policy(extra: Partial<HookPolicy> = {}): HookPolicy {
       manifests: [],
       depsDeclared: false,
       testGlobs: ["tests/**"],
-      bash: ["pnpm test"],
+      comandos: { ampliables: ["pnpm test"], exactos: [], fixers: [] },
     },
     fase: "implementar",
     unidad: "ST-2",
@@ -92,6 +92,13 @@ describe("tripwireHook", () => {
         "env -u CLAUDE_CODE_OAUTH_TOKEN -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN sh -c 'pnpm test'",
       description: "tests",
     });
+  });
+
+  // Regresión de VF-6: `git status --short` y `ls` encadenados se rechazaban por no estar tal cual.
+  test("un comando de lectura encadenado pasa por el hook y se reescribe sin secretos", async () => {
+    const r = await call(policy(), "Bash", { command: "git status --short; ls src" });
+    expect(r.decision).toBe("allow");
+    expect((r.updated as { command: string }).command).toMatch(/^env -u /);
   });
 
   test("una fase de solo lectura no escribe ni corre comandos; graft solo si está habilitado", async () => {

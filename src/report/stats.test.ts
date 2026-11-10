@@ -285,6 +285,8 @@ describe("stats por run", () => {
           type: "assistant",
           message: { content: [{ type: "text", text: "miro" }, toolUse("Read")] },
         }),
+        // Una línea sin id es un turno propio: dos sin id son dos turnos.
+        linea({ type: "assistant", message: { content: [{ type: "text", text: "sigo" }] } }),
         linea({ type: "user", message: { content: [{ type: "tool_result" }] } }),
         // El SDK escribe una línea por bloque: dos líneas del mismo mensaje son un solo turno.
         linea({
@@ -319,7 +321,7 @@ describe("stats por run", () => {
     expect(statsPorRun(home).runs[0]?.graftPlanificar).toEqual({
       llamadas: 1,
       reads: 1,
-      turnos: 2,
+      turnos: 3,
       subagente: { reads: 2, llamadas: 1 },
     });
   });

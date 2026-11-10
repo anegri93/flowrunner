@@ -58,7 +58,8 @@ Medido con graft 0.29, que es el instalado; la spec se escribió con 0.18 y el J
 - **Después de una falla, las consultas en curso se cortan** (un `AbortController`): `contextoGraft`
   devuelve enseguida y no deja graft corriendo hasta el plazo.
 - **Del error de graft se toma una línea de stderr, nunca de stdout,** sin las que le hablan al agente:
-  `[graft]` (el ahorro), `⬆` (versión nueva, «run `graft upgrade`») y `·` (telemetría).
+  `[graft]` (el ahorro) y `⬆` (versión nueva, «run `graft upgrade`», que sale aunque esté
+  `DO_NOT_TRACK`). También las de progreso, que empiezan con `·`.
 - **La orientación se arma antes de copiar los `env_files`** al worktree de la sub-task: tarda hasta
   60 s, y si tira no hay `finally` que los borre.
 - **El tope de `maxChars` es del texto de `contextoGraft`,** sin las notas finales. Implementar le suma

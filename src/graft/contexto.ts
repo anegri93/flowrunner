@@ -106,8 +106,9 @@ function primeraLinea(error: unknown): string {
   const lineas = (typeof stderr === "string" ? stderr : "")
     .split("\n")
     .map((l) => l.trim())
-    // `[graft]` es la línea de ahorro; `⬆`, el aviso de versión nueva («run `graft upgrade`»); `·`,
-    // el de telemetría. Las tres le hablan al agente, no dicen qué falló.
+    // `[graft]` es la línea de ahorro y `⬆`, el aviso de versión nueva («run `graft upgrade`»), que
+    // sale aunque esté DO_NOT_TRACK: le hablan al agente, no dicen qué falló. `·` son avisos de
+    // progreso. El de telemetría no sale, porque GRAFT_ENV fija DO_NOT_TRACK.
     .filter((l) => l !== "" && !/^(\[graft\]|⬆|·)/.test(l));
   const linea =
     lineas.find((l) => l.startsWith("✗")) ??

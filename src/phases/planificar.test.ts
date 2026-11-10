@@ -8,9 +8,10 @@ import { git, tempDir } from "../../test/helpers/git.ts";
 import { contextFor, makeProject, newRun, testDeps } from "../../test/helpers/project.ts";
 import { simQuery, type SimScript } from "../../test/helpers/sim-sdk.ts";
 import type { Plan } from "../gates/plan.ts";
+import type { RunEvent } from "../store/events.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
 import { prepared } from "./inputs.ts";
-import { planificar, readPlan } from "./planificar.ts";
+import { gateRechazado, planificar, readPlan, sesionAnterior } from "./planificar.ts";
 import { preparar } from "./preparar.ts";
 
 const FEATURE = `---
@@ -319,6 +320,375 @@ describe("planificar", () => {
     });
     expect(existsSync(join(worktree, "tests/viejo.mjs"))).toBe(false);
     expect(readFileSync(join(run.dir, "plan.md"), "utf8")).toContain("Un serializador.");
+  });
+
+  describe("con un gate rechazado", () => {
+    const writeAc2 = {
+      tool: "Write",
+      input: { file_path: "tests/ac2.mjs", content: writeTest.input.content },
+    };
+    const twoTests: Plan = { ...goodPlan, tests: ["tests/ac1.mjs", "tests/ac2.mjs"] };
+    const sesionFile = (run: { dir: string }) => join(run.dir, "planificar-sesion.json");
+
+    /** El primer intento, entre los eventos que deja el runner, y el reintento con el motivo del gate. */
+    async function rechazadoYReintento(
+      run: Parameters<typeof contextFor>[0],
+      deps: Parameters<typeof contextFor>[2],
+    ) {
+      appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+      const first = await planificar(contextFor(run, "planificar", deps));
+      expect(first).toMatchObject({ tipo: "falla", clase: "gate" });
+      if (first.tipo !== "falla") throw new Error("el primer intento tenía que fallar");
+      appendEvent(run.dir, { tipo: "accion_terminada", fase: "planificar", resultado: first });
+      appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+      const second = await planificar(
+        contextFor(run, "planificar", deps, { intento: 2, instruccion: first.motivo }),
+      );
+      return { motivo: first.motivo, second };
+    }
+
+    // Si regresiona, un rechazo por una sola declaración faltante vuelve a explorar todo el repo en una
+    // sesión nueva: en ML-1 y VF-5 eso costó US$ 2 a 2,8 y 10 minutos por reintento.
+    test("un plan rechazado por el gate se corrige retomando la misma sesión, con el motivo como único mensaje", async () => {
+      const preparado = await prepared_([
+        { calls: [writeTest], output: twoTests },
+        { calls: [writeAc2], output: twoTests },
+      ]);
+      const { run, sim, worktree } = preparado;
+      const borradas: string[] = [];
+      const deps = {
+        ...preparado.deps,
+        deleteSession: (id: string) => {
+          borradas.push(id);
+          return Promise.resolve();
+        },
+      };
+      appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+      const first = await planificar(contextFor(run, "planificar", deps));
+      expect(first.tipo === "falla" && first.motivo).toContain(
+        "el plan declara el test tests/ac2.mjs, pero no está escrito",
+      );
+      // La conversación marcada para retomar no se borra: sin ella, cada resume fallaría.
+      expect(borradas).toEqual([]);
+      // La sesión rechazada queda persistida y anotada para el reintento.
+      const sessionId = sim.records[0]?.options?.sessionId;
+      expect(sessionId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(sim.records[0]?.options?.persistSession).toBe(true);
+      if (first.tipo !== "falla") return;
+      expect(JSON.parse(readFileSync(sesionFile(run), "utf8"))).toEqual({
+        sessionId,
+        nombre: "planificar-1",
+        motivo: first.motivo,
+      });
+      appendEvent(run.dir, { tipo: "accion_terminada", fase: "planificar", resultado: first });
+      appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+
+      const second = await planificar(
+        contextFor(run, "planificar", deps, { intento: 2, instruccion: first.motivo }),
+      );
+
+      expect(sim.records).toHaveLength(2);
+      expect(sim.records[1]?.options?.resume).toBe(sessionId);
+      const prompt = sim.records[1]?.prompt ?? "";
+      expect(prompt.startsWith("El gate rechazó el plan que devolviste")).toBe(true);
+      expect(prompt).toContain(first.motivo);
+      expect(prompt).not.toContain("Exportar pedidos a CSV");
+      expect(existsSync(join(worktree, "tests/ac1.mjs"))).toBe(true);
+      expect(second).toEqual({ tipo: "ok" });
+      expect(Object.keys(readPlan(run).locked).sort()).toEqual(["tests/ac1.mjs", "tests/ac2.mjs"]);
+      // Cada sesión emite su propio uso.
+      const usos = readLog(run.dir).events.flatMap((e) => (e.tipo === "uso" ? [e.sesion] : []));
+      expect(usos).toEqual(["planificar-1", "planificar-2"]);
+      // Con el plan aprobado por el gate, la conversación ya no hace falta.
+      expect(borradas).toEqual([sessionId]);
+    });
+
+    // Si regresiona, una sesión que no se puede retomar (expiró, el CLI falló) deja el intento en falla
+    // y gasta uno de los tres intentos de planificar sin haber planificado.
+    test("si retomar falla, planifica de cero en el mismo intento y lo avisa", async () => {
+      const { run, deps, sim, worktree } = await prepared_([
+        { calls: [writeTest], output: twoTests },
+        { subtype: "error_during_execution" },
+        { calls: [writeTest, writeAc2], output: twoTests },
+      ]);
+      const { second } = await rechazadoYReintento(run, deps);
+      expect(sim.records).toHaveLength(3);
+      expect(sim.records[1]?.options?.resume).toBeDefined();
+      expect(sim.records[2]?.options?.resume).toBeUndefined();
+      expect(sim.records[2]?.prompt).toContain("Exportar pedidos a CSV");
+      const avisos = readLog(run.dir).events.flatMap((e) => (e.tipo === "aviso" ? [e.texto] : []));
+      expect(avisos.filter((t) => t.startsWith("no se pudo retomar la sesión del plan"))).toEqual([
+        expect.stringMatching(
+          /\(la sesión planificar-2 terminó con error_during_execution.*\): planifica de cero$/,
+        ),
+      ]);
+      expect(second).toEqual({ tipo: "ok" });
+      expect(existsSync(join(worktree, "tests/ac2.mjs"))).toBe(true);
+    });
+
+    // Si regresiona, un pedido de cambios retoma la conversación de un plan que ya se aprobó, o las
+    // conversaciones de planificar se acumulan en el disco después de pasar el gate.
+    test("un pedido de cambios no retoma la sesión", async () => {
+      const preparado = await prepared_([
+        { calls: [writeTest], output: goodPlan },
+        { calls: [], output: goodPlan },
+      ]);
+      const { run, sim, worktree } = preparado;
+      const borradas: { id: string; dir: string }[] = [];
+      const deps = {
+        ...preparado.deps,
+        deleteSession: (id: string, opts: { dir: string }) => {
+          borradas.push({ id, dir: opts.dir });
+          return Promise.resolve();
+        },
+      };
+      appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+      const first = await planificar(contextFor(run, "planificar", deps));
+      expect(first).toEqual({ tipo: "ok" });
+      expect(sim.records[0]?.options?.persistSession).toBe(true);
+      expect(existsSync(sesionFile(run))).toBe(false);
+      // La conversación del plan que pasó el gate tampoco queda en el disco.
+      expect(borradas).toEqual([{ id: sim.records[0]?.options?.sessionId, dir: worktree }]);
+      appendEvent(run.dir, { tipo: "accion_terminada", fase: "planificar", resultado: first });
+      appendEvent(run.dir, { tipo: "cambios_pedidos", motivo: "renombrá el serializador" });
+      appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+      expect(
+        await planificar(
+          contextFor(run, "planificar", deps, { instruccion: "renombrá el serializador" }),
+        ),
+      ).toEqual({ tipo: "ok" });
+      expect(sim.records[1]?.options?.resume).toBeUndefined();
+      expect(sim.records[1]?.prompt).toContain("Exportar pedidos a CSV");
+      expect(existsSync(sesionFile(run))).toBe(false);
+    });
+
+    // Si regresiona, un test que el planificador escribió en el intento rechazado y el plan corregido ya
+    // no declara queda bloqueado en rojo hasta la PR: antes lo borraba el reset entre intentos.
+    test("un test que el intento retomado dejó sin declarar se descarta", async () => {
+      const sobra = {
+        tool: "Write",
+        input: { file_path: "tests/sobra.mjs", content: "process.exit(1);\n" },
+      };
+      const { run, deps, worktree } = await prepared_([
+        { calls: [writeTest, sobra], output: twoTests },
+        { calls: [], output: goodPlan },
+      ]);
+      const { second } = await rechazadoYReintento(run, deps);
+      expect(second).toEqual({ tipo: "ok" });
+      expect(existsSync(join(worktree, "tests/sobra.mjs"))).toBe(false);
+      expect(Object.keys(readPlan(run).locked)).toEqual(["tests/ac1.mjs"]);
+      expect(git(worktree, "show", "--name-only", "--format=", "HEAD")).toBe("tests/ac1.mjs");
+      const avisos = readLog(run.dir).events.flatMap((e) => (e.tipo === "aviso" ? [e.texto] : []));
+      expect(avisos).toContain("se descartaron tests que el plan no declara: tests/sobra.mjs");
+    });
+
+    // Si regresiona, un proceso que muere en pleno intento nuevo deja anotada la sesión de un intento
+    // anterior, y el siguiente retoma esa conversación sobre un worktree que ya se reseteó.
+    test("si el proceso muere en un intento nuevo, el siguiente no retoma la sesión de antes", async () => {
+      const { work } = makeProject({ config: { setup: "true", tests_globs: ["tests/**"] } });
+      const run = newRun(work, FEATURE);
+      const sim = simQuery([
+        { calls: [writeTest], output: twoTests },
+        { subtype: "error_during_execution" },
+        { calls: [writeTest, writeAc2], output: twoTests },
+      ]);
+      let llamadas = 0;
+      const query: typeof sim.query = (args) => {
+        llamadas++;
+        // La tercera sesión es el intento nuevo después de no poder retomar: ahí muere el proceso.
+        if (llamadas === 3) throw new Error("el proceso se cortó");
+        return sim.query(args);
+      };
+      const deps = testDeps({ query });
+      expect(await preparar(contextFor(run, "preparar", deps))).toEqual({ tipo: "ok" });
+      appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+      const first = await planificar(contextFor(run, "planificar", deps));
+      if (first.tipo !== "falla") throw new Error("el primer intento tenía que fallar");
+      appendEvent(run.dir, { tipo: "accion_terminada", fase: "planificar", resultado: first });
+      const reintento = { intento: 2, instruccion: first.motivo };
+      appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+      await expect(planificar(contextFor(run, "planificar", deps, reintento))).rejects.toThrow(
+        "el proceso se cortó",
+      );
+      // El runner rehace la acción iniciada sin terminar, con la misma instrucción y sin otra
+      // `accion_iniciada`.
+      expect(await planificar(contextFor(run, "planificar", deps, reintento))).toEqual({
+        tipo: "ok",
+      });
+      expect(sim.records).toHaveLength(3);
+      expect(sim.records[2]?.options?.resume).toBeUndefined();
+      expect(sim.records[2]?.prompt).toContain("Exportar pedidos a CSV");
+    });
+
+    // Si regresiona, un proceso que muere mientras se retoma la sesión deja la marca, y el siguiente
+    // intento vuelve a retomar una conversación cortada a mitad sobre un worktree a medio escribir.
+    test("si el proceso muere mientras se retoma la sesión, el siguiente intento planifica de cero", async () => {
+      const { work } = makeProject({ config: { setup: "true", tests_globs: ["tests/**"] } });
+      const run = newRun(work, FEATURE);
+      const sim = simQuery([
+        { calls: [writeTest], output: twoTests },
+        { calls: [writeTest, writeAc2], output: twoTests },
+      ]);
+      let llamadas = 0;
+      const query: typeof sim.query = (args) => {
+        llamadas++;
+        if (llamadas === 2) throw new Error("el proceso se cortó");
+        return sim.query(args);
+      };
+      const deps = testDeps({ query });
+      expect(await preparar(contextFor(run, "preparar", deps))).toEqual({ tipo: "ok" });
+      appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+      const first = await planificar(contextFor(run, "planificar", deps));
+      if (first.tipo !== "falla") throw new Error("el primer intento tenía que fallar");
+      appendEvent(run.dir, { tipo: "accion_terminada", fase: "planificar", resultado: first });
+      appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+      const reintento = { intento: 2, instruccion: first.motivo };
+      await expect(planificar(contextFor(run, "planificar", deps, reintento))).rejects.toThrow(
+        "el proceso se cortó",
+      );
+      expect(await planificar(contextFor(run, "planificar", deps, reintento))).toEqual({
+        tipo: "ok",
+      });
+      expect(sim.records).toHaveLength(2);
+      expect(sim.records[1]?.options?.resume).toBeUndefined();
+      expect(sim.records[1]?.prompt).toContain("Exportar pedidos a CSV");
+    });
+
+    // Si regresiona, un corte en el gate de un intento retomado deja la marca, y el siguiente retoma la
+    // sesión con el motivo de un rechazo viejo, de un plan que ese gate nunca evaluó.
+    test("si el proceso muere en el gate de un intento retomado, el siguiente no retoma con el motivo viejo", async () => {
+      const { run, deps, sim } = await prepared_([
+        { calls: [writeTest], output: twoTests },
+        { calls: [writeAc2], output: twoTests },
+        { calls: [writeTest, writeAc2], output: twoTests },
+      ]);
+      const ctx = (extra: Parameters<typeof contextFor>[3] = {}) =>
+        contextFor(run, "planificar", deps, extra);
+      appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+      const first = await planificar(ctx());
+      if (first.tipo !== "falla") throw new Error("el primer intento tenía que fallar");
+      appendEvent(run.dir, { tipo: "accion_terminada", fase: "planificar", resultado: first });
+      appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+      const reintento = { intento: 2, instruccion: first.motivo };
+      // El gate del retomado empieza emitiendo las decisiones del plan: ahí muere el proceso.
+      const conCorte = ctx(reintento);
+      const corta = {
+        ...conCorte,
+        emit: (e: Parameters<typeof conCorte.emit>[0]) => {
+          if (e.tipo === "decision") throw new Error("el proceso se cortó");
+          return conCorte.emit(e);
+        },
+      };
+      await expect(planificar(corta)).rejects.toThrow("el proceso se cortó");
+      expect(sim.records[1]?.options?.resume).toBeDefined();
+      expect(await planificar(ctx(reintento))).toEqual({ tipo: "ok" });
+      expect(sim.records).toHaveLength(3);
+      expect(sim.records[2]?.options?.resume).toBeUndefined();
+    });
+
+    // Si regresiona, un corte entre el rechazo del gate y su `accion_terminada` deja una marca con un
+    // motivo que el engine no conoce, y el reintento retoma esa sesión diciéndole el motivo anterior.
+    test("la marca de un rechazo que el runner no llegó a anotar no se retoma con el motivo anterior", async () => {
+      const threeTests: Plan = { ...twoTests, tests: [...twoTests.tests, "tests/ac3.mjs"] };
+      const { run, deps, sim } = await prepared_([
+        { calls: [writeTest], output: twoTests },
+        { calls: [writeAc2], output: threeTests },
+        { calls: [writeTest, writeAc2], output: twoTests },
+      ]);
+      appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+      const first = await planificar(contextFor(run, "planificar", deps));
+      if (first.tipo !== "falla") throw new Error("el primer intento tenía que fallar");
+      appendEvent(run.dir, { tipo: "accion_terminada", fase: "planificar", resultado: first });
+      appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+      const reintento = { intento: 2, instruccion: first.motivo };
+      const second = await planificar(contextFor(run, "planificar", deps, reintento));
+      expect(second.tipo === "falla" && second.motivo).toContain("tests/ac3.mjs");
+      // El proceso muere antes de anotar el resultado: el runner rehace la acción con la instrucción
+      // de antes.
+      expect(await planificar(contextFor(run, "planificar", deps, reintento))).toEqual({
+        tipo: "ok",
+      });
+      expect(sim.records[1]?.options?.resume).toBeDefined();
+      expect(sim.records[2]?.options?.resume).toBeUndefined();
+    });
+
+    // Si regresiona, una sesión retomada que choca con el límite de la suscripción se toma como una que
+    // no se pudo retomar, y se abre otra sesión entera que también va a chocar.
+    test("si la sesión retomada choca con el límite, vuelve el límite sin planificar de cero", async () => {
+      const { run, deps, sim } = await prepared_([
+        { calls: [writeTest], output: twoTests },
+        { limit: true },
+        { calls: [writeTest, writeAc2], output: twoTests },
+      ]);
+      const { second } = await rechazadoYReintento(run, deps);
+      expect(second).toMatchObject({ tipo: "limite" });
+      expect(sim.records).toHaveLength(2);
+      const avisos = readLog(run.dir).events.flatMap((e) => (e.tipo === "aviso" ? [e.texto] : []));
+      expect(avisos.filter((t) => t.startsWith("no se pudo retomar"))).toEqual([]);
+    });
+
+    // Si regresiona, una sesión retomada que pasa el tope de gasto detiene el run, pero la fase igual
+    // abre una sesión nueva entera y gasta más allá del tope.
+    test("si la sesión retomada deja el run sin presupuesto, no planifica de cero", async () => {
+      const { run, deps, sim } = await prepared_([
+        { calls: [writeTest], output: twoTests },
+        { subtype: "error_during_execution", costUsd: 30 },
+        { calls: [writeTest, writeAc2], output: twoTests },
+      ]);
+      const { second } = await rechazadoYReintento(run, deps);
+      expect(second).toMatchObject({ tipo: "falla", clase: "infra" });
+      expect(sim.records).toHaveLength(2);
+    });
+
+    // Si regresiona, se retoma la sesión de un plan después de pedir cambios o de un rerun, o un archivo
+    // de sesión roto tira la fase abajo en vez de planificar de cero.
+    test("solo el reintento de un gate rechazado retoma, y un archivo de sesión roto cuenta como ausente", () => {
+      const motivo = "el plan no pasó el gate:\n- falta algo";
+      const at = "2026-11-07T10:00:00.000Z";
+      const rechazo = [
+        { tipo: "accion_iniciada", at, fase: "planificar" },
+        {
+          tipo: "accion_terminada",
+          at,
+          fase: "planificar",
+          resultado: { tipo: "falla", clase: "gate", motivo },
+        },
+        { tipo: "accion_iniciada", at, fase: "planificar" },
+      ] as const satisfies readonly RunEvent[];
+      expect(gateRechazado(rechazo, motivo)).toBe(motivo);
+      expect(gateRechazado(rechazo, undefined)).toBeUndefined();
+      expect(gateRechazado(rechazo, "otra instrucción")).toBeUndefined();
+      expect(
+        gateRechazado([...rechazo, { tipo: "rehacer", at, desde: "planificar" }], motivo),
+      ).toBeUndefined();
+      expect(
+        gateRechazado([...rechazo, { tipo: "cambios_pedidos", at, motivo }], motivo),
+      ).toBeUndefined();
+      const infra = [
+        ...rechazo,
+        {
+          tipo: "accion_terminada",
+          at,
+          fase: "planificar",
+          resultado: { tipo: "falla", clase: "infra", motivo },
+        },
+      ] as const satisfies readonly RunEvent[];
+      expect(gateRechazado(infra, motivo)).toBeUndefined();
+
+      const run = newRun(tempDir("fr-sesion-"));
+      expect(sesionAnterior(run)).toBeUndefined();
+      writeFileSync(join(run.dir, "planificar-sesion.json"), "{roto");
+      expect(sesionAnterior(run)).toBeUndefined();
+      writeFileSync(join(run.dir, "planificar-sesion.json"), JSON.stringify({ sessionId: "x" }));
+      expect(sesionAnterior(run)).toBeUndefined();
+      const ok = {
+        sessionId: "5b0c6f8e-4c1a-4b8e-9d3a-2f7e1c0a9b11",
+        nombre: "planificar-1",
+        motivo,
+      };
+      writeFileSync(join(run.dir, "planificar-sesion.json"), JSON.stringify(ok));
+      expect(sesionAnterior(run)).toEqual(ok);
+    });
   });
 
   describe("con un plan anterior", () => {

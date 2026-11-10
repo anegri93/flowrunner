@@ -8,7 +8,7 @@ import { TEST_BIN } from "../../test/helpers/cli.ts";
 import { fakeQuery, hanging, stream } from "../../test/helpers/fake-query.ts";
 import { newRun, testDeps } from "../../test/helpers/project.ts";
 import type { NewEvent } from "../store/events.ts";
-import { runSession, type SessionSpec } from "./session.ts";
+import { buildOptions, runSession, type SessionSpec } from "./session.ts";
 
 const allow: HookCallback = () => Promise.resolve({});
 
@@ -216,6 +216,30 @@ setInterval(() => {}, 1000);`;
     expect(options?.outputFormat?.type).toBe("json_schema");
     const denied = await options?.canUseTool?.("Write", {}, {} as never);
     expect(denied?.behavior).toBe("deny");
+  });
+
+  // Si regresiona, un gate rechazado no puede retomar la sesión del plan (no quedó en disco, o se
+  // abre una nueva), o las sesiones que no lo necesitan dejan su conversación en el disco.
+  test("con sessionId la sesión se persiste con ese id; con resume, retoma; sin ninguno, no se persiste", () => {
+    const { rt } = runtime(fakeQuery(stream("salida-estructurada")).query);
+    const id = "5b0c6f8e-4c1a-4b8e-9d3a-2f7e1c0a9b11";
+    const options = (extra: Partial<SessionSpec<z.infer<typeof outputSchema>>>) =>
+      buildOptions(spec(extra), rt, new AbortController());
+
+    const persisted = options({ sessionId: id });
+    expect(persisted).toMatchObject({ sessionId: id, persistSession: true });
+    expect(persisted.resume).toBeUndefined();
+
+    const resumed = options({ resume: id });
+    expect(resumed).toMatchObject({ resume: id, persistSession: true });
+    expect(resumed.sessionId).toBeUndefined();
+    // El SDK no acepta los dos juntos sin forkSession: gana resume.
+    expect(options({ resume: id, sessionId: "otro" }).sessionId).toBeUndefined();
+
+    const plain = options({});
+    expect(plain.persistSession).toBe(false);
+    expect(plain.sessionId).toBeUndefined();
+    expect(plain.resume).toBeUndefined();
   });
 
   // Si regresiona, flowrunner reintenta tres veces con una credencial que Claude ya rechazó.

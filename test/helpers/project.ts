@@ -49,6 +49,8 @@ export const testDeps = (overrides: Partial<Deps> = {}): Deps => ({
   query: () => {
     throw new Error("este test no usa modelo");
   },
+  // Sin tocar el `~/.claude` de quien corre los tests.
+  deleteSession: () => Promise.resolve(),
   env: {
     ...process.env,
     GIT_AUTHOR_NAME: "test",

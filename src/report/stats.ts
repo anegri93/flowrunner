@@ -1,10 +1,11 @@
 // `flowrunner stats`: qué pieza de la fábrica mejorar, juntando los logs de todos los runs.
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { stateOf } from "../engine/engine.ts";
+import { z } from "zod";
+import { stateOf, type RunStatus } from "../engine/engine.ts";
 import { readLog } from "../store/run-log.ts";
 import { listRunIds, runPaths } from "../store/runs.ts";
-import type { Phase } from "../store/events.ts";
+import type { Phase, RunEvent } from "../store/events.ts";
 import { phaseSummaries } from "./report.ts";
 
 /** El motivo sin lo que cambia entre runs: rutas, ids de sub-tasks y números. */
@@ -96,4 +97,213 @@ export function describeStats(s: ReturnType<typeof stats>): string {
       ...s.rechazos.map((m) => `  ${String(m.veces)}× ${m.motivo}`),
     );
   return lines.join("\n");
+}
+
+// `flowrunner stats --runs`: la línea de base del plan de raíz, un renglón por run.
+
+export interface RunStats {
+  readonly id: string;
+  readonly proyecto: string;
+  readonly status: RunStatus;
+  readonly activoMin: number;
+  readonly costoUsd: number;
+  readonly costoPorFase: Partial<Record<Phase, number>>;
+  readonly planes: number;
+  readonly rechazosBash: number;
+  readonly rechazosEscritura: number;
+  readonly vueltas: number;
+  readonly fallas: number;
+  readonly derecho: boolean;
+  /** La sesión principal de planificar; lo del subagente explorador, aparte. */
+  readonly graftPlanificar: {
+    readonly llamadas: number;
+    readonly reads: number;
+    readonly turnos: number;
+    readonly subagente: { readonly reads: number; readonly llamadas: number };
+  };
+}
+
+const WRITE_TOOLS: ReadonlySet<string> = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
+
+/** Los números de un run, de su log y de las sesiones de planificar. */
+export function runStats(dir: string, events: readonly RunEvent[]): RunStats {
+  const state = stateOf(events);
+  let activeMs = 0;
+  let openedAt: number | undefined;
+  let costoUsd = 0;
+  const costoPorFase: Partial<Record<Phase, number>> = {};
+  let planes = 0;
+  let rechazosBash = 0;
+  let rechazosEscritura = 0;
+  let vueltas = 0;
+  let fallas = 0;
+  let previousAt: number | undefined;
+  for (const e of events) {
+    const at = Date.parse(e.at);
+    // Un proceso cortado deja la acción abierta, y el runner la retoma sin una `accion_iniciada`
+    // nueva, tras un `resume` o un `rerun`: el tramo se cierra en lo último que se supo antes del
+    // corte y se reabre al retomar. Abortar una acción viva también la corta en su último evento:
+    // lo que trabajó después sin escribir nada no se cuenta, a sabiendas.
+    const resumes = e.tipo === "reanudado" || e.tipo === "rehacer";
+    if ((resumes || e.tipo === "abortado") && openedAt !== undefined) {
+      activeMs += (previousAt ?? openedAt) - openedAt;
+      openedAt = resumes ? at : undefined;
+    }
+    previousAt = at;
+    if (e.tipo === "accion_iniciada") {
+      openedAt = at;
+      if (e.fase === "planificar") planes++;
+    } else if (e.tipo === "accion_terminada") {
+      if (openedAt !== undefined) activeMs += at - openedAt;
+      openedAt = undefined;
+      if (e.resultado.tipo === "vuelve") vueltas++;
+      if (e.resultado.tipo === "falla") fallas++;
+    } else if (e.tipo === "uso") {
+      costoUsd += e.costo_usd;
+      costoPorFase[e.fase] = (costoPorFase[e.fase] ?? 0) + e.costo_usd;
+    } else if (e.tipo === "rechazo") {
+      if (e.herramienta === "Bash") rechazosBash++;
+      else if (WRITE_TOOLS.has(e.herramienta)) rechazosEscritura++;
+    }
+  }
+  // Una acción que sigue sin terminar cuenta hasta lo último que se sabe del run.
+  const last = events.at(-1);
+  if (openedAt !== undefined && last !== undefined) activeMs += Date.parse(last.at) - openedAt;
+  return {
+    id: state.runId,
+    proyecto: state.proyecto,
+    status: state.status,
+    activoMin: activeMs / 60_000,
+    costoUsd,
+    costoPorFase,
+    planes,
+    rechazosBash,
+    rechazosEscritura,
+    vueltas,
+    fallas,
+    derecho: vueltas === 0 && fallas === 0,
+    graftPlanificar: planningSessions(join(dir, "sesiones")),
+  };
+}
+
+/** Una línea del stream de una sesión: solo lo que se cuenta. Lo que no se reconoce suma 0. */
+const assistantLineSchema = z.object({
+  type: z.literal("assistant"),
+  /** Las líneas de un subagente, como el explorador, traen la llamada `Task` que lo lanzó. */
+  parent_tool_use_id: z.string().nullish().catch(undefined),
+  message: z
+    .object({ id: z.string().optional().catch(undefined), content: z.array(z.unknown()).catch([]) })
+    .optional()
+    .catch(undefined),
+});
+const toolUseSchema = z.object({ type: z.literal("tool_use"), name: z.string() });
+
+/**
+ * Turnos, `Read` y llamadas a graft de las sesiones de planificar (`sesiones/planificar-*.jsonl`),
+ * los del planificador separados de los de sus subagentes.
+ */
+function planningSessions(dir: string): RunStats["graftPlanificar"] {
+  const main = { llamadas: 0, reads: 0, turnos: 0 };
+  const subagente = { reads: 0, llamadas: 0 };
+  if (!existsSync(dir)) return { ...main, subagente };
+  for (const file of readdirSync(dir)) {
+    if (!file.startsWith("planificar-") || !file.endsWith(".jsonl")) continue;
+    // El SDK escribe una línea por bloque de contenido: un turno es un `message.id` distinto, y una
+    // línea sin id cuenta como un turno propio.
+    const messages = new Set<string>();
+    for (const line of readFileSync(join(dir, file), "utf8").split("\n")) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(line);
+      } catch {
+        continue; // una sesión cortada deja su última línea a medias
+      }
+      const turn = assistantLineSchema.safeParse(parsed);
+      if (!turn.success) continue;
+      const fromSubagent = typeof turn.data.parent_tool_use_id === "string";
+      const counts = fromSubagent ? subagente : main;
+      const id = turn.data.message?.id;
+      if (!fromSubagent && (id === undefined || !messages.has(id))) {
+        main.turnos++;
+        if (id !== undefined) messages.add(id);
+      }
+      for (const block of turn.data.message?.content ?? []) {
+        const tool = toolUseSchema.safeParse(block);
+        if (!tool.success) continue;
+        if (tool.data.name === "Read") counts.reads++;
+        else if (tool.data.name.startsWith("mcp__graft__")) counts.llamadas++;
+      }
+    }
+  }
+  return { ...main, subagente };
+}
+
+/** El promedio de los dos del medio si son pares; 0 sin valores. */
+function median(values: readonly number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length === 0) return 0;
+  if (sorted.length % 2 === 1) return sorted[mid] ?? 0;
+  return ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2;
+}
+
+export function statsPorRun(home: string, project?: string) {
+  const loaded: { createdAt: number; stats: RunStats }[] = [];
+  for (const id of listRunIds(home)) {
+    const dir = runPaths(home, id).dir;
+    const { events } = readLog(dir);
+    const first = events[0];
+    if (first === undefined) continue;
+    // Antes de leer las sesiones: las de otro proyecto no hace falta abrirlas.
+    if (project !== undefined && stateOf(events).proyecto !== project) continue;
+    loaded.push({ createdAt: Date.parse(first.at), stats: runStats(dir, events) });
+  }
+  // En el orden en que se crearon: el nombre ordena por clave, no por fecha.
+  const runs = loaded.sort((a, b) => a.createdAt - b.createdAt).map((r) => r.stats);
+  const sum = (f: (r: RunStats) => number) => runs.reduce((acc, r) => acc + f(r), 0);
+  const perRun = (total: number) => (runs.length === 0 ? 0 : total / runs.length);
+  const costo = sum((r) => r.costoUsd);
+  return {
+    ok: true as const,
+    runs,
+    resumen: {
+      runs: runs.length,
+      medianaActivoMin: median(runs.map((r) => r.activoMin)),
+      medianaCostoUsd: median(runs.map((r) => r.costoUsd)),
+      planificarPct: costo === 0 ? 0 : (100 * sum((r) => r.costoPorFase.planificar ?? 0)) / costo,
+      planesPorRun: perRun(sum((r) => r.planes)),
+      rechazosBashPorRun: perRun(sum((r) => r.rechazosBash)),
+      derechos: runs.filter((r) => r.derecho).length,
+    },
+  };
+}
+
+export function describeStatsPorRun(s: ReturnType<typeof statsPorRun>): string {
+  const header = ["id", "activo", "US$", "planes", "rechazos", "vueltas", "derecho"];
+  const rows = s.runs.map((r) => [
+    r.id,
+    `${r.activoMin.toFixed(0)} min`,
+    r.costoUsd.toFixed(2),
+    String(r.planes),
+    `${String(r.rechazosBash)}/${String(r.rechazosEscritura)}`,
+    String(r.vueltas),
+    r.derecho ? "sí" : "no",
+  ]);
+  const widths = header.map((h, i) =>
+    Math.max(h.length, ...rows.map((row) => row[i]?.length ?? 0)),
+  );
+  const line = (cells: readonly string[]) =>
+    `| ${cells.map((c, i) => c.padEnd(widths[i] ?? 0)).join(" | ")} |`;
+  const r = s.resumen;
+  return [
+    line(header),
+    ...rows.map(line),
+    "",
+    `mediana activo: ${r.medianaActivoMin.toFixed(1)} min`,
+    `mediana US$: ${r.medianaCostoUsd.toFixed(2)}`,
+    `planificar: ${r.planificarPct.toFixed(0)}% del costo`,
+    `planes por run: ${r.planesPorRun.toFixed(1)}`,
+    `rechazos de Bash por run: ${r.rechazosBashPorRun.toFixed(1)} (la columna rechazos es Bash/escritura)`,
+    `derechos: ${String(r.derechos)} de ${String(r.runs)} runs`,
+  ].join("\n");
 }

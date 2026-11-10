@@ -298,6 +298,7 @@ equivalente de API: con la suscripción no se cobran, y lo que limita es su cupo
 | `flowrunner abort <run>`                       | cancelar un run                               |
 | `flowrunner learn <run>`                       | aprender ya de una PR mergeada                |
 | `flowrunner stats [proyecto]`                  | en qué fase se va el tiempo y el costo        |
+| `flowrunner stats --runs [proyecto]`           | tiempo activo, costo y rechazos de cada run   |
 | `flowrunner doctor`                            | qué le falta a esta máquina                   |
 | `flowrunner self-update`                       | llevar el flowrunner que corre a `main`       |
 

@@ -283,6 +283,13 @@ Los tests de aceptación quedan bloqueados: ninguna sub-task los puede tocar. Po
 bloquearlos, flowrunner les pasa el lint del repo en modo arreglar y el formateador. Un error que el
 lint no arregla solo rechaza el plan, y el planificador lo corrige antes de que lo veas.
 
+Si una sub-task suma paquetes, flowrunner elige cada versión antes de mostrarte el plan (ADR 0029): la
+estable más nueva (sin `-beta` ni `-rc`, sin deprecar) cuyo `engines.node` acepta el Node más viejo
+que admite el `engines.node` del repo, o su `.nvmrc` o `.node-version`. Lo consulta con `npm view`,
+también en repos de pnpm o yarn, y la sub-task instala esa versión exacta. Una versión que trae el plan
+se respeta. Si ninguna anda, el plan lo dice primero, con qué hacer, y no se puede aprobar: pedí
+cambios con otra librería, o con la versión y que una sub-task suba el Node del repo.
+
 Mientras trabajan, los agentes no pueden salirse de lo suyo: cada sub-task solo escribe dentro de su
 alcance, y flowrunner lo controla en cada herramienta y otra vez sobre el diff. Los comandos de Bash
 se juzgan por tramos (`;`, `&&`, `|`) contra una política (ADR 0021): pasan los de lectura (`git log`,

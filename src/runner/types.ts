@@ -2,6 +2,7 @@
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Action, RunState } from "../engine/engine.ts";
 import type { NewEvent, Outcome, Phase, RunEvent } from "../store/events.ts";
+import type { Registro } from "../versiones/versiones.ts";
 
 /** La forma de `query` del SDK que usa flowrunner: un prompt, opciones y un stream de mensajes. */
 export type QueryFn = (params: { prompt: string; options?: Options }) => AsyncIterable<SDKMessage>;
@@ -15,6 +16,8 @@ export interface Deps {
   readonly notify: (title: string, body: string) => void;
   readonly query: QueryFn;
   readonly deleteSession: DeleteSessionFn;
+  /** Las versiones publicadas de un paquete: con ellas aprobar fija las dependencias nuevas del plan. */
+  readonly registro: Registro;
   readonly env: NodeJS.ProcessEnv;
 }
 

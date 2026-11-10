@@ -48,7 +48,8 @@ describe("entregar", () => {
       numero: 412,
       url: "https://github.com/acme/acme-api/pull/412",
     });
-    expect(notices[0]).toBe("SHOP-214: PR abierta. Pedile a Claude que te explique el informe.");
+    // El aviso de la PR abierta lo da el runner al cambiar de estado, no la fase.
+    expect(notices).toEqual([]);
   });
 
   // Si regresiona, retomar un run después de abrir la PR abre otra PR para la misma rama.

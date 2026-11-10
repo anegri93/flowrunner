@@ -3,6 +3,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { existsSync, openSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { stateOf, type RunState } from "../engine/engine.ts";
+import { avisoDeEstado, cambiosDelPlan } from "../notify/estado.ts";
 import { notifyMac } from "../notify/notify.ts";
 import { productionRuntime } from "../runner/production.ts";
 import { writeReport } from "../report/report.ts";
@@ -115,10 +116,30 @@ export function despacharCola(home: string, proyecto: string, env: NodeJS.Proces
         break;
       }
       handOver(home, loadState(home, id), run, env);
+      avisarCambio(home, id, "en_cola", env);
       lanzados.push(id);
     }
     return lanzados;
   });
+}
+
+/**
+ * Avisa el cambio de estado de un run que pasó sin que la persona lo pida: salir de la cola, volver
+ * de una pausa. Lo que pide ella con un comando se lo dice la respuesta del comando.
+ */
+export function avisarCambio(
+  home: string,
+  id: string,
+  antes: RunState["status"],
+  env: NodeJS.ProcessEnv,
+): void {
+  const run = runPaths(home, id);
+  const { events } = readLog(run.dir);
+  const aviso = avisoDeEstado(antes, stateOf(events), {
+    events,
+    cambiosExistentes: cambiosDelPlan(run),
+  });
+  if (aviso !== undefined) notifyMac(aviso.title, aviso.body, env);
 }
 
 /** La respuesta de un comando que lanza un run: arrancó, o en qué lugar de la cola quedó. */
@@ -331,6 +352,7 @@ export async function runProcess(home: string, id: string, env: NodeJS.ProcessEn
   if (!tomarLugar(home, state.proyecto, id, process.pid, reglas(home, state.repo)).ok) {
     // Perdió su lugar entre el lanzamiento y el arranque: espera el próximo como cualquiera.
     appendEvent(run.dir, { tipo: "encolado" });
+    avisarCambio(home, id, state.status, env);
     return loadState(home, id);
   }
   try {

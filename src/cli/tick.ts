@@ -10,7 +10,7 @@ import { writeReport } from "../report/report.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
 import { listRunIds, loadState, runPaths } from "../store/runs.ts";
 import { UserError } from "./output.ts";
-import { despacharCola, lanzarOEncolar } from "./runs.ts";
+import { avisarCambio, despacharCola, lanzarOEncolar } from "./runs.ts";
 
 /** Un lock de archivo con el pid: si el dueño murió, se toma. */
 function tryLock(file: string): boolean {
@@ -66,6 +66,7 @@ export async function tick(home: string, env: NodeJS.ProcessEnv, now: Date) {
       if (state.status === "pausado_por_limite" && (state.pausaHasta ?? 0) <= now.getTime()) {
         appendEvent(runPaths(home, id).dir, { tipo: "reanudado" });
         const lanzado = lanzarOEncolar(home, id, env);
+        avisarCambio(home, id, "pausado_por_limite", env);
         acciones.push(
           lanzado.tipo === "lanzado"
             ? `${id}: retomado después del límite`

@@ -58,6 +58,11 @@ const slotCount = (w: Pick<World, "home">) => {
   return existsSync(dir) ? readdirSync(dir).filter((e) => e.endsWith(".json")).length : 0;
 };
 
+const notices = (w: World) => {
+  const file = join(w.env.HOME ?? "", "avisos.log");
+  return existsSync(file) ? readFileSync(file, "utf8") : "";
+};
+
 const tipos = (w: Pick<World, "home">, id: string) =>
   readLog(runDir(w, id)).events.map((e) => e.tipo);
 
@@ -98,6 +103,13 @@ describe("varios runs por repo", () => {
     await waitFor("b entregado", () => stateNow(w, b.id).status === "entregado");
     expect(tipos(w, b.id).slice(0, 3)).toEqual(["run_creado", "encolado", "reanudado"]);
     expect(executions(w, b.id)[0]).toBe("preparar");
+    // Salir de la cola pasa sin que lo pidas: avisa. Lanzar y quedar en cola lo hiciste vos: no.
+    await waitFor("el aviso de a", () => notices(w).includes("SHOP-214: PR abierta"));
+    await waitFor("el aviso de b", () => notices(w).includes("SHOP-215: PR abierta"));
+    const avisos = notices(w);
+    expect(avisos).toContain("SHOP-215: salió de la cola y arrancó en preparar");
+    expect(avisos).not.toContain("en cola, esperando un lugar");
+    expect(avisos).not.toContain("SHOP-214: salió de la cola");
   });
 
   // Si regresiona, dos comandos que llegan juntos cuentan el mismo lugar libre y entran los dos.

@@ -87,8 +87,13 @@ describe("Fase 6 ensamblada", () => {
     expect(informe).toMatch(/verificar devolvió trabajo: AC-1 sigue en rojo/);
     expect(informe).toMatch(/revisar devolvió trabajo: la revisión encontró bloqueantes/);
     await waitFor("lugar suelto", () => slotOf(w) === undefined, 10_000);
-    expect(w.notices()).toContain(
-      "SHOP-214: PR abierta, 2 vueltas. Pedile a Claude que te explique el informe.",
+    await waitFor(
+      "el aviso",
+      () =>
+        w
+          .notices()
+          .includes("SHOP-214: PR abierta, 2 vueltas. Pedile a Claude que te explique el informe."),
+      10_000,
     );
   }, 180_000);
 });

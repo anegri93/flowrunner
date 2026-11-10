@@ -87,6 +87,9 @@ El shell toma caminos que las reglas literales no veían. Se cierran así, cada 
 - **Las rutas se resuelven con las mayúsculas del disco** (`realpathSync.native`): en APFS,
   `.ENV.LOCAL` es `.env.local`.
 - **`$[…]`**, la aritmética de bash, se rechaza como una sustitución.
+- **Lo que se agrega detrás de un criterio no apunta fuera del worktree ni a un env_file:**
+  `--outputFile=/tmp/x`, `--config /tmp/x`, `--root ..`, `-c/tmp/x` o `.env.local` se rechazan con el
+  motivo de `checkReadPath`. El criterio mismo no se toca.
 - **git no recibe archivos como valor de una opción** (`grep -f`, `blame -S`,
   `--ignore-revs-file`, `--pathspec-from-file`, `ls-files -X`): imprime en el error las líneas que
   no entiende.

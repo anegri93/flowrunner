@@ -1166,6 +1166,31 @@ function checkFixer(
   return OK;
 }
 
+/**
+ * Lo que se agrega detrás de un criterio: cualquier opción, pero sin apuntar fuera del worktree ni a
+ * un env_file. `--outputFile=/tmp/x` o `--root ..` escriben donde el doble control sobre el diff no
+ * mira. Se miran las palabras sueltas, el valor de `--opción=valor` y lo pegado a una opción corta
+ * que empieza como una ruta; el de `--opción valor` es la palabra siguiente, que ya es suelta.
+ */
+function checkDeMas(scope: Scope, deMas: readonly Palabra[]): Verdict {
+  for (const palabra of deMas) {
+    const t = palabra.texto;
+    // De una opción corta no se sabe si toma valor: lo pegado cuenta si parece una ruta (`-c/tmp/x`).
+    const pegado = /^-[^-]([/~]|\.\.)/.test(t) ? t.slice(2) : "";
+    const valor = t.startsWith("--")
+      ? t.slice(nombreLargo(t).length + 1)
+      : esOpcion(t)
+        ? pegado
+        : t;
+    if (valor === "" || esNumero(valor)) continue;
+    // `~` entre comillas no lo expande sh, pero sí el programa que lo recibe como ruta.
+    if (valor.startsWith("~")) return no(`${valor} queda fuera del worktree`);
+    const verdict = leer(scope, { ...palabra, texto: valor });
+    if (!verdict.ok) return verdict;
+  }
+  return OK;
+}
+
 function checkTramo(scope: Scope, politica: Politica, tramo: Tramo): Verdict {
   const primera = tramo.palabras.findIndex((p) => p.asigna === undefined);
   const asignaciones = tramo.palabras.slice(0, primera < 0 ? tramo.palabras.length : primera);
@@ -1183,7 +1208,13 @@ function checkTramo(scope: Scope, politica: Politica, tramo: Tramo): Verdict {
     return no(asignaciones.length > 0 ? MOTIVO.asignacion : MOTIVO.sintaxis);
   if (politica.exactos.some((e) => e.length === palabras.length && empiezaCon(palabras, e)))
     return OK;
-  if (politica.ampliables.some((a) => empiezaCon(palabras, a))) return OK;
+  const ampliable = politica.ampliables
+    .filter((a) => empiezaCon(palabras, a))
+    .reduce<Palabra[] | undefined>(
+      (mas, a) => (a.length > (mas?.length ?? 0) ? a : mas),
+      undefined,
+    );
+  if (ampliable !== undefined) return checkDeMas(scope, palabras.slice(ampliable.length));
   // Una variable cambia qué corre un programa de lectura: GIT_EXTERNAL_DIFF, GIT_CONFIG_* o PATH.
   // Delante de un criterio no abre nada nuevo: el criterio ya corre el código de la sub-task.
   if (asignaciones.length > 0) return no(MOTIVO.asignacion);

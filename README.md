@@ -129,9 +129,11 @@ Homebrew; si no está instalada, verify no corre y el run se detiene diciendo c�
 
 1. Abrí Claude Code en el repo y pedile la feature, como se la pedirías a una persona.
 2. La skill te hace preguntas de a una, escribe la feature y la lanza. Desde ahí el run corre solo.
-   Antes de lanzar, `feature check` avisa si un criterio usa un script que no existe o si solo se
-   comprueba leyendo documentación. El código que la skill comprobó al escribirla va en la sección
-   `## Contexto`, una cita por línea (`- src/export/pedidos.ts:40-58 — arma la consulta por rango`):
+   Antes de lanzar, `feature check` avisa si un criterio usa un script que no existe, si solo se
+   comprueba leyendo documentación o si solo pide que el repo pase sus chequeos («`npm run check`
+   pasa»): eso ya lo corre verificar en cada vuelta, y probar no puede correr comandos. El código que
+   la skill comprobó al escribirla va en la sección `## Contexto`, una cita por línea
+   (`- src/export/pedidos.ts:40-58 — arma la consulta por rango`):
    el planificador arranca de ahí, con el contexto de graft de esos archivos, y `feature check` frena
    una cita a un archivo o a una línea que no existe.
 3. Para ver cómo va, usá la pestaña de flowrunner en Orca o, en una terminal:
@@ -200,7 +202,8 @@ Después de revisar, la fase probar usa la feature como lo harías vos: levanta 
 desde la copia de la feature, llama a la API y navega la plataforma con Chrome. Una prueba que falla
 vuelve a su sub-task con la evidencia. Un criterio que no se pudo probar detiene el run: arreglás lo que
 faltó y rehacés probar, o decidís entregar igual con `flowrunner accept-untested <run> "<por qué>"`, y
-ese motivo queda en la PR. Para eso el repo dice cómo levantar el entorno en
+ese motivo queda en la PR. Un criterio que es el verify del repo no se prueba acá: ya lo dio en verde
+verificar, y no cuenta como sin probar. Para todo esto el repo dice cómo levantar el entorno en
 `.flowrunner/config.yaml`. Sin esto, probar se saltea: `feature check` lo avisa antes de lanzar, y
 `watch` y el panel de Orca muestran la etapa «salteada» con el motivo, no como lista:
 

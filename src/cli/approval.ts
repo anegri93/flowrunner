@@ -50,7 +50,7 @@ export const planViewSchema = z.strictObject({
   /** Los otros runs del proyecto, con la PR sin cerrar, cuyo alcance se pisa con este plan. */
   se_pisa_con: z.array(pisadaSchema),
   /**
-   * Las versiones que eligió flowrunner para las dependencias nuevas (ADR 0028); null si no eligió,
+   * Las versiones que eligió flowrunner para las dependencias nuevas (ADR 0029); null si no eligió,
    * porque el repo no es de npm. Con algo en `sin_version`, `approve` no sigue.
    */
   versiones: versionesSchema.nullable(),
@@ -270,7 +270,7 @@ export function approveRun(
   const run = runPaths(home, id);
   const plan = readPlan(run);
   // Sin flag que lo salte: instalar una versión que no anda con el Node del repo es lo que frenó la
-  // revisión siete veces en PIZ-3. La salida es otra librería, o la versión y subir el Node (ADR 0028).
+  // revisión siete veces en PIZ-3. La salida es otra librería, o la versión y subir el Node (ADR 0029).
   const sinVersion = plan.versiones?.sin_version ?? [];
   if (sinVersion.length > 0) {
     throw new UserError(

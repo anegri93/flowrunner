@@ -1,5 +1,5 @@
 // Las versiones de las dependencias nuevas de un plan: flowrunner las elige del registro antes de que
-// la persona apruebe, y quedan en el plan como `paquete@x.y.z` (ADR 0028). En PIZ-3 el plan sumó
+// la persona apruebe, y quedan en el plan como `paquete@x.y.z` (ADR 0029). En PIZ-3 el plan sumó
 // `unpdf` sin versión, `npm install -E unpdf` instaló la última, que pide Node >=24 en un repo que
 // declara >=20.6, y la revisión lo frenó siete veces sin que la sub-task pudiera cambiar la versión.
 import { existsSync, readFileSync } from "node:fs";

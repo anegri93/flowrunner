@@ -280,7 +280,7 @@ Los tests de aceptación quedan bloqueados: ninguna sub-task los puede tocar. Po
 bloquearlos, flowrunner les pasa el lint del repo en modo arreglar y el formateador. Un error que el
 lint no arregla solo rechaza el plan, y el planificador lo corrige antes de que lo veas.
 
-Si una sub-task suma paquetes, flowrunner elige cada versión antes de mostrarte el plan (ADR 0028): la
+Si una sub-task suma paquetes, flowrunner elige cada versión antes de mostrarte el plan (ADR 0029): la
 estable más nueva (sin `-beta` ni `-rc`, sin deprecar) cuyo `engines.node` acepta el Node más viejo
 que admite el `engines.node` del repo, o su `.nvmrc` o `.node-version`. Lo consulta con `npm view`,
 también en repos de pnpm o yarn, y la sub-task instala esa versión exacta. Una versión que trae el plan

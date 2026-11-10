@@ -1,4 +1,4 @@
-# 0028 · Las dependencias nuevas, en la versión estable más nueva que anda con el Node del repo
+# 0029 · Las dependencias nuevas, en la versión estable más nueva que anda con el Node del repo
 
 Estado: Aceptada · 2026-11-10
 

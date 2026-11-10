@@ -1,4 +1,4 @@
-// Aprobar fija las versiones de las dependencias nuevas antes de que la persona vea el plan (ADR 0028).
+// Aprobar fija las versiones de las dependencias nuevas antes de que la persona vea el plan (ADR 0029).
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";

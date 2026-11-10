@@ -170,7 +170,7 @@ export function writePlanArtifacts(
 
 const versionesFile = (dir: string) => join(dir, "versiones.json");
 
-/** Las sub-tasks con sus dependencias fijadas, y qué eligió aprobar (ADR 0028). */
+/** Las sub-tasks con sus dependencias fijadas, y qué eligió aprobar (ADR 0029). */
 export function writeVersiones(
   run: RunPaths,
   subtareas: Plan["subtareas"],

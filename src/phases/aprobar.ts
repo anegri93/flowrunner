@@ -1,7 +1,7 @@
 // Aprobar: el run espera y termina su proceso. Sigue cuando la persona aprueba o pide cambios. El
 // aviso de que el plan espera, y de si cambia lo que ya existe, lo da el runner al detenerse.
 //
-// Antes de esperar, fija las versiones de las dependencias nuevas del plan con el registro (ADR 0028):
+// Antes de esperar, fija las versiones de las dependencias nuevas del plan con el registro (ADR 0029):
 // la persona aprueba el plan con las versiones que se van a instalar. Va acá y no al final de
 // planificar porque un registro que no responde reintenta solo esto, sin volver a pagar el plan.
 import { existsSync } from "node:fs";

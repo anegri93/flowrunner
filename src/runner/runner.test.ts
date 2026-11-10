@@ -30,6 +30,7 @@ const deps: Deps = {
     throw new Error("sin modelo en este test");
   },
   deleteSession: () => Promise.resolve(),
+  registro: () => Promise.reject(new Error("sin registro en este test")),
   env: {},
 };
 

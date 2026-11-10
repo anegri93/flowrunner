@@ -51,6 +51,8 @@ export const testDeps = (overrides: Partial<Deps> = {}): Deps => ({
   },
   // Sin tocar el `~/.claude` de quien corre los tests.
   deleteSession: () => Promise.resolve(),
+  // Sin red: un test que fija versiones pasa su registro falso.
+  registro: () => Promise.reject(new Error("este test no usa el registro")),
   env: {
     ...process.env,
     GIT_AUTHOR_NAME: "test",

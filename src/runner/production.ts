@@ -15,6 +15,7 @@ import { probar } from "../phases/probar.ts";
 import { revisar } from "../phases/revisar.ts";
 import { verificar } from "../phases/verificar.ts";
 import { PHASES, type Phase } from "../store/events.ts";
+import { npmRegistro } from "../versiones/registro.ts";
 import type { Deps, PhaseFn, PhaseRegistry, QueryFn } from "./types.ts";
 
 interface TestHooks {
@@ -66,6 +67,7 @@ export async function productionRuntime(
       notify: hooks.notify ?? notify,
       query: hooks.query ?? sdkQuery,
       deleteSession,
+      registro: npmRegistro(env),
       env,
     },
   };

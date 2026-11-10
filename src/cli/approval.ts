@@ -21,6 +21,7 @@ import { readPlan, readPlanAt } from "../phases/planificar.ts";
 import type { Origen } from "../store/events.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
 import { listRunIds, loadState, runPaths } from "../store/runs.ts";
+import { versionesSchema, type Versiones } from "../versiones/versiones.ts";
 import { summarize, runSummarySchema } from "./contracts.ts";
 import { UserError } from "./output.ts";
 import { lanzamiento, lanzarOEncolar } from "./runs.ts";
@@ -48,6 +49,11 @@ export const planViewSchema = z.strictObject({
   cambia_lo_existente: z.array(cambioExistenteSchema),
   /** Los otros runs del proyecto, con la PR sin cerrar, cuyo alcance se pisa con este plan. */
   se_pisa_con: z.array(pisadaSchema),
+  /**
+   * Las versiones que eligió flowrunner para las dependencias nuevas (ADR 0028); null si no eligió,
+   * porque el repo no es de npm. Con algo en `sin_version`, `approve` no sigue.
+   */
+  versiones: versionesSchema.nullable(),
   /** Qué cambió contra el plan anterior; null en el primer plan. */
   cambios: z
     .strictObject({
@@ -84,6 +90,7 @@ export async function showPlan(home: string, id: string, env: NodeJS.ProcessEnv)
     diff_tests: diff,
     cambia_lo_existente: plan.cambia_lo_existente,
     se_pisa_con: pisadas(home, id, plan.subtareas, loadRepoConfig(prep.worktree)),
+    versiones: plan.versiones ?? null,
     cambios: existsSync(join(previousDir(run), "plan.md"))
       ? planChanges(readPlanAt(previousDir(run)), plan)
       : null,
@@ -144,8 +151,10 @@ export function describePlan(view: z.infer<typeof planViewSchema>): string {
   return [
     `${view.run.id} · ${view.run.status}`,
     `${view.subtareas.length} sub-tasks · ${view.criterios.length} criterios con tests en rojo · arrancan juntas: ${parallel.join(", ")}`,
+    ...sinVersionText(view.versiones),
     ...existingText(view.cambia_lo_existente),
     ...overlapText(view.se_pisa_con),
+    ...fijadasText(view.versiones),
     "",
     ...view.subtareas.map(
       (t) =>
@@ -161,6 +170,29 @@ export function describePlan(view: z.infer<typeof planViewSchema>): string {
     "",
     view.diff_tests,
   ].join("\n");
+}
+
+/** Arriba de todo: con esto, el plan no se aprueba. */
+function sinVersionText(versiones: Versiones | null): string[] {
+  if (versiones === null || versiones.sin_version.length === 0) return [];
+  return [
+    "",
+    `⚠ Sin una versión que sirva (${String(versiones.sin_version.length)}). No se puede aprobar así: pedí cambios:`,
+    ...versiones.sin_version.map((s) => `  - ${s.motivo}`),
+  ];
+}
+
+/** Las que eligió flowrunner, para que se vea que no las eligió el planificador. */
+function fijadasText(versiones: Versiones | null): string[] {
+  if (versiones === null || versiones.fijadas.length === 0) return [];
+  const con =
+    versiones.node === null
+      ? "el repo no dice qué Node usa"
+      : `andan con Node ${versiones.node.version}, de ${versiones.node.de}`;
+  return [
+    "",
+    `Versiones que eligió flowrunner, las estables más nuevas (${con}): ${versiones.fijadas.map((f) => `${f.paquete}@${f.version}`).join(", ")}`,
+  ];
 }
 
 /** Arriba de todo: es lo primero que tiene que leer quien aprueba. */
@@ -236,7 +268,17 @@ export function approveRun(
 ) {
   waitingOrExplain(home, id);
   const run = runPaths(home, id);
-  const cambios = readPlan(run).cambia_lo_existente;
+  const plan = readPlan(run);
+  // Sin flag que lo salte: instalar una versión que no anda con el Node del repo es lo que frenó la
+  // revisión siete veces en PIZ-3. La salida es otra librería, o la versión y subir el Node (ADR 0028).
+  const sinVersion = plan.versiones?.sin_version ?? [];
+  if (sinVersion.length > 0) {
+    throw new UserError(
+      `el plan de ${id} agrega dependencias sin una versión que sirva:\n${sinVersion.map((s) => `- ${s.motivo}`).join("\n")}\nPedí cambios: otra librería, o la versión que va y que una sub-task suba el Node del repo`,
+      `flowrunner changes ${id} "<qué hacer con ${sinVersion.map((s) => s.paquete).join(", ")}>"${origen === "claude" ? " --origen claude" : ""}`,
+    );
+  }
+  const cambios = plan.cambia_lo_existente;
   if (cambios.length > 0 && !aceptaCambios) {
     throw new UserError(
       `el plan de ${id} cambia lo que ya existe:\n${cambios.map((c) => `- ${c.que} (${c.donde}) ← ${c.criterio}`).join("\n")}\nSi esos cambios van, aprobá con --acepto-cambios; si no, pedí cambios`,

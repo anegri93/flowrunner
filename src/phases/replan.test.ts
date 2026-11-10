@@ -1,9 +1,9 @@
 // Un replan sobre código ya implementado: preparar, planificar, implementar y planificar otra vez,
 // llamando a las fases como el runner y escribiendo los eventos que el runner escribiría.
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { git } from "../../test/helpers/git.ts";
+import { git, tempDir } from "../../test/helpers/git.ts";
 import { contextFor, makeProject, newRun, testDeps } from "../../test/helpers/project.ts";
 import { simQuery, type SimScript } from "../../test/helpers/sim-sdk.ts";
 import type { Plan, Subtask } from "../gates/plan.ts";
@@ -131,6 +131,11 @@ async function implementado(
     config: { setup: "true", tests_globs: ["tests/**"] },
   },
   unit: (prompt: string) => SimScript = unitScript,
+  verifica: Outcome = {
+    tipo: "pregunta",
+    motivo: "ST-6 no pudo escribir lo pedido",
+    unidades: ["ST-6"],
+  },
 ) {
   const { work } = makeProject(project);
   const run = newRun(work, FEATURE);
@@ -150,14 +155,23 @@ async function implementado(
   await fase(run, deps, "aprobar", aprobar);
   appendEvent(run.dir, { tipo: "aprobado" });
   expect(await fase(run, deps, "implementar", implementar)).toEqual({ tipo: "ok" });
-  const verifica: Outcome = {
-    tipo: "pregunta",
-    motivo: "ST-6 no pudo escribir lo pedido",
-    unidades: ["ST-6"],
-  };
   await fase(run, deps, "verificar", () => Promise.resolve(verifica));
   return { run, deps, sim, seen, worktree, base: prep.base_sha };
 }
+
+/** Las sesiones del planificador, sin las de implementar. */
+const planners = (sim: ReturnType<typeof simQuery>) => sim.records.filter((r) => !isUnit(r.prompt));
+
+/** ST-1 cambia de alcance y conserva: el gate lo rechaza sin tocar la rama. */
+const MAL_ST1: SimScript = {
+  ...SCRIPT_2,
+  output: {
+    ...PLAN_2,
+    subtareas: PLAN_2.subtareas.map((t) =>
+      t.id === "ST-1" ? { ...t, alcance: ["src/s1/", "src/otra/"] } : t,
+    ),
+  },
+};
 
 const subjects = (wt: string, base: string) =>
   git(wt, "log", "--reverse", "--format=%s", `${base}..HEAD`).split("\n");
@@ -328,7 +342,7 @@ describe("un replan conserva el código", { timeout: 30_000 }, () => {
           tests: [...PLAN_2.tests, "tests/falta.mjs"],
         },
       };
-      const { run, deps, worktree } = await implementado([SCRIPT_1, sinST4, SCRIPT_2]);
+      const { run, deps, sim, worktree } = await implementado([SCRIPT_1, sinST4, SCRIPT_2]);
       appendEvent(run.dir, { tipo: "rehacer", desde: "planificar" });
       const first = await fase(run, deps, "planificar", planificar);
       expect(first.tipo === "falla" && first.motivo).toContain(
@@ -340,6 +354,8 @@ describe("un replan conserva el código", { timeout: 30_000 }, () => {
       expect(
         await fase(run, deps, "planificar", planificar, { intento: 2, instruccion: motivo }),
       ).toEqual({ tipo: "ok" });
+      // La rama ya no era la que vio la sesión rechazada: no se retoma, se planifica de cero (ADR 0025).
+      expect(planners(sim)[2]?.options?.resume).toBeUndefined();
       expect(Object.keys(readPlan(run).conservadas)).toEqual([
         "ST-1",
         "ST-2",
@@ -485,6 +501,134 @@ describe("un replan conserva el código", { timeout: 30_000 }, () => {
         "ST-4",
         "ST-5",
       ]);
+    });
+
+    // Si regresiona, retomar la sesión tras un gate rechazado pierde las candidatas guardadas (lo que el
+    // plan corregido conserva pasa por «no estaba implementada») o le pasa a implementar SHAs que ya no
+    // están en la rama.
+    test("un replan rechazado retoma la sesión con la rama entera y las candidatas guardadas", async () => {
+      const todas: Plan = {
+        ...PLAN_1,
+        subtareas: PLAN_1.subtareas.map((t) => ({ ...t, conserva: true })),
+      };
+      const malST1: SimScript = {
+        calls: [],
+        output: {
+          ...todas,
+          subtareas: todas.subtareas.map((t) =>
+            t.id === "ST-1" ? { ...t, alcance: ["src/s1/", "src/otra/"] } : t,
+          ),
+        },
+      };
+      // Un motivo que no nombra sub-tasks: el plan corregido las conserva todas y la rama no se rearma.
+      const neutro: Outcome = { tipo: "pregunta", motivo: "algo no anda", unidades: ["ST-6"] };
+      const { run, deps, sim, worktree, base } = await implementado(
+        [SCRIPT_1, malST1, { calls: [], output: todas }],
+        undefined,
+        undefined,
+        neutro,
+      );
+      const orden = subjects(worktree, base).filter((s) => /· ST-\d+$/.test(s));
+      appendEvent(run.dir, { tipo: "rehacer", desde: "planificar" });
+      const first = await fase(run, deps, "planificar", planificar);
+      expect(first.tipo === "falla" && first.motivo).toContain("ST-1 cambió su alcance");
+      const motivo = first.tipo === "falla" ? first.motivo : "";
+      expect(
+        await fase(run, deps, "planificar", planificar, { intento: 2, instruccion: motivo }),
+      ).toEqual({ tipo: "ok" });
+      const sesiones = planners(sim);
+      expect(sesiones).toHaveLength(3);
+      expect(sesiones[2]?.options?.resume).toBe(sesiones[1]?.options?.sessionId);
+      expect(sesiones[2]?.prompt.startsWith("El gate rechazó el plan que devolviste")).toBe(true);
+      const { conservadas, locked } = readPlan(run);
+      expect(Object.keys(conservadas)).toEqual(["ST-1", "ST-2", "ST-3", "ST-4", "ST-5", "ST-6"]);
+      // Los SHAs que implementar da por integrados son los de la rama de ahora, no los de la vieja.
+      const enRama = git(worktree, "rev-list", `${base}..HEAD`).split("\n");
+      expect(
+        Object.values(conservadas)
+          .flat()
+          .every((sha) => enRama.includes(sha)),
+      ).toBe(true);
+      expect(subjects(worktree, base)).toEqual([
+        ...orden,
+        "test: los criterios de SHOP-214, en rojo",
+      ]);
+      expect(Object.keys(locked).sort()).toEqual([...PLAN_1.tests].sort());
+    });
+
+    // Si regresiona, el intento retomado toma como «test nuevo sin declarar» el que commiteó una
+    // sub-task conservada, lo borra del worktree, y el commit de los tests del plan se lleva el borrado.
+    test("el intento retomado no descarta los tests que commitearon las conservadas", async () => {
+      const todas: Plan = {
+        ...PLAN_1,
+        subtareas: PLAN_1.subtareas.map((t) => ({ ...t, conserva: true })),
+      };
+      const malST1: SimScript = {
+        calls: [],
+        output: {
+          ...todas,
+          subtareas: todas.subtareas.map((t) =>
+            t.id === "ST-1" ? { ...t, alcance: ["src/s1/", "src/otra/"] } : t,
+          ),
+        },
+      };
+      // ST-1 escribe, además de su código, un test propio dentro de los globs de tests.
+      const unit = (prompt: string): SimScript => {
+        const base = unitScript(prompt);
+        return /# Sub-task ST-1\b/.test(prompt)
+          ? {
+              calls: [
+                ...(base.calls ?? []),
+                {
+                  tool: "Write",
+                  input: { file_path: "src/s1/s1.test.mjs", content: "process.exit(0);\n" },
+                },
+              ],
+            }
+          : base;
+      };
+      const neutro: Outcome = { tipo: "pregunta", motivo: "algo no anda", unidades: ["ST-6"] };
+      const { run, deps, sim, worktree, base } = await implementado(
+        [SCRIPT_1, malST1, { calls: [], output: todas }],
+        { config: { setup: "true", tests_globs: ["tests/**", "src/**/*.test.mjs"] } },
+        unit,
+        neutro,
+      );
+      expect(git(worktree, "ls-files", "src/s1/s1.test.mjs")).toBe("src/s1/s1.test.mjs");
+      appendEvent(run.dir, { tipo: "rehacer", desde: "planificar" });
+      const first = await fase(run, deps, "planificar", planificar);
+      expect(first.tipo === "falla" && first.motivo).toContain("ST-1 cambió su alcance");
+      const motivo = first.tipo === "falla" ? first.motivo : "";
+      expect(
+        await fase(run, deps, "planificar", planificar, { intento: 2, instruccion: motivo }),
+      ).toEqual({ tipo: "ok" });
+      expect(planners(sim)[2]?.options?.resume).toBeDefined();
+      expect(existsSync(join(worktree, "src/s1/s1.test.mjs"))).toBe(true);
+      expect(git(worktree, "diff", "--name-status", base, "HEAD", "--", "src/s1/")).toContain(
+        "A\tsrc/s1/s1.test.mjs",
+      );
+      const avisos = readLog(run.dir).events.flatMap((e) => (e.tipo === "aviso" ? [e.texto] : []));
+      expect(avisos.filter((t) => t.startsWith("se descartaron tests"))).toEqual([]);
+    });
+
+    // Si regresiona, el reintento retoma una sesión cuyo gate miró los llamadores con un índice viejo, y
+    // conserva lo que el intento nuevo no habría conservado.
+    test("si el índice no se pudo reconstruir, el reintento no retoma la sesión: planifica de cero", async () => {
+      const { run, deps, sim } = await implementado([SCRIPT_1, MAL_ST1, SCRIPT_2]);
+      const dir = tempDir("flowrunner-sin-graft-");
+      writeFileSync(join(dir, "graft"), "#!/bin/sh\necho 'graft roto' >&2\nexit 1\n");
+      chmodSync(join(dir, "graft"), 0o755);
+      const sinGraft = { ...deps, env: { ...deps.env, PATH: `${dir}:${deps.env.PATH ?? ""}` } };
+      appendEvent(run.dir, { tipo: "rehacer", desde: "planificar" });
+      const first = await fase(run, sinGraft, "planificar", planificar);
+      expect(first).toMatchObject({ tipo: "falla", clase: "gate" });
+      const avisos = readLog(run.dir).events.flatMap((e) => (e.tipo === "aviso" ? [e.texto] : []));
+      expect(avisos).toContainEqual(expect.stringMatching(/^graft no pudo reconstruir el índice/));
+      const motivo = first.tipo === "falla" ? first.motivo : "";
+      expect(
+        await fase(run, sinGraft, "planificar", planificar, { intento: 2, instruccion: motivo }),
+      ).toEqual({ tipo: "ok" });
+      expect(planners(sim)[2]?.options?.resume).toBeUndefined();
     });
 
     // Si regresiona, una conservada que agregó un paquete se rechaza porque su criterio corre con las

@@ -38,6 +38,10 @@ export interface SessionSpec<T> {
   readonly maxBudgetUsd?: number;
   readonly timeoutMs: number;
   readonly maxTurns?: number;
+  /** Persiste la sesión con este id (un UUID), para poder retomarla. Sin él, no se persiste. */
+  readonly sessionId?: string;
+  /** Retoma la sesión persistida con este id, en lugar de empezar una nueva. */
+  readonly resume?: string;
 }
 
 export type SessionResult<T> =
@@ -90,7 +94,12 @@ export function buildOptions<T>(
             schema: z.toJSONSchema(spec.schema, { target: "draft-7" }),
           },
         }),
-    persistSession: false,
+    // El SDK no acepta `sessionId` con `resume` sin `forkSession`: si vienen los dos, gana `resume`.
+    ...(spec.resume !== undefined
+      ? { resume: spec.resume, persistSession: true }
+      : spec.sessionId !== undefined
+        ? { sessionId: spec.sessionId, persistSession: true }
+        : { persistSession: false }),
     abortController: abort,
   };
 }

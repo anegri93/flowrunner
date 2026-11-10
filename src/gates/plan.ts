@@ -180,7 +180,8 @@ export function checkPlanShape(
   plan: Plan,
   feature: Feature,
   root: string,
-  rules: PlanRepoRules,
+  /** `verify` es el del repo (`config.verify`): el rechazo de un criterio del run lo nombra. */
+  rules: PlanRepoRules & { readonly verify: string },
   /** Si el comando es el verify del repo (`isVerifyCommand`): solo esos criterios pueden ser del run. */
   esVerify: (comando: string) => boolean = () => false,
 ): string[] {
@@ -193,10 +194,11 @@ export function checkPlanShape(
     const entry = plan.criterios.find((c) => c.id === ac.id);
     if (entry === undefined) problems.push(`${ac.id} no tiene comando ni sub-task`);
     else if (entry.subtarea === CRITERIO_DEL_RUN) {
-      // Implementar no se lo da a nadie: si no lo corre verificar, nadie lo cumple.
+      // Implementar no se lo da a nadie: si no lo corre verificar, nadie lo cumple. Lo más común es una
+      // variante del verify (`pnpm test`, `verify.sh | tail`): primero se dice cuál es el comando.
       if (!esVerify(entry.comando))
         problems.push(
-          `${ac.id} es del run, pero solo un criterio cuyo comando es el verify del repo puede serlo: asignalo a la sub-task que lo cubre`,
+          `${ac.id} es del run, pero \`${entry.comando}\` no es el verify del repo. Si el criterio pide el repo en verde, su comando es \`./${rules.verify.replace(/^\.\//, "")}\` tal cual, sin nada antes ni después; si no, asignalo a la sub-task que lo cubre`,
         );
     } else if (!idSet.has(entry.subtarea))
       problems.push(`${ac.id} apunta a ${entry.subtarea}, que no existe`);

@@ -5,7 +5,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { z } from "zod";
-import type { Candidata } from "../gates/conserva.ts";
+import type { Candidata, ConservaInput } from "../gates/conserva.ts";
 import type { Plan, Subtask } from "../gates/plan.ts";
 import {
   changesSince,
@@ -377,4 +377,37 @@ export async function llamadoresDelPlan(
     }
   }
   return { llamadores, sinLlamadores };
+}
+
+/** Lo que se sabe al abrir la sesión para decidir el `conserva` de un plan (ADR 0024). */
+export interface BaseConserva {
+  /** Las sub-tasks del plan anterior. */
+  readonly anteriores: readonly Subtask[];
+  /** Las candidatas que están en la rama al abrir la sesión. */
+  readonly candidatas: readonly Candidata[];
+  /** Los textos de la regla (c). */
+  readonly pedidos: readonly string[];
+  readonly worktree: string;
+  readonly indexDir: string;
+  /** Por qué el índice no está al día, si no lo está. */
+  readonly sinIndice: string | undefined;
+  readonly env: NodeJS.ProcessEnv;
+}
+
+/**
+ * El `ConservaInput` de un plan, o undefined si no conserva nada. Lo usan el gate y `validar_plan`, sobre
+ * el mismo worktree, así no pueden divergir. Solo lee: git grep y el índice de graft, sin refrescarlo.
+ */
+export async function conservaDelPlan(
+  plan: Pick<Plan, "subtareas" | "cambia_lo_existente">,
+  base: BaseConserva,
+): Promise<ConservaInput | undefined> {
+  if (!plan.subtareas.some((t) => t.conserva === true)) return undefined;
+  return {
+    plan,
+    anteriores: base.anteriores,
+    candidatas: base.candidatas,
+    pedidos: base.pedidos,
+    ...(await llamadoresDelPlan(plan, base.worktree, base.indexDir, base.sinIndice, base.env)),
+  };
 }

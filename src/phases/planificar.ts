@@ -11,23 +11,22 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import type { HookCallback } from "@anthropic-ai/claude-agent-sdk";
+import type { HookCallback, McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { loadBrain, type Brain } from "../brain/brain.ts";
 import { stateOf } from "../engine/engine.ts";
 import { isVerifyCommand, loadRepoConfig } from "../config/load.ts";
 import type { RepoConfig } from "../config/schemas.ts";
-import { existedAt, testsInScope, testsTouched, undeclared } from "../gates/existente.ts";
-import { checkConserva, conservadas, type ConservaInput } from "../gates/conserva.ts";
-import { callersOutOfScope } from "../gates/llamadores.ts";
+import { checkConserva, conservadas } from "../gates/conserva.ts";
+import { chequeosEstaticos } from "../gates/estaticos.ts";
 import {
   checkCommandsFail,
   checkCommandsPass,
-  checkPlanShape,
   delRun,
   planSchema,
   type Plan,
 } from "../gates/plan.ts";
+import { VALIDAR_PLAN_TOOL, validarPlanServer } from "../gates/validar-plan.ts";
 import { changesSince, commitAll, discardChanges, headSha } from "../git/git.ts";
 import { buildIndex, GRAFT_TOOLS, graftMcpServer } from "../graft/graft.ts";
 import { featureText, render } from "../prompts/render.ts";
@@ -47,11 +46,12 @@ import { graftIndex, prepared, runFeature, type Prepared } from "./inputs.ts";
 import {
   commitsDeLaRama,
   conLosTests,
+  conservaDelPlan,
   enAnterior,
-  llamadoresDelPlan,
   ramaAnterior,
   reaplicar,
   soltarAnterior,
+  type BaseConserva,
   type RamaAnterior,
   type Reaplicado,
 } from "./conservar.ts";
@@ -142,8 +142,13 @@ interface Comun {
   readonly brain: Brain;
   readonly feature: Feature;
   readonly hook: HookCallback;
+  /** Si un comando es el verify del repo: el mismo para el gate de afuera y para `validar_plan`. */
+  readonly esVerify: (comando: string) => boolean;
   /** La sesión del planificador, sin lo que cambia entre un intento nuevo y uno retomado. */
-  readonly spec: Omit<SessionSpec<Plan>, "prompt" | "nombre" | "sessionId" | "resume">;
+  readonly spec: Omit<
+    SessionSpec<Plan>,
+    "prompt" | "nombre" | "sessionId" | "resume" | "mcpServers"
+  >;
 }
 
 interface Intento {
@@ -248,7 +253,7 @@ async function olvidarSesiones(
 }
 
 function armarComun(ctx: PhaseContext): Comun {
-  const { run, deps, emit } = ctx;
+  const { run, emit } = ctx;
   const prep = prepared(ctx.events);
   const worktree = prep.worktree;
   const config: RepoConfig = loadRepoConfig(worktree);
@@ -274,6 +279,7 @@ function armarComun(ctx: PhaseContext): Comun {
       bash: false,
       agents: true,
       graft: true,
+      mcp: [VALIDAR_PLAN_TOOL],
     },
     emit,
   );
@@ -284,6 +290,7 @@ function armarComun(ctx: PhaseContext): Comun {
     brain,
     feature,
     hook,
+    esVerify: (comando) => isVerifyCommand(config, comando),
     spec: {
       fase: "planificar",
       cwd: worktree,
@@ -291,7 +298,6 @@ function armarComun(ctx: PhaseContext): Comun {
       tools: ["Read", "Grep", "Glob", "Write", "Edit", "Agent"],
       hook,
       schema: planSchema,
-      mcpServers: { graft: graftMcpServer(worktree, graftIndex(run), deps.env) },
       agents: {
         explorador: {
           description:
@@ -304,6 +310,51 @@ function armarComun(ctx: PhaseContext): Comun {
       },
       timeoutMs: PLANIFICAR_TIMEOUT_MS,
     },
+  };
+}
+
+/**
+ * Los servidores MCP de un intento. `validar_plan` cuenta los tests desde `inicioSesion`, el HEAD al
+ * abrir (o retomar) la sesión, como el gate: lo conservado de un replan ya está ahí y no lo escribió el
+ * planificador. Un servidor en proceso se conecta a una sola sesión, así que es uno por intento.
+ */
+function servidores(
+  ctx: PhaseContext,
+  comun: Comun,
+  inicioSesion: string,
+  conserva: BaseConserva,
+): Record<string, McpServerConfig> {
+  const { worktree, config, feature, esVerify } = comun;
+  return {
+    graft: graftMcpServer(worktree, graftIndex(ctx.run), ctx.deps.env),
+    gate: validarPlanServer({
+      feature,
+      worktree,
+      base: comun.prep.base_sha,
+      desde: inicioSesion,
+      config,
+      env: ctx.deps.env,
+      esVerify,
+      candidatas: conserva.candidatas.map((c) => c.id),
+      conservaDe: (plan) => conservaDelPlan(plan, conserva),
+    }),
+  };
+}
+
+/** Con qué arman el `conserva` de un plan el gate y `validar_plan` en este intento: lo mismo para los dos. */
+function baseConserva(
+  ctx: PhaseContext,
+  comun: Comun,
+  intento: Pick<Intento, "previous" | "armada" | "rama" | "sinIndice">,
+): BaseConserva {
+  return {
+    anteriores: intento.previous?.subtareas ?? [],
+    candidatas: intento.armada.candidatas,
+    pedidos: intento.rama.textos,
+    worktree: comun.worktree,
+    indexDir: graftIndex(ctx.run),
+    sinIndice: intento.sinIndice,
+    env: ctx.deps.env,
   };
 }
 
@@ -390,6 +441,12 @@ async function intentoNuevo(ctx: PhaseContext, comun: Comun, sessionId: string):
   const result = await runSession(
     {
       ...comun.spec,
+      mcpServers: servidores(
+        ctx,
+        comun,
+        inicioSesion,
+        baseConserva(ctx, comun, { previous, armada, rama, sinIndice }),
+      ),
       nombre,
       sessionId,
       prompt: render("planificar", {
@@ -450,6 +507,12 @@ async function intentoRetomado(
   const result = await runSession(
     {
       ...comun.spec,
+      mcpServers: servidores(
+        ctx,
+        comun,
+        inicioSesion,
+        baseConserva(ctx, comun, { previous, armada, rama, sinIndice: undefined }),
+      ),
       nombre: sessionName(run, "planificar"),
       resume: sesion.sessionId,
       prompt: mensajeRetomado(motivo),
@@ -474,7 +537,7 @@ async function intentoRetomado(
 /** Lo de siempre después de la sesión: descarta lo ajeno, corre el gate, commitea y escribe artefactos. */
 async function gateYCierre(ctx: PhaseContext, comun: Comun, intento: Intento): Promise<Outcome> {
   const { run, deps, emit } = ctx;
-  const { worktree, config, feature } = comun;
+  const { worktree, config, feature, esVerify } = comun;
   const base = comun.prep.base_sha;
   const { result, restored, previous, rama, armada, inicioSesion, sinIndice, avisados } = intento;
   if (result.tipo !== "ok")
@@ -483,7 +546,6 @@ async function gateYCierre(ctx: PhaseContext, comun: Comun, intento: Intento): P
       : { tipo: "falla", clase: result.clase, motivo: result.motivo };
   // «verify en verde» es del run, no de una sub-task (VF-6: AC-12 en ST-6, que no era dueña de lo que
   // se rompía). flowrunner lo corrige solo en vez de rechazar: es el plan que pasa el gate y se escribe.
-  const esVerify = (comando: string) => isVerifyCommand(config, comando);
   const plan = delRun(result.output, esVerify);
   for (const [path] of restored.filter(([path]) => !plan.tests.includes(path))) {
     rmSync(join(worktree, path), { force: true });
@@ -525,22 +587,16 @@ async function gateYCierre(ctx: PhaseContext, comun: Comun, intento: Intento): P
     });
   }
 
-  const problems = checkPlanShape(plan, feature, worktree, config, esVerify);
   let kept: string[] = [];
   let rearmada = false;
   let invalid: string[] = [];
   let nuevos = armada.nuevos;
   let inicioTests = inicioSesion;
-  if (plan.subtareas.some((t) => t.conserva === true)) {
-    const conserva: ConservaInput = {
-      plan,
-      anteriores: previous?.subtareas ?? [],
-      candidatas: armada.candidatas,
-      pedidos: rama.textos,
-      ...(await llamadoresDelPlan(plan, worktree, graftIndex(run), sinIndice, deps.env)),
-    };
+  // Sobre el worktree que vio la sesión, como `validar_plan`.
+  const conserva = await conservaDelPlan(plan, baseConserva(ctx, comun, intento));
+  if (conserva !== undefined) {
+    // Antes del resto: decide qué queda en la rama. Sus problemas los suma `chequeosEstaticos`.
     invalid = checkConserva(conserva);
-    problems.push(...invalid);
     if (invalid.length === 0) kept = conservadas(conserva);
   }
   // Lo que no se conserva se saca de la rama antes del resto del gate: sus criterios tienen que fallar
@@ -565,35 +621,27 @@ async function gateYCierre(ctx: PhaseContext, comun: Comun, intento: Intento): P
     nuevos = final.nuevos;
     inicioTests = await headSha(worktree, deps.env);
   }
-  problems.push(...(await callersOutOfScope(plan, worktree, deps.env)));
-  // Desde donde empiezan los tests: lo conservado no se bloquea como test.
-  const changes = await changesSince(worktree, inicioTests, deps.env);
-  const written = changes.filter((c) => c.status !== "borrado").map((c) => c.path);
-  if (written.length === 0) problems.push("planificar no escribió ningún test");
-  // Lo que se detecta y no se declara no pasa: así lo que ve la persona al aprobar no depende de que
-  // el planificador lo cuente.
-  const touched = [
-    ...testsTouched(changes, config.tests_globs),
-    // Los que existían en la base: uno que escribió una sub-task conservada no es «existente».
-    ...(await existedAt(
-      worktree,
-      base,
-      testsInScope(plan.subtareas, worktree, config.tests_globs),
-      deps.env,
-    )),
-  ];
-  for (const path of undeclared(touched, plan.cambia_lo_existente)) {
-    problems.push(
-      `el plan cambia ${path}, un test que ya existe, y no lo declara en cambia_lo_existente. Declaralo con qué cambia, dónde y qué criterio lo obliga, o dejalo como está`,
-    );
-  }
+  // Los mismos chequeos que `validar_plan` en la sesión, acá sobre la rama ya rearmada: un llamador que
+  // estaba en el código que no se conserva ya no existe. Desde donde empiezan los tests: lo conservado
+  // no se bloquea como test.
+  const problems = await chequeosEstaticos({
+    plan,
+    feature,
+    worktree,
+    base,
+    desde: inicioTests,
+    config,
+    env: deps.env,
+    esVerify,
+    ...(conserva === undefined ? {} : { conserva }),
+  });
+  const written = (await changesSince(worktree, inicioTests, deps.env))
+    .filter((c) => c.status !== "borrado")
+    .map((c) => c.path);
   // Los tests quedan bloqueados byte a byte: el lint y el formateador del repo los arreglan antes del
   // gate y del hash. Lo que el lint no arregla solo rechaza el plan, y el planificador lo corrige.
   for (const f of await runFixers(worktree, config, written, deps.env)) {
     problems.push(`${f.falla} en los tests: ${f.detalle}`);
-  }
-  for (const declared of plan.tests.filter((t) => !written.includes(t))) {
-    problems.push(`el plan declara el test ${declared}, pero no está escrito`);
   }
   if (problems.length === 0) {
     // Lo conservado puede haber agregado paquetes: sus criterios corren con ellos instalados.

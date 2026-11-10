@@ -16,8 +16,7 @@
         "id": "flowrunner",
         "title": "flowrunner",
         "icon": "rocket",
-        "entry": "src/panel.tsx",
-        "ui": "components"
+        "entry": "panel/index.html"
       }
     ],
     "settings": [
@@ -37,6 +36,9 @@
     },
     {
       "kind": "workspace:read"
+    },
+    {
+      "kind": "storage:own"
     }
   ]
 }

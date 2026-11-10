@@ -1,7 +1,7 @@
 // Los runs en disco: crear su directorio, encontrarlos y saber en qué están.
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { stateOf, type RunState } from "../engine/engine.ts";
+import { MAX_NETWORK_RETRIES, stateOf, type RunState } from "../engine/engine.ts";
 import type { RunPaths } from "../runner/types.ts";
 import { appendEvent, readLog } from "./run-log.ts";
 
@@ -43,6 +43,7 @@ export function createRun(home: string, run: NewRun, now: Date): RunPaths {
       repo: run.repo,
       ...(run.budgetUsd === undefined ? {} : { budget_usd: run.budgetUsd }),
       ...(run.vueltas === undefined ? {} : { vueltas: run.vueltas }),
+      reintentos_red: MAX_NETWORK_RETRIES,
     },
     () => now,
   );

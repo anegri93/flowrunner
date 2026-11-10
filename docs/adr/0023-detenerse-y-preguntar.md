@@ -112,6 +112,11 @@ reintentos de infraestructura esperaban 5 y 20 s.
 - **Una falla de red** se reintenta 3 veces, a los 30 s, 2 min y 5 min: unos 7,5 minutos. Después se
   detiene con el motivo y `resume`. **El resto de la infraestructura** sigue con 2 reintentos, a los 5
   y 20 s. La falla que agota los reintentos ya no espera su backoff antes de detenerse.
+- **Se congela al crear el run,** como las vueltas: `run_creado` suma `reintentos_red`. Un run creado
+  antes, sin el campo, trata un corte de red como cualquier otra infraestructura. Si no, un log viejo
+  detenido por tres cortes se leería en curso, sin proceso ni opciones (C8).
+- **La lista deja afuera** el «unable to access» de git, que también precede a un 403 o a un error de
+  TLS, y `EPIPE`, que es un pipe local. Esperar no arregla ninguno.
 - **Mientras espera, el run conserva su lugar** del repo (ADR 0019): sigue en curso, con su proceso
   vivo. Los lugares y la cola no cambian (C8).
 - **Una credencial rechazada no reintenta:** sigue siendo `entorno`, pero su primera opción pasa a

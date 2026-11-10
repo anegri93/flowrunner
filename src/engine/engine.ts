@@ -32,6 +32,13 @@ export const MAX_ATTEMPTS: Record<Phase, number> = {
 export const MAX_INFRA_RETRIES = 2;
 /** Un corte de red dura más que un error de otra infraestructura: 30 s, 2 min y 5 min. */
 export const MAX_NETWORK_RETRIES = 3;
+
+/**
+ * Esta falla espera como un corte de red. Un run creado antes de distinguirlos, sin `reintentos_red`
+ * en `run_creado`, la trata como cualquier otra infraestructura: su log se reduce como antes (C8).
+ */
+export const esEsperaDeRed = (state: RunState, motivo: string): boolean =>
+  state.reintentosRed !== undefined && esFallaDeRed(motivo);
 /**
  * Las vueltas automáticas de un run creado antes de que existiera `vueltas` en `run_creado`: era el
  * máximo fijo de entonces, y un run en curso no cambia a mitad de camino (ADR 0023).
@@ -89,6 +96,8 @@ export interface RunState {
   readonly vueltas: Record<RoundPhase, number>;
   /** Vueltas automáticas por fase antes de preguntar; la config del repo al crear el run (ADR 0023). */
   readonly vueltasMax: number;
+  /** Reintentos de un corte de red; undefined en un run creado antes de distinguirlos (ADR 0023). */
+  readonly reintentosRed: number | undefined;
   /** Lo que la fase anterior o tu pedido le dicen a la próxima ejecución de esta fase. */
   readonly instruccion: string | undefined;
   /** Las sub-tasks que verificar, revisar o probar devolvieron a implementar. */
@@ -299,8 +308,9 @@ function onOutcome(state: RunState, fase: Phase, outcome: Outcome): RunState {
       }
       if (outcome.clase === "infra") {
         const infra = state.infra + 1;
-        const red = esFallaDeRed(outcome.motivo);
-        const max = red ? MAX_NETWORK_RETRIES : MAX_INFRA_RETRIES;
+        const maxRed = esEsperaDeRed(state, outcome.motivo) ? state.reintentosRed : undefined;
+        const red = maxRed !== undefined;
+        const max = maxRed ?? MAX_INFRA_RETRIES;
         if (infra > max) {
           return halt(
             { ...state, infra },
@@ -345,6 +355,7 @@ export function initialState(): RunState {
     ultimoMotivo: undefined,
     vueltas: NO_ROUNDS,
     vueltasMax: LEGACY_ROUNDS,
+    reintentosRed: undefined,
     instruccion: undefined,
     unidades: undefined,
     costoUsd: 0,
@@ -388,6 +399,7 @@ export function reduce(state: RunState, event: RunEvent): RunState {
         repo: event.repo,
         budgetUsd: event.budget_usd,
         vueltasMax: event.vueltas ?? LEGACY_ROUNDS,
+        reintentosRed: event.reintentos_red,
       };
     case "accion_iniciada":
       return { ...state, interrumpida: true };

@@ -16,6 +16,7 @@ function newRun(): RunPaths {
     proyecto: "acme",
     repo: "/r",
     budget_usd: 25,
+    reintentos_red: 3,
   });
   return { id: "R1", home: dir, dir, worktrees: join(dir, "wt") };
 }
@@ -121,7 +122,11 @@ describe("runUntilStop", () => {
   // Si regresiona, el run ya detenido espera el backoff antes de soltar su lugar y avisar.
   test("una falla de infraestructura que no es de red espera 5 s y 20 s, y no espera al detenerse", async () => {
     const run = newRun();
-    const fail: Outcome = { tipo: "falla", clase: "infra", motivo: "gh 502" };
+    const fail: Outcome = {
+      tipo: "falla",
+      clase: "infra",
+      motivo: "la sesión terminó sin resultado",
+    };
     const phases = recordingPhases(run, { preparar: [fail, fail, fail] });
     const waits: number[] = [];
     const state = await runUntilStop(run, phases, {

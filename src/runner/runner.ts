@@ -1,7 +1,12 @@
 // El loop del run: lee el log, pide la siguiente acción al engine y la ejecuta con su fase.
 // Cada acción queda entre `accion_iniciada` y `accion_terminada`; una iniciada sin terminar se rehace.
-import { nextAction, stateOf, type RunState, type RunStatus } from "../engine/engine.ts";
-import { esFallaDeRed } from "../engine/motivos.ts";
+import {
+  esEsperaDeRed,
+  nextAction,
+  stateOf,
+  type RunState,
+  type RunStatus,
+} from "../engine/engine.ts";
 import { avisoDeEstado, cambiosDelPlan } from "../notify/estado.ts";
 import { outcomeSchema, type Outcome } from "../store/events.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
@@ -74,12 +79,10 @@ export async function runUntilStop(
     }
     // Solo si el engine la reintenta: la falla que agotó los reintentos no espera para detenerse, y el
     // run no retiene su lugar durante una espera que no lleva a nada.
-    if (
-      outcome.tipo === "falla" &&
-      outcome.clase === "infra" &&
-      nextAction(stateOf(readLog(run.dir).events), opts).tipo === "fase"
-    ) {
-      await deps.sleep(infraBackoffMs(state.infra + 1, esFallaDeRed(outcome.motivo)));
+    if (outcome.tipo === "falla" && outcome.clase === "infra") {
+      const after = stateOf(readLog(run.dir).events);
+      if (nextAction(after, opts).tipo === "fase")
+        await deps.sleep(infraBackoffMs(state.infra + 1, esEsperaDeRed(after, outcome.motivo)));
     }
   }
 }

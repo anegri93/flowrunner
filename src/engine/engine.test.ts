@@ -255,14 +255,17 @@ describe("transiciones", () => {
     const VF6 =
       "git fetch --quiet origin falló: fatal: unable to access 'https://github.com/anegri93/videoFactory.git/': Could not resolve host: github.com";
     const commands = (s: RunState) => s.halt?.opciones.map((o) => o.comando);
+    const cut = done("preparar", { tipo: "falla", clase: "infra", motivo: VF6 });
+    /** Un run creado con esta versión: congela sus reintentos de red al crearse. */
+    const fresh = (...events: RunEvent[][]) =>
+      stateOf([{ ...created, reintentos_red: 3 }, ...events.flat()]);
 
     // Si regresiona, un corte de red de menos de 7 minutos vuelve a matar el run (primer VF-6).
     test("un corte de red se reintenta tres veces y a la cuarta detiene, con resume", () => {
-      const cut = done("preparar", { tipo: "falla", clase: "infra", motivo: VF6 });
-      const three = state(cut, cut, cut);
+      const three = fresh(cut, cut, cut);
       expect(three.status).toBe("en_curso");
       expect(three.infra).toBe(3);
-      const four = state(cut, cut, cut, cut);
+      const four = fresh(cut, cut, cut, cut);
       expect(four.status).toBe("detenido");
       expect(four.halt?.motivo).toContain("sin conexión después de 3 reintentos");
       expect(four.halt?.opciones[0]?.comando).toBe(`flowrunner resume ${R}`);
@@ -272,10 +275,18 @@ describe("transiciones", () => {
     test("una falla de infraestructura que no es de red sigue deteniendo a la tercera", () => {
       const motivo = "la sesión planificar-1 terminó sin resultado";
       const fail = done("preparar", { tipo: "falla", clase: "infra", motivo });
-      expect(state(fail, fail)).toMatchObject({ status: "en_curso", infra: 2 });
-      const three = state(fail, fail, fail);
+      expect(fresh(fail, fail)).toMatchObject({ status: "en_curso", infra: 2 });
+      const three = fresh(fail, fail, fail);
       expect(three.status).toBe("detenido");
       expect(three.halt?.motivo).toBe(`preparar: falla de infraestructura repetida: ${motivo}`);
+    });
+
+    // Si regresiona, un run detenido por la red antes de esta versión revive como en curso, sin proceso,
+    // motivo ni opciones: el log viejo se tiene que seguir leyendo igual (C8).
+    test("un log viejo detenido por tres cortes de red se sigue leyendo detenido", () => {
+      const s = state(cut, cut, cut);
+      expect(s.status).toBe("detenido");
+      expect(s.halt?.motivo).toBe(`preparar: falla de infraestructura repetida: ${VF6}`);
     });
 
     // Si regresiona, el run detenido ofrece `resume`, que vuelve a fallar sin arreglar la credencial.

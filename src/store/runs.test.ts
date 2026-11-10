@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import type { Outcome, Phase } from "./events.ts";
-import { appendEvent } from "./run-log.ts";
+import { appendEvent, readLog } from "./run-log.ts";
 import { colaDe, createRun, listRunIds, ocupaLugar, runPaths } from "./runs.ts";
 
 function runIn(home: string, ...steps: [Phase, Outcome][]): string {
@@ -80,5 +80,15 @@ describe("createRun", () => {
     expect(a).not.toBe(b);
     expect(listRunIds(home)).toEqual([a, b].sort());
     expect(runPaths(home, b).dir).toBe(join(home, "runs", b));
+  });
+
+  // Si regresiona, un run nuevo trata un corte de red como cualquier falla de infraestructura.
+  test("un run nuevo congela sus reintentos de red en run_creado", () => {
+    const home = mkdtempSync(join(tmpdir(), "fr-home-"));
+    const id = runIn(home);
+    expect(readLog(runPaths(home, id).dir).events[0]).toMatchObject({
+      tipo: "run_creado",
+      reintentos_red: 3,
+    });
   });
 });

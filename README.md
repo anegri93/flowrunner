@@ -149,6 +149,21 @@ Se copian solo mientras corren esos comandos (al comprobar que los criterios est
 sub-task y en verificar) y se borran después. El agente no puede leerlos ni buscar en ellos, y nunca
 entran en un commit. Sin ellos, un e2e que no puede levantar la app «falla» sin probar nada.
 
+### Explorar antes de planificar
+
+Un experimento, apagado por defecto. Con la opción prendida, antes del primer plan del run una sesión de
+Sonnet que solo lee recorre el repo y le deja al planificador un informe corto con archivos, funciones y
+sus llamadores, tests y riesgos. Opus planifica sobre ese informe en vez de explorar solo. Un replan o un
+pedido de cambios reusa el informe; si la exploración falla, se planifica sin él y queda un aviso.
+Conviene en features grandes, donde Opus lee mucho: en una chica, dos sesiones pueden costar más que una.
+
+```yaml
+explorar_antes: true # experimento: Sonnet explora antes del primer plan
+```
+
+La sesión usa `models.explorar`, por defecto Sonnet con esfuerzo `medium`; un repo que quiera Haiku lo
+pone ahí. El subagente `explorador` del planificador toma de esa clave el modelo, no el esfuerzo.
+
 ### Probar la feature en el entorno
 
 Después de revisar, la fase probar usa la feature como lo harías vos: levanta el entorno de desarrollo

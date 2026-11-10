@@ -22,7 +22,7 @@ export type ModelChoice = z.infer<typeof modelChoice>;
 
 export const DEFAULT_MODELS: Record<AgentPhase, ModelChoice> = {
   planificar: { model: "claude-opus-5-5", effort: "high" },
-  explorar: { model: "claude-haiku-5-5", effort: "low" },
+  explorar: { model: "claude-sonnet-5-5", effort: "medium" },
   implementar: { model: "claude-sonnet-5-5", effort: "high" },
   revisar: { model: "claude-opus-5-5", effort: "high" },
   probar: { model: "claude-sonnet-5-5", effort: "high" },
@@ -61,6 +61,8 @@ export const repoConfigSchema = z
     vueltas: z.int().min(0).max(3).default(0),
     /** Tope opcional en USD por run. Sin él, el run no se corta por gasto. */
     budget: z.strictObject({ run_usd: z.number().positive() }).optional(),
+    /** Una sesión de Sonnet explora antes del primer plan y le deja a Opus un informe (PR 13). */
+    explorar_antes: z.boolean().default(false),
     models: z.partialRecord(z.enum(AGENT_PHASES), modelChoice).default({}),
     /** Cómo levantar el entorno de desarrollo para que la fase probar use la feature. Sin él, se saltea. */
     probar: z

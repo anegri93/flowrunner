@@ -72,6 +72,14 @@ describe("config del repo", () => {
     expect(config.models.planificar).toEqual(DEFAULT_MODELS.planificar);
   });
 
+  // Si regresiona, un repo que no tocó nada paga una sesión de exploración más por run, o el explorador
+  // vuelve a ser Haiku y su informe queda corto: Opus vuelve a leer lo que el informe tenía que darle.
+  test("explorar_antes viene apagado y el explorador usa Sonnet por defecto", () => {
+    const config = loadRepoConfig(repoWithConfig(MINIMAL));
+    expect(config.explorar_antes).toBe(false);
+    expect(config.models.explorar).toEqual({ model: "claude-sonnet-5-5", effort: "medium" });
+  });
+
   test("varios problemas a la vez llegan todos juntos", () => {
     const problems = problemsOf(() =>
       loadRepoConfig(repoWithConfig("tests_globs: []\nverify: ../fuera.sh\nmax_parallel: 0\n")),

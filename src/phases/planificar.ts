@@ -42,6 +42,7 @@ import { SIN_COMANDOS } from "../tripwires/comandos.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
 import { isTestFile } from "../tripwires/rules.ts";
 import { copyEnvFiles } from "./env-files.ts";
+import { EXPLORACION_FALLIDA, explorar } from "./explorar.ts";
 import { runFixers } from "./fixers.ts";
 import { reinstalarSiCambiaron } from "./reinstalar.ts";
 import { conEntorno } from "./turno-entorno.ts";
@@ -431,6 +432,41 @@ function textosDeConserva(events: readonly RunEvent[], replan: Replan): string[]
   return [...replan.pedidos, ...(rerun === undefined ? [] : [rerun])];
 }
 
+/**
+ * El informe del explorador previo, si lo hay. Solo el primer plan del run explora: si
+ * `exploracion.md` ya existe, un replan, un pedido de cambios o un reintento lo reusan. Una exploración
+ * que falla deja planificar sin informe, también en los planes que siguen; un `limite` se devuelve tal cual, y si lo que gastó detuvo el
+ * run por su tope, la sesión del planificador no se abre: lo pasaría más.
+ */
+async function informePrevio(
+  ctx: PhaseContext,
+  comun: Comun,
+  codigo: string,
+): Promise<
+  | { readonly tipo: "seguir"; readonly md: string | undefined }
+  | { readonly tipo: "cortar"; readonly result: SessionResult<Plan> }
+> {
+  const file = join(ctx.run.dir, "exploracion.md");
+  if (existsSync(file)) return { tipo: "seguir", md: readFileSync(file, "utf8") };
+  // El primer plan ya intentó explorar y falló: los que siguen tampoco tienen informe.
+  if (!comun.config.explorar_antes || existsSync(join(ctx.run.dir, EXPLORACION_FALLIDA)))
+    return { tipo: "seguir", md: undefined };
+  const { worktree, config, feature } = comun;
+  const e = await explorar(ctx, { worktree, config, feature, codigo });
+  if (e.tipo === "limite") return { tipo: "cortar", result: e };
+  const estado = stateOf(readLog(ctx.run.dir).events);
+  if (estado.status !== "en_curso")
+    return {
+      tipo: "cortar",
+      result: {
+        tipo: "falla",
+        clase: "infra",
+        motivo: `el run se detuvo durante la exploración previa${estado.halt === undefined ? "" : `: ${estado.halt.motivo}`}`,
+      },
+    };
+  return { tipo: "seguir", md: e.tipo === "ok" ? e.md : undefined };
+}
+
 /** El camino de siempre: archiva, resetea, restaura y abre una sesión nueva persistida. */
 async function intentoNuevo(ctx: PhaseContext, comun: Comun, sessionId: string): Promise<Intento> {
   const { run, deps, emit, action } = ctx;
@@ -500,30 +536,36 @@ async function intentoNuevo(ctx: PhaseContext, comun: Comun, sessionId: string):
   // Después de reaplicar, de restaurar los tests y de reconstruir el índice: describe la rama que ve la
   // sesión, conservadas incluidas. Solo en el intento nuevo: el retomado ya lo tiene en su conversación.
   const codigo = await codigoUbicado(feature, worktree, graftIndex(run), deps.env, sinIndice);
+  const informe = await informePrevio(ctx, comun, codigo);
   const nombre = sessionName(run, "planificar");
-  const result = await runSession(
-    {
-      ...comun.spec,
-      mcpServers: servidores(
-        ctx,
-        comun,
-        inicioSesion,
-        baseConserva(ctx, comun, { previous, armada, rama, sinIndice }),
-      ),
-      nombre,
-      sessionId,
-      prompt: render("planificar", {
-        feature: featureText(feature),
-        tests_globs: config.tests_globs.join(", "),
-        verify: config.verify,
-        harness: config.harness_files.length === 0 ? "(ninguno)" : config.harness_files.join(", "),
-        instruccion,
-        codigo_ubicado: codigo,
-        ...brainVars(brain),
-      }),
-    },
-    { run, deps, emit },
-  );
+  const result: SessionResult<Plan> =
+    informe.tipo === "cortar"
+      ? informe.result
+      : await runSession(
+          {
+            ...comun.spec,
+            mcpServers: servidores(
+              ctx,
+              comun,
+              inicioSesion,
+              baseConserva(ctx, comun, { previous, armada, rama, sinIndice }),
+            ),
+            nombre,
+            sessionId,
+            prompt: render("planificar", {
+              feature: featureText(feature),
+              tests_globs: config.tests_globs.join(", "),
+              verify: config.verify,
+              harness:
+                config.harness_files.length === 0 ? "(ninguno)" : config.harness_files.join(", "),
+              instruccion,
+              codigo_ubicado: codigo,
+              exploracion: informe.md ?? "(no hubo exploración previa)",
+              ...brainVars(brain),
+            }),
+          },
+          { run, deps, emit },
+        );
   return {
     result,
     restored,

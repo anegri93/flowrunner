@@ -67,14 +67,30 @@ Medido con graft 0.29, que es el instalado; la spec se escribió con 0.18 y el J
   el tope: en `src/store/` de flowrunner, 11.787 caracteres sin marcar y 15.175 marcados.
 - **Un corte por el tope de 30 archivos dice «por tamaño»,** con el texto exacto de la spec.
 
-## Pendiente
+### Un nombre repetido: la unión con `graft grep`
 
-- **Un nombre repetido pierde sus llamadores de otros archivos.** graft 0.29 no los lista: si
-  `src/a/uno.ts` y `src/c/otro.ts` definen `uno`, el llamador de `src/b/dos.ts` no aparece, y lo dice
-  solo en el `note` del match. La spec da la unión por conservadora («Si el nombre es ambiguo, es la
-  unión»), y no lo es. Hoy `llamadoresDe` devuelve esa unión, que puede quedar vacía, y
-  `contextoGraft` muestra la entrada sin llamadores. Hay que decidirlo antes de la PR 09, que usa
-  `llamadoresDe` para conservar código.
+graft 0.29 no lista los llamadores de otro archivo de un nombre definido más de una vez: si
+`src/a/uno.ts` y `src/c/otro.ts` definen `uno`, el llamador de `src/b/dos.ts` no aparece, y lo dice
+solo en el `note` del match («a cross-file caller of an ambiguous name is dropped rather than
+guessed»). Se cumple la spec («si el nombre es ambiguo, es la unión: es lo conservador»), con
+`graft grep` de respaldo. Las firmas de C6 no cambian.
+
+- **Cuándo es un nombre repetido:** `callers` trae más de un match, o el `note` de alguno dice que
+  descartó llamadores por un nombre ambiguo.
+- **La unión:** lo que devolvió `callers`, más los archivos de
+  `graft --dir <índice> grep --json --no-refresh -- '\b<nombre>\b' <repo>`, con el nombre escapado
+  para regex, menos los hits que son la definición misma: la línea donde empieza un símbolo con ese
+  nombre. Un archivo que solo lo define no cuenta; si además lo usa, sí. Para un nombre que empieza o
+  termina con `$`, `\b` no marca el borde, y van `(?<![\w$])` y `(?![\w$])`.
+- **Si grep viene cortado** (`truncated.files > 0` o `truncated.hits > 0`), **o falla,** no se puede
+  garantizar la unión: `llamadoresDe` tira `GraftError`. **La PR 09 trata ese error como «no se
+  puede conservar»** la sub-task que dependía de ese símbolo.
+- **En `contextoGraft`,** la función lista sus llamadores con la misma unión. Los que salen de grep
+  llevan « · por texto: nombre repetido», y la marca «fuera de tu alcance» se aplica igual. Si grep
+  falla o se corta, la entrada dice «no se pudieron saber sus llamadores: nombre repetido, y …»;
+  `contextoGraft` no tira.
+- **Un nombre muy usado corta grep.** En flowrunner, `\bgit\b` viene cortado: `llamadoresDe("git")`
+  tira, y la entrada de `git()` en `src/git/git.ts` dice que no se pudieron saber sus llamadores.
 
 ## Consecuencias
 

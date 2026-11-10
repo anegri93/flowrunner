@@ -65,6 +65,14 @@ const SIN_DEFINICIONES = "- (todavía no existe, o graft no le encontró definic
 const LINEA_LLAMADOR = /^ {2}- ← `([^`:]+)(?::L\d+-L\d+)?`/;
 /** `callers` sale con 1 y esto en stderr cuando el símbolo no está en el grafo: no es un error. */
 const SIN_SIMBOLO = /no symbol ".*" in the graph/;
+/**
+ * El `note` de un match cuando graft descartó llamadores porque el nombre está definido más de una vez
+ * (graft 0.29: «N definitions share the name "x"; a cross-file caller of an ambiguous name is dropped
+ * rather than guessed»).
+ */
+const AMBIGUO = /definitions share the name|ambiguous name is dropped/;
+/** La `relation` de un llamador que salió de `graft grep`, no del grafo. */
+const POR_TEXTO = "texto";
 
 const entradaSchema = z.object({
   name: z.string(),
@@ -89,10 +97,25 @@ const callersSchema = z.object({
     z.object({
       symbol: z.object({ name: z.string(), path: z.string() }),
       hits: z.array(llamadorSchema),
+      note: z.string().optional(),
     }),
   ),
 });
 type Match = z.infer<typeof callersSchema>["matches"][number];
+const grepSchema = z.object({
+  groups: z.array(
+    z.object({
+      // `null` para lo que está fuera de toda definición, como un import o código de nivel superior.
+      symbol: z
+        .object({ name: z.string(), kind: z.string(), span: z.string() })
+        .nullable()
+        .optional(),
+      path: z.string(),
+      hits: z.array(z.object({ line: z.number() })),
+    }),
+  ),
+  truncated: z.object({ files: z.number(), hits: z.number() }),
+});
 
 /** Se acabó el tiempo total antes de que la consulta respondiera, o antes de empezarla. */
 class SinTiempo extends Error {}
@@ -185,6 +208,49 @@ async function callers(g: Graft, simbolo: string, timeoutMs: number): Promise<Ma
   return conForma(callersSchema, json, "callers").matches;
 }
 
+/** graft no garantiza los llamadores de este nombre: está definido más de una vez. */
+function esAmbiguo(matches: readonly Match[]): boolean {
+  return matches.length > 1 || matches.some((m) => m.note !== undefined && AMBIGUO.test(m.note));
+}
+
+/** El nombre como palabra entera, para `graft grep`. `\b` no sirve en un borde como `$`. */
+function patronDe(nombre: string): string {
+  const literal = nombre.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const antes = /^\w/.test(nombre) ? "\\b" : "(?<![\\w$])";
+  const despues = /\w$/.test(nombre) ? "\\b" : "(?![\\w$])";
+  return `${antes}${literal}${despues}`;
+}
+
+/**
+ * Los usos de `nombre` por texto, con `graft grep`, sin las líneas que son una definición de ese
+ * nombre: un archivo que solo lo define no lo usa. Tira `GraftError` si grep falla o se cortó, porque
+ * entonces no se puede garantizar la unión.
+ */
+async function porTexto(g: Graft, nombre: string, timeoutMs: number): Promise<Llamador[]> {
+  const json = conForma(
+    grepSchema,
+    await consultar(g, ["grep", patronDe(nombre), g.repo], timeoutMs),
+    "grep",
+  );
+  if (json.truncated.files > 0 || json.truncated.hits > 0)
+    throw new GraftError(
+      `graft grep cortó la búsqueda de "${nombre}": no se puede garantizar la unión`,
+    );
+  const out: Llamador[] = [];
+  for (const grupo of json.groups) {
+    const simbolo = grupo.symbol ?? undefined;
+    const inicio = Number(/^L(\d+)/.exec(simbolo?.span ?? "")?.[1]);
+    const usos = grupo.hits.filter((h) => !(simbolo?.name === nombre && h.line === inicio));
+    if (usos.length === 0) continue;
+    out.push(
+      simbolo === undefined
+        ? { name: grupo.path, kind: "file", path: grupo.path, span: "", relation: POR_TEXTO }
+        : { ...simbolo, path: grupo.path, relation: POR_TEXTO },
+    );
+  }
+  return out;
+}
+
 /** `fn` sobre cada item, de a `n` a la vez, en orden. Después de una falla no arranca ninguno más. */
 async function deAPocos<T, R>(
   items: readonly T[],
@@ -252,11 +318,22 @@ export async function armarContexto(opts: ContextoOpts, limites: Limites): Promi
     ];
     const aConsultar = nombres.slice(0, limites.consultas);
     const respuestas = await deAPocos(aConsultar, limites.paralelas, async (nombre) => {
+      let matches: Match[];
       try {
-        return await callers(g, nombre, quedan());
+        matches = await callers(g, nombre, quedan());
       } catch (error) {
         if (error instanceof SinTiempo) return undefined;
         throw error;
+      }
+      if (!esAmbiguo(matches)) return { matches };
+      // Un nombre repetido: lo que graft resolvió, más lo que encuentra grep (decisión del ADR 0022).
+      try {
+        return { matches, texto: await porTexto(g, nombre, quedan()) };
+      } catch (error) {
+        if (!(error instanceof GraftError || error instanceof SinTiempo)) throw error;
+        const falla =
+          error instanceof SinTiempo ? "graft grep no respondió a tiempo" : error.message;
+        return { matches, falla };
       }
     });
     const omitidas =
@@ -265,15 +342,17 @@ export async function armarContexto(opts: ContextoOpts, limites: Limites): Promi
     const secciones = archivos.map((archivo, i) => {
       const api = apis[i] ?? [];
       const llamadores = new Map<string, Llamador[]>();
+      const sinLlamadores = new Map<string, string>();
       for (const e of api) {
-        const matches = porNombre.get(e.name);
-        if (matches === undefined) continue;
-        llamadores.set(
-          e.name,
-          matches.filter((m) => m.symbol.path === archivo).flatMap((m) => m.hits),
-        );
+        const respuesta = porNombre.get(e.name);
+        if (respuesta === undefined) continue;
+        llamadores.set(e.name, [
+          ...respuesta.matches.filter((m) => m.symbol.path === archivo).flatMap((m) => m.hits),
+          ...(respuesta.texto ?? []),
+        ]);
+        if (respuesta.falla !== undefined) sinLlamadores.set(e.name, respuesta.falla);
       }
-      return seccionDe(archivo, api, llamadores);
+      return seccionDe(archivo, api, llamadores, sinLlamadores);
     });
     return juntar(secciones, todos.length, opts.maxChars ?? MAX_CHARS, omitidas);
   } catch (error) {
@@ -302,22 +381,23 @@ export async function llamadoresDe(
   simbolo: string,
   env: NodeJS.ProcessEnv,
 ): Promise<string[]> {
-  let matches: Match[];
+  const g: Graft = { repo, indexDir, env };
+  const hasta = Date.now() + LIMITES.totalMs;
   try {
-    matches = await callers({ repo, indexDir, env }, simbolo, LIMITES.totalMs);
+    const matches = await callers(g, simbolo, hasta - Date.now());
+    const rutas = matches.flatMap((m) =>
+      m.hits.flatMap((h) => (h.path === m.symbol.path ? [] : [h.path])),
+    );
+    // Con un nombre repetido, graft no lista los llamadores de otros archivos: la unión con lo que
+    // encuentra grep es lo conservador (ADR 0022). Si grep no la garantiza, tira.
+    if (esAmbiguo(matches))
+      rutas.push(...(await porTexto(g, simbolo, hasta - Date.now())).map((l) => l.path));
+    return [...new Set(rutas)].sort();
   } catch (error) {
     if (error instanceof SinTiempo)
       throw new GraftError(`graft no respondió en ${LIMITES.totalMs / 1000} s`);
     throw error;
   }
-  // Con un nombre repetido, la unión de todos los matches, como pide la spec. Pero graft 0.29 no
-  // lista los llamadores de otros archivos de un nombre repetido («a cross-file caller of an
-  // ambiguous name is dropped», en el `note` de cada match): la unión puede quedar corta. Pendiente
-  // de decisión antes de la PR 09; ver «Pendiente» en el ADR 0022.
-  const rutas = matches.flatMap((m) =>
-    m.hits.flatMap((h) => (h.path === m.symbol.path ? [] : [h.path])),
-  );
-  return [...new Set(rutas)].sort();
 }
 
 function firma(signature: string): string {
@@ -330,6 +410,8 @@ export function seccionDe(
   archivo: string,
   api: readonly EntradaApi[],
   llamadores: ReadonlyMap<string, readonly Llamador[]>,
+  /** Por nombre, por qué no se pudieron saber sus llamadores. */
+  sinLlamadores: ReadonlyMap<string, string> = new Map(),
 ): string {
   const lineas = [`### \`${archivo}\``, ""];
   if (api.length === 0) lineas.push(SIN_DEFINICIONES);
@@ -344,10 +426,14 @@ export function seccionDe(
         hit.kind === "file"
           ? `  - ← \`${hit.path}\` (archivo)`
           : `  - ← \`${hit.path}:${hit.span}\` (${hit.name})`;
+      // Uno que graft ya resolvió no se repite por texto.
       if (vistas.has(linea)) continue;
       vistas.add(linea);
-      lineas.push(linea);
+      lineas.push(hit.relation === POR_TEXTO ? `${linea} · por texto: nombre repetido` : linea);
     }
+    const falla = sinLlamadores.get(entrada.name);
+    if (falla !== undefined)
+      lineas.push(`  - (no se pudieron saber sus llamadores: nombre repetido, y ${falla})`);
   }
   return lineas.join("\n");
 }

@@ -61,6 +61,23 @@ describe("el contexto de graft, con el graft real", () => {
     ).rejects.toBeInstanceOf(GraftError);
   });
 
+  // graft 0.29 no lista los llamadores de otro archivo de un nombre repetido. Si regresiona, el replan
+  // de la PR 09 cree que nadie llama a `uno` y conserva código que rompe a src/b/dos.ts.
+  test("con un nombre repetido, llamadoresDe devuelve la unión y no pierde el llamador de otro archivo", async () => {
+    const repo = repoWith({
+      ...FILES,
+      "src/c/otro.ts":
+        'export function uno(): string { return "x" }\nexport function usa() { return uno() }\n',
+    });
+    const idx = join(tempDir(), "graft");
+    await buildIndex(repo, idx);
+    // src/a/uno.ts solo define `uno`: no cuenta. src/c/otro.ts además lo usa: cuenta.
+    expect(await llamadoresDe(repo, idx, "uno", process.env)).toEqual([
+      "src/b/dos.ts",
+      "src/c/otro.ts",
+    ]);
+  });
+
   // graft resuelve un nombre suelto a cualquier archivo con ese nombre. Si regresiona, un archivo
   // nuevo del alcance aparece con la API de otro.
   test("un archivo que todavía no existe no toma la API de otro con el mismo nombre", async () => {

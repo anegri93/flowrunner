@@ -5,8 +5,10 @@ import { repoWith, tempDir } from "../../test/helpers/git.ts";
 import {
   armarContexto,
   contextoGraft,
+  GraftError,
   juntar,
   LIMITES,
+  llamadoresDe,
   marcarFueraDeAlcance,
   seccionDe,
   type EntradaApi,
@@ -327,5 +329,112 @@ describe("los procesos y los errores de graft", () => {
       max = Math.max(max, ahora);
     }
     expect(max).toBe(4);
+  });
+});
+
+describe("un nombre repetido", () => {
+  // graft 0.29 con dos `uno`: el match del que pedimos no trae al llamador de otro archivo, y lo dice
+  // en su `note`. Así responde `callers --json` sobre `src/a/uno.ts`, `src/c/otro.ts` y `src/b/dos.ts`.
+  const CALLERS_AMBIGUO = JSON.stringify({
+    query: "uno",
+    matches: [
+      {
+        symbol: { name: "uno", kind: "function", path: "src/a/uno.ts", span: "L1-L1" },
+        hits: [],
+        note: '  no indexed callers — 2 definitions share the name "uno"; a cross-file caller of an ambiguous name is dropped rather than guessed, so this may undercount.',
+      },
+      {
+        symbol: { name: "uno", kind: "function", path: "src/c/otro.ts", span: "L1-L1" },
+        hits: [
+          {
+            relation: "calls",
+            name: "usa",
+            kind: "function",
+            path: "src/c/otro.ts",
+            span: "L2-L2",
+          },
+        ],
+      },
+    ],
+  });
+  const sym = (name: string, path: string, span: string) => ({
+    name,
+    kind: "function",
+    path,
+    span,
+  });
+  const grep = (truncated: { files: number; hits: number }) =>
+    JSON.stringify({
+      pattern: "\\buno\\b",
+      groups: [
+        {
+          symbol: sym("uno", "src/c/otro.ts", "L1-L1"),
+          path: "src/c/otro.ts",
+          hits: [{ line: 1 }],
+        },
+        { symbol: sym("uno", "src/a/uno.ts", "L1-L1"), path: "src/a/uno.ts", hits: [{ line: 1 }] },
+        { symbol: sym("dos", "src/b/dos.ts", "L1-L1"), path: "src/b/dos.ts", hits: [{ line: 1 }] },
+        { symbol: null, path: "src/b/top.ts", hits: [{ line: 2 }] },
+        {
+          symbol: sym("usa", "src/c/otro.ts", "L2-L2"),
+          path: "src/c/otro.ts",
+          hits: [{ line: 2 }],
+        },
+      ],
+      truncated,
+    });
+  const graftAmbiguo = (respuestaGrep: string) =>
+    fakeGraft(
+      [
+        `if [ "$sub" = skeleton ]; then echo '${UNA_FUNCION("uno")}'; exit 0; fi`,
+        `if [ "$sub" = callers ]; then echo '${CALLERS_AMBIGUO}'; exit 0; fi`,
+        respuestaGrep,
+      ].join("\n"),
+    );
+
+  // Decisión del coordinador: la unión con grep, y si grep no la puede garantizar, tira. Si regresiona,
+  // el replan de la PR 09 conserva código con una búsqueda que se cortó a la mitad.
+  test("un grep cortado hace tirar a llamadoresDe", async () => {
+    const repo = repoWith({ "src/a/uno.ts": "export {};\n" });
+    const { env } = graftAmbiguo(`echo '${grep({ files: 3, hits: 0 })}'`);
+    await expect(llamadoresDe(repo, "idx", "uno", env)).rejects.toBeInstanceOf(GraftError);
+  });
+
+  // Si regresiona, una función con nombre repetido aparece sin llamadores, y la sub-task cree que
+  // puede cambiarle la firma (en flowrunner, `git()` de src/git/git.ts tiene 4 definiciones).
+  test("contextoGraft marca los llamadores por texto de un nombre repetido", async () => {
+    const repo = repoWith({ "src/a/uno.ts": "export {};\n" });
+    const { env } = graftAmbiguo(`echo '${grep({ files: 0, hits: 0 })}'`);
+    const texto = marcarFueraDeAlcance(
+      await contextoGraft({ repo, indexDir: "idx", archivos: ["src/a/uno.ts"], env }),
+      ["src/a/"],
+    );
+    expect(texto).toBe(
+      [
+        "### `src/a/uno.ts`",
+        "",
+        "- L1-L1 · `function uno()`",
+        "  - ← `src/b/dos.ts:L1-L1` (dos) · por texto: nombre repetido · fuera de tu alcance",
+        "  - ← `src/b/top.ts` (archivo) · por texto: nombre repetido · fuera de tu alcance",
+        "  - ← `src/c/otro.ts:L2-L2` (usa) · por texto: nombre repetido · fuera de tu alcance",
+      ].join("\n"),
+    );
+  });
+
+  // Si regresiona, un grep que falla tira abajo el contexto entero, o deja la entrada sin llamadores
+  // como si no tuviera.
+  test("si el grep de un nombre repetido falla, la entrada lo dice y contextoGraft no tira", async () => {
+    const repo = repoWith({ "src/a/uno.ts": "export {};\n" });
+    const cortado = graftAmbiguo(`echo '${grep({ files: 0, hits: 7 })}'`);
+    const roto = graftAmbiguo(`echo "✗ no graph — run graft build first" >&2; exit 1`);
+    for (const { env } of [cortado, roto]) {
+      const texto = await contextoGraft({ repo, indexDir: "idx", archivos: ["src/a/uno.ts"], env });
+      expect(texto.split("\n").slice(2)).toEqual([
+        "- L1-L1 · `function uno()`",
+        expect.stringMatching(
+          /^ {2}- \(no se pudieron saber sus llamadores: nombre repetido, .+\)$/,
+        ),
+      ]);
+    }
   });
 });

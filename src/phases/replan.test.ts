@@ -8,7 +8,7 @@ import { contextFor, makeProject, newRun, testDeps } from "../../test/helpers/pr
 import { validandoAlFinal } from "../../test/helpers/mcp.ts";
 import { simQuery, type SimScript } from "../../test/helpers/sim-sdk.ts";
 import type { Plan, Subtask } from "../gates/plan.ts";
-import { respuestaValidar } from "../gates/validar-plan.ts";
+import { notaSinRama, respuestaValidar } from "../gates/validar-plan.ts";
 import type { Deps, PhaseFn, RunPaths } from "../runner/types.ts";
 import type { NewEvent, Outcome, Phase } from "../store/events.ts";
 import { commitAll, resetHard } from "../git/git.ts";
@@ -730,7 +730,7 @@ describe("un replan conserva el código", { timeout: 30_000 }, () => {
 
     // Si regresiona, validar_plan le dice «ok» a un `conserva` que el gate rechaza, y el planificador
     // lo descubre con un intento más: justo en un replan, donde cada intento cuesta más.
-    test("en un replan con un conserva inválido, validar_plan da el mismo problema que el gate", async () => {
+    test("en un replan con un conserva inválido, validar_plan da los mismos problemas de conserva que el gate", async () => {
       const { run, deps } = await implementado([SCRIPT_1, MAL_ST1]);
       const respuestas: string[] = [];
       const validando = { ...deps, query: validandoAlFinal(deps.query, respuestas) };
@@ -739,8 +739,8 @@ describe("un replan conserva el código", { timeout: 30_000 }, () => {
       const motivo = first.tipo === "falla" ? first.motivo : "";
       expect(motivo).toContain("ST-1 cambió su alcance");
       const problemas = motivo.replace(/^el plan no pasó el gate:\n- /, "").split("\n- ");
-      expect(respuestas).toHaveLength(1);
-      expect(respuestas[0]?.startsWith(respuestaValidar(problemas))).toBe(true);
+      // Sin los de la rama: con un conserva inválido, el plan corregido puede rearmarla.
+      expect(respuestas).toEqual([respuestaValidar(problemas, notaSinRama(["ST-1", "ST-6"]))]);
     });
 
     // Si regresiona, validar_plan mira la rama con todas las candidatas y le marca al planificador un
@@ -774,9 +774,7 @@ describe("un replan conserva el código", { timeout: 30_000 }, () => {
       const validando = { ...deps, query: validandoAlFinal(deps.query, respuestas) };
       appendEvent(run.dir, { tipo: "rehacer", desde: "planificar" });
       expect(await fase(run, validando, "planificar", planificar)).toEqual({ tipo: "ok" });
-      expect(respuestas).toHaveLength(1);
-      expect(respuestas[0]).not.toContain("foo cambia");
-      expect(respuestas[0]).toContain("ST-6");
+      expect(respuestas).toEqual([respuestaValidar([], notaSinRama(["ST-6"]))]);
     });
 
     // Si regresiona, un `rerun --desde planificar` después de que planificar se detuvo por el gate toma

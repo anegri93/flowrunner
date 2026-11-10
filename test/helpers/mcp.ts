@@ -51,7 +51,8 @@ export async function llamarHerramienta(
 /**
  * Antes de devolver el plan, la sesión lo pasa por `validar_plan`, como pide el prompt. El sim no llama
  * a los servidores MCP: esto lo llama de verdad con la salida del guion, justo antes del resultado, y
- * guarda lo que respondió. Una respuesta con `isError` es una falla del test.
+ * guarda lo que respondió. La herramienta nunca da `isError` por una excepción, la dice en el texto:
+ * cualquiera de las dos es una falla del test.
  */
 export function validandoAlFinal(query: QueryFn, respuestas: string[]): QueryFn {
   return (args) => {
@@ -61,9 +62,10 @@ export function validandoAlFinal(query: QueryFn, respuestas: string[]): QueryFn 
       for await (const m of inner) {
         if (m.type === "result" && "structured_output" in m) {
           const r = await llamarHerramienta(gate, "validar_plan", m.structured_output);
-          if (r.isError === true)
-            throw new Error(`validar_plan dio error: ${r.content[0]?.text ?? ""}`);
-          respuestas.push(r.content[0]?.text ?? "");
+          const text = r.content[0]?.text ?? "";
+          if (r.isError === true || text.startsWith("no se pudo validar el plan"))
+            throw new Error(`validar_plan falló: ${text}`);
+          respuestas.push(text);
         }
         yield m;
       }

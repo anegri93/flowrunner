@@ -6,7 +6,8 @@ import { llamarHerramienta as llamar } from "../../test/helpers/mcp.ts";
 import { repoConfigSchema } from "../config/schemas.ts";
 import type { Feature } from "../feature/feature.ts";
 import type { Plan } from "./plan.ts";
-import { respuestaValidar, validarPlanServer } from "./validar-plan.ts";
+import type { ConservaInput } from "./conserva.ts";
+import { respuestaValidar, sacadasDeLaRama, validarPlanServer } from "./validar-plan.ts";
 
 const feature = {
   clave: "SHOP-214",
@@ -120,5 +121,53 @@ describe("validar_plan", () => {
     };
     const r = await llamar(gate, "validar_plan", enOtra);
     expect(r.content[0]?.text).toBe(respuestaValidar([]));
+  });
+
+  // Si regresiona, validar_plan juzga llamadores y tests sobre una rama que el gate va a rearmar (falsos
+  // problemas que deforman el plan), o se los saltea cuando el gate chequea la misma rama.
+  test("los llamadores y los tests se chequean solo si el gate va a ver la misma rama", () => {
+    const st = (id: string, conserva?: boolean) => ({
+      id,
+      titulo: id,
+      descripcion: id,
+      alcance: [`src/${id}/`],
+      dependencias: [],
+      depende_de: [],
+      ...(conserva === undefined ? {} : { conserva }),
+    });
+    const conserva = (marcadas: string[], anteriores = ["ST-1", "ST-2"]): ConservaInput => ({
+      plan: {
+        subtareas: ["ST-1", "ST-2"].map((id) => st(id, marcadas.includes(id))),
+        cambia_lo_existente: [],
+      },
+      anteriores: anteriores.map((id) => st(id)),
+      candidatas: [
+        { id: "ST-1", shas: ["a"] },
+        { id: "ST-2", shas: ["b"] },
+      ],
+      pedidos: [],
+      llamadores: new Map(),
+    });
+    // Fuera de un replan: la misma rama.
+    expect(sacadasDeLaRama([], undefined)).toBeUndefined();
+    // Candidatas y ninguna conservada: el gate saca todas.
+    expect(sacadasDeLaRama(["ST-1", "ST-2"], undefined)).toEqual(["ST-1", "ST-2"]);
+    // Todas conservadas: la misma rama.
+    expect(sacadasDeLaRama(["ST-1", "ST-2"], conserva(["ST-1", "ST-2"]))).toBeUndefined();
+    // Alguna sin conservar: el gate la saca.
+    expect(sacadasDeLaRama(["ST-1", "ST-2"], conserva(["ST-1"]))).toEqual(["ST-2"]);
+    // Inválido (ST-2 no estaba en el plan anterior): la rama depende de cómo se corrija.
+    expect(sacadasDeLaRama(["ST-1", "ST-2"], conserva(["ST-1", "ST-2"], ["ST-1"]))).toEqual([
+      "ST-2",
+    ]);
+    // Inválido por una que no es candidata (ST-3 no estaba implementada), con las dos candidatas bien:
+    // el gate no rearma ahora, pero el plan corregido puede hacerlo.
+    const conST3 = conserva(["ST-1", "ST-2"]);
+    expect(
+      sacadasDeLaRama(["ST-1", "ST-2"], {
+        ...conST3,
+        plan: { ...conST3.plan, subtareas: [...conST3.plan.subtareas, st("ST-3", true)] },
+      }),
+    ).toEqual([]);
   });
 });

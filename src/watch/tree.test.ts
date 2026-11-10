@@ -208,6 +208,56 @@ describe("runTree", () => {
     expect(tree).toMatchObject({ status: "detenido", siguiente: "flowrunner resume PIZ-1-x" });
   });
 
+  // Regresión de VF-6: rehecho desde planificar, el plan nuevo esperaba aprobación, pero implementar
+  // y verificar seguían «falló» con el motivo de la corrida anterior, sus sub-tasks «integrada», y el
+  // panel repetía el motivo y los botones de aprobar debajo de las tres etapas.
+  test("rehacer desde una fase anterior deja pendientes las que siguen, con sus sub-tasks", () => {
+    const tree = runTree({
+      events: [
+        ...base,
+        { tipo: "accion_terminada", at: at(161), fase: "aprobar", resultado: { tipo: "ok" } },
+        { tipo: "accion_iniciada", at: at(200), fase: "implementar" },
+        {
+          tipo: "unidad",
+          at: at(250),
+          fase: "implementar",
+          unidad: "ST-1",
+          estado: "integrada",
+          sha: "a",
+        },
+        { tipo: "accion_terminada", at: at(300), fase: "implementar", resultado: { tipo: "ok" } },
+        { tipo: "accion_iniciada", at: at(300), fase: "verificar" },
+        {
+          tipo: "accion_terminada",
+          at: at(320),
+          fase: "verificar",
+          resultado: { tipo: "falla", clase: "entorno", motivo: "el plan no se puede cumplir" },
+        },
+        { tipo: "rehacer", at: at(400), desde: "planificar" },
+        { tipo: "accion_iniciada", at: at(400), fase: "planificar" },
+        { tipo: "accion_terminada", at: at(500), fase: "planificar", resultado: { tipo: "ok" } },
+        { tipo: "accion_iniciada", at: at(500), fase: "aprobar" },
+        { tipo: "accion_terminada", at: at(500), fase: "aprobar", resultado: { tipo: "espera" } },
+      ],
+      tasks,
+      titulo: "x",
+      sessions: new Map(),
+      now: T0 + 600_000,
+    });
+    expect(tree.status).toBe("esperando_aprobacion");
+    expect(tree.fases.filter((f) => !["ok", "pendiente"].includes(f.estado))).toEqual([
+      expect.objectContaining({ fase: "aprobar", estado: "espera" }),
+    ]);
+    const verificar = tree.fases.find((f) => f.fase === "verificar");
+    expect(verificar).toMatchObject({
+      estado: "pendiente",
+      nota: "falló en una corrida anterior; el run se rehízo desde planificar",
+    });
+    expect(verificar?.detalle).toBeUndefined();
+    expect(tree.fases.find((f) => f.fase === "implementar")?.estado).toBe("pendiente");
+    expect(tree.fases.find((f) => f.fase === "implementar")?.unidades[0]?.estado).toBe("pendiente");
+  });
+
   // Si regresiona, un plan ya aprobado sigue apareciendo como si te esperara.
   test("aprobar queda hecho cuando la persona aprueba después de la espera", () => {
     const tree = runTree({

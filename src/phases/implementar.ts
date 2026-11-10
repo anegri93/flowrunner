@@ -7,6 +7,7 @@ import { runSession } from "../agent/session.ts";
 import { loadBrain } from "../brain/brain.ts";
 import { isVerifyCommand, loadRepoConfig } from "../config/load.ts";
 import type { RepoConfig } from "../config/schemas.ts";
+import { esEsperaDeRed, initialState, reduce } from "../engine/engine.ts";
 import { blockedByFailure, readyToStart } from "../engine/scheduler.ts";
 import { AVISO_TEST_EXISTENTE, existedAt, testsTouched, undeclared } from "../gates/existente.ts";
 import { allDependencies, type Plan, type Subtask } from "../gates/plan.ts";
@@ -42,11 +43,53 @@ export const UNIT_TIMEOUT_MS = 60 * 60_000;
 
 type UnitEvent = Extract<RunEvent, { tipo: "unidad" }>;
 
-/** Los eventos de esta entrada a implementar: los que siguen a su última `accion_iniciada`. */
+/**
+ * Los intentos que gastó una sub-task en esta entrada: los que reintentó en la misma acción, y el que
+ * dejó abierto un proceso que murió. Uno que terminó con la acción sin cerrarse (un corte de red, un
+ * límite, el entorno, o el `fatal` de otra sub-task) no se gastó en ella.
+ */
+export function spentAttempts(entry: readonly RunEvent[], unidad: string): number {
+  let spent = 0;
+  let open = false;
+  for (const e of entry) {
+    if (e.tipo === "accion_terminada" && e.fase === "implementar") open = false;
+    else if (e.tipo === "unidad" && e.unidad === unidad) {
+      if (e.estado === "iniciada") {
+        if (open) spent++;
+        open = true;
+      } else if (e.estado !== "commiteada") open = false;
+    }
+  }
+  return open ? spent + 1 : spent;
+}
+
+/**
+ * Los eventos de esta entrada a implementar: los que siguen a la `accion_iniciada` que la abrió. Un
+ * reintento del engine por infraestructura sigue la misma entrada, como en el engine, que no la
+ * reinicia; y también retomar una detención a la que se llegó con esos reintentos. Así lo integrado
+ * antes de un corte no se rehace, y los intentos se siguen contando (ADR 0023).
+ */
 export function currentEntry(events: readonly RunEvent[]): RunEvent[] {
-  const start = events.findLastIndex(
-    (e) => e.tipo === "accion_iniciada" && e.fase === "implementar",
-  );
+  let state = initialState();
+  let start = -1;
+  /** Un `reanudado` de una detención con reintentos de infraestructura: sigue la misma entrada. */
+  let resumed = false;
+  events.forEach((e, i) => {
+    if (e.tipo === "accion_iniciada" && e.fase === "implementar") {
+      // Un run creado antes de `reintentos_red` abre una entrada en cada acción, como antes.
+      const sigue = state.reintentosRed !== undefined && (state.infra > 0 || resumed);
+      if (!sigue) start = i;
+      resumed = false;
+    } else if (e.tipo === "reanudado") {
+      resumed ||=
+        state.fase === "implementar" &&
+        state.infra > 0 &&
+        (state.status === "detenido" || state.status === "pausado_por_limite");
+    } else if (e.tipo !== "encolado") {
+      resumed = false;
+    }
+    state = reduce(state, e);
+  });
   return events.slice(start + 1);
 }
 
@@ -258,7 +301,8 @@ export const implementar: PhaseFn = async (ctx) => {
   const locked = Object.keys(plan.locked);
   const manifest = join(featureWt, "package.json");
   const exact = existsSync(manifest) && prefersExact(readFileSync(manifest, "utf8"));
-  const entry = currentEntry(ctx.events).filter((e): e is UnitEvent => e.tipo === "unidad");
+  const entryEvents = currentEntry(ctx.events);
+  const entry = entryEvents.filter((e): e is UnitEvent => e.tipo === "unidad");
   const lastOf = (id: string) => entry.findLast((e) => e.unidad === id);
   // Las integradas de este plan: lo de antes de la última aprobación lo descarta un replan.
   const integradas = new Set(
@@ -305,10 +349,12 @@ export const implementar: PhaseFn = async (ctx) => {
       }
     }
     // Retomado después de que ya falló en esta entrada: lo que falta lo decide la persona, no otra sesión.
-    if (previous?.estado === "fallida")
+    // Un corte de red no: la sub-task no falló, se cortó la conexión.
+    if (previous?.estado === "fallida" && previous.corte_de_red !== true)
       return { ok: false, motivo: previous.motivo ?? `${task.id} no pudo terminar` };
     let motivo = action.unidades?.includes(task.id) === true ? action.instruccion : undefined;
-    const tried = entry.filter((e) => e.unidad === task.id && e.estado === "iniciada").length;
+    // Los intentos que cortó la red, o un límite, no cuentan: la sub-task no tuvo la oportunidad.
+    const tried = spentAttempts(entryEvents, task.id);
     for (let attempt = tried + 1; attempt <= MAX_UNIT_ATTEMPTS; attempt++) {
       const start = await headSha(featureWt, deps.env);
       await addWorktree(state.repo, wt, branch, start, deps.env);
@@ -408,6 +454,23 @@ export const implementar: PhaseFn = async (ctx) => {
             motivo: result.motivo,
             fatal: { tipo: "falla", clase: "entorno", motivo: result.motivo },
           };
+        // Un corte de red sube al engine, que espera y reintenta la fase: reintentar enseguida acá
+        // gastaba los intentos en segundos. Un run viejo, sin `reintentos_red`, sigue como antes.
+        if (result.clase === "infra" && esEsperaDeRed(state, result.motivo)) {
+          emit({
+            tipo: "unidad",
+            fase: "implementar",
+            unidad: task.id,
+            estado: "fallida",
+            motivo: result.motivo,
+            corte_de_red: true,
+          });
+          return {
+            ok: false,
+            motivo: result.motivo,
+            fatal: { tipo: "falla", clase: "infra", motivo: result.motivo },
+          };
+        }
         motivo = result.motivo;
         continue;
       }
@@ -540,10 +603,16 @@ export const implementar: PhaseFn = async (ctx) => {
     }
     if (running.size === 0) break;
     await Promise.race(running.values());
-    const fatal = [...failed.values()].find((r) => !r.ok && r.fatal !== undefined);
-    if (fatal !== undefined && !fatal.ok && fatal.fatal !== undefined) {
+    if ([...failed.values()].some((r) => !r.ok && r.fatal !== undefined)) {
       await Promise.all(running.values());
-      return fatal.fatal;
+      const fatals = [...failed.values()].flatMap((r) =>
+        !r.ok && r.fatal !== undefined ? [r.fatal] : [],
+      );
+      // Una detención le gana a un corte de red: reintentarla no la arregla, y así no se pierden su
+      // motivo (una credencial pide `doctor`) ni la hora del límite.
+      const stop = fatals.find((f) => !(f.tipo === "falla" && f.clase === "infra"));
+      const fatal = stop ?? fatals[0];
+      if (fatal !== undefined) return fatal;
     }
   }
   const blocked = blockedByFailure({

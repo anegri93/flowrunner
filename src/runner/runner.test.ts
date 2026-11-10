@@ -16,6 +16,7 @@ function newRun(): RunPaths {
     proyecto: "acme",
     repo: "/r",
     budget_usd: 25,
+    reintentos_red: 3,
   });
   return { id: "R1", home: dir, dir, worktrees: join(dir, "wt") };
 }
@@ -95,6 +96,48 @@ describe("runUntilStop", () => {
     expect(fallas.map((f) => f.clase)).toEqual(["infra", "infra", "infra"]);
     expect(state.status).toBe("detenido");
     expect(notified).toContain("SHOP-1: el run se detuvo");
+  });
+
+  // Si regresiona, un corte de red de unos minutos vuelve a matar el run en 25 segundos (primer VF-6).
+  test("el runner espera 30 s, 2 min y 5 min entre reintentos de red", async () => {
+    const run = newRun();
+    const cut: Outcome = {
+      tipo: "falla",
+      clase: "infra",
+      motivo: "git fetch --quiet origin falló: fatal: Could not resolve host: github.com",
+    };
+    const phases = recordingPhases(run, { preparar: [cut, cut, cut, cut] });
+    const waits: number[] = [];
+    const state = await runUntilStop(run, phases, {
+      ...deps,
+      sleep: (ms) => {
+        waits.push(ms);
+        return Promise.resolve();
+      },
+    });
+    expect(waits).toEqual([30_000, 120_000, 300_000]);
+    expect(state.status).toBe("detenido");
+  });
+
+  // Si regresiona, el run ya detenido espera el backoff antes de soltar su lugar y avisar.
+  test("una falla de infraestructura que no es de red espera 5 s y 20 s, y no espera al detenerse", async () => {
+    const run = newRun();
+    const fail: Outcome = {
+      tipo: "falla",
+      clase: "infra",
+      motivo: "la sesión terminó sin resultado",
+    };
+    const phases = recordingPhases(run, { preparar: [fail, fail, fail] });
+    const waits: number[] = [];
+    const state = await runUntilStop(run, phases, {
+      ...deps,
+      sleep: (ms) => {
+        waits.push(ms);
+        return Promise.resolve();
+      },
+    });
+    expect(waits).toEqual([5_000, 20_000]);
+    expect(state.status).toBe("detenido");
   });
 
   // Regresión T1.3b: implementar busca su entrada en el log; con eventos viejos tomaba la anterior.

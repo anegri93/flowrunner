@@ -311,6 +311,24 @@ describe("detenido con pregunta", () => {
     await waitFor("entregado", () => stateNow(cortado, c).status === "entregado");
   });
 
+  // Si regresiona, la credencial rechazada ofrece `resume` primero, que falla igual (VF-3, VF-4), o
+  // la regla de las sub-tasks deja sin `resume` a quien ya arregló la credencial.
+  test("una credencial rechazada ofrece doctor primero, y resume sigue valiendo", async () => {
+    const w = world({ FAKE_FALLA: "preparar:credencial" });
+    const id = launch(w);
+    await waitFor("detenido por la credencial", () => stateNow(w, id).status === "detenido");
+    expect(stateNow(w, id).halt?.siguiente).toBe("flowrunner doctor");
+    const status = runCli(["status", id], w.env);
+    expect(status.stdout).toContain(
+      `Opciones:\n  flowrunner doctor  ·  revisá la credencial; después retomá el run\n  flowrunner resume ${id}  ·  `,
+    );
+    expect(runCli(["resume", id], w.env).status).toBe(0);
+    await waitFor(
+      "preparar otra vez",
+      () => executions(w, id).filter((f) => f === "preparar").length === 2,
+    );
+  });
+
   /** Un run detenido en verificar con el arreglo a mano iniciado: el worktree, listo para editar. */
   async function byHand(locked: Record<string, string> = {}) {
     const { work } = makeProject();

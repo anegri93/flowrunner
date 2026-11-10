@@ -257,6 +257,10 @@ antes:
   el test pasa con la feature y sigue fallando sin ella. El arreglo va en su propio commit y la PR lo
   muestra para que lo revises.
 
+- **Un corte de red** se reintenta durante unos 7 minutos (a los 30 s, 2 min y 5 min) antes de
+  detenerse; cuando vuelva la red, `flowrunner resume <run>`. **Una credencial rechazada** no se
+  reintenta: te pide `flowrunner doctor` y después `resume`.
+
 Todo tiene tope. Si el run se detiene, `flowrunner watch` y `flowrunner status` dicen el motivo y los
 comandos exactos para seguir.
 

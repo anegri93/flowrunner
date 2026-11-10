@@ -6,8 +6,10 @@
 // FAKE_VUELVE: una sub-task, como "ST-1": verificar se la devuelve a implementar solo la primera vez.
 // FAKE_PREGUNTA: sub-tasks separadas por comas: implementar pregunta por ellas la primera vez.
 // FAKE_FALLA: "fase:clase", como "preparar:entorno": esa fase falla siempre, con otro motivo cada vez.
+//   Con la clase "credencial", falla de entorno con el texto de la credencial rechazada.
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { TOKEN_REJECTED } from "../../src/engine/motivos.ts";
 import type { PhaseFn, PhaseRegistry } from "../../src/runner/types.ts";
 import { PHASES } from "../../src/store/events.ts";
 
@@ -41,6 +43,9 @@ const fake: PhaseFn = async (ctx) => {
   const [fase, clase] = (process.env.FAKE_FALLA ?? "").split(":");
   if (ctx.action.fase === fase && (clase === "entorno" || clase === "gate")) {
     return { tipo: "falla", clase, motivo: `falla ${String(ran())}` };
+  }
+  if (ctx.action.fase === fase && clase === "credencial") {
+    return { tipo: "falla", clase: "entorno", motivo: TOKEN_REJECTED };
   }
   // FAKE_SIN_PROBAR: probar deja un criterio sin probar, como cuando falta simular una falla.
   if (ctx.action.fase === "probar" && process.env.FAKE_SIN_PROBAR === "1") {

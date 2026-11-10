@@ -99,6 +99,50 @@ Cada intento es una sesión entera. Ahora implementar no paga el segundo a ciega
 
 Detalle en `docs/plan-de-raiz/pr-06-subtask-trabada-pregunta.md`.
 
+### La infraestructura sí reintenta
+
+Preguntar en vez de reintentar vale para lo que reintentar no arregla. Un corte de red sí se arregla
+solo, y esperar es lo único que sirve: el primer VF-6 (`VF-6-20261109-210425`) murió en preparar en
+25 segundos, porque `git fetch` falló tres veces con «Could not resolve host: github.com» y los
+reintentos de infraestructura esperaban 5 y 20 s.
+
+- **Qué es una falla de red** lo decide el texto del motivo, con una lista cerrada de patrones en
+  `src/engine/motivos.ts` (git, Node y la API de Anthropic). No hay clase nueva en el outcome: ninguna
+  fase cambia cómo propaga `clase`. Un rojo de código no entra en la lista.
+- **Una falla de red** se reintenta 3 veces, a los 30 s, 2 min y 5 min: unos 7,5 minutos. Después se
+  detiene con el motivo y `resume`. **El resto de la infraestructura** sigue con 2 reintentos, a los 5
+  y 20 s. La falla que agota los reintentos ya no espera su backoff antes de detenerse.
+- **Se congela al crear el run,** como las vueltas: `run_creado` suma `reintentos_red`. Un run creado
+  antes, sin el campo, trata un corte de red como cualquier otra infraestructura. Si no, un log viejo
+  detenido por tres cortes se leería en curso, sin proceso ni opciones (C8).
+- **La lista deja afuera** el «unable to access» de git, que también precede a un 403 o a un error de
+  TLS, y `EPIPE`, que es un pipe local. Esperar no arregla ninguno.
+- **Mientras espera, el run conserva su lugar** del repo (ADR 0019): sigue en curso, con su proceso
+  vivo. Los lugares y la cola no cambian (C8).
+- **Una credencial rechazada no reintenta:** sigue siendo `entorno`, pero su primera opción pasa a
+  `flowrunner doctor`, y las opciones quedan `doctor`, `resume` y `abort`. En VF-3 y VF-4 el «para
+  seguir» decía `resume`, y retomar sin arreglar la credencial vuelve a fallar. Los dos textos de
+  credencial viven en `motivos.ts`, para que el engine los reconozca sin comparar strings sueltos.
+- **En implementar, el corte sube al engine.** Una sesión de sub-task cortada por la red deja su
+  `unidad` `fallida` con `corte_de_red: true` y la fase devuelve `falla infra`: el engine espera y la
+  reintenta como en las otras fases. Antes se reintentaba dentro de la sub-task, sin espera, y tres
+  cortes seguidos gastaban sus intentos en segundos y terminaban en una pregunta sobre una sub-task que
+  no estaba trabada. Las demás fallas de infraestructura de una sesión se siguen reintentando adentro,
+  y un run creado antes de `reintentos_red` también.
+- **El reintento sigue la misma entrada a implementar,** como en el engine: lo integrado antes del
+  corte no se rehace, y un intento cortado no cuenta para `MAX_UNIT_ATTEMPTS`. Retomar una detención a
+  la que se llegó con reintentos de infraestructura, como la de cuatro cortes, también la sigue. Un
+  run creado antes de `reintentos_red` abre una entrada en cada acción, como antes.
+- **Un intento que terminó con la acción sin cerrarse** (un corte, un límite, el entorno) no cuenta
+  para `MAX_UNIT_ATTEMPTS`: cuentan los que la sub-task reintentó en la misma acción, y el que dejó
+  abierto un proceso que murió.
+- **Una detención le gana a un corte:** si en la misma vuelta una sub-task se corta y otra choca con
+  el límite o el entorno, la fase devuelve la detención, con su hora o su motivo, y no el corte.
+- **watch y Orca muestran la sub-task cortada como «cortada»**, y `flowrunner etapa`, como pendiente,
+  sin contar sus cortes como intentos.
+
+Detalle en `docs/plan-de-raiz/pr-07-reintentos-de-red.md`.
+
 ## Alternativas descartadas
 
 - **Un estado nuevo, `pregunta`.** Todo lo que lee el estado (Orca, la skill, `tick`, el aviso, la
@@ -133,3 +177,10 @@ Detalle en `docs/plan-de-raiz/pr-06-subtask-trabada-pregunta.md`.
 - `src/phases/implementar.test.ts`: una sub-task sin cambios, o devuelta y frenada por el bloqueo,
   pregunta al primer intento; las demás se integran, y las que dependen de ella entran en la pregunta.
 - Orca: `orca/src/runs.test.ts`, `worker.test.ts` y `panel.test.tsx`.
+- `src/engine/motivos.test.ts`: qué motivos son de red y cuáles no, y las dos credenciales.
+- `src/engine/engine.test.ts`, «reintentos de red y credenciales», y `src/runner/runner.test.ts`: tres
+  reintentos de red con sus esperas, dos para el resto, y `doctor` primero ante una credencial.
+- `src/phases/implementar.test.ts`, «cortes de red en implementar»: la sub-task cortada espera sin
+  gastar sus intentos, cuatro cortes detienen con `resume`, lo integrado no se rehace al reintentar ni
+  al retomar, un límite le gana a un corte, un límite no gasta intentos, la entrada sigue a través de
+  la cola, y un run viejo reintenta como antes.

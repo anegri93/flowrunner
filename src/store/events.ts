@@ -67,6 +67,11 @@ export const eventSchema = z.discriminatedUnion("tipo", [
     budget_usd: z.number().positive().optional(),
     /** Vueltas automáticas, congeladas al crear el run. Un run anterior sin el campo vale 2. */
     vueltas: z.int().min(0).max(3).optional(),
+    /**
+     * Reintentos de un corte de red, congelados al crear el run. Un run anterior sin el campo trata un
+     * corte de red como cualquier otra infraestructura: así un log viejo se sigue leyendo igual (C8).
+     */
+    reintentos_red: z.int().min(1).max(3).optional(),
   }),
   z.strictObject({ tipo: z.literal("accion_iniciada"), at, fase: phaseSchema }),
   z.strictObject({
@@ -113,6 +118,11 @@ export const eventSchema = z.discriminatedUnion("tipo", [
     estado: z.enum(["iniciada", "commiteada", "integrada", "fallida", "sin_cambios"]),
     sha: z.string().optional(),
     motivo: z.string().optional(),
+    /**
+     * fallida por un corte de red: el engine reintenta la fase, y ese intento no cuenta para
+     * `MAX_UNIT_ATTEMPTS` ni deja la sub-task fallida (ADR 0023).
+     */
+    corte_de_red: z.literal(true).optional(),
   }),
   z.strictObject({
     tipo: z.literal("preparado"),

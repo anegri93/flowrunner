@@ -15,11 +15,14 @@ import { plannedRun } from "../../test/helpers/planned.ts";
 import { contextFor, testDeps } from "../../test/helpers/project.ts";
 import { simQuery, type SimScript } from "../../test/helpers/sim-sdk.ts";
 import type { Plan, Subtask } from "../gates/plan.ts";
-import type { Outcome, RunEvent } from "../store/events.ts";
+import { runUntilStop } from "../runner/runner.ts";
+import type { Deps, PhaseFn, PhaseRegistry, RunPaths } from "../runner/types.ts";
+import { PHASES, type Outcome, type RunEvent } from "../store/events.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
 import { repoConfigSchema } from "../config/schemas.ts";
 import { checkCommand } from "../tripwires/comandos.ts";
 import {
+  currentEntry,
   implementar,
   integradasText,
   prefersExact,
@@ -638,6 +641,211 @@ describe("implementar", () => {
       expect(await implementar(contextFor(run, "implementar", deps))).toEqual({ tipo: "ok" });
       expect(avisos(run.dir)).toEqual([]);
     });
+  });
+});
+
+describe("cortes de red en implementar", () => {
+  const CUT = "getaddrinfo ENOTFOUND api.anthropic.com";
+  const cut: SimScript = { throws: CUT };
+  const done = (path: string): SimScript => ({ calls: [write(path, "export {};\n")] });
+  const pair = planWith([st("ST-1", ["src/a/"]), st("ST-2", ["src/b/"])]);
+
+  /** El run entero como lo corre el runner: implementar de verdad, el resto en ok. Anota las esperas. */
+  async function runAll(run: RunPaths, deps: Deps) {
+    const waits: number[] = [];
+    const ok: PhaseFn = () => Promise.resolve({ tipo: "ok" });
+    const registry = Object.fromEntries(
+      PHASES.map((f) => [f, f === "implementar" ? implementar : ok]),
+    ) as PhaseRegistry;
+    const final = await runUntilStop(run, registry, {
+      ...deps,
+      sleep: (ms) => {
+        waits.push(ms);
+        return Promise.resolve();
+      },
+    });
+    return { final, waits };
+  }
+  const of = (dir: string, id: string) =>
+    unitEvents(dir)
+      .filter((e) => e.startsWith(`${id}:`))
+      .map((e) => e.slice(id.length + 1));
+  const sessionsOf = (records: { prompt: string }[], id: string) =>
+    records.filter((r) => r.prompt.includes(`Sub-task ${id}`)).length;
+
+  // Si regresiona, un corte de red de segundos gasta los intentos de la sub-task y termina en una
+  // pregunta sobre una sub-task que no estaba trabada.
+  test("un corte de red en una sub-task espera y reintenta sin gastar sus intentos", async () => {
+    // Dos cortes y una falla de otra infraestructura: si los cortes contaran, el tercer intento sería
+    // el último y la sub-task terminaría «no salió en 3 intentos».
+    const sim = simQuery(
+      byUnit({ "ST-1": [cut, cut, { subtype: "error_during_execution" }, done("src/a/uno.js")] }),
+    );
+    const deps = testDeps({ query: sim.query });
+    const { run } = await plannedRun(planWith([st("ST-1", ["src/a/"])]), TESTS, deps);
+    const { final, waits } = await runAll(run, deps);
+    expect(waits).toEqual([30_000, 120_000]);
+    expect(final.status).toBe("entregado");
+    expect(of(run.dir, "ST-1")).toEqual([
+      "iniciada",
+      "fallida",
+      "iniciada",
+      "fallida",
+      "iniciada",
+      "iniciada",
+      "commiteada",
+      "integrada",
+    ]);
+  });
+
+  // Si regresiona, un corte largo termina en la pregunta de implementar, que pide arreglar una
+  // sub-task que no tiene nada que arreglar.
+  test("cuatro cortes de red en una sub-task detienen con sin conexión y resume", async () => {
+    const sim = simQuery(byUnit({ "ST-1": [cut] }));
+    const deps = testDeps({ query: sim.query });
+    const { run } = await plannedRun(planWith([st("ST-1", ["src/a/"])]), TESTS, deps);
+    const { final, waits } = await runAll(run, deps);
+    expect(waits).toEqual([30_000, 120_000, 300_000]);
+    expect(final.status).toBe("detenido");
+    expect(final.fase).toBe("implementar");
+    expect(final.halt?.motivo).toContain("sin conexión después de 3 reintentos");
+    expect(final.halt?.opciones[0]?.comando).toBe(`flowrunner resume ${run.id}`);
+    expect(final.halt?.unidades).toBeUndefined();
+    expect(sessionsOf(sim.records, "ST-1")).toBe(4);
+  });
+
+  // Si regresiona, el reintento rehace una sub-task ya integrada: otra sesión, que no encuentra nada
+  // que cambiar y termina en una pregunta.
+  test("una sub-task integrada antes del corte no se rehace al reintentar", async () => {
+    const sim = simQuery(
+      byUnit({ "ST-1": [cut, done("src/a/uno.js")], "ST-2": [done("src/b/dos.js")] }),
+    );
+    const deps = testDeps({ query: sim.query });
+    const { run } = await plannedRun(pair, TESTS, deps);
+    const { final, waits } = await runAll(run, deps);
+    expect(waits).toEqual([30_000]);
+    expect(final.status).toBe("entregado");
+    expect(sessionsOf(sim.records, "ST-2")).toBe(1);
+    expect(of(run.dir, "ST-2")).toEqual(["iniciada", "commiteada", "integrada"]);
+    expect(of(run.dir, "ST-1").at(-1)).toBe("integrada");
+  });
+
+  // Si regresiona, retomar después de un corte de más de 7 minutos rehace lo ya integrado.
+  test("retomar después de cuatro cortes no rehace lo integrado ni cuenta los cortes", async () => {
+    const sim = simQuery(
+      byUnit({
+        "ST-1": [cut, cut, cut, cut, { subtype: "error_during_execution" }, done("src/a/uno.js")],
+        "ST-2": [done("src/b/dos.js")],
+      }),
+    );
+    const deps = testDeps({ query: sim.query });
+    const { run } = await plannedRun(pair, TESTS, deps);
+    expect((await runAll(run, deps)).final.status).toBe("detenido");
+    appendEvent(run.dir, { tipo: "reanudado" });
+    const { final } = await runAll(run, deps);
+    expect(final.status).toBe("entregado");
+    expect(sessionsOf(sim.records, "ST-2")).toBe(1);
+    expect(sessionsOf(sim.records, "ST-1")).toBe(6);
+  });
+
+  // Si regresiona, un corte esconde un límite (o un entorno, como la credencial): el run espera el
+  // backoff y vuelve a chocar, en vez de pausar hasta la hora del límite.
+  test("un límite que llega junto a un corte de red gana: pausa sin esperar el backoff", async () => {
+    const sim = simQuery(byUnit({ "ST-1": [cut], "ST-2": [{ limit: true, delayMs: 200 }] }));
+    const deps = testDeps({ query: sim.query });
+    const { run } = await plannedRun(pair, TESTS, deps);
+    const { final, waits } = await runAll(run, deps);
+    expect(waits).toEqual([]);
+    expect(final.status).toBe("pausado_por_limite");
+  });
+
+  // Si regresiona, retomar la misma entrada después de varios límites inventa una sub-task fallida,
+  // «no salió en 3 intentos. Último motivo: sin motivo», sin que haya fallado nunca.
+  test("un intento que cortó un límite no cuenta al retomar la misma entrada", async () => {
+    const limit: SimScript = { limit: true };
+    // Cada vuelta: un corte, que deja la entrada con reintentos de infraestructura, y un límite.
+    const sim = simQuery(
+      byUnit({ "ST-1": [cut, limit, cut, limit, cut, limit, done("src/a/uno.js")] }),
+    );
+    const deps = testDeps({ query: sim.query });
+    const { run } = await plannedRun(planWith([st("ST-1", ["src/a/"])]), TESTS, deps);
+    expect((await runAll(run, deps)).final.status).toBe("pausado_por_limite");
+    for (let i = 0; i < 2; i++) {
+      appendEvent(run.dir, { tipo: "reanudado" });
+      expect((await runAll(run, deps)).final.status).toBe("pausado_por_limite");
+    }
+    appendEvent(run.dir, { tipo: "reanudado" });
+    const { final } = await runAll(run, deps);
+    expect(final.status).toBe("entregado");
+    expect(of(run.dir, "ST-1").at(-1)).toBe("integrada");
+  });
+
+  // Si regresiona, una espera en la cola rehace lo integrado, o un fix o un rerun después de un corte
+  // siguen contando los intentos de antes; y un run viejo cambia lo que ve implementar.
+  test("la entrada sigue a través de la cola y se abre de nuevo con un fix o un rerun", () => {
+    const AT = "2026-11-07T10:00:00.000Z";
+    const created: RunEvent = {
+      tipo: "run_creado",
+      at: AT,
+      run_id: "R1",
+      clave: "SHOP-1",
+      proyecto: "acme",
+      repo: "/r",
+      reintentos_red: 3,
+    };
+    const e = (event: Parameters<typeof appendEvent>[1]): RunEvent => ({ ...event, at: AT });
+    const start = e({ tipo: "accion_iniciada", fase: "implementar" });
+    const unit = e({ tipo: "unidad", fase: "implementar", unidad: "ST-1", estado: "integrada" });
+    const red = e({
+      tipo: "accion_terminada",
+      fase: "implementar",
+      resultado: { tipo: "falla", clase: "infra", motivo: CUT },
+    });
+    const before = [
+      created,
+      ...(["preparar", "planificar", "aprobar"] as const).flatMap((fase) => [
+        e({ tipo: "accion_iniciada", fase }),
+        e({ tipo: "accion_terminada", fase, resultado: { tipo: "ok" } }),
+      ]),
+      start,
+      unit,
+      red,
+      red,
+      red,
+      red,
+    ];
+    // Cuatro cortes: detenido. Retomar pasa por la cola y sigue la entrada.
+    const queued = [
+      ...before,
+      e({ tipo: "reanudado" }),
+      e({ tipo: "encolado" }),
+      e({ tipo: "reanudado" }),
+      start,
+    ];
+    expect(currentEntry(queued)).toContainEqual(unit);
+    // Un rerun desde implementar abre una entrada nueva.
+    const redo = [...before, e({ tipo: "rehacer", desde: "implementar" }), start];
+    expect(currentEntry(redo)).toEqual([]);
+    // Un run viejo, sin reintentos_red: cada acción abre su entrada, como antes.
+    const { reintentos_red: _, ...old } = created;
+    expect(currentEntry([old, ...queued.slice(1)])).toEqual([]);
+    expect(currentEntry([old, ...before.slice(1), start])).toEqual([]);
+  });
+
+  // Fija lo que no cambia: un run creado antes de distinguir los cortes de red los reintenta dentro de
+  // la sub-task, sin espera, como siempre.
+  test("un run viejo sin reintentos_red reintenta la sub-task como antes", async () => {
+    const sim = simQuery(byUnit({ "ST-1": [cut, done("src/a/uno.js")] }));
+    const deps = testDeps({ query: sim.query });
+    const { run } = await plannedRun(planWith([st("ST-1", ["src/a/"])]), TESTS, deps);
+    const log = join(run.dir, "events.jsonl");
+    const [first = "", ...rest] = readFileSync(log, "utf8").split("\n");
+    const { reintentos_red: _, ...old } = JSON.parse(first) as Record<string, unknown>;
+    writeFileSync(log, [JSON.stringify(old), ...rest].join("\n"));
+    const { final, waits } = await runAll(run, deps);
+    expect(waits).toEqual([]);
+    expect(final.status).toBe("entregado");
+    expect(of(run.dir, "ST-1")).toEqual(["iniciada", "iniciada", "commiteada", "integrada"]);
   });
 });
 

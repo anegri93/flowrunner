@@ -125,7 +125,8 @@ const DIBUJO: Record<Indicador, string> = {
   "espera-merge": `<g class="g"><path d="M5 2.8h6M5 13.2h6M5.6 2.8L10.4 13.2M10.4 2.8L5.6 13.2"/></g>`,
   "aprende-chequeo": `<circle cx="8" cy="8" r="5.5"/><path class="g" d="M8 8V4.6"/>`,
   pausa: `<g class="g"><path d="M6 4.5v7M10 4.5v7"/></g>`,
-  vuelve: `<g class="g"><path d="M12.5 8a4.5 4.5 0 1 1-1.32-3.18"/><path d="M11.6 2.4v2.8H8.8"/></g>`,
+  // ↺, como el carácter que mostraba antes: apunta hacia atrás y gira para ese lado (fr-vuelta).
+  vuelve: `<g class="g"><path d="M3.5 8a4.5 4.5 0 1 0 1.32-3.18"/><path d="M4.4 2.4v2.8h2.8"/></g>`,
   falla: `<path d="M5 5l6 6M11 5l-6 6"/>`,
   cortada: `<path d="M5 8h6" opacity=".55"/>`,
   "tarea-pendiente": `<circle cx="8" cy="8" r="3.2" opacity=".55"/>`,
@@ -153,15 +154,17 @@ const escapeAttr = (text: string) =>
 
 /**
  * Las animaciones, una por indicador. `--fr-t` es la fase del ciclo que pone `indicador`; los
- * puntos y barras desfasados suman su propio corrimiento. Con movimiento reducido, todo quieto.
+ * puntos y barras desfasados suman su propio corrimiento, siempre negativo: uno positivo dejaría el
+ * punto quieto y entero hasta arrancar, un parpadeo en cada redibujo. Con movimiento reducido, todo
+ * quieto.
  */
 export const INDICADORES_CSS = `
 .fr-i { flex: none; display: block; overflow: visible; }
 .fr-i .g { transform-box: fill-box; transform-origin: center; }
 .fr-preparar .g, .fr-tarea-corriendo .g { transform-box: view-box; transform-origin: 8px 8px; animation: fr-gira 900ms linear infinite; animation-delay: var(--fr-t, 0ms); }
 .fr-planificar .g { animation: fr-late 1200ms ease-in-out infinite; animation-delay: var(--fr-t, 0ms); }
-.fr-planificar .d1 { animation-delay: calc(var(--fr-t, 0ms) + 150ms); }
-.fr-planificar .d2 { animation-delay: calc(var(--fr-t, 0ms) + 300ms); }
+.fr-planificar .d1 { animation-delay: calc(var(--fr-t, 0ms) - 1050ms); }
+.fr-planificar .d2 { animation-delay: calc(var(--fr-t, 0ms) - 900ms); }
 .fr-implementar .g { transform-origin: bottom; animation: fr-barra 1000ms ease-in-out infinite; animation-delay: var(--fr-t, 0ms); }
 .fr-implementar .d1 { animation-delay: calc(var(--fr-t, 0ms) - 333ms); }
 .fr-implementar .d2 { animation-delay: calc(var(--fr-t, 0ms) - 666ms); }

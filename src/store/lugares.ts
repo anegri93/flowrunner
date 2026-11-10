@@ -31,7 +31,8 @@ export function lockViejo(home: string, proyecto: string): string {
   return join(home, "locks", `${proyecto}.lock`);
 }
 
-function leer(file: string): Lugar | undefined {
+/** Un archivo de lugar; undefined si no existe o no se puede leer entero. */
+export function leerLugar(file: string): Lugar | undefined {
   try {
     return lugarSchema.parse(JSON.parse(readFileSync(file, "utf8")));
   } catch {
@@ -71,7 +72,7 @@ function vigentes(
     .sort()) {
     const id = entry.slice(0, -".json".length);
     if (id === opts.salvo) continue;
-    const lugar = leer(join(dir, entry));
+    const lugar = leerLugar(join(dir, entry));
     const vale = lugar !== undefined && lugar.run_id === id && alive(lugar.pid) && reglas.ocupa(id);
     if (vale) ids.push(id);
     else if (opts.borrar) rmSync(join(dir, entry), { force: true });
@@ -83,7 +84,7 @@ function vigentes(
 function migrar(home: string, proyecto: string): void {
   const viejo = lockViejo(home, proyecto);
   if (!existsSync(viejo)) return;
-  const lugar = leer(viejo);
+  const lugar = leerLugar(viejo);
   if (lugar !== undefined) escribir(lugarFile(home, proyecto, lugar.run_id), lugar);
   rmSync(viejo, { force: true });
 }
@@ -126,5 +127,5 @@ export function soltarLugar(home: string, proyecto: string, runId: string): void
 }
 
 export function lugarDe(home: string, proyecto: string, runId: string): Lugar | undefined {
-  return leer(lugarFile(home, proyecto, runId));
+  return leerLugar(lugarFile(home, proyecto, runId));
 }

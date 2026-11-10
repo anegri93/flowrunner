@@ -35,6 +35,19 @@ sesión abierta.
    ln -s "$PWD/bin/flowrunner.js" ~/.local/bin/flowrunner
    ```
 
+Ese link es solo para arrancar. `flowrunner init <repo> --aplicar` deja el flowrunner que corre runs en
+`~/.flowrunner/app`, un worktree de este repo en `origin/main` con sus propias dependencias, y apunta ahí
+el comando, el job de launchd, la skill y el plugin de Orca. Para actualizarlo a lo último de `main`:
+
+```bash
+flowrunner self-update
+```
+
+No actualiza con un run corriendo: los que esperan aprobación, detenidos o en cola siguen con el código
+nuevo. El checkout que clonaste queda para desarrollar, y cambiar de rama ahí no afecta a ningún run.
+`flowrunner doctor` avisa si el comando o el job de launchd apuntan a otro lado. `self-update` instala con
+`pnpm install --frozen-lockfile`: pnpm tiene que estar en el PATH de quien lo corre.
+
 ## Sumar un repo
 
 Una vez por repo. El repo tiene que estar en GitHub y su rama base en verde. Si fija Node en `.nvmrc` o
@@ -286,6 +299,7 @@ equivalente de API: con la suscripción no se cobran, y lo que limita es su cupo
 | `flowrunner learn <run>`                       | aprender ya de una PR mergeada                |
 | `flowrunner stats [proyecto]`                  | en qué fase se va el tiempo y el costo        |
 | `flowrunner doctor`                            | qué le falta a esta máquina                   |
+| `flowrunner self-update`                       | llevar el flowrunner que corre a `main`       |
 
 `run` puede ser el id completo o la clave de la feature, como `PIZ-1`. Casi nunca hace falta escribirlos:
 la skill de Claude Code los usa por vos.

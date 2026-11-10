@@ -1,11 +1,19 @@
 // flowrunner init: infiere la config de un repo real, comprueba la base y, con --aplicar, deja la
 // máquina y el repo listos. Con repos en tmpdir, el gh y el claude falsos, y un HOME de prueba.
 import { execFileSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { parse } from "yaml";
-import { describe, expect, test } from "vitest";
-import { runCli, TEST_BIN } from "./helpers/cli.ts";
+import { beforeAll, describe, expect, test } from "vitest";
+import { conApp, type Fuente, fuenteClonada } from "./helpers/app.ts";
+import { type CliResult, runCliFrom, TEST_BIN } from "./helpers/cli.ts";
 import { git, repoWithRemote, tempDir } from "./helpers/git.ts";
 import type { SimScript } from "./helpers/sim-sdk.ts";
 import { SIM_HOOKS } from "./helpers/sim-world.ts";
@@ -16,6 +24,15 @@ const LOCK = JSON.stringify({
   requires: true,
   packages: { "": { name: "pizarra" } },
 });
+
+// init --aplicar instala el flowrunner que corre con self-update, que hace fetch y `worktree add` sobre
+// el repo del código que corre: el CLI corre desde un clon, nunca desde el checkout real.
+let fuente: Fuente;
+beforeAll(() => {
+  fuente = fuenteClonada();
+});
+const runCli = (args: readonly string[], env: NodeJS.ProcessEnv): CliResult =>
+  runCliFrom(fuente.repo, args, env);
 
 const GRAFT_DIR = dirname(
   execFileSync("sh", ["-c", "command -v graft"], { encoding: "utf8" }).trim(),
@@ -62,7 +79,7 @@ function world(
   const home = tempDir("init-home-");
   const localBin = join(home, ".local", "bin");
   mkdirSync(localBin, { recursive: true });
-  const env: NodeJS.ProcessEnv = {
+  const env: NodeJS.ProcessEnv = conApp({
     HOME: home,
     // Un PATH armado a mano: el real puede tener un flowrunner ya instalado por la persona, y vitest
     // expone el propio en node_modules/.bin; en los dos casos init lo daría por instalado.
@@ -78,7 +95,7 @@ function world(
     GIT_AUTHOR_EMAIL: "test@example.com",
     GIT_COMMITTER_NAME: "test",
     GIT_COMMITTER_EMAIL: "test@example.com",
-  };
+  });
   return { work, remote, home, env };
 }
 
@@ -217,8 +234,12 @@ describe("init", () => {
       existsSync(join(w.env.FLOWRUNNER_LAUNCH_AGENTS ?? "", "com.flowrunner.tick.plist")),
     ).toBe(true);
     expect(existsSync(join(w.home, ".claude", "skills", "flowrunner", "SKILL.md"))).toBe(true);
-    expect(paso(out.stdout, "comando flowrunner"), out.stdout).toMatchObject({ estado: "hecho" });
-    expect(existsSync(join(w.home, ".local", "bin", "flowrunner"))).toBe(true);
+    expect(paso(out.stdout, "flowrunner instalado en ~/.flowrunner/app"), out.stdout).toMatchObject(
+      { estado: "hecho" },
+    );
+    expect(realpathSync(join(w.home, ".local", "bin", "flowrunner"))).toBe(
+      realpathSync(join(w.home, ".flowrunner", "app", "bin", "flowrunner.js")),
+    );
     expect(paso(out.stdout, "PR del cerebro")?.detalle).toMatch(/pull\/412/);
 
     const again = runCli(["init", w.work, "--aplicar", "--json"], w.env);
@@ -244,6 +265,22 @@ describe("init", () => {
     const renewed = runCli(["init", w.work, "--aplicar", "--json"], w.env);
     expect(paso(renewed.stdout, "skill de Claude Code")).toMatchObject({ estado: "hecho" });
   }, 180_000);
+
+  // Si regresiona, init da por instalado un comando que no quedó en ningún lado del PATH.
+  test("sin ~/.local/bin en el PATH, el paso de la app falta y dice qué hacer", () => {
+    const w = world();
+    const localBin = join(w.home, ".local", "bin");
+    w.env.PATH = (w.env.PATH ?? "")
+      .split(":")
+      .filter((d) => d !== localBin)
+      .join(":");
+    const out = runCli(["init", w.work, "--aplicar", "--json"], w.env);
+    expect(out.status).toBe(1);
+    expect(paso(out.stdout, "flowrunner instalado en ~/.flowrunner/app")).toMatchObject({
+      estado: "falta",
+      detalle: "agregá ~/.local/bin a tu PATH",
+    });
+  }, 120_000);
 
   // Si regresiona, init abre una PR sobre una base roja y el primer run se detiene en preparar.
   test("con la base en rojo, --aplicar sale 1 y no empuja nada", () => {

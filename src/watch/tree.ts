@@ -1,7 +1,7 @@
 // El árbol de un run para `flowrunner watch`: fases, sub-tasks y sesiones, armado del log de eventos,
 // del plan y de los transcripts que cada sesión escribe mientras corre. Función pura: el disco lo lee
 // `load.ts`.
-import { stateOf, TERMINAL, type RunStatus } from "../engine/engine.ts";
+import { stateOf, TERMINAL, type Opcion, type RunStatus } from "../engine/engine.ts";
 import type { Step } from "../report/transcript.ts";
 import { contextWindow, estimateCost, promptTokens, type Usage } from "./pricing.ts";
 import { PHASES, type Phase, type RunEvent } from "../store/events.ts";
@@ -78,6 +78,10 @@ export interface RunTree {
   readonly motivo: string | undefined;
   /** El comando que la persona corre para seguir, si el run la espera. */
   readonly siguiente: string | undefined;
+  /** Las respuestas posibles de un run detenido, la primera es `siguiente` (ADR 0023). */
+  readonly opciones: readonly Opcion[] | undefined;
+  /** Las sub-tasks a las que un run detenido atribuye el problema. */
+  readonly unidades: readonly string[] | undefined;
   /** Lo que hoy existe y el plan cambia: aprobarlo pide aceptarlo. Vacío sin plan o sin cambios. */
   readonly cambiaLoExistente: readonly CambioExistente[];
   readonly fases: PhaseNode[];
@@ -304,6 +308,8 @@ export function runTree(input: TreeInput): RunTree {
       }
     }
     const r = ended?.resultado;
+    // Una pregunta es una fase que no pudo seguir sola: se ve como su falla, con su motivo.
+    const failed = r?.tipo === "falla" || r?.tipo === "pregunta";
     // Lo que terminó antes de un `rehacer` desde esta fase o una anterior es de otra corrida: la
     // fase vuelve a estar pendiente, no fallada ni hecha (VF-6).
     const redo =
@@ -315,7 +321,7 @@ export function runTree(input: TreeInput): RunTree {
           );
     // Una falla o una vuelta que el run dejó atrás: una fase posterior corrió después.
     const overtaken =
-      ended !== undefined && (r?.tipo === "falla" || r?.tipo === "vuelve")
+      ended !== undefined && (failed || r?.tipo === "vuelve")
         ? PHASES.slice(index + 1).find((q) => (lastStart.get(q) ?? -1) >= ended.at)
         : undefined;
     const raw: PhaseState =
@@ -330,20 +336,24 @@ export function runTree(input: TreeInput): RunTree {
             : "corriendo"
           : r.tipo === "limite"
             ? "pausa"
-            : r.tipo;
+            : r.tipo === "pregunta"
+              ? "falla"
+              : r.tipo;
     const estado: PhaseState =
       redo !== undefined ? "pendiente" : overtaken === undefined ? raw : "ok";
-    const verbo = r?.tipo === "falla" ? "falló" : "volvió";
+    const verbo = failed ? "falló" : "volvió";
     const nota =
       redo !== undefined
-        ? r?.tipo === "falla" || r?.tipo === "vuelve"
+        ? failed || r?.tipo === "vuelve"
           ? `${verbo} en una corrida anterior; el run se rehízo desde ${redo.desde}`
           : undefined
         : overtaken === undefined
           ? undefined
           : `${verbo} en una corrida anterior; el run siguió desde ${overtaken}`;
     const detalle =
-      redo === undefined && overtaken === undefined && (r?.tipo === "falla" || r?.tipo === "vuelve")
+      redo === undefined &&
+      overtaken === undefined &&
+      (r?.tipo === "falla" || r?.tipo === "pregunta" || r?.tipo === "vuelve")
         ? r.motivo
         : undefined;
     const mine = sessions.filter((s) => s.owner?.fase === fase);
@@ -414,6 +424,8 @@ export function runTree(input: TreeInput): RunTree {
     haceSegundos: TERMINAL.has(state.status) ? Math.round((now - end) / 1000) : undefined,
     motivo: state.halt?.motivo,
     siguiente,
+    opciones: state.status === "detenido" ? state.halt?.opciones : undefined,
+    unidades: state.status === "detenido" ? state.halt?.unidades : undefined,
     cambiaLoExistente: input.cambiaLoExistente ?? [],
     fases,
   };

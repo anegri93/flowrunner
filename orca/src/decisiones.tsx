@@ -1,13 +1,15 @@
 // Las decisiones que espera un run, en una fila de botones: aprobar o pedir cambios al plan,
-// reanudar o rehacer un run detenido. Las usan la pestaña de los runs y la del plan. Aprobar,
-// reanudar y rehacer piden confirmación; pedir cambios, el motivo. Aparte, al pie de la tarjeta,
-// abortar el run entero, también con confirmación.
+// reanudar o rehacer un run detenido, o responder su pregunta: que una sub-task lo arregle, arreglarlo
+// a mano o seguir igual (ADR 0023). Las usan la pestaña de los runs y la del plan. Aprobar, reanudar,
+// rehacer y arreglarlo a mano piden confirmación; pedir cambios, arreglar y seguir igual, el texto.
+// Aparte, al pie de la tarjeta, abortar el run entero, también con confirmación.
 import { atom, Button, Input, plugin, read, Row, set, Spinner, Stack, Text } from "orca";
 import {
   canAbort,
   decisionsFor,
   describeExisting,
   existingChanges,
+  fixUnits,
   rerunPhase,
   type Decision,
   type Run,
@@ -30,13 +32,45 @@ async function decide(run: string, decision: Decision, after: () => Promise<void
   try {
     const answer = await plugin.request("flowrunner.decidir", { run, decision });
     if (answer.ok) set(draft, "");
-    if (!answer.ok || decision.accion === "aprender") set(said, { run, ...answer });
+    // Lo que dice al aprender, y la ruta del worktree para arreglarlo a mano, se muestran aunque salga.
+    if (!answer.ok || decision.accion === "aprender" || decision.accion === "aMano")
+      set(said, { run, ...answer });
   } catch (error) {
     set(said, { run, ok: false, mensaje: error instanceof Error ? error.message : String(error) });
   } finally {
     set(sending, null);
   }
   await after();
+}
+
+/** Las decisiones que se mandan con un texto de la persona: qué escribe y cómo se arma la decisión. */
+function textFor(
+  decision: Decision | undefined,
+): { label: string; placeholder: string; decision: (text: string) => Decision } | undefined {
+  switch (decision?.accion) {
+    case "cambios":
+      return {
+        label: "Qué cambiar del plan",
+        placeholder: "Qué corregir y qué mantener",
+        decision: (motivo) => ({ accion: "cambios", motivo }),
+      };
+    case "arreglar": {
+      const unidad = decision.unidad;
+      return {
+        label: `Qué tiene que corregir ${unidad}`,
+        placeholder: "Qué está mal y qué tiene que quedar",
+        decision: (instruccion) => ({ accion: "arreglar", unidad, instruccion }),
+      };
+    }
+    case "aceptar":
+      return {
+        label: "Por qué seguir así; queda en la PR",
+        placeholder: "Por qué este rojo no frena la entrega",
+        decision: (motivo) => ({ accion: "aceptar", motivo }),
+      };
+    default:
+      return undefined;
+  }
 }
 
 export function Decisions({
@@ -62,13 +96,14 @@ export function Decisions({
     ) : null;
   if (read(sending) === run.id) return <Spinner label="Enviando tu decisión" />;
   if (offered.length === 0) return note;
-  if (mine?.accion === "cambios") {
-    const send = () => decide(run.id, { accion: "cambios", motivo: read(draft) }, after);
+  const asked = textFor(mine);
+  if (asked !== undefined) {
+    const send = () => decide(run.id, asked.decision(read(draft)), after);
     return (
       <Stack gap="xs">
         <Input
-          label="Qué cambiar del plan"
-          placeholder="Qué corregir y qué mantener"
+          label={asked.label}
+          placeholder={asked.placeholder}
           value={read(draft)}
           onChange={(v) => set(draft, v)}
           onSubmit={send}
@@ -121,7 +156,9 @@ export function Decisions({
         ? "¿Aprobar el plan? Arranca implementar."
         : mine.accion === "reanudar"
           ? `¿Reanudar ${run.clave}?`
-          : `¿Rehacer ${run.clave} desde ${mine.accion === "rehacer" ? mine.desde : ""}?`;
+          : mine.accion === "aMano"
+            ? `¿Lo arreglás vos en el worktree de ${run.clave}? Después, Reanudar commitea tu cambio y vuelve a verificar.`
+            : `¿Rehacer ${run.clave} desde ${mine.accion === "rehacer" ? mine.desde : ""}?`;
     return (
       <Stack gap="xs">
         <Text size="sm" weight="semibold">
@@ -140,9 +177,15 @@ export function Decisions({
   }
   const ask = (decision: Decision) => set(pending, { run: run.id, decision });
   const desde = rerunPhase(run);
+  const units = offered.includes("arreglar") ? fixUnits(run) : [];
   return (
     <Stack gap="xs">
       {note}
+      {run.status === "detenido" && run.unidades !== undefined && run.unidades.length > 0 ? (
+        <Text size="xs" muted>
+          {`Parece ser de: ${run.unidades.join(", ")}`}
+        </Text>
+      ) : null}
       {offered.includes("aprobar") && existing.length > 0 ? (
         <Text size="xs" tone="warning">
           {`⚠ El plan cambia lo que ya existe (${String(existing.length)}): miralo antes de aprobar.`}
@@ -176,6 +219,30 @@ export function Decisions({
         {onPlan !== undefined && run.status === "esperando_aprobacion" ? (
           <Button size="sm" variant="ghost" icon="file-text" onPress={onPlan}>
             Plan
+          </Button>
+        ) : null}
+        {units.map((unidad) => (
+          <Button
+            key={unidad}
+            size="sm"
+            icon="edit"
+            onPress={() => ask({ accion: "arreglar", unidad, instruccion: "" })}
+          >
+            {`Arreglar ${unidad}`}
+          </Button>
+        ))}
+        {offered.includes("aMano") ? (
+          <Button size="sm" variant="outline" onPress={() => ask({ accion: "aMano" })}>
+            Lo arreglo yo
+          </Button>
+        ) : null}
+        {offered.includes("aceptar") ? (
+          <Button
+            size="sm"
+            variant="outline"
+            onPress={() => ask({ accion: "aceptar", motivo: "" })}
+          >
+            Seguir igual
           </Button>
         ) : null}
         {offered.includes("reanudar") ? (

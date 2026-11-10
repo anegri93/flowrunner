@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { initialState, type RunState } from "../engine/engine.ts";
+import { initialState, stateOf, type RunState } from "../engine/engine.ts";
 import type { RunEvent } from "../store/events.ts";
 import { avisoDeEstado, type Contexto } from "./estado.ts";
 
@@ -43,10 +43,20 @@ describe("avisoDeEstado", () => {
     expect(
       avisoDeEstado(
         "en_curso",
-        run({ status: "detenido", halt: { motivo: "base roja", siguiente: "x" } }),
+        run({
+          status: "detenido",
+          halt: {
+            motivo: "base roja",
+            siguiente: "flowrunner resume SHOP-1-x",
+            opciones: [{ comando: "flowrunner resume SHOP-1-x", que: "retomar en preparar" }],
+          },
+        }),
         ctx(),
       ),
-    ).toEqual({ title: "SHOP-1: el run se detuvo", body: "base roja" });
+    ).toEqual({
+      title: "SHOP-1: el run se detuvo",
+      body: "base roja\nPara seguir: flowrunner resume SHOP-1-x",
+    });
     expect(
       body(
         "en_curso",
@@ -91,5 +101,32 @@ describe("avisoDeEstado", () => {
         }),
       ),
     ).toBe("SHOP-1: cerrado después del merge, con 1 lección");
+  });
+
+  // Si regresiona, el aviso dice que el run se detuvo pero no qué responder.
+  test("el aviso de detenido termina con la primera opción", () => {
+    const e = (event: Record<string, unknown>) => ({ ...event, at }) as RunEvent;
+    const done = (fase: string, resultado: Record<string, unknown>) => [
+      e({ tipo: "accion_iniciada", fase }),
+      e({ tipo: "accion_terminada", fase, resultado }),
+    ];
+    const halted = stateOf([
+      e({
+        tipo: "run_creado",
+        run_id: "SHOP-1-x",
+        clave: "SHOP-1",
+        proyecto: "acme",
+        repo: "/r",
+        vueltas: 0,
+      }),
+      ...["preparar", "planificar", "aprobar", "implementar"].flatMap((f) =>
+        done(f, { tipo: "ok" }),
+      ),
+      ...done("verificar", { tipo: "vuelve", unidades: ["ST-2"], motivo: "AC-1 sigue en rojo" }),
+    ]);
+    expect(avisoDeEstado("en_curso", halted, ctx())).toEqual({
+      title: "SHOP-1: el run se detuvo",
+      body: 'verificar: AC-1 sigue en rojo\nPara seguir: flowrunner fix SHOP-1-x --unidad ST-2 "<qué cambiar>"',
+    });
   });
 });

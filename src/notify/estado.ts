@@ -48,8 +48,15 @@ export function avisoDeEstado(
           : `⚠ ${clave}: el plan cambia ${n === 1 ? "1 cosa que ya existe" : `${String(n)} cosas que ya existen`}. Pedile a Claude que te lo muestre antes de aprobar.`,
       );
     }
-    case "detenido":
-      return { title: `${clave}: el run se detuvo`, body: despues.halt?.motivo ?? "sin motivo" };
+    case "detenido": {
+      // La primera respuesta, para que el aviso diga qué hacer y no solo qué pasó (ADR 0023).
+      const halt = despues.halt;
+      const first = halt?.opciones[0]?.comando;
+      return {
+        title: `${clave}: el run se detuvo`,
+        body: `${halt?.motivo ?? "sin motivo"}${first === undefined ? "" : `\nPara seguir: ${first}`}`,
+      };
+    }
     case "entregado": {
       const rounds = Object.values(despues.vueltas).reduce((a, b) => a + b, 0);
       return aviso(

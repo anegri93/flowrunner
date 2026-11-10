@@ -319,6 +319,61 @@ test("cada decisión corre su comando fijo, con el motivo tal cual, y devuelve l
   }
 });
 
+// Si regresiona, la respuesta del panel a un run detenido no llega, o llega sin decir que vino de Orca.
+test("arreglar, a mano y aceptar se traducen a fix y accept con --origen orca", async () => {
+  const { worker, calls } = await fakeWorker();
+  const id = "VF-2-20261109-001527";
+  try {
+    const instruccion = "no toques el 'login' ni $(whoami)";
+    const fixed = await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "arreglar", unidad: "ST-2", instruccion },
+    });
+    assert.deepEqual(fixed, { ok: true, mensaje: "arreglando" });
+    await worker.request("flowrunner.decidir", { run: id, decision: { accion: "aMano" } });
+    const accepted = await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "aceptar", motivo: "AC-1 es flaky" },
+    });
+    assert.deepEqual(accepted, { ok: true, mensaje: "aceptado: revisar arrancó" });
+    assert.deepEqual(calls(), [
+      `fix ${id} --unidad ST-2 ${instruccion} --origen orca --json`,
+      `fix ${id} --yo --origen orca --json`,
+      `accept ${id} AC-1 es flaky --origen orca --json`,
+    ]);
+  } finally {
+    await worker.deactivate();
+  }
+});
+
+// Si regresiona, el panel puede mandar a flowrunner una sub-task que es un comando, o un fix vacío.
+test("un arreglo con una sub-task inválida o sin instrucción se rechaza", async () => {
+  const { worker, calls } = await fakeWorker();
+  const run = "VF-2-20261109-001527";
+  try {
+    const bad = [
+      { accion: "arreglar" as const, unidad: "ST-1; rm -rf ~", instruccion: "x" },
+      { accion: "arreglar" as const, unidad: "ST-1", instruccion: "   " },
+      { accion: "arreglar" as const, unidad: "ST-1", instruccion: "x".repeat(2_001) },
+      { accion: "aceptar" as const, motivo: "" },
+    ];
+    const answers = [];
+    for (const decision of bad)
+      answers.push(await worker.request("flowrunner.decidir", { run, decision }));
+    assert.deepEqual(
+      answers.map((a) => a.ok),
+      [false, false, false, false],
+    );
+    assert.match(answers[0]?.mensaje ?? "", /sub-task inválida/);
+    assert.match(answers[1]?.mensaje ?? "", /falta la instrucción/);
+    assert.match(answers[2]?.mensaje ?? "", /demasiado larga/);
+    assert.match(answers[3]?.mensaje ?? "", /falta el motivo/);
+    assert.deepEqual(calls(), []);
+  } finally {
+    await worker.deactivate();
+  }
+});
+
 // Si regresiona, lo que llega del panel puede terminar como otro comando en el shell o en otra ruta.
 test("rechaza un id, una fase, un motivo, una sesión, una sub-task o una etapa inválidos sin llamar a flowrunner", async () => {
   const { worker, calls } = await fakeWorker();

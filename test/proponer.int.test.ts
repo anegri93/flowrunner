@@ -45,7 +45,8 @@ async function withRound(proposal: SimScript) {
       proposal,
     ],
     feature: FEATURE,
-    project: { config: { setup: "true", tests_globs: ["tests/**"] } },
+    // Un repo que pide vueltas automáticas: sin ellas, la vuelta de revisar es una pregunta (ADR 0023).
+    project: { config: { setup: "true", tests_globs: ["tests/**"], vueltas: 2 } },
   });
   const id = w.launch();
   await waitFor("esperando", () => w.state(id).status === "esperando_aprobacion", 60_000);

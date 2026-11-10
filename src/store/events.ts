@@ -37,11 +37,24 @@ export const outcomeSchema = z.discriminatedUnion("tipo", [
   z.strictObject({ tipo: z.literal("espera") }),
   /** El SDK informó el límite de la suscripción; `hasta` en milisegundos epoch. */
   z.strictObject({ tipo: z.literal("limite"), hasta: z.number() }),
+  /**
+   * Reintentar solo no sirve: el run se detiene y le pregunta a la persona (ADR 0023). `unidades`,
+   * las sub-tasks a las que se atribuye el problema, si hay.
+   */
+  z.strictObject({
+    tipo: z.literal("pregunta"),
+    motivo: z.string().min(1),
+    unidades: z.array(z.string().min(1)).min(1).optional(),
+  }),
 ]);
 export type Outcome = z.infer<typeof outcomeSchema>;
 
 const at = z.iso.datetime();
 const unit = z.string().min(1).optional();
+
+/** De dónde vino una decisión de la persona: la terminal, la skill de Claude Code o el panel de Orca. */
+export const origenSchema = z.enum(["terminal", "claude", "orca"]);
+export type Origen = z.infer<typeof origenSchema>;
 
 export const eventSchema = z.discriminatedUnion("tipo", [
   z.strictObject({
@@ -52,6 +65,8 @@ export const eventSchema = z.discriminatedUnion("tipo", [
     proyecto: z.string(),
     repo: z.string(),
     budget_usd: z.number().positive().optional(),
+    /** Vueltas automáticas, congeladas al crear el run. Un run anterior sin el campo vale 2. */
+    vueltas: z.int().min(0).max(3).optional(),
   }),
   z.strictObject({ tipo: z.literal("accion_iniciada"), at, fase: phaseSchema }),
   z.strictObject({
@@ -118,6 +133,34 @@ export const eventSchema = z.discriminatedUnion("tipo", [
   z.strictObject({ tipo: z.literal("encolado"), at }),
   /** La persona decidió entregar aunque probar dejó criterios sin probar, y dijo por qué. */
   z.strictObject({ tipo: z.literal("sin_probar_aceptado"), at, motivo: z.string().min(1) }),
+  /** La persona eligió una respuesta de la pregunta: que esas sub-tasks lo corrijan (ADR 0023). */
+  z.strictObject({
+    tipo: z.literal("arreglo_pedido"),
+    at,
+    unidades: z.array(z.string().min(1)).min(1),
+    instruccion: z.string().min(1),
+    origen: origenSchema,
+  }),
+  /**
+   * La persona lo arregla a mano en el worktree; el run espera su `resume`. `base`, el HEAD del
+   * worktree en ese momento: `resume` chequea todo lo que cambió desde ahí, commiteado o no.
+   */
+  z.strictObject({
+    tipo: z.literal("arreglo_manual_iniciado"),
+    at,
+    origen: origenSchema,
+    base: z.string().min(1),
+  }),
+  /** `resume` commiteó el arreglo a mano; `sha` es null si no había cambios. */
+  z.strictObject({ tipo: z.literal("arreglo_manual"), at, sha: z.string().nullable() }),
+  /** La persona decidió seguir a la fase siguiente con la fase en rojo, y dijo por qué. */
+  z.strictObject({
+    tipo: z.literal("aceptado"),
+    at,
+    fase: phaseSchema,
+    motivo: z.string().min(1),
+    origen: origenSchema,
+  }),
   z.strictObject({ tipo: z.literal("rehacer"), at, desde: phaseSchema }),
   z.strictObject({ tipo: z.literal("abortado"), at }),
   z.strictObject({ tipo: z.literal("pr"), at, url: z.string(), numero: z.int() }),

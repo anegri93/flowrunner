@@ -14,6 +14,9 @@ export const ASK_RULES = [
   "Bash(flowrunner changes:*)",
   // Entregar con criterios sin probar es de la persona, como aprobar (ADR 0017).
   "Bash(flowrunner accept-untested:*)",
+  // Responder la pregunta de un run detenido también (ADR 0023).
+  "Bash(flowrunner fix:*)",
+  "Bash(flowrunner accept:*)",
 ] as const;
 /** El hook SessionStart: con la ruta del bin, para no depender del PATH con que arranca Claude Code. */
 export const SESSION_HOOK = `${shellQuote(BIN)} hook session-start`;

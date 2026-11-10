@@ -30,7 +30,8 @@ describe("Fase 8 ensamblada", () => {
         { output: { hallazgos: [], decisiones: [] }, costUsd: 0.1 },
       ],
       feature: FEATURE,
-      project: { config: { setup: "true", tests_globs: ["tests/**"] } },
+      // Un repo que pide vueltas automáticas: sin ellas, la primera vuelta es una pregunta (ADR 0023).
+      project: { config: { setup: "true", tests_globs: ["tests/**"], vueltas: 2 } },
     });
     const check = runCli(["feature", "check", w.feature, "--json"], w.env);
     expect(JSON.parse(check.stdout)).toMatchObject({ ok: true, feature: { clave: "SHOP-214" } });

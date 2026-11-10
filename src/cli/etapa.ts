@@ -61,6 +61,8 @@ function outcomeText(o: Outcome): string {
       return "quedó esperando";
     case "limite":
       return `pausado por el límite de la suscripción hasta ${new Date(o.hasta).toISOString()}`;
+    case "pregunta":
+      return `se detuvo a preguntar${o.unidades === undefined ? "" : ` por ${o.unidades.join(", ")}`}: ${plain(o.motivo)}`;
   }
 }
 

@@ -115,4 +115,19 @@ describe("git", () => {
       { path: "nuevo.txt", status: "agregado", added: ["hola", ""] },
     ]);
   });
+
+  // Regresión: sin -z, git escapa entre comillas una ruta con tildes o comillas, el archivo no se lee
+  // y su contenido no pasa por el chequeo de secretos (revisión de la PR 05).
+  test("changesSince lee rutas con tildes, espacios y comillas, con su contenido", async () => {
+    const { work } = repoWithRemote({ "año.txt": "uno\n" });
+    const wt = join(tempDir(), "w");
+    const base = await addWorktree(work, wt, "feat/w", "origin/main", ENV);
+    writeFileSync(join(wt, "año.txt"), "uno\ndos\n");
+    writeFileSync(join(wt, 'contraseña "nueva".ts'), "clave\n");
+    const changes = await changesSince(wt, base, ENV);
+    expect(changes).toEqual([
+      { path: "año.txt", status: "modificado", added: ["dos"] },
+      { path: 'contraseña "nueva".ts', status: "agregado", added: ["clave", ""] },
+    ]);
+  });
 });

@@ -220,21 +220,43 @@ alcance, y flowrunner lo controla en cada herramienta y otra vez sobre el diff.
 
 ## Qué pasa cuando algo falla
 
-Una sub-task que falla se reintenta con el motivo, y verificar, revisar y probar pueden devolver trabajo hasta 2
-vueltas. Cuando reintentar no tiene sentido, flowrunner corta antes:
+Cuando algo sale mal, el run se detiene y te pregunta. `flowrunner status <run>`, el aviso, watch y el
+panel de Orca dicen el motivo, a qué sub-task se atribuye y tus respuestas, como comandos:
+
+- `flowrunner fix <run> --unidad ST-n "<qué cambiar>"`: que esa sub-task lo corrija con tu instrucción,
+  sobre el código que ya está.
+- `flowrunner fix <run> --yo`: lo arreglás vos en el worktree de la feature, que el comando te dice, y
+  después `flowrunner resume <run>` commitea tu cambio y vuelve a verificar. Podés commitear vos
+  también: resume chequea todo lo que cambió desde `fix --yo`. No pasa un cambio que toque `.git`,
+  cambie un test bloqueado del plan o agregue un secreto; un `CLAUDE.md`, sí.
+- `flowrunner accept <run> "<por qué>"`: seguir a la fase siguiente igual. Tu motivo queda en el
+  informe y en la PR.
+- `flowrunner rerun <run> --desde planificar`: replanificar, o `flowrunner abort <run>` para cortarlo.
+
+Cada run ofrece solo las que tienen sentido en su detención, y los comandos aceptan solo esas. Por
+defecto, el primer rojo de verificar, revisar o probar ya es una pregunta. Si preferís que flowrunner
+reintente solo antes de preguntarte, cada repo puede pedir vueltas automáticas:
+
+```yaml
+vueltas: 2 # de 0 a 3; por defecto 0. Un run toma el valor de cuando se creó
+```
+
+Una sub-task que falla se reintenta con el motivo. Cuando reintentar no tiene sentido, flowrunner corta
+antes:
 
 - **Un problema del entorno**, como una dependencia sin instalar, no se le devuelve a una sub-task:
   verificar reinstala y repite. Si sigue, se detiene y dice qué falta.
 - **Una sub-task que no avanza** dos intentos seguidos se corta, con lo último que dijo.
-- **Si el ciclo no converge**, un agente de solo lectura diagnostica si el problema está en el código de
-  alguna sub-task, en el entorno, en un test bloqueado o en el plan, y actúa según eso.
+- **Si el ciclo no converge**, y el repo pidió vueltas automáticas, un agente de solo lectura
+  diagnostica si el problema está en el código de alguna sub-task, en el entorno, en un test bloqueado o
+  en el plan, y actúa según eso. Con 0 vueltas no corre: decidís vos.
 - **Un test bloqueado con un detalle que no cambia lo que prueba**, como un `let` que el lint quiere
   `const`, se repara: una sesión chica edita solo ese archivo, y flowrunner acepta el cambio solo si
   el test pasa con la feature y sigue fallando sin ella. El arreglo va en su propio commit y la PR lo
   muestra para que lo revises.
 
-Todo tiene tope. Si el run se detiene, `flowrunner watch` y `flowrunner status` dicen el motivo y el
-comando exacto para seguir.
+Todo tiene tope. Si el run se detiene, `flowrunner watch` y `flowrunner status` dicen el motivo y los
+comandos exactos para seguir.
 
 ## Cómo aprende el cerebro
 
@@ -259,7 +281,9 @@ dibuja una vez.
 Si usás [Orca](https://www.onorca.dev), el plugin de [`orca/`](orca/README.md) suma una pestaña en la
 barra derecha, con el ícono del cohete. Cada run es una tarjeta con su estado, su tiempo y las ocho
 etapas del flujo, cada una con su tiempo. La que trabaja gira, y debajo dice qué está haciendo. Desde
-ahí decidís lo que el run espera: aprobar o pedir cambios al plan, reanudar o rehacer un run detenido.
+ahí decidís lo que el run espera: aprobar o pedir cambios al plan, reanudar o rehacer un run detenido,
+o responder su pregunta: «Arreglar ST-n» con lo que tiene que corregir, «Lo arreglo yo» o «Seguir
+igual» con tu motivo.
 Al pie de cada run vivo, «Abortar el run» lo corta en cualquier etapa.
 El botón de pasos de una sesión y «Plan» abren el archivo como pestaña de Orca. Tocar una etapa que ya
 arrancó abre su detalle: los intentos, lo propio de la etapa, las decisiones, los rechazos y las
@@ -293,6 +317,9 @@ equivalente de API: con la suscripción no se cobran, y lo que limita es su cupo
 | `flowrunner changes <run> "<motivo>"`          | pedir cambios al plan                         |
 | `flowrunner report <run>`                      | el informe del run                            |
 | `flowrunner resume <run>`                      | retomar un run detenido                       |
+| `flowrunner fix <run> --unidad ST-n "<qué>"`   | que una sub-task corrija lo que le pedís      |
+| `flowrunner fix <run> --yo`                    | arreglarlo vos; después `resume`              |
+| `flowrunner accept <run> "<por qué>"`          | seguir a la fase siguiente igual              |
 | `flowrunner rerun <run> --desde <fase>`        | rehacer desde una fase                        |
 | `flowrunner accept-untested <run> "<por qué>"` | entregar con criterios sin probar             |
 | `flowrunner abort <run>`                       | cancelar un run                               |

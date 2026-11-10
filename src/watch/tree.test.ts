@@ -572,3 +572,88 @@ describe("runTree", () => {
     );
   });
 });
+
+describe("detenido con pregunta", () => {
+  const first = base[0];
+  if (first?.tipo !== "run_creado") throw new Error("base empieza con run_creado");
+  const created: RunEvent = { ...first, vueltas: 0 };
+  const through = (until: number): RunEvent[] => [
+    created,
+    ...base.slice(1),
+    { tipo: "accion_terminada", at: at(161), fase: "aprobar", resultado: { tipo: "ok" } },
+    { tipo: "accion_iniciada", at: at(200), fase: "implementar" },
+    ...(until > 0
+      ? ([
+          { tipo: "accion_terminada", at: at(300), fase: "implementar", resultado: { tipo: "ok" } },
+          { tipo: "accion_iniciada", at: at(300), fase: "verificar" },
+        ] as RunEvent[])
+      : []),
+  ];
+
+  // Si regresiona, watch y el panel de Orca no saben qué responderle a un run detenido.
+  test("el árbol de un run detenido trae sus opciones y sus sub-tasks", () => {
+    const tree = runTree({
+      events: [
+        ...through(1),
+        {
+          tipo: "accion_terminada",
+          at: at(320),
+          fase: "verificar",
+          resultado: { tipo: "vuelve", unidades: ["ST-2"], motivo: "AC-2 sigue en rojo" },
+        },
+      ],
+      tasks,
+      titulo: "x",
+      sessions: new Map(),
+      now: T0 + 400_000,
+    });
+    expect(tree.status).toBe("detenido");
+    expect(tree.unidades).toEqual(["ST-2"]);
+    expect(tree.opciones?.map((o) => o.comando)).toEqual([
+      'flowrunner fix PIZ-1-x --unidad ST-2 "<qué cambiar>"',
+      "flowrunner fix PIZ-1-x --yo",
+      'flowrunner accept PIZ-1-x "<por qué>"',
+      "flowrunner rerun PIZ-1-x --desde planificar",
+      "flowrunner abort PIZ-1-x",
+    ]);
+    expect(tree.siguiente).toBe('flowrunner fix PIZ-1-x --unidad ST-2 "<qué cambiar>"');
+    // Un run que no está detenido no trae opciones.
+    const running = runTree({
+      events: through(1),
+      tasks,
+      titulo: "x",
+      sessions: new Map(),
+      now: T0 + 400_000,
+    });
+    expect(running.opciones).toBeUndefined();
+    expect(running.unidades).toBeUndefined();
+  });
+
+  // Si regresiona, una sub-task trabada se ve como si implementar hubiera terminado bien.
+  test("una pregunta de implementar se ve como falla de esa fase, con su motivo", () => {
+    const tree = runTree({
+      events: [
+        ...through(0),
+        {
+          tipo: "accion_terminada",
+          at: at(300),
+          fase: "implementar",
+          resultado: {
+            tipo: "pregunta",
+            motivo: "ST-1 no cambió ningún archivo",
+            unidades: ["ST-1", "ST-3"],
+          },
+        },
+      ],
+      tasks,
+      titulo: "x",
+      sessions: new Map(),
+      now: T0 + 400_000,
+    });
+    expect(tree.fases.find((f) => f.fase === "implementar")).toMatchObject({
+      estado: "falla",
+      detalle: "ST-1 no cambió ningún archivo",
+    });
+    expect(tree.unidades).toEqual(["ST-1", "ST-3"]);
+  });
+});

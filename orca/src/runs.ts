@@ -57,9 +57,19 @@ export interface Run {
   readonly segundos: number;
   readonly motivo?: string;
   readonly siguiente?: string;
+  /** Las respuestas de un run detenido; un flowrunner anterior no las informa. */
+  readonly opciones?: readonly Opcion[];
+  /** Las sub-tasks a las que un run detenido atribuye el problema. */
+  readonly unidades?: readonly string[];
   /** Lo que hoy existe y el plan cambia. Con algo acá, aprobar pide aceptarlo. */
   readonly cambiaLoExistente?: readonly ExistingChange[];
   readonly fases: readonly Phase[];
+}
+
+/** Una respuesta a un run detenido, como la arma flowrunner: el comando y qué hace (ADR 0023). */
+export interface Opcion {
+  readonly comando: string;
+  readonly que: string;
 }
 
 /** Un comportamiento de hoy que el plan cambia: qué, dónde lo fija el código y qué criterio lo pide. */
@@ -442,10 +452,46 @@ export type Decision =
   | { readonly accion: "reanudar" }
   | { readonly accion: "rehacer"; readonly desde: PhaseName }
   | { readonly accion: "aprender" }
-  | { readonly accion: "abortar" };
+  | { readonly accion: "abortar" }
+  /** Que esa sub-task corrija lo que la persona escribe, sobre el código que ya está. */
+  | { readonly accion: "arreglar"; readonly unidad: string; readonly instruccion: string }
+  /** La persona lo arregla en el worktree; flowrunner contesta con su ruta. */
+  | { readonly accion: "aMano" }
+  /** Seguir a la fase siguiente igual; el motivo queda en la PR. */
+  | { readonly accion: "aceptar"; readonly motivo: string };
 
 /** Un run vivo se puede abortar, en cualquier etapa: todos menos los cerrados y los abortados. */
 export const canAbort = (run: Run) => run.status !== "cerrado" && run.status !== "abortado";
+
+/** Las sub-tasks que el run detenido ofrece arreglar, de sus opciones `fix <run> --unidad ST-n`. */
+export const fixUnits = (run: Run): string[] =>
+  (run.opciones ?? []).flatMap((o) => {
+    const unidad = /--unidad (ST-\d+)/.exec(o.comando)?.[1];
+    return unidad === undefined ? [] : [unidad];
+  });
+
+/** El run detenido ofrece ese comando entre sus opciones. */
+export function offers(run: Run, comando: "fix --yo" | "accept" | "resume"): boolean {
+  const matches: Record<typeof comando, RegExp> = {
+    "fix --yo": /^flowrunner fix \S+ --yo$/,
+    accept: /^flowrunner accept \S+ /,
+    resume: /^flowrunner resume \S+$/,
+  };
+  return (run.opciones ?? []).some((o) => matches[comando].test(o.comando));
+}
+
+/** Las respuestas de un run detenido, de las opciones que arma flowrunner. */
+function stoppedDecisions(run: Run): Decision["accion"][] {
+  if (run.opciones === undefined)
+    return rerunPhase(run) === undefined ? ["reanudar"] : ["reanudar", "rehacer"];
+  const out: Decision["accion"][] = [];
+  if (fixUnits(run).length > 0) out.push("arreglar");
+  if (offers(run, "fix --yo")) out.push("aMano");
+  if (offers(run, "accept")) out.push("aceptar");
+  if (offers(run, "resume")) out.push("reanudar");
+  if (rerunPhase(run) !== undefined) out.push("rehacer");
+  return out;
+}
 
 /** Las decisiones de la etapa actual que tiene sentido ofrecer según el estado del run. */
 export function decisionsFor(run: Run): Decision["accion"][] {
@@ -453,7 +499,7 @@ export function decisionsFor(run: Run): Decision["accion"][] {
     case "esperando_aprobacion":
       return ["aprobar", "cambios"];
     case "detenido":
-      return rerunPhase(run) === undefined ? ["reanudar"] : ["reanudar", "rehacer"];
+      return stoppedDecisions(run);
     case "pausado_por_limite":
       return ["reanudar"];
     // Aprender corre en el chequeo cada 10 minutos; con la PR recién mergeada, no hace falta esperarlo.
@@ -464,10 +510,18 @@ export function decisionsFor(run: Run): Decision["accion"][] {
   }
 }
 
-/** La fase desde la que el motivo de la detención sugiere rehacer: `rerun <id> --desde verificar`. */
+/**
+ * La fase desde la que la detención ofrece rehacer: `rerun <id> --desde verificar`, en sus opciones o,
+ * con un flowrunner anterior, en `siguiente`.
+ */
 export function rerunPhase(run: Run): PhaseName | undefined {
-  const desde = /--desde (\w+)/.exec(run.siguiente ?? "")?.[1];
-  return PHASES.find((p) => p === desde);
+  const commands = run.opciones?.map((o) => o.comando) ?? [run.siguiente ?? ""];
+  for (const comando of commands) {
+    const desde = /--desde (\w+)/.exec(comando)?.[1];
+    const phase = PHASES.find((p) => p === desde);
+    if (phase !== undefined) return phase;
+  }
+  return undefined;
 }
 
 // --- Lo que se abre en una pestaña ---------------------------------------------------------

@@ -21,9 +21,14 @@ export async function git(
   args: readonly string[],
   env: NodeJS.ProcessEnv = process.env,
 ) {
+  return (await gitRaw(cwd, args, env)).trim();
+}
+
+/** La salida de git tal cual, sin recortar: con `-z`, un espacio al principio es parte de una ruta. */
+async function gitRaw(cwd: string, args: readonly string[], env: NodeJS.ProcessEnv = process.env) {
   const result = await runProc("git", args, { cwd, env });
   if (result.code !== 0) throw new GitError(args, result.stderr);
-  return result.stdout.trim();
+  return result.stdout;
 }
 
 /**
@@ -196,6 +201,61 @@ export interface FileChange {
   readonly added: readonly string[];
 }
 
+/** Si `ancestor` es ancestro de HEAD (o HEAD mismo). */
+export async function isAncestor(
+  worktree: string,
+  ancestor: string,
+  env?: NodeJS.ProcessEnv,
+): Promise<boolean> {
+  const result = await runProc("git", ["merge-base", "--is-ancestor", ancestor, "HEAD"], {
+    cwd: worktree,
+    env: env ?? process.env,
+  });
+  return result.code === 0;
+}
+
+/**
+ * Lo que cambió cada commit de `base..HEAD`, uno por uno, con las líneas que agregó: un secreto que un
+ * commit agrega y otro borra sigue en la rama. Un gitlink (un repo embebido) sale con `/` al final,
+ * como lo lista `ls-files` sin seguir.
+ */
+export async function commitChanges(
+  worktree: string,
+  base: string,
+  env?: NodeJS.ProcessEnv,
+): Promise<FileChange[]> {
+  const fields = (out: string) => out.split("\0").filter((f) => f !== "");
+  const commits = fields(
+    (await git(worktree, ["rev-list", "--reverse", `${base}..HEAD`], env)).replaceAll("\n", "\0"),
+  );
+  const changes: FileChange[] = [];
+  for (const commit of commits) {
+    const raw = fields(
+      await gitRaw(worktree, ["diff", "--raw", "--no-renames", "-z", `${commit}^`, commit], env),
+    );
+    for (let i = 0; i + 1 < raw.length; i += 2) {
+      // `:100644 160000 <sha> <sha> A`: el modo nuevo y la letra del cambio.
+      const [, newMode = "", , , code = ""] = (raw[i] ?? "").split(" ");
+      const path = raw[i + 1] ?? "";
+      const status = code === "A" ? "agregado" : code === "D" ? "borrado" : "modificado";
+      if (newMode === "160000") {
+        changes.push({ path: `${path}/`, status: "agregado", added: [] });
+        continue;
+      }
+      const patch =
+        status === "borrado"
+          ? ""
+          : await git(worktree, ["diff", "--unified=0", `${commit}^`, commit, "--", path], env);
+      const added = patch
+        .split("\n")
+        .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
+        .map((l) => l.slice(1));
+      changes.push({ path, status, added });
+    }
+  }
+  return changes;
+}
+
 /** Lo que cambió en el worktree respecto de `base`, incluidos los archivos sin seguimiento. */
 export async function changesSince(
   worktree: string,
@@ -203,9 +263,15 @@ export async function changesSince(
   env?: NodeJS.ProcessEnv,
 ): Promise<FileChange[]> {
   const changes: FileChange[] = [];
-  const tracked = await git(worktree, ["diff", "--name-status", "--no-renames", base], env);
-  for (const line of tracked.split("\n").filter((l) => l !== "")) {
-    const [code = "", path = ""] = line.split("\t");
+  // Con -z, git da las rutas tal cual: sin él, escapa entre comillas las que tienen tildes, comillas o
+  // caracteres de control, y esas no se podían leer ni chequear.
+  const fields = (out: string) => out.split("\0").filter((f) => f !== "");
+  const tracked = fields(
+    await gitRaw(worktree, ["diff", "--name-status", "--no-renames", "-z", base], env),
+  );
+  for (let i = 0; i + 1 < tracked.length; i += 2) {
+    const code = tracked[i] ?? "";
+    const path = tracked[i + 1] ?? "";
     const status = code === "A" ? "agregado" : code === "D" ? "borrado" : "modificado";
     const patch =
       status === "borrado"
@@ -217,8 +283,10 @@ export async function changesSince(
       .map((l) => l.slice(1));
     changes.push({ path, status, added });
   }
-  const untracked = await git(worktree, ["ls-files", "--others", "--exclude-standard"], env);
-  for (const path of untracked.split("\n").filter((l) => l !== "")) {
+  const untracked = fields(
+    await gitRaw(worktree, ["ls-files", "--others", "--exclude-standard", "-z"], env),
+  );
+  for (const path of untracked) {
     let added: string[] = [];
     try {
       added = readFileSync(join(worktree, path), "utf8").split("\n");

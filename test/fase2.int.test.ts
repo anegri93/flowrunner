@@ -51,6 +51,8 @@ describe("Fase 2 ensamblada", () => {
     expect(state.halt?.motivo).toMatch(/no está en verde[\s\S]*falla un test/);
     expect(readLog(r.dir).events.filter((e) => e.tipo === "uso")).toEqual([]);
     const status = runCli(["status", r.id], r.env);
-    expect(status.stdout).toContain(`Para seguir: flowrunner resume ${r.id}`);
+    expect(status.stdout).toContain(
+      `Opciones:\n  flowrunner resume ${r.id}  ·  retomar en preparar\n  flowrunner abort ${r.id}  ·  `,
+    );
   });
 });

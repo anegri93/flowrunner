@@ -290,3 +290,65 @@ test("si la persona aceptó entregar sin probar, el informe y la PR lo dicen con
   expect(prBody([created, aceptado], paths)).toContain(aviso);
   expect(prBody([created], paths)).not.toContain("Se entregó con criterios sin probar");
 });
+
+// Si regresiona, la PR se aprueba sin saber que la persona dejó pasar un rojo o lo arregló a mano, o
+// lista una respuesta que el run ignoró porque otra llegó antes.
+test("el informe y la PR listan lo que aceptaste, con su fase y su motivo", () => {
+  const dir = tempDir();
+  const tests = join(dir, "pruebas", "probar-1");
+  mkdirSync(tests, { recursive: true });
+  writeFileSync(
+    join(tests, "pruebas.json"),
+    JSON.stringify({
+      pruebas: [
+        {
+          criterio: "AC-2",
+          que: "el job nocturno",
+          pasos: [],
+          resultado: "no_probado",
+          evidencia: "no hay cómo dispararlo",
+          subtarea: "",
+        },
+      ],
+      decisiones: [],
+    }),
+  );
+  const paths = { id: "R", home: "/nada", dir, worktrees: "/nada" };
+  const sinProbar: Outcome = { tipo: "falla", clase: "sin_probar", motivo: "AC-2 sin probar" };
+  const events = [
+    { ...created, vueltas: 0 } as RunEvent,
+    ...(["preparar", "planificar", "aprobar", "implementar"] as const).flatMap((f) =>
+      step(f, { tipo: "ok" }),
+    ),
+    ...step("verificar", { tipo: "vuelve", unidades: ["ST-2"], motivo: "AC-3 en rojo" }),
+    ev({ tipo: "aceptado", fase: "verificar", motivo: "AC-3 es flaky en CI", origen: "terminal" }),
+    // Llegó después de la primera: el run ya estaba en revisar y la ignoró.
+    ev({ tipo: "aceptado", fase: "verificar", motivo: "la segunda", origen: "orca" }),
+    ...step("revisar", { tipo: "ok" }),
+    ...step("probar", sinProbar),
+    ev({ tipo: "arreglo_manual_iniciado", origen: "terminal", base: "abc1234" }),
+    ev({ tipo: "arreglo_manual", sha: "abc1234def5678" }),
+    ...step("verificar", { tipo: "ok" }),
+    ...step("revisar", { tipo: "ok" }),
+    ...step("probar", sinProbar),
+    ev({ tipo: "aceptado", fase: "probar", motivo: "lo cubre el e2e del cron", origen: "orca" }),
+  ];
+  const section = [
+    "## Lo que aceptaste al seguir",
+    "",
+    "- en verificar: AC-3 es flaky en CI",
+    "- arreglo a mano: abc1234",
+    "- en probar: lo cubre el e2e del cron",
+  ].join("\n");
+  const report = buildReport(events, paths);
+  const pr = prBody(events, paths);
+  expect(report).toContain(section);
+  expect(pr).toContain(section);
+  expect(report).not.toContain("la segunda");
+  // El aviso de probar toma el `accept` de probar, como el de `accept-untested`.
+  const aviso =
+    "> ⚠️ Se entregó con criterios sin probar, por decisión de la persona: lo cubre el e2e del cron";
+  expect(report).toContain(aviso);
+  expect(pr).toContain(aviso);
+  expect(buildReport([created], paths)).not.toContain("Lo que aceptaste al seguir");
+});

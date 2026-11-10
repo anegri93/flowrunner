@@ -39,7 +39,10 @@ declare module "orca" {
     "flowrunner.runs": { output: Snapshot };
     /** Abre los pasos de una sesión o el plan en una pestaña de Orca, en el proyecto del run. */
     "flowrunner.abrir": { input: { run: string; que: Openable }; output: Outcome };
-    /** Una decisión de la persona: aprobar, pedir cambios, reanudar o rehacer desde una fase. */
+    /**
+     * Una decisión de la persona: aprobar, pedir cambios, reanudar o rehacer desde una fase; o
+     * responder a un run detenido: que una sub-task lo arregle, arreglarlo a mano o seguir igual.
+     */
     "flowrunner.decidir": { input: { run: string; decision: Decision }; output: Outcome };
   }
 }

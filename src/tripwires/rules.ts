@@ -178,6 +178,16 @@ const SECRETS: readonly [RegExp, string][] = [
   ],
 ];
 
+/** Si lo que se agrega a `rel` trae un secreto. Lo usan los agentes y el arreglo a mano. */
+export function checkSecrets(rel: string, added: readonly string[]): Verdict {
+  for (const line of added) {
+    for (const [pattern, what] of SECRETS) {
+      if (pattern.test(line)) return no(`${rel} agrega ${what}; los secretos no se commitean`);
+    }
+  }
+  return OK;
+}
+
 /** Reglas sobre el contenido que se agrega: tests desactivados y secretos. */
 export function checkContent(scope: Scope, rel: string, added: readonly string[]): Verdict {
   const test = isTestFile(scope.testGlobs, rel);
@@ -187,9 +197,8 @@ export function checkContent(scope: Scope, rel: string, added: readonly string[]
         `${rel} agrega un test desactivado o exclusivo (skip, only o todo): "${line.trim()}"`,
       );
     }
-    for (const [pattern, what] of SECRETS) {
-      if (pattern.test(line)) return no(`${rel} agrega ${what}; los secretos no se commitean`);
-    }
+    const secret = checkSecrets(rel, [line]);
+    if (!secret.ok) return secret;
   }
   return OK;
 }

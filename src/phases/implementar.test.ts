@@ -8,10 +8,17 @@ import { plannedRun } from "../../test/helpers/planned.ts";
 import { contextFor, testDeps } from "../../test/helpers/project.ts";
 import { simQuery, type SimScript } from "../../test/helpers/sim-sdk.ts";
 import type { Plan, Subtask } from "../gates/plan.ts";
+import type { RunEvent } from "../store/events.ts";
 import { readLog } from "../store/run-log.ts";
 import { repoConfigSchema } from "../config/schemas.ts";
 import { checkCommand } from "../tripwires/comandos.ts";
-import { implementar, prefersExact, unitComandos, unitScope } from "./implementar.ts";
+import {
+  implementar,
+  integradasText,
+  prefersExact,
+  unitComandos,
+  unitScope,
+} from "./implementar.ts";
 
 const st = (id: string, alcance: string[], extra: Partial<Subtask> = {}): Subtask => ({
   id,
@@ -507,5 +514,100 @@ describe("implementar", () => {
       expect(await implementar(contextFor(run, "implementar", deps))).toEqual({ tipo: "ok" });
       expect(avisos(run.dir)).toEqual([]);
     });
+  });
+});
+
+describe("la orientación de cada sub-task", () => {
+  const FUENTES = {
+    "src/a/uno.ts": "export function uno(): number { return 1 }\n",
+    "src/b/dos.ts": 'import { uno } from "../a/uno.ts"; export const dos = () => uno() + 1;\n',
+    "src/a/tres.ts": "export class Tres {}\n",
+  };
+
+  // Si regresiona, cada sub-task vuelve a orientarse con ls, cat y git log por Bash, que es buena parte
+  // de los ~100 comandos de lectura que rechazó el bloqueo en 9 runs.
+  test("cada sub-task arranca con lo integrado, la API de su alcance y sus llamadores fuera del alcance marcados", async () => {
+    const sim = simQuery(
+      byUnit({
+        "ST-1": [{ calls: [write("src/a/cuatro.ts", "export const cuatro = 4;\n")] }],
+        "ST-2": [{ calls: [write("src/c/cinco.ts", "export const cinco = 5;\n")] }],
+      }),
+    );
+    const deps = testDeps({ query: sim.query });
+    const { run } = await plannedRun(
+      planWith([st("ST-1", ["src/a/"]), st("ST-2", ["src/c/"], { depende_de: ["ST-1"] })]),
+      TESTS,
+      deps,
+      { files: FUENTES },
+    );
+    expect(await implementar(contextFor(run, "implementar", deps))).toEqual({ tipo: "ok" });
+    const primero = sim.records[0]?.prompt ?? "";
+    expect(primero).toContain("Sub-task ST-1");
+    expect(primero).toContain("# Lo que ya hay");
+    expect(primero).toContain("function uno(): number");
+    expect(primero).toMatch(/`src\/b\/dos\.ts[^\n]*fuera de tu alcance/);
+    const segundo = sim.records[1]?.prompt ?? "";
+    expect(segundo).toContain("Sub-task ST-2");
+    expect(segundo).toMatch(/- ST-1 · tarea ST-1 · [0-9a-f]{7} · alcance: src\/a\//);
+  });
+
+  // Si regresiona, las sub-tasks ven la API de la base de preparar, sin los tests del plan ni lo integrado.
+  test("implementar reconstruye el índice al entrar: la sub-task ve la API de los tests del plan", async () => {
+    const sim = simQuery(
+      byUnit({ "ST-1": [{ calls: [write("src/a/cuatro.ts", "export const cuatro = 4;\n")] }] }),
+    );
+    const deps = testDeps({ query: sim.query });
+    const { run } = await plannedRun(
+      planWith([st("ST-1", ["src/a/", "tests/ayuda.ts"])]),
+      { ...TESTS, "tests/ayuda.ts": "export function ayudaDelPlan(): number { return 1 }\n" },
+      deps,
+      { files: FUENTES },
+    );
+    expect(await implementar(contextFor(run, "implementar", deps))).toEqual({ tipo: "ok" });
+    expect(sim.records[0]?.prompt).toContain("function ayudaDelPlan(): number");
+  });
+
+  // Si regresiona, un graft que falta tira la fase abajo en vez de dejar a las sub-tasks como antes.
+  test("sin graft, implementar avisa y las sub-tasks arrancan con el texto de falla", async () => {
+    const sim = simQuery(
+      byUnit({ "ST-1": [{ calls: [write("src/a/cuatro.ts", "export const cuatro = 4;\n")] }] }),
+    );
+    const deps = testDeps({ query: sim.query });
+    const { run } = await plannedRun(planWith([st("ST-1", ["src/a/"])]), TESTS, deps, {
+      files: FUENTES,
+    });
+    const sinGraft = testDeps({ query: sim.query, env: { ...deps.env, PATH: "/usr/bin:/bin" } });
+    expect(await implementar(contextFor(run, "implementar", sinGraft))).toEqual({ tipo: "ok" });
+    const avisos = readLog(run.dir).events.flatMap((e) => (e.tipo === "aviso" ? [e.texto] : []));
+    expect(avisos).toEqual([
+      expect.stringMatching(
+        /^graft no pudo reconstruir el índice: .+; las sub-tasks arrancan sin su contexto$/,
+      ),
+    ]);
+    expect(sim.records[0]?.prompt).toContain("(graft no pudo armar el contexto:");
+  });
+
+  // Si regresiona, una sub-task ve como integrado lo que un replan ya tiró, o se ve a sí misma.
+  test("integradasText toma lo integrado desde la última aprobación, una vez por sub-task y sin la propia", () => {
+    const at = "2026-11-07T10:00:00.000Z";
+    const integrada = (unidad: string, sha: string): RunEvent => ({
+      tipo: "unidad",
+      at,
+      fase: "implementar",
+      unidad,
+      estado: "integrada",
+      sha,
+    });
+    const events: RunEvent[] = [
+      integrada("ST-1", "aaaaaaa1111111"),
+      { tipo: "aprobado", at },
+      integrada("ST-1", "bbbbbbb2222222"),
+      integrada("ST-2", "ccccccc3333333"),
+    ];
+    const plan = { subtareas: [st("ST-1", ["src/a/", "src/x.ts"]), st("ST-2", ["src/b/"])] };
+    expect(integradasText(events, plan, "ST-2")).toBe(
+      "- ST-1 · tarea ST-1 · bbbbbbb · alcance: src/a/, src/x.ts",
+    );
+    expect(integradasText(events.slice(0, 2), plan, "ST-1")).toBe("Ninguna todavía.");
   });
 });

@@ -8,7 +8,7 @@ import { isVerifyCommand, loadRepoConfig } from "../config/load.ts";
 import type { RepoConfig } from "../config/schemas.ts";
 import { blockedByFailure, readyToStart } from "../engine/scheduler.ts";
 import { AVISO_TEST_EXISTENTE, existedAt, testsTouched, undeclared } from "../gates/existente.ts";
-import { allDependencies, type Subtask } from "../gates/plan.ts";
+import { allDependencies, type Plan, type Subtask } from "../gates/plan.ts";
 import {
   addWorktree,
   changesSince,
@@ -19,16 +19,19 @@ import {
   removeWorktree,
   type FileChange,
 } from "../git/git.ts";
+import { contextoGraft, marcarFueraDeAlcance } from "../graft/contexto.ts";
+import { buildIndex } from "../graft/graft.ts";
 import { runShell, tail } from "../proc/proc.ts";
 import { featureText, render } from "../prompts/render.ts";
-import type { PhaseFn } from "../runner/types.ts";
+import type { PhaseFn, RunPaths } from "../runner/types.ts";
 import type { Outcome, RunEvent } from "../store/events.ts";
+import { readLog } from "../store/run-log.ts";
 import { describeComandos, type Comandos } from "../tripwires/comandos.ts";
 import { checkChanges, type Violation } from "../tripwires/diff.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
 import { dependencySectionsChanged, WRITE_TOOLS, type Scope } from "../tripwires/rules.ts";
 import { copyEnvFiles } from "./env-files.ts";
-import { featureWorktree, prepared, runFeature, unitWorktree } from "./inputs.ts";
+import { featureWorktree, graftIndex, prepared, runFeature, unitWorktree } from "./inputs.ts";
 import { brainVars, readPlan, sessionName } from "./planificar.ts";
 import { runFixers } from "./fixers.ts";
 import { SETUP_TIMEOUT_MS } from "./preparar.ts";
@@ -166,12 +169,80 @@ async function dependencyEdits(
   return out;
 }
 
+/** El mensaje de un error hasta el primer salto de línea. */
+function firstLine(error: unknown): string {
+  return (error instanceof Error ? error.message : String(error)).split("\n")[0] ?? "";
+}
+
+/** Puro: «- ST-1 · <título> · <sha corto> · alcance: a, b», o «Ninguna todavía.». */
+export function integradasText(
+  events: readonly RunEvent[],
+  plan: Pick<Plan, "subtareas">,
+  self: string,
+): string {
+  // Lo integrado antes de la última aprobación es de otro plan: un replan lo descarta.
+  const desde = events.findLastIndex((e) => e.tipo === "aprobado") + 1;
+  const integradas = events
+    .slice(desde)
+    .filter((e): e is UnitEvent => e.tipo === "unidad" && e.estado === "integrada");
+  const lineas = plan.subtareas.flatMap((t) => {
+    if (t.id === self) return [];
+    const ultima = integradas.findLast((e) => e.unidad === t.id);
+    if (ultima === undefined) return [];
+    const sha = ultima.sha === undefined ? "sin sha" : ultima.sha.slice(0, 7);
+    return [`- ${t.id} · ${t.titulo} · ${sha} · alcance: ${t.alcance.join(", ")}`];
+  });
+  return lineas.length === 0 ? "Ninguna todavía." : lineas.join("\n");
+}
+
+/** Lo que la sub-task tiene que saber antes de empezar: lo ya integrado y su alcance según graft. */
+export async function orientacionDe(
+  run: RunPaths,
+  plan: Pick<Plan, "subtareas">,
+  task: Subtask,
+  featureWt: string,
+  env: NodeJS.ProcessEnv,
+): Promise<string> {
+  // Del log de ahora, no de `ctx.events`: una sub-task paralela pudo integrarse después de que
+  // empezó la fase.
+  const integradas = integradasText(readLog(run.dir).events, plan, task.id);
+  const api = marcarFueraDeAlcance(
+    await contextoGraft({
+      repo: featureWt,
+      indexDir: graftIndex(run),
+      archivos: task.alcance,
+      env,
+    }),
+    task.alcance,
+  );
+  return [
+    "## Sub-tasks ya integradas en tu rama",
+    "",
+    integradas,
+    "",
+    "## Tu alcance hoy, según graft",
+    "",
+    api,
+  ].join("\n");
+}
+
 type UnitResult =
   { readonly ok: true } | { readonly ok: false; readonly fatal?: Outcome; readonly motivo: string };
 
 export const implementar: PhaseFn = async (ctx) => {
   const { run, deps, emit, action, state } = ctx;
   const featureWt = featureWorktree(run);
+  // La rama tiene los tests del plan y lo ya integrado, que el índice de preparar no tiene. Sin índice
+  // no se detiene nada: cada sub-task recibe el texto de falla de `contextoGraft` y sigue como antes.
+  try {
+    await buildIndex(featureWt, graftIndex(run), deps.env);
+  } catch (error) {
+    emit({
+      tipo: "aviso",
+      fase: "implementar",
+      texto: `graft no pudo reconstruir el índice: ${firstLine(error)}; las sub-tasks arrancan sin su contexto`,
+    });
+  }
   const config = loadRepoConfig(featureWt);
   const brain = loadBrain(featureWt);
   const feature = runFeature(run);
@@ -260,6 +331,7 @@ export const implementar: PhaseFn = async (ctx) => {
           rejectedWrites.push(event.motivo);
         return emit(event);
       };
+      const orientacion = await orientacionDe(run, plan, task, featureWt, deps.env);
       const result = await runSession(
         {
           fase: "implementar",
@@ -289,6 +361,7 @@ export const implementar: PhaseFn = async (ctx) => {
                 : `# Atención: esto ya se intentó\n\n${motivo}\n\nCorregilo.`,
             feature: featureText(feature),
             plan: plan.plan,
+            orientacion,
             ...brainVars(brain),
           }),
           cwd: wt,

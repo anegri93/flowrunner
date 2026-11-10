@@ -195,6 +195,18 @@ describe("stats por run", () => {
     expect(statsPorRun(home).runs[0]?.activoMin).toBe(10);
   });
 
+  // `rerun` sobre un run cortado también retoma la acción sin una `accion_iniciada` nueva.
+  test("una acción cortada y rehecha con rerun no cuenta el tiempo del corte", () => {
+    const home = tempDir("stats-");
+    runAt(home, T0, [
+      [0, inicia("implementar")],
+      [5 * MIN, uso("implementar", 1)],
+      [8 * 60 * MIN, { tipo: "rehacer", desde: "implementar" }],
+      [5 * MIN, termina("implementar")],
+    ]);
+    expect(statsPorRun(home).runs[0]?.activoMin).toBe(10);
+  });
+
   test("una acción cortada y después abortada no cuenta el tiempo hasta el abort", () => {
     const home = tempDir("stats-");
     runAt(home, T0, [
@@ -274,10 +286,16 @@ describe("stats por run", () => {
           message: { content: [{ type: "text", text: "miro" }, toolUse("Read")] },
         }),
         linea({ type: "user", message: { content: [{ type: "tool_result" }] } }),
+        // El SDK escribe una línea por bloque: dos líneas del mismo mensaje son un solo turno.
         linea({
           type: "assistant",
           parent_tool_use_id: null,
-          message: { content: [toolUse("mcp__graft__graft_file_api")] },
+          message: { id: "msg_2", content: [{ type: "thinking", thinking: "" }] },
+        }),
+        linea({
+          type: "assistant",
+          parent_tool_use_id: null,
+          message: { id: "msg_2", content: [toolUse("mcp__graft__graft_file_api")] },
         }),
         // El subagente explorador: sus lecturas se cuentan aparte de las del planificador.
         linea({

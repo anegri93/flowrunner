@@ -141,10 +141,13 @@ export function runStats(dir: string, events: readonly RunEvent[]): RunStats {
   for (const e of events) {
     const at = Date.parse(e.at);
     // Un proceso cortado deja la acción abierta, y el runner la retoma sin una `accion_iniciada`
-    // nueva: el tramo se cierra en lo último que se supo antes del corte y se reabre al retomar.
-    if ((e.tipo === "reanudado" || e.tipo === "abortado") && openedAt !== undefined) {
+    // nueva, tras un `resume` o un `rerun`: el tramo se cierra en lo último que se supo antes del
+    // corte y se reabre al retomar. Abortar una acción viva también la corta en su último evento:
+    // lo que trabajó después sin escribir nada no se cuenta, a sabiendas.
+    const resumes = e.tipo === "reanudado" || e.tipo === "rehacer";
+    if ((resumes || e.tipo === "abortado") && openedAt !== undefined) {
       activeMs += (previousAt ?? openedAt) - openedAt;
-      openedAt = e.tipo === "reanudado" ? at : undefined;
+      openedAt = resumes ? at : undefined;
     }
     previousAt = at;
     if (e.tipo === "accion_iniciada") {
@@ -189,7 +192,7 @@ const assistantLineSchema = z.object({
   /** Las líneas de un subagente, como el explorador, traen la llamada `Task` que lo lanzó. */
   parent_tool_use_id: z.string().nullish().catch(undefined),
   message: z
-    .object({ content: z.array(z.unknown()).catch([]) })
+    .object({ id: z.string().optional().catch(undefined), content: z.array(z.unknown()).catch([]) })
     .optional()
     .catch(undefined),
 });
@@ -205,6 +208,9 @@ function planningSessions(dir: string): RunStats["graftPlanificar"] {
   if (!existsSync(dir)) return { ...main, subagente };
   for (const file of readdirSync(dir)) {
     if (!file.startsWith("planificar-") || !file.endsWith(".jsonl")) continue;
+    // El SDK escribe una línea por bloque de contenido: un turno es un `message.id` distinto, y una
+    // línea sin id cuenta como un turno propio.
+    const messages = new Set<string>();
     for (const line of readFileSync(join(dir, file), "utf8").split("\n")) {
       let parsed: unknown;
       try {
@@ -216,7 +222,11 @@ function planningSessions(dir: string): RunStats["graftPlanificar"] {
       if (!turn.success) continue;
       const fromSubagent = typeof turn.data.parent_tool_use_id === "string";
       const counts = fromSubagent ? subagente : main;
-      if (!fromSubagent) main.turnos++;
+      const id = turn.data.message?.id;
+      if (!fromSubagent && (id === undefined || !messages.has(id))) {
+        main.turnos++;
+        if (id !== undefined) messages.add(id);
+      }
       for (const block of turn.data.message?.content ?? []) {
         const tool = toolUseSchema.safeParse(block);
         if (!tool.success) continue;

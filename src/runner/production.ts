@@ -3,7 +3,7 @@
 // FLOWRUNNER_TEST_HOOKS es la ruta absoluta de un módulo que puede exportar `phases`, `query` y
 // `notify`. Solo lo usan los tests de integración, que corren el CLI real como proceso hijo; en
 // producción la variable no existe.
-import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
+import { deleteSession, query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import { pathToFileURL } from "node:url";
 import { aprender } from "../phases/aprender.ts";
 import { aprobar } from "../phases/aprobar.ts";
@@ -65,6 +65,7 @@ export async function productionRuntime(
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       notify: hooks.notify ?? notify,
       query: hooks.query ?? sdkQuery,
+      deleteSession,
       env,
     },
   };

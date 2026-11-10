@@ -6,11 +6,15 @@ import type { NewEvent, Outcome, Phase, RunEvent } from "../store/events.ts";
 /** La forma de `query` del SDK que usa flowrunner: un prompt, opciones y un stream de mensajes. */
 export type QueryFn = (params: { prompt: string; options?: Options }) => AsyncIterable<SDKMessage>;
 
+/** `deleteSession` del SDK: borra del disco la conversación persistida de una sesión. */
+export type DeleteSessionFn = (sessionId: string, options: { dir: string }) => Promise<void>;
+
 export interface Deps {
   readonly now: () => Date;
   readonly sleep: (ms: number) => Promise<void>;
   readonly notify: (title: string, body: string) => void;
   readonly query: QueryFn;
+  readonly deleteSession: DeleteSessionFn;
   readonly env: NodeJS.ProcessEnv;
 }
 

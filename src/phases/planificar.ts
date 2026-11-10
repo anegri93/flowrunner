@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { deleteSession, type HookCallback } from "@anthropic-ai/claude-agent-sdk";
+import type { HookCallback } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { loadBrain, type Brain } from "../brain/brain.ts";
 import { stateOf } from "../engine/engine.ts";
@@ -30,6 +30,7 @@ import {
 import { changesSince, commitAll, discardChanges, headSha } from "../git/git.ts";
 import { buildIndex, GRAFT_TOOLS, graftMcpServer } from "../graft/graft.ts";
 import { featureText, render } from "../prompts/render.ts";
+import { readLog } from "../store/run-log.ts";
 import type { Outcome, RunEvent } from "../store/events.ts";
 import type { Feature } from "../feature/feature.ts";
 import type { PhaseContext, PhaseFn, RunPaths } from "../runner/types.ts";
@@ -159,19 +160,38 @@ interface Intento {
   readonly inicioSesion: string;
   readonly sinIndice: string | undefined;
   readonly avisados: Set<string>;
+  /** La conversación de este intento: la que se retoma si el gate rechaza su plan. */
+  readonly sesion: { readonly sessionId: string; readonly nombre: string };
 }
 
-/** La sesión de planificar que se puede retomar si el gate rechaza su plan (ADR 0025). */
+/**
+ * La sesión de planificar que se puede retomar (ADR 0025). Es una marca de «el gate rechazó este plan,
+ * con este motivo»: se escribe solo al rechazarlo y se consume al empezar la próxima llamada, así un
+ * proceso que muere a mitad de camino deja al siguiente intento planificando de cero.
+ */
 const sesionFile = (run: RunPaths) => join(run.dir, "planificar-sesion.json");
-const sesionSchema = z.object({ sessionId: z.string().min(1), nombre: z.string().min(1) });
+const sesionSchema = z.object({
+  sessionId: z.string().min(1),
+  nombre: z.string().min(1),
+  /** El motivo del rechazo: el del reintento tiene que ser este, no el de un intento anterior. */
+  motivo: z.string().min(1),
+});
+type SesionMarcada = z.infer<typeof sesionSchema>;
 
 /** El id de la sesión del último intento, o undefined. Un archivo roto cuenta como ausente. */
-export function sesionAnterior(run: RunPaths): { sessionId: string; nombre: string } | undefined {
+export function sesionAnterior(run: RunPaths): SesionMarcada | undefined {
   try {
     return sesionSchema.parse(JSON.parse(readFileSync(sesionFile(run), "utf8")));
   } catch {
     return undefined;
   }
+}
+
+/** Lee la marca y la borra: vale para una sola llamada a la fase. */
+function tomarSesion(run: RunPaths): SesionMarcada | undefined {
+  const sesion = sesionAnterior(run);
+  rmSync(sesionFile(run), { force: true });
+  return sesion;
 }
 
 /**
@@ -205,16 +225,24 @@ export function gateRechazado(
 export const mensajeRetomado = (motivo: string) =>
   `El gate rechazó el plan que devolviste:\n\n${motivo}\n\nCorregí el plan y los tests en este mismo worktree, sin volver a explorar lo que ya leíste, y devolvé el plan completo otra vez.`;
 
-/** El plan pasó el gate: su conversación ya no se retoma. Borrarla del SDK es una limpieza, no un requisito. */
-async function olvidarSesion(run: RunPaths, worktree: string): Promise<void> {
-  const sesion = sesionAnterior(run);
-  rmSync(sesionFile(run), { force: true });
-  if (sesion === undefined) return;
-  try {
-    await deleteSession(sesion.sessionId, { dir: worktree });
-  } catch {
-    // En modo token la conversación vive en la config de Claude de flowrunner, que este proceso no
-    // busca: queda como residuo (ADR 0025).
+/**
+ * Borra del disco las conversaciones de esta llamada que no quedaron marcadas para retomar. Es una
+ * limpieza, no un requisito: una que no se encuentra no es un error.
+ */
+async function olvidarSesiones(
+  ctx: PhaseContext,
+  worktree: string,
+  usadas: readonly string[],
+): Promise<void> {
+  const marcada = sesionAnterior(ctx.run)?.sessionId;
+  for (const id of new Set(usadas)) {
+    if (id === marcada) continue;
+    try {
+      await ctx.deps.deleteSession(id, { dir: worktree });
+    } catch {
+      // En modo token la conversación vive en la config de Claude de flowrunner, que este proceso no
+      // busca: queda como residuo (ADR 0025).
+    }
   }
 }
 
@@ -293,12 +321,10 @@ function textosDeConserva(events: readonly RunEvent[], replan: Replan): string[]
 }
 
 /** El camino de siempre: archiva, resetea, restaura y abre una sesión nueva persistida. */
-async function intentoNuevo(ctx: PhaseContext, comun: Comun): Promise<Intento> {
+async function intentoNuevo(ctx: PhaseContext, comun: Comun, sessionId: string): Promise<Intento> {
   const { run, deps, emit, action } = ctx;
   const { worktree, config, brain, feature } = comun;
   const base = comun.prep.base_sha;
-  // Lo que sigue resetea la rama: la conversación de un intento anterior ya no es sobre este worktree.
-  rmSync(sesionFile(run), { force: true });
   // Cada intento arranca de la base con los tests del plan anterior, si lo hay, tal como quedaron
   // bloqueados: los de un intento rechazado no se arrastran, y una nueva vuelta no reescribe lo que ya
   // estaba bien. En un replan, la base lleva además el código de las sub-tasks ya integradas, para que
@@ -359,7 +385,6 @@ async function intentoNuevo(ctx: PhaseContext, comun: Comun): Promise<Intento> {
       : [{ id: c.id, titulo: task.titulo, alcance: task.alcance, commits: c.shas.length }];
   });
   const instruccion = replanText(previous, replan, implementadas);
-  const sessionId = randomUUID();
   const nombre = sessionName(run, "planificar");
   const result = await runSession(
     {
@@ -377,10 +402,6 @@ async function intentoNuevo(ctx: PhaseContext, comun: Comun): Promise<Intento> {
     },
     { run, deps, emit },
   );
-  // Un intento retomado no reconstruye el índice: si este no lo pudo reconstruir, el próximo arranca
-  // de cero, que lo vuelve a intentar.
-  if (result.tipo === "ok" && sinIndice === undefined)
-    writeFileSync(sesionFile(run), `${JSON.stringify({ sessionId, nombre })}\n`);
   return {
     result,
     restored,
@@ -391,6 +412,7 @@ async function intentoNuevo(ctx: PhaseContext, comun: Comun): Promise<Intento> {
     inicioSesion,
     sinIndice,
     avisados,
+    sesion: { sessionId, nombre },
   };
 }
 
@@ -415,8 +437,8 @@ async function intentoRetomado(
     previous === undefined
       ? { subtasks: [], manuales: [], textos }
       : await ramaAnterior(run, worktree, ctx.events, base, textos, deps.env);
-  // La rama es la que armó el intento nuevo: el gate la deja como estaba, salvo al rearmarla, y ahí
-  // se olvida la sesión. Lo que no entró entonces (chocó) tampoco está ahora.
+  // La rama es la que armó el intento nuevo: el gate la deja como estaba, y si la rearma no marca la
+  // sesión. Lo que no entró entonces (chocó) tampoco está ahora.
   const enRama =
     previous === undefined ? undefined : await commitsDeLaRama(worktree, base, deps.env);
   const armada: Reaplicado = {
@@ -441,9 +463,10 @@ async function intentoRetomado(
     rama,
     armada,
     inicioSesion,
-    // La sesión se guarda solo si el intento nuevo pudo reconstruir el índice.
+    // La sesión se marca solo si el intento que la abrió pudo reconstruir el índice.
     sinIndice: undefined,
     avisados: new Set<string>(),
+    sesion: { sessionId: sesion.sessionId, nombre: sesion.nombre },
   };
 }
 
@@ -500,6 +523,7 @@ async function gateYCierre(ctx: PhaseContext, comun: Comun, intento: Intento): P
 
   const problems = checkPlanShape(plan, feature, worktree, config);
   let kept: string[] = [];
+  let rearmada = false;
   let invalid: string[] = [];
   let nuevos = armada.nuevos;
   let inicioTests = inicioSesion;
@@ -519,9 +543,8 @@ async function gateYCierre(ctx: PhaseContext, comun: Comun, intento: Intento): P
   // sin ello, y un llamador que estaba en su código ya no existe. Con un `conserva` inválido la rama no
   // se toca: el plan vuelve igual, y el próximo intento la ve entera.
   if (invalid.length === 0 && armada.candidatas.some((c) => !kept.includes(c.id))) {
-    // La rama deja de ser la que vio la sesión: si el gate rechaza este plan, el próximo intento no la
-    // retoma (ADR 0025).
-    rmSync(sesionFile(run), { force: true });
+    // La rama deja de ser la que vio la sesión: si el gate rechaza este plan, no se marca para retomar.
+    rearmada = true;
     const final = await conLosTests(worktree, inicioSesion, config.tests_globs, deps.env, () =>
       reaplicar(
         worktree,
@@ -603,11 +626,11 @@ async function gateYCierre(ctx: PhaseContext, comun: Comun, intento: Intento): P
     }
   }
   if (problems.length > 0) {
-    return {
-      tipo: "falla",
-      clase: "gate",
-      motivo: `el plan no pasó el gate:\n- ${problems.join("\n- ")}`,
-    };
+    const motivo = `el plan no pasó el gate:\n- ${problems.join("\n- ")}`;
+    // Se retoma solo sobre el worktree que vio la sesión, y con el índice que miró su gate (ADR 0025).
+    if (!rearmada && sinIndice === undefined)
+      writeFileSync(sesionFile(run), `${JSON.stringify({ ...intento.sesion, motivo })}\n`);
+    return { tipo: "falla", clase: "gate", motivo };
   }
   const locked = Object.fromEntries(
     written.map((path) => [path, sha256(readFileSync(join(worktree, path), "utf8"))]),
@@ -621,7 +644,6 @@ async function gateYCierre(ctx: PhaseContext, comun: Comun, intento: Intento): P
   // Antes de los artefactos: si se corta entre los dos, el próximo intento no rearma con las
   // candidatas de un plan que ya no es el anterior.
   await soltarAnterior(run, worktree, deps.env);
-  await olvidarSesion(run, worktree);
   writePlanArtifacts(
     run,
     plan,
@@ -633,17 +655,27 @@ async function gateYCierre(ctx: PhaseContext, comun: Comun, intento: Intento): P
 
 export const planificar: PhaseFn = async (ctx) => {
   const comun = armarComun(ctx);
-  const sesion = sesionAnterior(ctx.run);
+  const sesion = tomarSesion(ctx.run);
   const motivo = gateRechazado(ctx.events, ctx.action.instruccion);
-  if (sesion !== undefined && motivo !== undefined) {
-    const retomado = await intentoRetomado(ctx, comun, sesion, motivo);
-    if (retomado.result.tipo === "ok" || retomado.result.tipo === "limite")
-      return gateYCierre(ctx, comun, retomado);
-    ctx.emit({
-      tipo: "aviso",
-      fase: "planificar",
-      texto: `no se pudo retomar la sesión del plan (${retomado.result.motivo}): planifica de cero`,
-    });
+  const usadas = sesion === undefined ? [] : [sesion.sessionId];
+  try {
+    if (sesion !== undefined && motivo !== undefined && sesion.motivo === motivo) {
+      const retomado = await intentoRetomado(ctx, comun, sesion, motivo);
+      if (retomado.result.tipo === "ok" || retomado.result.tipo === "limite")
+        return await gateYCierre(ctx, comun, retomado);
+      // Si lo que gastó la sesión retomada detuvo el run por su tope, otra sesión entera lo pasaría más.
+      if (stateOf(readLog(ctx.run.dir).events).status !== "en_curso")
+        return { tipo: "falla", clase: retomado.result.clase, motivo: retomado.result.motivo };
+      ctx.emit({
+        tipo: "aviso",
+        fase: "planificar",
+        texto: `no se pudo retomar la sesión del plan (${retomado.result.motivo}): planifica de cero`,
+      });
+    }
+    const sessionId = randomUUID();
+    usadas.push(sessionId);
+    return await gateYCierre(ctx, comun, await intentoNuevo(ctx, comun, sessionId));
+  } finally {
+    await olvidarSesiones(ctx, comun.worktree, usadas);
   }
-  return gateYCierre(ctx, comun, await intentoNuevo(ctx, comun));
 };

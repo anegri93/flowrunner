@@ -29,6 +29,7 @@ const deps: Deps = {
   query: () => {
     throw new Error("sin modelo en este test");
   },
+  deleteSession: () => Promise.resolve(),
   env: {},
 };
 

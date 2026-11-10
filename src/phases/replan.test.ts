@@ -346,17 +346,10 @@ describe("un replan conserva el código", { timeout: 30_000 }, () => {
     // pierde todo lo implementado.
     test("si el proceso se corta en pleno rearmado, el reintento retoma desde la punta vieja", async () => {
       const { run, deps, worktree, base } = await implementado([SCRIPT_1, SCRIPT_2]);
-      const tip = git(worktree, "rev-parse", "HEAD");
       appendEvent(run.dir, { tipo: "rehacer", desde: "planificar" });
       appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
       // Lo que alcanzó a hacer el intento cortado: guardar la punta y volver la rama a la base.
-      const events = readLog(run.dir).events;
-      await ramaAnterior(
-        run,
-        worktree,
-        { preparado: events.findLastIndex((e) => e.tipo === "preparado"), base },
-        deps.env,
-      );
+      await ramaAnterior(run, worktree, readLog(run.dir).events, base, [], deps.env);
       await resetHard(worktree, base, deps.env);
       expect(await planificar(contextFor(run, "planificar", deps, { intento: 2 }))).toEqual({
         tipo: "ok",
@@ -371,7 +364,90 @@ describe("un replan conserva el código", { timeout: 30_000 }, () => {
       expect(existsSync(join(worktree, "src/s1/s1.js"))).toBe(true);
       // La punta vieja se soltó recién con el plan aprobado por el gate.
       expect(git(worktree, "for-each-ref", `refs/flowrunner/${run.id}/`)).toBe("");
-      expect(git(worktree, "cat-file", "-t", tip)).toBe("commit");
+    });
+  });
+
+  describe("lo que la revisión encontró", () => {
+    // Si regresiona, el primer rechazo del gate borra el motivo del replan, y en el segundo intento se
+    // conserva justo la sub-task que lo motivó.
+    test("el motivo del replan sigue valiendo después de un gate rechazado", async () => {
+      // El plan de antes, entero y conservado, ST-6 incluida, con el mismo alcance.
+      const conST6: Plan = {
+        ...PLAN_1,
+        subtareas: PLAN_1.subtareas.map((t) => ({ ...t, conserva: true })),
+      };
+      const falta: SimScript = {
+        calls: [],
+        output: {
+          ...conST6,
+          subtareas: conST6.subtareas.map((t) => ({ ...t, conserva: false })),
+          tests: [...conST6.tests, "tests/falta.mjs"],
+        },
+      };
+      const { run, deps } = await implementado([SCRIPT_1, falta, { calls: [], output: conST6 }]);
+      appendEvent(run.dir, { tipo: "rehacer", desde: "planificar" });
+      const first = await fase(run, deps, "planificar", planificar);
+      expect(first.tipo === "falla" && first.motivo).toContain("tests/falta.mjs");
+      const motivo = first.tipo === "falla" ? first.motivo : "";
+      const second = await fase(run, deps, "planificar", planificar, {
+        intento: 2,
+        instruccion: motivo,
+      });
+      expect(second.tipo === "falla" && second.motivo).toContain(
+        "ST-6 la nombran los pedidos de cambios o el motivo del replan: no se puede conservar",
+      );
+    });
+
+    // Si regresiona, una sub-task conservada no cumple el criterio que el plan nuevo le pide, nadie la
+    // vuelve a implementar, y verificar la encuentra en rojo.
+    test("una conservada cuyo criterio no pasa con su código no se conserva", async () => {
+      const nuevoAC5: SimScript = {
+        calls: [
+          writeTest("tests/ac5b.mjs", "src/s5/otro.js"),
+          writeTest("tests/ac6b.mjs", "src/s6b/s6.js"),
+        ],
+        output: {
+          ...PLAN_2,
+          criterios: PLAN_2.criterios.map((c) =>
+            c.id === "AC-5" ? { ...c, comando: "node tests/ac5b.mjs" } : c,
+          ),
+          tests: [...PLAN_2.tests.filter((t) => t !== "tests/ac5.mjs"), "tests/ac5b.mjs"],
+        },
+      };
+      const { run, deps } = await implementado([SCRIPT_1, nuevoAC5]);
+      appendEvent(run.dir, { tipo: "rehacer", desde: "planificar" });
+      const outcome = await fase(run, deps, "planificar", planificar);
+      expect(outcome.tipo === "falla" && outcome.motivo).toContain(
+        "ST-5 tiene conserva: true pero AC-5 no pasa con su código",
+      );
+    });
+
+    // Si regresiona, las candidatas de un replan rechazado se reusan después de que otra fase cambió la
+    // rama, y lo que se commiteó en el medio se pierde.
+    test("lo que se commiteó después de un replan rechazado no se pierde en el siguiente", async () => {
+      const invalido: SimScript = {
+        ...SCRIPT_2,
+        output: {
+          ...PLAN_2,
+          subtareas: PLAN_2.subtareas.map((t) => (t.id === "ST-6" ? { ...t, conserva: true } : t)),
+        },
+      };
+      const { run, deps, worktree, base } = await implementado([SCRIPT_1, invalido, SCRIPT_2]);
+      appendEvent(run.dir, { tipo: "rehacer", desde: "planificar" });
+      expect((await fase(run, deps, "planificar", planificar)).tipo).toBe("falla");
+      // La persona sigue desde verificar y arregla algo a mano. Lo que dejó sin commitear el intento
+      // rechazado, sus tests, no es parte del arreglo.
+      await resetHard(worktree, "HEAD", deps.env);
+      appendEvent(run.dir, { tipo: "rehacer", desde: "verificar" });
+      await fase(run, deps, "verificar", () =>
+        Promise.resolve({ tipo: "pregunta", motivo: "algo", unidades: ["ST-6"] }),
+      );
+      writeFileSync(join(worktree, "NOTAS.md"), "arreglado a mano\n");
+      await commitAll(worktree, "fix: arreglo a mano", { "Flowrunner-Manual": run.id }, deps.env);
+      appendEvent(run.dir, { tipo: "rehacer", desde: "planificar" });
+      expect(await fase(run, deps, "planificar", planificar)).toEqual({ tipo: "ok" });
+      expect(subjects(worktree, base)).toContain("fix: arreglo a mano");
+      expect(existsSync(join(worktree, "NOTAS.md"))).toBe(true);
     });
   });
 });

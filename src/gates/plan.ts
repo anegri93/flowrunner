@@ -275,3 +275,31 @@ export async function checkCommandsFail(
   }
   return problems;
 }
+
+/**
+ * Los criterios de las sub-tasks conservadas de un replan (ADR 0024): su código ya está y no vuelve a
+ * correr, así que cada comando que es solo de ellas tiene que pasar. Uno compartido con una sub-task
+ * nueva lo corre `checkCommandsFail`, en rojo.
+ */
+export async function checkCommandsPass(
+  plan: Plan,
+  worktree: string,
+  env: NodeJS.ProcessEnv,
+  kept: readonly string[],
+  skip: (comando: string) => boolean = () => false,
+): Promise<string[]> {
+  const onlyKept = (comando: string) =>
+    plan.criterios.filter((c) => c.comando === comando).every((c) => kept.includes(c.subtarea));
+  const run = acceptanceRunner(worktree, env);
+  const problems: string[] = [];
+  for (const c of plan.criterios.filter(
+    (c) => kept.includes(c.subtarea) && onlyKept(c.comando) && !skip(c.comando),
+  )) {
+    const result = await run(c.comando);
+    if (result.code !== 0)
+      problems.push(
+        `${c.subtarea} tiene conserva: true pero ${c.id} no pasa con su código (\`${c.comando}\`, exit ${String(result.code)}): sacale conserva, o asigná el criterio a la sub-task que lo implementa:\n${tail(result, 8)}`,
+      );
+  }
+  return problems;
+}

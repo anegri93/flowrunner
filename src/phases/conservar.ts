@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import type { Candidata } from "../gates/conserva.ts";
-import type { Subtask } from "../gates/plan.ts";
+import type { Plan, Subtask } from "../gates/plan.ts";
 import {
   changesSince,
   cherryPick,
@@ -17,11 +17,15 @@ import {
   headSha,
   resetHard,
 } from "../git/git.ts";
+import { callersOf } from "../gates/llamadores.ts";
+import { GraftError, llamadoresDe } from "../graft/contexto.ts";
 import type { PhaseContext, RunPaths } from "../runner/types.ts";
+import type { RunEvent } from "../store/events.ts";
 import { isTestFile } from "../tripwires/rules.ts";
 
 export const SUBTASK_TRAILER = "Flowrunner-Subtask";
 export const MANUAL_TRAILER = "Flowrunner-Manual";
+const RUN_TRAILER = "Flowrunner-Run";
 
 /** La ref que mantiene viva la punta de antes del replan: un `gc` no se lleva sus commits. */
 export const refAnterior = (run: RunPaths) => `refs/flowrunner/${run.id}/anterior`;
@@ -35,7 +39,12 @@ export interface Rama {
 
 const SIN_RAMA: Rama = { subtasks: [], manuales: [] };
 
-/** Los commits de base..HEAD con su trailer de sub-task o de arreglo manual, en orden. */
+/**
+ * Los commits de base..HEAD con su trailer de sub-task o de arreglo manual, en orden. Un commit sin
+ * ningún trailer de flowrunner es de la persona (`resume` acepta los que hizo por su cuenta durante
+ * `fix --yo`): va con los manuales. Solo se descarta lo que flowrunner commiteó sin ser una sub-task,
+ * como los tests del plan, que el plan nuevo reescribe.
+ */
 export async function commitsDeLaRama(
   worktree: string,
   base: string,
@@ -47,7 +56,7 @@ export async function commitsDeLaRama(
     [
       "log",
       "--reverse",
-      `--format=%H%x09${trailer(SUBTASK_TRAILER)}%x09${trailer(MANUAL_TRAILER)}`,
+      `--format=%H%x09${trailer(SUBTASK_TRAILER)}%x09${trailer(MANUAL_TRAILER)}%x09${trailer(RUN_TRAILER)}`,
       `${base}..HEAD`,
     ],
     env,
@@ -55,11 +64,10 @@ export async function commitsDeLaRama(
   const byId = new Map<string, string[]>();
   const manuales: string[] = [];
   for (const line of out.split("\n").filter((l) => l !== "")) {
-    const [sha = "", subtask = "", manual = ""] = line.split("\t");
+    const [sha = "", subtask = "", manual = "", runId = ""] = line.split("\t");
     const id = subtask.split(",")[0]?.trim() ?? "";
     if (id !== "") byId.set(id, [...(byId.get(id) ?? []), sha]);
-    else if (manual.trim() !== "") manuales.push(sha);
-    // Lo demás, como el commit de los tests del plan, lo reescribe el plan nuevo.
+    else if (manual.trim() !== "" || runId.trim() === "") manuales.push(sha);
   }
   return { subtasks: [...byId].map(([id, shas]) => ({ id, shas })), manuales };
 }
@@ -176,6 +184,13 @@ const candidatasSchema = z.object({
   anterior: z.string(),
   subtasks: z.array(z.object({ id: z.string(), shas: z.array(z.string()) })),
   manuales: z.array(z.string()),
+  /**
+   * Los pedidos y el motivo con que empezó el replan, para la regla (c): el engine reemplaza la
+   * instrucción por el motivo del gate en cada reintento, y el motivo del `rerun` se perdería.
+   */
+  textos: z.array(z.string()),
+  /** Cuántos eventos tenía el log al guardarlo: si después corrió otra fase, la rama ya es otra. */
+  log: z.int(),
 });
 type CandidatasFile = z.infer<typeof candidatasSchema>;
 
@@ -188,11 +203,19 @@ async function refSha(worktree: string, ref: string, env: NodeJS.ProcessEnv) {
   }
 }
 
-/** Las candidatas que dejó un intento anterior de esta misma preparación, si su ref sigue en pie. */
+/** La preparación vigente: otra preparación (`rerun --desde preparar`) es otra rama. */
+const preparadoEn = (events: readonly RunEvent[]) =>
+  events.findLastIndex((e) => e.tipo === "preparado");
+
+/**
+ * Las candidatas que dejó un intento anterior de este replan, si siguen valiendo: la misma preparación
+ * y la misma base, la ref en pie, y ninguna otra fase ni arreglo a mano en el medio.
+ */
 async function guardadas(
   run: RunPaths,
   worktree: string,
-  donde: { readonly preparado: number; readonly base: string },
+  events: readonly RunEvent[],
+  base: string,
   env: NodeJS.ProcessEnv,
 ): Promise<CandidatasFile | undefined> {
   if (!existsSync(candidatasFile(run))) return undefined;
@@ -202,8 +225,22 @@ async function guardadas(
   } catch {
     return undefined;
   }
-  if (data.preparado !== donde.preparado || data.base !== donde.base) return undefined;
+  if (data.preparado !== preparadoEn(events) || data.base !== base) return undefined;
+  const otraFase = events
+    .slice(data.log)
+    .some(
+      (e) =>
+        (e.tipo === "accion_iniciada" && e.fase !== "planificar") ||
+        e.tipo === "arreglo_manual_iniciado" ||
+        e.tipo === "arreglo_manual",
+    );
+  if (otraFase) return undefined;
   return (await refSha(worktree, refAnterior(run), env)) === data.anterior ? data : undefined;
+}
+
+export interface RamaAnterior extends Rama {
+  /** Los textos de la regla (c): los de cuando empezó el replan, más los de este intento. */
+  readonly textos: readonly string[];
 }
 
 /**
@@ -214,26 +251,37 @@ async function guardadas(
 export async function ramaAnterior(
   run: RunPaths,
   worktree: string,
-  donde: { readonly preparado: number; readonly base: string },
+  events: readonly RunEvent[],
+  base: string,
+  /** Los pedidos de cambios y el motivo de este intento. */
+  textos: readonly string[],
   env: NodeJS.ProcessEnv,
-): Promise<Rama> {
-  const saved = await guardadas(run, worktree, donde, env);
-  if (saved !== undefined) return { subtasks: saved.subtasks, manuales: saved.manuales };
-  const rama = await commitsDeLaRama(worktree, donde.base, env);
+): Promise<RamaAnterior> {
+  const saved = await guardadas(run, worktree, events, base, env);
+  if (saved !== undefined)
+    return {
+      subtasks: saved.subtasks,
+      manuales: saved.manuales,
+      textos: [...new Set([...saved.textos, ...textos])],
+    };
+  const rama = await commitsDeLaRama(worktree, base, env);
   if (rama.subtasks.length === 0 && rama.manuales.length === 0) {
     await soltarAnterior(run, worktree, env);
-    return SIN_RAMA;
+    return { ...SIN_RAMA, textos };
   }
   const anterior = await headSha(worktree, env);
   await conTurnoGit(worktree, () => git(worktree, ["update-ref", refAnterior(run), anterior], env));
   const data: CandidatasFile = {
-    ...donde,
+    preparado: preparadoEn(events),
+    base,
     anterior,
     subtasks: rama.subtasks.map((c) => ({ id: c.id, shas: [...c.shas] })),
     manuales: [...rama.manuales],
+    textos: [...textos],
+    log: events.length,
   };
   writeFileSync(candidatasFile(run), `${JSON.stringify(data, null, 2)}\n`);
-  return rama;
+  return { ...rama, textos };
 }
 
 /**
@@ -288,4 +336,45 @@ export async function conLosTests<T>(
     }
   }
   return result;
+}
+
+/**
+ * Los llamadores de cada `simbolo` que el plan cambia, para la regla (d) de `checkConserva`. Si graft
+ * no puede responder, ese símbolo va a `sinLlamadores`: no saber quién lo llama no es «nadie».
+ */
+export async function llamadoresDelPlan(
+  plan: Pick<Plan, "cambia_lo_existente">,
+  worktree: string,
+  indexDir: string,
+  /** Por qué el índice no está al día, si no lo está. */
+  sinIndice: string | undefined,
+  env: NodeJS.ProcessEnv,
+): Promise<{
+  readonly llamadores: Map<string, string[]>;
+  readonly sinLlamadores: Map<string, string>;
+}> {
+  const llamadores = new Map<string, string[]>();
+  const sinLlamadores = new Map<string, string>();
+  const simbolos = new Set(
+    plan.cambia_lo_existente.flatMap((c) =>
+      c.simbolo === undefined || c.simbolo.trim() === "" ? [] : [c.simbolo.trim()],
+    ),
+  );
+  for (const simbolo of simbolos) {
+    if (sinIndice !== undefined) {
+      sinLlamadores.set(simbolo, sinIndice);
+      continue;
+    }
+    try {
+      // graft no ve una llamada a través de una variable sin tipo (CUENTAS-1): grep, como el gate de
+      // llamadores, completa la unión. Lo conservador es la unión.
+      const porGraft = await llamadoresDe(worktree, indexDir, simbolo, env);
+      const porTexto = await callersOf(simbolo, worktree, env);
+      llamadores.set(simbolo, [...new Set([...porGraft, ...porTexto])].sort());
+    } catch (error) {
+      if (!(error instanceof GraftError)) throw error;
+      sinLlamadores.set(simbolo, error.message);
+    }
+  }
+  return { llamadores, sinLlamadores };
 }

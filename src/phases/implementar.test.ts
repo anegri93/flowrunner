@@ -29,6 +29,7 @@ import {
   unitComandos,
   unitScope,
 } from "./implementar.ts";
+import { readPlan, writePlanArtifacts } from "./planificar.ts";
 
 const st = (id: string, alcance: string[], extra: Partial<Subtask> = {}): Subtask => ({
   id,
@@ -239,6 +240,28 @@ describe("implementar", () => {
     expect(sim.records[0]?.decisions[0]).toMatchObject({ tool: "Read", decision: "deny" });
     expect(sim.records[0]?.decisions[0]?.reason).toContain("secretos");
     expect(git(featureWt, "show", "--name-only", "--format=", "HEAD")).toBe("src/a/uno.js");
+  });
+
+  // Si regresiona, una sub-task que un replan conservó pero cuyo código ya no está en la rama (un replan
+  // posterior, rechazado, la sacó) se da por integrada sin código.
+  test("una conservada se da por integrada solo si su commit está en la rama", async () => {
+    const sim = simQuery(
+      byUnit({ "ST-2": [{ calls: [write("src/b/dos.js", "export const b = 2;\n")] }] }),
+    );
+    const deps = testDeps({ query: sim.query });
+    const plan = planWith([st("ST-1", ["src/a/"]), st("ST-2", ["src/b/"])]);
+    const { run, featureWt } = await plannedRun(plan, TESTS, deps);
+    const head = git(featureWt, "rev-parse", "HEAD");
+    writePlanArtifacts(run, plan, readPlan(run).locked, {
+      "ST-1": [head],
+      "ST-2": ["0123456789abcdef0123456789abcdef01234567"],
+    });
+    expect(await implementar(contextFor(run, "implementar", deps))).toEqual({ tipo: "ok" });
+    expect(sim.records.map((r) => /# Sub-task (ST-\d+)/.exec(r.prompt)?.[1])).toEqual(["ST-2"]);
+    const conservadas = readLog(run.dir).events.flatMap((e) =>
+      e.tipo === "unidad" && e.motivo === "conservada del plan anterior" ? [e.unidad] : [],
+    );
+    expect(conservadas).toEqual(["ST-1"]);
   });
 
   // Si regresiona, las sub-tasks independientes corren de a una y el run tarda el doble.

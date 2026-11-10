@@ -14,12 +14,17 @@ import { dirname, join } from "node:path";
 import { loadBrain, type Brain } from "../brain/brain.ts";
 import { isVerifyCommand, loadRepoConfig } from "../config/load.ts";
 import type { RepoConfig } from "../config/schemas.ts";
-import { testsInScope, testsTouched, undeclared } from "../gates/existente.ts";
+import { existedAt, testsInScope, testsTouched, undeclared } from "../gates/existente.ts";
 import { checkConserva, conservadas, type ConservaInput } from "../gates/conserva.ts";
 import { callersOutOfScope } from "../gates/llamadores.ts";
-import { checkCommandsFail, checkPlanShape, planSchema, type Plan } from "../gates/plan.ts";
+import {
+  checkCommandsFail,
+  checkCommandsPass,
+  checkPlanShape,
+  planSchema,
+  type Plan,
+} from "../gates/plan.ts";
 import { changesSince, commitAll, discardChanges, headSha } from "../git/git.ts";
-import { GraftError, llamadoresDe } from "../graft/contexto.ts";
 import { buildIndex, GRAFT_TOOLS, graftMcpServer } from "../graft/graft.ts";
 import { featureText, render } from "../prompts/render.ts";
 import type { PhaseFn, RunPaths } from "../runner/types.ts";
@@ -30,7 +35,14 @@ import { isTestFile } from "../tripwires/rules.ts";
 import { copyEnvFiles } from "./env-files.ts";
 import { runFixers } from "./fixers.ts";
 import { graftIndex, prepared, runFeature } from "./inputs.ts";
-import { conLosTests, enAnterior, ramaAnterior, reaplicar, soltarAnterior } from "./conservar.ts";
+import {
+  conLosTests,
+  enAnterior,
+  llamadoresDelPlan,
+  ramaAnterior,
+  reaplicar,
+  soltarAnterior,
+} from "./conservar.ts";
 import {
   archivePlan,
   previousDir,
@@ -119,19 +131,8 @@ export const planificar: PhaseFn = async (ctx) => {
   // estaba bien. En un replan, la base lleva además el código de las sub-tasks ya integradas, para que
   // el planificador lo vea y decida qué conserva (ADR 0024).
   const previous = archivePlan(run) ? readPlanAt(previousDir(run)) : undefined;
-  const rama =
-    previous === undefined
-      ? { subtasks: [], manuales: [] }
-      : await ramaAnterior(
-          run,
-          worktree,
-          {
-            preparado: ctx.events.findLastIndex((e) => e.tipo === "preparado"),
-            base,
-          },
-          deps.env,
-        );
   // Del worktree, o de la punta vieja si un intento cortado en pleno rearmado ya no los dejó ahí.
+  // Antes de `ramaAnterior`, que puede mover la ref a la rama de ahora.
   const restored: (readonly [string, string])[] = [];
   for (const [path, hash] of Object.entries(previous?.locked ?? {})) {
     const file = join(worktree, path);
@@ -142,6 +143,12 @@ export const planificar: PhaseFn = async (ctx) => {
         : await enAnterior(run, worktree, path, deps.env);
     if (content !== undefined && sha256(content) === hash) restored.push([path, content]);
   }
+  const replan = replanOf(ctx.events, action.instruccion);
+  const textos = [...replan.pedidos, ...(replan.motivo === undefined ? [] : [replan.motivo])];
+  const rama =
+    previous === undefined
+      ? { subtasks: [], manuales: [], textos }
+      : await ramaAnterior(run, worktree, ctx.events, base, textos, deps.env);
   const avisados = new Set<string>();
   // Con 0 candidatas es el `resetHard` de siempre.
   const armada = await reaplicar(
@@ -204,7 +211,6 @@ export const planificar: PhaseFn = async (ctx) => {
       ? []
       : [{ id: c.id, titulo: task.titulo, alcance: task.alcance, commits: c.shas.length }];
   });
-  const replan = replanOf(ctx.events, action.instruccion);
   const instruccion = replanText(previous, replan, implementadas);
   const result = await runSession(
     {
@@ -274,7 +280,7 @@ export const planificar: PhaseFn = async (ctx) => {
       plan,
       anteriores: previous?.subtareas ?? [],
       candidatas: armada.candidatas,
-      pedidos: [...replan.pedidos, ...(replan.motivo === undefined ? [] : [replan.motivo])],
+      pedidos: rama.textos,
       ...(await llamadoresDelPlan(plan, worktree, graftIndex(run), sinIndice, deps.env)),
     };
     invalid = checkConserva(conserva);
@@ -290,7 +296,8 @@ export const planificar: PhaseFn = async (ctx) => {
         worktree,
         base,
         { subtasks: armada.candidatas.filter((c) => kept.includes(c.id)), manuales: rama.manuales },
-        plan.subtareas,
+        // Lo que dependía de algo que choca, en el plan nuevo o en el viejo, tampoco queda.
+        [...plan.subtareas, ...(previous?.subtareas ?? [])],
         deps.env,
         emit,
         avisados,
@@ -309,7 +316,13 @@ export const planificar: PhaseFn = async (ctx) => {
   // el planificador lo cuente.
   const touched = [
     ...testsTouched(changes, config.tests_globs),
-    ...testsInScope(plan.subtareas, worktree, config.tests_globs),
+    // Los que existían en la base: uno que escribió una sub-task conservada no es «existente».
+    ...(await existedAt(
+      worktree,
+      base,
+      testsInScope(plan.subtareas, worktree, config.tests_globs),
+      deps.env,
+    )),
   ];
   for (const path of undeclared(touched, plan.cambia_lo_existente)) {
     problems.push(
@@ -328,6 +341,12 @@ export const planificar: PhaseFn = async (ctx) => {
     const env = copyEnvFiles(ctx.state.repo, worktree, config.env_files);
     if (!env.ok) return { tipo: "falla", clase: "entorno", motivo: env.motivo };
     try {
+      // Lo conservado no vuelve a correr: sus criterios tienen que pasar ya con su código.
+      problems.push(
+        ...(await checkCommandsPass(plan, worktree, deps.env, kept, (comando) =>
+          isVerifyCommand(config, comando),
+        )),
+      );
       problems.push(
         // «verify en verde» pasa sobre la base, como debe: lo comprueba verificar, no este rojo. Un
         // criterio de lo conservado ya pasa: su código está. Uno compartido con lo nuevo tiene que fallar.
@@ -373,37 +392,3 @@ export const planificar: PhaseFn = async (ctx) => {
   );
   return { tipo: "ok" };
 };
-
-/**
- * Los llamadores de cada `simbolo` que el plan cambia, para la regla (d) de `checkConserva`. Si graft
- * no puede responder, ese símbolo va a `sinLlamadores`: no saber quién lo llama no es «nadie».
- */
-async function llamadoresDelPlan(
-  plan: Pick<Plan, "cambia_lo_existente">,
-  worktree: string,
-  indexDir: string,
-  /** Por qué el índice no está al día, si no lo está. */
-  sinIndice: string | undefined,
-  env: NodeJS.ProcessEnv,
-): Promise<Pick<ConservaInput, "llamadores" | "sinLlamadores">> {
-  const llamadores = new Map<string, string[]>();
-  const sinLlamadores = new Map<string, string>();
-  const simbolos = new Set(
-    plan.cambia_lo_existente.flatMap((c) =>
-      c.simbolo === undefined || c.simbolo.trim() === "" ? [] : [c.simbolo.trim()],
-    ),
-  );
-  for (const simbolo of simbolos) {
-    if (sinIndice !== undefined) {
-      sinLlamadores.set(simbolo, sinIndice);
-      continue;
-    }
-    try {
-      llamadores.set(simbolo, await llamadoresDe(worktree, indexDir, simbolo, env));
-    } catch (error) {
-      if (!(error instanceof GraftError)) throw error;
-      sinLlamadores.set(simbolo, error.message);
-    }
-  }
-  return { llamadores, sinLlamadores };
-}

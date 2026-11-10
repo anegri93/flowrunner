@@ -166,6 +166,27 @@ describe("checkConserva", () => {
     expect(conservadas(i)).toEqual([]);
   });
 
+  // Si regresiona, se conserva código que usa el de una sub-task que se saca de la rama, porque el plan
+  // nuevo le borró la dependencia.
+  test("una sub-task que dependía en el plan anterior de una que no se conserva no se conserva", () => {
+    const ST6 = st("ST-6", ["src/s6/"]);
+    const plan = {
+      subtareas: [ST1, { ...st("ST-2", ["src/s2/"]), conserva: true }, st("ST-6", ["src/s6b/"])],
+      cambia_lo_existente: [],
+    };
+    const i = input({
+      plan,
+      anteriores: [ST1, st("ST-2", ["src/s2/"], { depende_de: ["ST-6"] }), ST6],
+      candidatas: [
+        { id: "ST-2", shas: ["b1"] },
+        { id: "ST-6", shas: ["f1"] },
+      ],
+    });
+    expect(checkConserva(i)).toEqual([
+      "ST-2 depende de ST-6, que no se conserva: no se puede conservar",
+    ]);
+  });
+
   test("sin conserva, ni conserva: false, no hay nada que chequear", () => {
     const plan = {
       subtareas: [{ ...st("ST-9", ["src/s9/"]), conserva: false }, st("ST-8", ["x/"])],

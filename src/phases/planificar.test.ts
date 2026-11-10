@@ -266,6 +266,20 @@ describe("planificar", () => {
       );
     });
 
+    // Si regresiona, un test que no existía en la base cuenta como «existente»: en un replan, el que
+    // escribió una sub-task conservada y nombra en su alcance pide declararse en cambia_lo_existente.
+    test("un test del alcance que no existía en la base no es un test existente", async () => {
+      const inScope = {
+        ...goodPlan,
+        subtareas: goodPlan.subtareas.map((t) => ({
+          ...t,
+          alcance: ["src/export/", "tests/ac1.mjs"],
+        })),
+      };
+      const { run, deps } = await prepared_([{ calls: [writeTest], output: inScope }]);
+      expect(await planificar(contextFor(run, "planificar", deps))).toEqual({ tipo: "ok" });
+    });
+
     test("el prompt dice que cambiar lo existente no es una decisión del planificador", async () => {
       const { run, deps, sim } = await prepared_([{ calls: [writeTest], output: goodPlan }]);
       await planificar(contextFor(run, "planificar", deps));

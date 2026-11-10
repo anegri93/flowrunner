@@ -1,11 +1,12 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { git, repoWith } from "../../test/helpers/git.ts";
+import { git, repoWith, tempDir } from "../../test/helpers/git.ts";
 import type { Subtask } from "../gates/plan.ts";
 import { commitAll } from "../git/git.ts";
 import type { NewEvent } from "../store/events.ts";
-import { commitsDeLaRama, reaplicar } from "./conservar.ts";
+import { buildIndex } from "../graft/graft.ts";
+import { commitsDeLaRama, llamadoresDelPlan, reaplicar } from "./conservar.ts";
 
 const ENV = {
   ...process.env,
@@ -59,6 +60,21 @@ describe("commitsDeLaRama", () => {
         { id: "ST-2", shas: [b1] },
       ],
       manuales: [m],
+    });
+  });
+
+  // Si regresiona, un replan borra en silencio lo que la persona commiteó por su cuenta durante
+  // `fix --yo`: `resume` acepta esos commits tal cual, sin trailer.
+  test("un commit sin trailers de flowrunner es de la persona: va con los manuales", async () => {
+    const repo = repoWith({ "README.md": "# r\n" });
+    const base = git(repo, "rev-parse", "HEAD");
+    await commit(repo, { "tests/ac1.mjs": "x\n" }, { "Flowrunner-Run": "R" });
+    const a1 = await commit(repo, { "src/ST-1/a.js": "1\n" }, { "Flowrunner-Subtask": "ST-1" });
+    const propio = await commit(repo, { "docs/propio.md": "mío\n" }, {});
+    const m = await commit(repo, { "docs/nota.md": "a mano\n" }, { "Flowrunner-Manual": "R" });
+    expect(await commitsDeLaRama(repo, base, ENV)).toEqual({
+      subtasks: [{ id: "ST-1", shas: [a1] }],
+      manuales: [propio, m],
     });
   });
 });
@@ -167,5 +183,36 @@ describe("reaplicar", () => {
     expect(avisos).toEqual([
       `el arreglo a mano ${m.slice(0, 7)} no se pudo reaplicar sobre la base y se descartó: con \`git cherry-pick ${m}\` en el worktree se recupera`,
     ]);
+  });
+});
+
+describe("llamadoresDelPlan", () => {
+  const cambio = (simbolo: string) => ({
+    cambia_lo_existente: [{ que: "cambia", donde: "src/servicio.js:1", criterio: "AC-1", simbolo }],
+  });
+
+  // Si regresiona, la regla (d) depende solo de graft, que no ve una llamada a través de una variable
+  // sin tipo (CUENTAS-1), y se conserva una sub-task que llama a lo que el plan cambia.
+  test("suma los llamadores que encuentra grep a los de graft", async () => {
+    const repo = repoWith({
+      "src/servicio.js": "export class Servicio {\n  metodo(x) {\n    return x;\n  }\n}\n",
+      "src/s2/a.js":
+        'import { Servicio } from "../servicio.js";\nconst s = app.get(Servicio);\ns.metodo(1);\n',
+    });
+    const index = tempDir("graft-index-");
+    await buildIndex(repo, index, ENV);
+    const out = await llamadoresDelPlan(cambio("Servicio.metodo"), repo, index, undefined, ENV);
+    expect(out.llamadores.get("Servicio.metodo")).toContain("src/s2/a.js");
+    expect(out.sinLlamadores.size).toBe(0);
+  });
+
+  // Si regresiona, un graft sin índice pasa como «nadie lo llama».
+  test("sin índice al día, o si graft falla, el símbolo queda sin llamadores conocidos", async () => {
+    const repo = repoWith({ "src/servicio.js": "export function tomar() {}\n" });
+    const sinIndice = await llamadoresDelPlan(cambio("tomar"), repo, "/no/hay", "se rompió", ENV);
+    expect([...sinIndice.sinLlamadores]).toEqual([["tomar", "se rompió"]]);
+    const roto = await llamadoresDelPlan(cambio("tomar"), repo, tempDir("vacio-"), undefined, ENV);
+    expect(roto.sinLlamadores.has("tomar")).toBe(true);
+    expect(roto.llamadores.has("tomar")).toBe(false);
   });
 });

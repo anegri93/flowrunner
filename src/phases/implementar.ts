@@ -18,6 +18,7 @@ import {
   commitAll,
   git,
   headSha,
+  isAncestor,
   removeWorktree,
   type FileChange,
 } from "../git/git.ts";
@@ -585,14 +586,16 @@ export const implementar: PhaseFn = async (ctx) => {
   // Con `unidades` (un `fix` o una vuelta) no: si nombra una conservada, corre sobre su código.
   if (action.unidades === undefined) {
     for (const t of todo) {
-      const shas = plan.conservadas[t.id];
-      if (shas === undefined || integrated.has(t.id)) continue;
+      const sha = plan.conservadas[t.id]?.at(-1);
+      if (sha === undefined || integrated.has(t.id)) continue;
+      // Un replan posterior, rechazado, pudo haberlo sacado de la rama: sin su commit, se implementa.
+      if (!(await isAncestor(featureWt, sha, deps.env))) continue;
       emit({
         tipo: "unidad",
         fase: "implementar",
         unidad: t.id,
         estado: "integrada",
-        ...(shas.at(-1) === undefined ? {} : { sha: shas.at(-1) }),
+        sha,
         motivo: "conservada del plan anterior",
       });
       integrated.add(t.id);

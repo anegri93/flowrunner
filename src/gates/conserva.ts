@@ -73,8 +73,13 @@ function problemsById(input: ConservaInput): Map<string, string[]> {
   const own = new Map(marked.map((t) => [t.id, ownProblems(input, t)]));
   const ok = new Set(marked.filter((t) => own.get(t.id)?.length === 0).map((t) => t.id));
   for (const task of marked) {
-    // `ancestors` es transitivo: si ST-1 no se conserva, ST-3 → ST-2 → ST-1 lo ve directamente.
-    const deps = ancestors(input.plan.subtareas, task.id);
+    // `ancestors` es transitivo: si ST-1 no se conserva, ST-3 → ST-2 → ST-1 lo ve directamente. Las
+    // dependencias del plan anterior también cuentan: el código conservado se escribió sobre ellas,
+    // aunque el plan nuevo les haya borrado la arista.
+    const deps = new Set([
+      ...ancestors(input.plan.subtareas, task.id),
+      ...ancestors(input.anteriores, task.id),
+    ]);
     for (const other of input.plan.subtareas.map((t) => t.id).filter((d) => deps.has(d))) {
       if (!ok.has(other))
         own

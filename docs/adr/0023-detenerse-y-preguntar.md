@@ -70,6 +70,35 @@ Recién sigue cuando la persona elige una. Es el contrato C1 a C5 del plan de ra
 
 Detalle en `docs/plan-de-raiz/pr-05-detenido-con-pregunta.md`.
 
+### Sub-tasks trabadas
+
+Una sub-task que terminaba sin cambios se reintentaba con el motivo, y recién al segundo intento sin
+avanzar fallaba. En los runs de la línea de base ningún reintento sin cambios salió bien: en PIZ-2,
+ST-1 hizo tres intentos y ninguno cambió nada; en VF-1, ST-5 hizo dos, frenados por el bloqueo de
+formato; en VF-6, ST-6 cerró cuatro veces «sin cambios» sobre `CLAUDE.md`, y ST-7 hizo dos intentos.
+Cada intento es una sesión entera. Ahora implementar no paga el segundo a ciegas:
+
+- **Se detiene al primer intento** una sub-task en su primera pasada que no cambió ningún archivo, y
+  una devuelta (por verificar o por un `fix`) que no cambió nada y tuvo escrituras rechazadas. El
+  motivo dice lo último que dijo el agente y lo que le rechazó el bloqueo. El segundo intento de #70,
+  para un rechazo que pudo ser error del agente, lo reemplaza `fix --unidad`: la misma sesión, con la
+  instrucción de la persona en vez del motivo genérico.
+- **Una devuelta sin cambios y sin rechazos** sigue cerrando `sin_cambios` como éxito: su código ya
+  está integrado, y verificar decide.
+- **Los reintentos mecánicos se quedan,** hasta `MAX_UNIT_ATTEMPTS`: el diff que rompe una regla del
+  doble control, el commit que choca al integrarse y el «no dejó nada para commitear». No piden
+  criterio humano.
+- **Las demás sub-tasks se integran igual.** Al final de la fase, cualquier sub-task fallida da una
+  `pregunta`, nunca una falla de gate, con `unidades` en las fallidas, en el orden del plan, más las
+  que quedaron sin arrancar porque dependen de ellas. Las fallas de entorno y el límite siguen como
+  antes.
+- **`resume` se niega sobre una pregunta con sub-tasks,** de implementar o de una fase con vueltas
+  agotadas, y lista sus opciones: rehacía la fase entera a ciegas, también lo ya integrado. Las demás
+  detenciones se retoman como antes, aunque ofrezcan `rerun`. La regla vive solo en el CLI: el
+  reductor no puede ignorar un `reanudado` viejo sin cambiar cómo se lee un log ya escrito (C8).
+
+Detalle en `docs/plan-de-raiz/pr-06-subtask-trabada-pregunta.md`.
+
 ## Alternativas descartadas
 
 - **Un estado nuevo, `pregunta`.** Todo lo que lee el estado (Orca, la skill, `tick`, el aviso, la
@@ -101,4 +130,6 @@ Detalle en `docs/plan-de-raiz/pr-05-detenido-con-pregunta.md`.
 - `test/pregunta.int.test.ts`: `fix --unidad`, `fix --yo` con `resume`, `accept` y un comando que el
   run no ofrece, con el CLI real.
 - `src/phases/verificar.test.ts`: con 0 vueltas no se diagnostica.
+- `src/phases/implementar.test.ts`: una sub-task sin cambios, o devuelta y frenada por el bloqueo,
+  pregunta al primer intento; las demás se integran, y las que dependen de ella entran en la pregunta.
 - Orca: `orca/src/runs.test.ts`, `worker.test.ts` y `panel.test.tsx`.

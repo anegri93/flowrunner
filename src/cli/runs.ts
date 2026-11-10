@@ -223,6 +223,11 @@ export async function resumeRun(home: string, id: string, env: NodeJS.ProcessEnv
   if (isRunning(home, state))
     throw new UserError(`el run ${id} ya está corriendo`, `flowrunner status ${id}`);
   if (state.status === "detenido" && state.aMano) return resumeByHand(home, id, env);
+  // Una pregunta con sub-tasks no se retoma: rehacía la fase entera a ciegas, también lo integrado.
+  // Las demás detenciones sí, aunque ofrezcan `rerun`: el reductor no puede ignorar un `reanudado`
+  // viejo sin cambiar cómo se lee un log ya escrito (C8), así que la regla vive solo acá (ADR 0023).
+  if (state.status === "detenido" && (state.halt?.unidades ?? []).length > 0)
+    requireOffered(state, id, offers(state, `flowrunner resume ${id}`));
   const resumable =
     state.status === "detenido" ||
     state.status === "pausado_por_limite" ||

@@ -1,5 +1,6 @@
 // Implementar: las sub-tasks en paralelo, cada una en su worktree y su sesión, con los tripwires.
 // flowrunner hace un commit por sub-task y lo integra por cherry-pick sobre la rama de la feature.
+// Una sub-task sin cambios no reintenta: la fase termina en una pregunta (ADR 0023).
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { runSession } from "../agent/session.ts";
@@ -227,7 +228,14 @@ export async function orientacionDe(
 }
 
 type UnitResult =
-  { readonly ok: true } | { readonly ok: false; readonly fatal?: Outcome; readonly motivo: string };
+  | { readonly ok: true }
+  | {
+      readonly ok: false;
+      readonly fatal?: Outcome;
+      readonly motivo: string;
+      /** Se detiene sin reintentar: lo que falta lo decide la persona. */
+      readonly pregunta?: true;
+    };
 
 export const implementar: PhaseFn = async (ctx) => {
   const { run, deps, emit, action, state } = ctx;
@@ -252,6 +260,12 @@ export const implementar: PhaseFn = async (ctx) => {
   const exact = existsSync(manifest) && prefersExact(readFileSync(manifest, "utf8"));
   const entry = currentEntry(ctx.events).filter((e): e is UnitEvent => e.tipo === "unidad");
   const lastOf = (id: string) => entry.findLast((e) => e.unidad === id);
+  // Las integradas de este plan: lo de antes de la última aprobación lo descarta un replan.
+  const integradas = new Set(
+    ctx.events
+      .slice(ctx.events.findLastIndex((e) => e.tipo === "aprobado") + 1)
+      .flatMap((e) => (e.tipo === "unidad" && e.estado === "integrada" ? [e.unidad] : [])),
+  );
   const todo = plan.subtareas.filter(
     (t) => action.unidades === undefined || action.unidades.includes(t.id),
   );
@@ -290,9 +304,11 @@ export const implementar: PhaseFn = async (ctx) => {
         return { ok: true };
       }
     }
+    // Retomado después de que ya falló en esta entrada: lo que falta lo decide la persona, no otra sesión.
+    if (previous?.estado === "fallida")
+      return { ok: false, motivo: previous.motivo ?? `${task.id} no pudo terminar` };
     let motivo = action.unidades?.includes(task.id) === true ? action.instruccion : undefined;
     const tried = entry.filter((e) => e.unidad === task.id && e.estado === "iniciada").length;
-    let stalled = false;
     for (let attempt = tried + 1; attempt <= MAX_UNIT_ATTEMPTS; attempt++) {
       const start = await headSha(featureWt, deps.env);
       await addWorktree(state.repo, wt, branch, start, deps.env);
@@ -401,7 +417,13 @@ export const implementar: PhaseFn = async (ctx) => {
         // Devuelta y sin nada que cambiar: su código ya está integrado y la sub-task lo sostiene.
         // Reintentarla no arregla nada; verificar decide de qué lado está el problema.
         // Con escrituras rechazadas no: no es que no hubiera nada que hacer, es que no la dejaron.
-        if (action.unidades?.includes(task.id) === true && rejectedWrites.length === 0) {
+        // Y solo si se integró alguna vez: un `fix` desde una pregunta de implementar también la
+        // nombra, y sin código integrado «sin cambios» sería una sub-task sin hacer que pasa como hecha.
+        if (
+          action.unidades?.includes(task.id) === true &&
+          integradas.has(task.id) &&
+          rejectedWrites.length === 0
+        ) {
           emit({ tipo: "unidad", fase: "implementar", unidad: task.id, estado: "sin_cambios" });
           await removeWorktree(state.repo, wt, deps.env);
           return { ok: true };
@@ -411,24 +433,19 @@ export const implementar: PhaseFn = async (ctx) => {
           rejectedWrites.length === 0
             ? ""
             : `. El bloqueo rechazó lo que intentó escribir: ${[...new Set(rejectedWrites)].join("; ")}`;
-        const why = `no cambió ningún archivo${blocked}${said === "" ? "" : `. Lo último que dijo: ${said.slice(0, 400)}`}`;
-        // Dos intentos seguidos sin avanzar: un tercero no va a ser distinto.
-        if (stalled) {
-          const stop = `${task.id} no avanzó en dos intentos seguidos: ${why}`;
-          emit({
-            tipo: "unidad",
-            fase: "implementar",
-            unidad: task.id,
-            estado: "fallida",
-            motivo: stop,
-          });
-          return { ok: false, motivo: stop };
-        }
-        stalled = true;
-        motivo = `${task.id} ${why}`;
-        continue;
+        // Sin reintento: en PIZ-2, VF-1 y VF-6 ninguna sesión sin cambios repetida salió bien. Lo que
+        // falta lo dice la persona con `fix --unidad`, que es la misma sesión con su instrucción.
+        const stop = `${task.id} no cambió ningún archivo${blocked}${said === "" ? "" : `. Lo último que dijo: ${said.slice(0, 400)}`}`;
+        emit({
+          tipo: "unidad",
+          fase: "implementar",
+          unidad: task.id,
+          estado: "fallida",
+          motivo: stop,
+        });
+        // El worktree queda, como el de toda sub-task fallida, para mirarlo; `abort` lo borra.
+        return { ok: false, motivo: stop, pregunta: true };
       }
-      stalled = false;
       if (!scope.depsDeclared)
         violations.push(...(await dependencyEdits(wt, start, changes, deps.env)));
       if (violations.length > 0) {
@@ -535,10 +552,22 @@ export const implementar: PhaseFn = async (ctx) => {
     running: new Set(),
     failed: new Set(failed.keys()),
   });
+  // Reintentar la fase no arregla una sub-task fallida: pregunta por ella y por las que esperan por ella.
   if (failed.size > 0) {
-    const reasons = [...failed.entries()].map(([id, r]) => `${id}: ${r.ok ? "" : r.motivo}`);
-    const tail_ = blocked.length > 0 ? `\nQuedaron sin arrancar: ${blocked.join(", ")}` : "";
-    return { tipo: "falla", clase: "gate", motivo: `${reasons.join("\n")}${tail_}` };
+    const ids = todo.map((t) => t.id).filter((id) => failed.has(id));
+    const reasons = ids.map((id) => {
+      const r = failed.get(id);
+      return `- ${r !== undefined && !r.ok ? r.motivo : id}`;
+    });
+    const tail_ =
+      blocked.length > 0
+        ? `\nQuedaron sin arrancar, porque dependen de esas: ${blocked.join(", ")}`
+        : "";
+    return {
+      tipo: "pregunta",
+      motivo: `${ids.length === 1 ? "una sub-task no pudo terminar" : `${String(ids.length)} sub-tasks no pudieron terminar`}:\n${reasons.join("\n")}${tail_}`,
+      unidades: [...ids, ...blocked],
+    };
   }
   // ponytail: los worktrees de sub-tasks fallidas quedan para mirarlos; `abort` los borra todos.
   return { tipo: "ok" };

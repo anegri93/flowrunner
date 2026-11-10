@@ -440,6 +440,26 @@ describe("detenerse y preguntar (ADR 0023)", () => {
     expect(s.halt).toBeUndefined();
   });
 
+  // Si regresiona, la persona puede entregar una sub-task sin hacer, o no puede pedir que se arregle.
+  test("una pregunta de implementar detiene sin accept y con fix por cada sub-task", () => {
+    const s = state(
+      upTo("preparar", "planificar"),
+      ok("aprobar"),
+      done("implementar", { tipo: "pregunta", motivo: "x", unidades: ["ST-1", "ST-2"] }),
+    );
+    expect(s.status).toBe("detenido");
+    expect(s.halt?.unidades).toEqual(["ST-1", "ST-2"]);
+    expect(commands(s)).toEqual([
+      `flowrunner fix ${R} --unidad ST-1 "<qué cambiar>"`,
+      `flowrunner fix ${R} --unidad ST-2 "<qué cambiar>"`,
+      `flowrunner fix ${R} --yo`,
+      `flowrunner rerun ${R} --desde planificar`,
+      `flowrunner abort ${R}`,
+    ]);
+    expect(commands(s)?.some((c) => c.includes("accept"))).toBe(false);
+    expect(s.intentos).toBe(0);
+  });
+
   // Si regresiona, una sub-task bloqueada por la que se arregla no arranca nunca.
   test("arreglo_pedido sobre una pregunta de implementar incluye las bloqueadas", () => {
     const asked = [

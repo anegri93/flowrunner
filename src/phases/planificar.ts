@@ -15,10 +15,12 @@ import { loadBrain, type Brain } from "../brain/brain.ts";
 import { isVerifyCommand, loadRepoConfig } from "../config/load.ts";
 import type { RepoConfig } from "../config/schemas.ts";
 import { testsInScope, testsTouched, undeclared } from "../gates/existente.ts";
+import { checkConserva, conservadas, type ConservaInput } from "../gates/conserva.ts";
 import { callersOutOfScope } from "../gates/llamadores.ts";
 import { checkCommandsFail, checkPlanShape, planSchema, type Plan } from "../gates/plan.ts";
-import { changesSince, commitAll, discardChanges, resetHard } from "../git/git.ts";
-import { GRAFT_TOOLS, graftMcpServer } from "../graft/graft.ts";
+import { changesSince, commitAll, discardChanges, headSha } from "../git/git.ts";
+import { GraftError, llamadoresDe } from "../graft/contexto.ts";
+import { buildIndex, GRAFT_TOOLS, graftMcpServer } from "../graft/graft.ts";
 import { featureText, render } from "../prompts/render.ts";
 import type { PhaseFn, RunPaths } from "../runner/types.ts";
 import { runSession } from "../agent/session.ts";
@@ -28,7 +30,14 @@ import { isTestFile } from "../tripwires/rules.ts";
 import { copyEnvFiles } from "./env-files.ts";
 import { runFixers } from "./fixers.ts";
 import { graftIndex, prepared, runFeature } from "./inputs.ts";
-import { archivePlan, previousDir, replanOf, replanText } from "./plan-anterior.ts";
+import { conLosTests, enAnterior, ramaAnterior, reaplicar, soltarAnterior } from "./conservar.ts";
+import {
+  archivePlan,
+  previousDir,
+  replanOf,
+  replanText,
+  type Implementada,
+} from "./plan-anterior.ts";
 
 export const PLANIFICAR_TIMEOUT_MS = 30 * 60_000;
 
@@ -59,6 +68,8 @@ export function writePlanArtifacts(
   run: RunPaths,
   plan: Plan,
   locked: Record<string, string>,
+  /** Los SHAs nuevos de cada sub-task conservada de un replan: implementar las da por integradas. */
+  conservadas: Record<string, string[]> = {},
 ): void {
   const json = (data: unknown) => `${JSON.stringify(data, null, 2)}\n`;
   writeFileSync(join(run.dir, "plan.md"), plan.plan);
@@ -66,6 +77,7 @@ export function writePlanArtifacts(
   writeFileSync(join(run.dir, "ac-map.json"), json(plan.criterios));
   writeFileSync(join(run.dir, "locked.json"), json(locked));
   writeFileSync(join(run.dir, "cambios-existentes.json"), json(plan.cambia_lo_existente));
+  writeFileSync(join(run.dir, "conservadas.json"), json(conservadas));
 }
 
 export const readPlan = (run: RunPaths) => readPlanAt(run.dir);
@@ -76,9 +88,11 @@ export function readPlanAt(dir: string): Pick<
 > & {
   plan: string;
   locked: Record<string, string>;
+  conservadas: Record<string, string[]>;
 } {
   const read = (name: string) => readFileSync(join(dir, name), "utf8");
   const cambios = join(dir, "cambios-existentes.json");
+  const kept = join(dir, "conservadas.json");
   return {
     plan: read("plan.md"),
     subtareas: JSON.parse(read("tasks.json")) as Plan["subtareas"],
@@ -88,6 +102,10 @@ export function readPlanAt(dir: string): Pick<
     cambia_lo_existente: existsSync(cambios)
       ? (JSON.parse(readFileSync(cambios, "utf8")) as Plan["cambia_lo_existente"])
       : [],
+    // Lo mismo con lo conservado: un plan de antes no conservó nada.
+    conservadas: existsSync(kept)
+      ? (JSON.parse(readFileSync(kept, "utf8")) as Record<string, string[]>)
+      : {},
   };
 }
 
@@ -95,20 +113,64 @@ export const planificar: PhaseFn = async (ctx) => {
   const { run, deps, emit, action } = ctx;
   const prep = prepared(ctx.events);
   const worktree = prep.worktree;
+  const base = prep.base_sha;
   // Cada intento arranca de la base con los tests del plan anterior, si lo hay, tal como quedaron
   // bloqueados: los de un intento rechazado no se arrastran, y una nueva vuelta no reescribe lo que ya
-  // estaba bien.
+  // estaba bien. En un replan, la base lleva además el código de las sub-tasks ya integradas, para que
+  // el planificador lo vea y decida qué conserva (ADR 0024).
   const previous = archivePlan(run) ? readPlanAt(previousDir(run)) : undefined;
-  const restored = Object.entries(previous?.locked ?? {}).flatMap(([path, hash]) => {
+  const rama =
+    previous === undefined
+      ? { subtasks: [], manuales: [] }
+      : await ramaAnterior(
+          run,
+          worktree,
+          {
+            preparado: ctx.events.findLastIndex((e) => e.tipo === "preparado"),
+            base,
+          },
+          deps.env,
+        );
+  // Del worktree, o de la punta vieja si un intento cortado en pleno rearmado ya no los dejó ahí.
+  const restored: (readonly [string, string])[] = [];
+  for (const [path, hash] of Object.entries(previous?.locked ?? {})) {
     const file = join(worktree, path);
-    if (!existsSync(file)) return [];
-    const content = readFileSync(file, "utf8");
-    return sha256(content) === hash ? [[path, content] as const] : [];
-  });
-  await resetHard(worktree, prep.base_sha, deps.env);
+    const here = existsSync(file) ? readFileSync(file, "utf8") : undefined;
+    const content =
+      here !== undefined && sha256(here) === hash
+        ? here
+        : await enAnterior(run, worktree, path, deps.env);
+    if (content !== undefined && sha256(content) === hash) restored.push([path, content]);
+  }
+  const avisados = new Set<string>();
+  // Con 0 candidatas es el `resetHard` de siempre.
+  const armada = await reaplicar(
+    worktree,
+    base,
+    rama,
+    previous?.subtareas ?? [],
+    deps.env,
+    emit,
+    avisados,
+  );
   for (const [path, content] of restored) {
     mkdirSync(dirname(join(worktree, path)), { recursive: true });
     writeFileSync(join(worktree, path), content);
+  }
+  const inicioSesion = await headSha(worktree, deps.env);
+  // El planificador y `llamadoresDe` tienen que ver la API del código conservado, no la de la base.
+  let sinIndice: string | undefined;
+  if (inicioSesion !== base) {
+    try {
+      await buildIndex(worktree, graftIndex(run), deps.env);
+    } catch (error) {
+      sinIndice = `graft no pudo reconstruir el índice: ${(error instanceof Error ? error.message : String(error)).split("\n")[0] ?? ""}`;
+      emit({
+        tipo: "aviso",
+        fase: "planificar",
+        texto: `${sinIndice}; no se conserva nada que dependa de quién llama a qué`,
+      });
+    }
   }
   const config: RepoConfig = loadRepoConfig(worktree);
   const brain = loadBrain(worktree);
@@ -136,7 +198,14 @@ export const planificar: PhaseFn = async (ctx) => {
     },
     emit,
   );
-  const instruccion = replanText(previous, replanOf(ctx.events, action.instruccion));
+  const implementadas: Implementada[] = armada.candidatas.flatMap((c) => {
+    const task = previous?.subtareas.find((t) => t.id === c.id);
+    return task === undefined
+      ? []
+      : [{ id: c.id, titulo: task.titulo, alcance: task.alcance, commits: c.shas.length }];
+  });
+  const replan = replanOf(ctx.events, action.instruccion);
+  const instruccion = replanText(previous, replan, implementadas);
   const result = await runSession(
     {
       fase: "planificar",
@@ -182,11 +251,12 @@ export const planificar: PhaseFn = async (ctx) => {
   // El hook solo deja escribir tests, así que lo demás que cambió en el worktree lo escribió otro
   // proceso. En CUENTAS-1 una herramienta reescribió `.claude/helpers/*` mientras se planificaba, y
   // el commit de abajo (`add -A`) lo metió como test en rojo, bloqueado por hash, hasta la PR.
-  const foreign = (await changesSince(worktree, prep.base_sha, deps.env)).filter(
+  // Contra donde arrancó la sesión, no contra la base: el código conservado no es ajeno.
+  const foreign = (await changesSince(worktree, inicioSesion, deps.env)).filter(
     (c) => !isTestFile(config.tests_globs, c.path),
   );
   if (foreign.length > 0) {
-    await discardChanges(worktree, prep.base_sha, foreign, deps.env);
+    await discardChanges(worktree, inicioSesion, foreign, deps.env);
     emit({
       tipo: "aviso",
       fase: "planificar",
@@ -194,11 +264,45 @@ export const planificar: PhaseFn = async (ctx) => {
     });
   }
 
-  const problems = [
-    ...checkPlanShape(plan, feature, worktree, config),
-    ...(await callersOutOfScope(plan, worktree, deps.env)),
-  ];
-  const changes = await changesSince(worktree, prep.base_sha, deps.env);
+  const problems = checkPlanShape(plan, feature, worktree, config);
+  let kept: string[] = [];
+  let invalid: string[] = [];
+  let nuevos = armada.nuevos;
+  let inicioTests = inicioSesion;
+  if (plan.subtareas.some((t) => t.conserva === true)) {
+    const conserva: ConservaInput = {
+      plan,
+      anteriores: previous?.subtareas ?? [],
+      candidatas: armada.candidatas,
+      pedidos: [...replan.pedidos, ...(replan.motivo === undefined ? [] : [replan.motivo])],
+      ...(await llamadoresDelPlan(plan, worktree, graftIndex(run), sinIndice, deps.env)),
+    };
+    invalid = checkConserva(conserva);
+    problems.push(...invalid);
+    if (invalid.length === 0) kept = conservadas(conserva);
+  }
+  // Lo que no se conserva se saca de la rama antes del resto del gate: sus criterios tienen que fallar
+  // sin ello, y un llamador que estaba en su código ya no existe. Con un `conserva` inválido la rama no
+  // se toca: el plan vuelve igual, y el próximo intento la ve entera.
+  if (invalid.length === 0 && armada.candidatas.some((c) => !kept.includes(c.id))) {
+    const final = await conLosTests(worktree, inicioSesion, config.tests_globs, deps.env, () =>
+      reaplicar(
+        worktree,
+        base,
+        { subtasks: armada.candidatas.filter((c) => kept.includes(c.id)), manuales: rama.manuales },
+        plan.subtareas,
+        deps.env,
+        emit,
+        avisados,
+      ),
+    );
+    kept = kept.filter((id) => final.candidatas.some((c) => c.id === id));
+    nuevos = final.nuevos;
+    inicioTests = await headSha(worktree, deps.env);
+  }
+  problems.push(...(await callersOutOfScope(plan, worktree, deps.env)));
+  // Desde donde empiezan los tests: lo conservado no se bloquea como test.
+  const changes = await changesSince(worktree, inicioTests, deps.env);
   const written = changes.filter((c) => c.status !== "borrado").map((c) => c.path);
   if (written.length === 0) problems.push("planificar no escribió ningún test");
   // Lo que se detecta y no se declara no pasa: así lo que ve la persona al aprobar no depende de que
@@ -225,9 +329,17 @@ export const planificar: PhaseFn = async (ctx) => {
     if (!env.ok) return { tipo: "falla", clase: "entorno", motivo: env.motivo };
     try {
       problems.push(
-        // «verify en verde» pasa sobre la base, como debe: lo comprueba verificar, no este rojo.
-        ...(await checkCommandsFail(plan, worktree, deps.env, (comando) =>
-          isVerifyCommand(config, comando),
+        // «verify en verde» pasa sobre la base, como debe: lo comprueba verificar, no este rojo. Un
+        // criterio de lo conservado ya pasa: su código está. Uno compartido con lo nuevo tiene que fallar.
+        ...(await checkCommandsFail(
+          plan,
+          worktree,
+          deps.env,
+          (comando) =>
+            isVerifyCommand(config, comando) ||
+            plan.criterios
+              .filter((c) => c.comando === comando)
+              .every((c) => kept.includes(c.subtarea)),
         )),
       );
     } finally {
@@ -250,6 +362,48 @@ export const planificar: PhaseFn = async (ctx) => {
     { "Flowrunner-Run": run.id },
     deps.env,
   );
-  writePlanArtifacts(run, plan, locked);
+  // Antes de los artefactos: si se corta entre los dos, el próximo intento no rearma con las
+  // candidatas de un plan que ya no es el anterior.
+  await soltarAnterior(run, worktree, deps.env);
+  writePlanArtifacts(
+    run,
+    plan,
+    locked,
+    Object.fromEntries(kept.flatMap((id) => (nuevos[id] === undefined ? [] : [[id, nuevos[id]]]))),
+  );
   return { tipo: "ok" };
 };
+
+/**
+ * Los llamadores de cada `simbolo` que el plan cambia, para la regla (d) de `checkConserva`. Si graft
+ * no puede responder, ese símbolo va a `sinLlamadores`: no saber quién lo llama no es «nadie».
+ */
+async function llamadoresDelPlan(
+  plan: Pick<Plan, "cambia_lo_existente">,
+  worktree: string,
+  indexDir: string,
+  /** Por qué el índice no está al día, si no lo está. */
+  sinIndice: string | undefined,
+  env: NodeJS.ProcessEnv,
+): Promise<Pick<ConservaInput, "llamadores" | "sinLlamadores">> {
+  const llamadores = new Map<string, string[]>();
+  const sinLlamadores = new Map<string, string>();
+  const simbolos = new Set(
+    plan.cambia_lo_existente.flatMap((c) =>
+      c.simbolo === undefined || c.simbolo.trim() === "" ? [] : [c.simbolo.trim()],
+    ),
+  );
+  for (const simbolo of simbolos) {
+    if (sinIndice !== undefined) {
+      sinLlamadores.set(simbolo, sinIndice);
+      continue;
+    }
+    try {
+      llamadores.set(simbolo, await llamadoresDe(worktree, indexDir, simbolo, env));
+    } catch (error) {
+      if (!(error instanceof GraftError)) throw error;
+      sinLlamadores.set(simbolo, error.message);
+    }
+  }
+  return { llamadores, sinLlamadores };
+}

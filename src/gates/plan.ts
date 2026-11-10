@@ -25,6 +25,8 @@ export const subtaskSchema = z.object({
   /** Paquetes de desarrollo y de tests que puede agregar. */
   dependencias_dev: z.array(packageName).optional(),
   depende_de: z.array(z.string()),
+  /** Solo en un replan: la sub-task ya está implementada y su código se conserva tal cual. */
+  conserva: z.boolean().optional(),
 });
 export type Subtask = z.infer<typeof subtaskSchema>;
 
@@ -86,8 +88,8 @@ export interface PlanRepoRules {
   readonly manifests: readonly string[];
 }
 
-const normalize = (p: string) => p.replace(/^\.\//, "").replace(/\/+$/, "");
-const overlaps = (a: string, b: string) =>
+export const normalize = (p: string) => p.replace(/^\.\//, "").replace(/\/+$/, "");
+export const overlaps = (a: string, b: string) =>
   a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
 
 /**
@@ -112,7 +114,11 @@ export function effectiveScope(task: Subtask, rules: PlanRepoRules): string[] {
 }
 
 /** Las sub-tasks de las que depende `id`, directa o indirectamente. */
-function ancestors(tasks: readonly Subtask[], id: string, seen = new Set<string>()): Set<string> {
+export function ancestors(
+  tasks: readonly Subtask[],
+  id: string,
+  seen = new Set<string>(),
+): Set<string> {
   for (const dep of tasks.find((t) => t.id === id)?.depende_de ?? []) {
     if (!seen.has(dep)) {
       seen.add(dep);

@@ -580,6 +580,24 @@ export const implementar: PhaseFn = async (ctx) => {
   const integrated = new Set(
     todo.filter((t) => lastOf(t.id)?.estado === "integrada").map((t) => t.id),
   );
+  // Lo que un replan conservó ya está en la rama: se da por integrado al entrar después de aprobar,
+  // con el evento de siempre, así watch, Orca y una vuelta posterior lo ven como cualquier integrada.
+  // Con `unidades` (un `fix` o una vuelta) no: si nombra una conservada, corre sobre su código.
+  if (action.unidades === undefined) {
+    for (const t of todo) {
+      const shas = plan.conservadas[t.id];
+      if (shas === undefined || integrated.has(t.id)) continue;
+      emit({
+        tipo: "unidad",
+        fase: "implementar",
+        unidad: t.id,
+        estado: "integrada",
+        ...(shas.at(-1) === undefined ? {} : { sha: shas.at(-1) }),
+        motivo: "conservada del plan anterior",
+      });
+      integrated.add(t.id);
+    }
+  }
   const failed = new Map<string, UnitResult>();
   const running = new Map<string, Promise<void>>();
   for (;;) {

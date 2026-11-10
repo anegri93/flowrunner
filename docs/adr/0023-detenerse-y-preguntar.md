@@ -51,11 +51,15 @@ Recién sigue cuando la persona elige una. Es el contrato C1 a C5 del plan de ra
    - `aceptado`: sigue a la fase siguiente, solo desde verificar, revisar o probar, y solo en la fase
      del halt. Generaliza `sin_probar_aceptado`, que se sigue leyendo igual. Lo aceptado y los
      arreglos a mano van al informe y a la PR, en «Lo que aceptaste al seguir».
-8. **`fix --yo` y `resume` (D2).** `fix --yo` deja el run esperando y dice la ruta del worktree de la
-   feature, sin lanzar nada. `resume` mira lo que cambió sin commitear y lo commitea con el trailer
-   `Flowrunner-Manual: <run>`, salvo que toque `.git`, cambie un test bloqueado del plan (por su hash)
-   o agregue un secreto (un repo git embebido cuenta como `.git`). Si algo de eso pasa, no commitea
-   ni escribe nada, sale con 1 y lista los problemas. Mientras el arreglo espera, `accept-untested` y
+8. **`fix --yo` y `resume` (D2).** `fix --yo` deja el run esperando, guarda en el evento el HEAD del
+   worktree de la feature (`base`) y dice su ruta, sin lanzar nada. `resume` chequea todo lo que
+   cambió desde `base`: los commits que la persona hizo por su cuenta, uno por uno (un secreto que un
+   commit agrega y otro borra sigue en la rama), y lo que no commiteó. Lo sin commitear lo commitea
+   con el trailer `Flowrunner-Manual: <run>`; si solo hay commits propios, `arreglo_manual` lleva su
+   HEAD, sin un commit vacío. No pasa nada que toque `.git`, cambie un test bloqueado del plan (por
+   su hash) o agregue un secreto (un repo git embebido cuenta como `.git`). Si `base` ya no es
+   ancestro de HEAD, por un reset o un rebase, lo que salió de la rama no se puede chequear, y se
+   rechaza. Si algo de eso pasa, no commitea ni escribe nada, sale con 1 y lista los problemas. Mientras el arreglo espera, `accept-untested` y
    un `rerun` con cambios sin commitear se niegan: entregarían una rama sin el cambio que se
    verificó. Las rutas protegidas (`ALWAYS_PROTECTED`) no se chequean: protegen de los agentes, no de
    la persona, y arreglar a mano el `CLAUDE.md` de VF-6 es para lo que existe `fix --yo`.
@@ -82,10 +86,10 @@ Detalle en `docs/plan-de-raiz/pr-05-detenido-con-pregunta.md`.
   métrica es esa: sesiones de implementar disparadas por una vuelta automática, por run.
 - El run espera más a la persona, y le pide decidir en el primer rojo. A cambio, cada respuesta es un
   comando que el run ya validó.
-- `resume` sobre un arreglo a mano chequea lo que cambió sin commitear. Lo que la persona commitee
-  por su cuenta en el worktree no pasa por esos chequeos: verificar vuelve a comparar los hashes de
-  los tests bloqueados, pero un secreto commiteado así llega a la PR. Cerrarlo pide guardar el HEAD
-  de `fix --yo`, un campo que C4 no tiene; queda para decidir.
+- **Una desviación menor de C4:** `arreglo_manual_iniciado` suma `base`, obligatorio, que C4 no
+  tenía. Sin él, `resume` solo veía lo sin commitear, y un secreto que la persona, o Claude en el
+  worktree, commiteaba por su cuenta llegaba a la PR. El evento nace en esta PR, así que no hay logs
+  viejos con él y C8 se cumple.
 
 ## Verificación
 

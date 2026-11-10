@@ -326,7 +326,7 @@ test("el informe y la PR listan lo que aceptaste, con su fase y su motivo", () =
     ev({ tipo: "aceptado", fase: "verificar", motivo: "la segunda", origen: "orca" }),
     ...step("revisar", { tipo: "ok" }),
     ...step("probar", sinProbar),
-    ev({ tipo: "arreglo_manual_iniciado", origen: "terminal" }),
+    ev({ tipo: "arreglo_manual_iniciado", origen: "terminal", base: "abc1234" }),
     ev({ tipo: "arreglo_manual", sha: "abc1234def5678" }),
     ...step("verificar", { tipo: "ok" }),
     ...step("revisar", { tipo: "ok" }),

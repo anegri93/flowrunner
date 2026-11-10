@@ -4,7 +4,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { existsSync, openSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { offers, offersFix, reduce, stateOf, type RunState } from "../engine/engine.ts";
-import { changesSince, commitAll, headSha } from "../git/git.ts";
+import { changesSince, commitAll, commitChanges, headSha, isAncestor } from "../git/git.ts";
 import { avisoDeEstado, cambiosDelPlan } from "../notify/estado.ts";
 import { notifyMac } from "../notify/notify.ts";
 import { productionRuntime } from "../runner/production.ts";
@@ -249,25 +249,40 @@ export async function resumeRun(home: string, id: string, env: NodeJS.ProcessEnv
  */
 async function resumeByHand(home: string, id: string, env: NodeJS.ProcessEnv) {
   const run = runPaths(home, id);
-  const { worktree } = prepared(readLog(run.dir).events);
+  const events = readLog(run.dir).events;
+  const { worktree } = prepared(events);
+  const started = events.findLast((e) => e.tipo === "arreglo_manual_iniciado");
+  if (started?.tipo !== "arreglo_manual_iniciado")
+    throw new Error("aMano sin arreglo_manual_iniciado");
+  const { base } = started;
   // Con el turno de las respuestas: dos `resume` a la vez no commitean ni escriben dos veces.
   const answer = await conTurno(answerTurno(home, id), id, async () => {
     if (!loadState(home, id).aMano) {
       throw new UserError(`el run ${id} ya retomó tu arreglo a mano`, `flowrunner status ${id}`);
     }
-    const changes = await changesSince(worktree, await headSha(worktree, env), env);
-    const problems = manualChangeProblems(worktree, changes, readPlan(run).locked, id);
+    if (!(await isAncestor(worktree, base, env))) {
+      throw new UserError(
+        `el worktree ya no parte de donde lo dejó fix --yo: ${base.slice(0, 7)} no está en la historia de HEAD (¿un reset o un rebase?), y lo que salió de la rama no se puede chequear`,
+        `volvé a dejar la rama sobre ${base} y corré: flowrunner resume ${id}`,
+      );
+    }
+    const head = await headSha(worktree, env);
+    // Lo que no se commiteó y, commit por commit, lo que la persona commiteó por su cuenta.
+    const changes = await changesSince(worktree, head, env);
+    const own = head === base ? [] : await commitChanges(worktree, base, env);
+    const problems = manualChangeProblems(worktree, changes, readPlan(run).locked, id, own);
     if (problems.length > 0) {
       throw new UserError(
         `tu arreglo a mano no se commitea:\n${problems.map((p) => `- ${p}`).join("\n")}`,
         `corregilo en ${worktree} y volvé a correr: flowrunner resume ${id}`,
       );
     }
-    const committed =
+    // Lo sin commitear va en un commit con el trailer; si solo hay commits propios, vale su HEAD.
+    const manual =
       changes.length === 0
-        ? null
-        : ((await commitAll(worktree, "fix: arreglo a mano", { "Flowrunner-Manual": id }, env)) ??
-          null);
+        ? undefined
+        : await commitAll(worktree, "fix: arreglo a mano", { "Flowrunner-Manual": id }, env);
+    const committed = manual ?? (head === base ? null : head);
     return appendEvent(run.dir, { tipo: "arreglo_manual", sha: committed });
   });
   const sha = answer.tipo === "arreglo_manual" ? answer.sha : null;
@@ -351,8 +366,15 @@ export function fixRun(
       const events = readLog(run.dir).events;
       if (!events.some((e) => e.tipo === "preparado"))
         throw new UserError("el run todavía no tiene worktree", `flowrunner status ${id}`);
-      appendEvent(run.dir, { tipo: "arreglo_manual_iniciado", origen: opts.origen });
-      return prepared(events).worktree;
+      const { worktree } = prepared(events);
+      if (!existsSync(worktree))
+        throw new UserError(`el worktree ${worktree} ya no existe`, `flowrunner status ${id}`);
+      // De acá parte el arreglo: resume chequea todo lo que cambie desde este HEAD.
+      const base = execFileSync("git", ["-C", worktree, "rev-parse", "HEAD"], {
+        encoding: "utf8",
+      }).trim();
+      appendEvent(run.dir, { tipo: "arreglo_manual_iniciado", origen: opts.origen, base });
+      return worktree;
     });
     return runStartedSchema.parse({
       ok: true,

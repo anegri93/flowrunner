@@ -141,8 +141,16 @@ export const eventSchema = z.discriminatedUnion("tipo", [
     instruccion: z.string().min(1),
     origen: origenSchema,
   }),
-  /** La persona lo arregla a mano en el worktree; el run espera su `resume`. */
-  z.strictObject({ tipo: z.literal("arreglo_manual_iniciado"), at, origen: origenSchema }),
+  /**
+   * La persona lo arregla a mano en el worktree; el run espera su `resume`. `base`, el HEAD del
+   * worktree en ese momento: `resume` chequea todo lo que cambió desde ahí, commiteado o no.
+   */
+  z.strictObject({
+    tipo: z.literal("arreglo_manual_iniciado"),
+    at,
+    origen: origenSchema,
+    base: z.string().min(1),
+  }),
   /** `resume` commiteó el arreglo a mano; `sha` es null si no había cambios. */
   z.strictObject({ tipo: z.literal("arreglo_manual"), at, sha: z.string().nullable() }),
   /** La persona decidió seguir a la fase siguiente con la fase en rojo, y dijo por qué. */

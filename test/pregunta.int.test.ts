@@ -1,5 +1,6 @@
 // El run que se detiene y pregunta (ADR 0023), con el CLI real y las fases falsas: FAKE_VUELVE hace
 // que verificar devuelva trabajo la primera vez.
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -234,5 +235,92 @@ describe("detenido con pregunta", () => {
     const resumed = runCli(["resume", id], env);
     expect(resumed.status).toBe(1);
     expect(resumed.stderr).toMatch(/está abortado: no hay nada que retomar/);
+  });
+
+  /** Un run detenido en verificar con el arreglo a mano iniciado: el worktree, listo para editar. */
+  async function byHand(locked: Record<string, string> = {}) {
+    const { work } = makeProject();
+    const env: NodeJS.ProcessEnv = {
+      ...homeWith(`github_user: yo\nprojects:\n  - { name: acme-api, path: ${work} }\n`),
+      FLOWRUNNER_TEST_HOOKS: FAKE_PHASES,
+      FAKE_KEEP_REAL: "preparar",
+      FAKE_VUELVE: "ST-1",
+      GIT_AUTHOR_NAME: "t",
+      GIT_AUTHOR_EMAIL: "t@e",
+      GIT_COMMITTER_NAME: "t",
+      GIT_COMMITTER_EMAIL: "t@e",
+    };
+    const home = join(env.HOME ?? "", ".flowrunner");
+    const feature = join(tempDir(), "SHOP-214.md");
+    writeFileSync(feature, FEATURE);
+    const started = runCli(["run", feature, "--json"], env);
+    expect(started.status, started.stderr).toBe(0);
+    const id = (JSON.parse(started.stdout) as { id: string }).id;
+    const run = runPaths(home, id);
+    const w = { home, env, repo: work, feature };
+    await waitFor("el run detenido", () => stateNow(w, id).status === "detenido", 60_000);
+    writePlanArtifacts(run, PLAN, locked);
+    const yo = runCli(["fix", id, "--yo"], env);
+    expect(yo.status, yo.stdout + yo.stderr).toBe(0);
+    const preparado = events(run.dir).find((e) => e.tipo === "preparado");
+    const worktree = preparado?.tipo === "preparado" ? preparado.worktree : "";
+    const commit = (file: string, content: string) => {
+      writeFileSync(join(worktree, file), content);
+      git(worktree, "add", "-A");
+      git(worktree, "commit", "-q", "-m", `mano: ${file}`);
+    };
+    return { id, env, run, w, worktree, commit };
+  }
+
+  // Regresión: resume miraba solo lo que no estaba commiteado, y un secreto que la persona (o Claude
+  // en el worktree) commiteaba por su cuenta llegaba a la PR.
+  test("un secreto que la persona commiteó por su cuenta durante fix --yo no pasa resume", async () => {
+    const r = await byHand();
+    r.commit("token.ts", `export const t = "ghp_${"a".repeat(36)}";\n`);
+    // Aunque después lo borre: el commit con el secreto sigue en la rama.
+    git(r.worktree, "rm", "-q", "token.ts");
+    git(r.worktree, "commit", "-q", "-m", "mano: sin token");
+    const resumed = runCli(["resume", r.id], r.env);
+    expect(resumed.status).toBe(1);
+    expect(resumed.stderr).toContain("token.ts agrega un token de GitHub");
+    expect(events(r.run.dir).some((e) => e.tipo === "arreglo_manual")).toBe(false);
+  });
+
+  // Regresión: un test bloqueado cambiado en un commit propio pasaba resume, y recién lo frenaba verificar.
+  test("un test bloqueado cambiado en un commit propio de la persona tampoco", async () => {
+    const readme = readFileSync(join(makeProject().work, "README.md"), "utf8");
+    const r = await byHand({
+      "README.md": createHash("sha256").update(readme).digest("hex"),
+    });
+    r.commit("README.md", "# otro\n");
+    const resumed = runCli(["resume", r.id], r.env);
+    expect(resumed.status).toBe(1);
+    expect(resumed.stderr).toContain("README.md es un test bloqueado del plan");
+    expect(events(r.run.dir).some((e) => e.tipo === "arreglo_manual")).toBe(false);
+  });
+
+  // Si regresiona, la PR no nombra el arreglo que la persona commiteó, o flowrunner suma un commit vacío.
+  test("un commit propio limpio pasa y arreglo_manual lleva su sha", async () => {
+    const r = await byHand();
+    r.commit("CLAUDE.md", "# reglas\n");
+    const head = git(r.worktree, "rev-parse", "HEAD");
+    const resumed = runCli(["resume", r.id, "--json"], r.env);
+    expect(resumed.status, resumed.stdout + resumed.stderr).toBe(0);
+    expect(events(r.run.dir)).toContainEqual(
+      expect.objectContaining({ tipo: "arreglo_manual", sha: head }),
+    );
+    expect(git(r.worktree, "rev-parse", "HEAD")).toBe(head);
+    await waitFor("el run entregado", () => stateNow(r.w, r.id).status === "entregado", 60_000);
+  });
+
+  // Si regresiona, un reset o un rebase saca de la rama lo que ya estaba integrado y nadie lo chequea.
+  test("si base ya no es ancestro de HEAD, resume se niega", async () => {
+    const r = await byHand();
+    const parent = git(r.worktree, "rev-parse", "HEAD~1");
+    git(r.worktree, "reset", "-q", "--hard", parent);
+    const resumed = runCli(["resume", r.id], r.env);
+    expect(resumed.status).toBe(1);
+    expect(resumed.stderr).toContain("el worktree ya no parte de donde lo dejó fix --yo");
+    expect(events(r.run.dir).some((e) => e.tipo === "arreglo_manual")).toBe(false);
   });
 });

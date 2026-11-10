@@ -493,7 +493,7 @@ describe("detenerse y preguntar (ADR 0023)", () => {
   test("fix a mano: espera tu resume y después vuelve a verificar", () => {
     const waiting = stateOf([
       ...verifyQuestion,
-      ev({ tipo: "arreglo_manual_iniciado", origen: "claude" }),
+      ev({ tipo: "arreglo_manual_iniciado", origen: "claude", base: "abc1234" }),
     ]);
     expect(waiting).toMatchObject({ status: "detenido", aMano: true, fase: "verificar" });
     expect(waiting.halt?.motivo).toMatch(/arreglo a mano/);
@@ -501,7 +501,7 @@ describe("detenerse y preguntar (ADR 0023)", () => {
     expect(waiting.halt?.siguiente).toBe(`flowrunner resume ${R}`);
     const after = stateOf([
       ...verifyQuestion,
-      ev({ tipo: "arreglo_manual_iniciado", origen: "claude" }),
+      ev({ tipo: "arreglo_manual_iniciado", origen: "claude", base: "abc1234" }),
       ev({ tipo: "arreglo_manual", sha: "abc1234" }),
     ]);
     expect(after).toMatchObject({ status: "en_curso", fase: "verificar", aMano: false });
@@ -696,7 +696,7 @@ describe("detenerse y preguntar (ADR 0023)", () => {
       ...done("verificar", { tipo: "falla", clase: "entorno", motivo: "falta jsqr" }),
     ];
     same(porEntorno, { tipo: "aceptado", fase: "verificar", motivo: "x", origen: "terminal" });
-    same(porEntorno, { tipo: "arreglo_manual_iniciado", origen: "terminal" });
+    same(porEntorno, { tipo: "arreglo_manual_iniciado", origen: "terminal", base: "abc1234" });
     // Una sub-task que el halt no nombra, aunque ofrezca otras.
     same(verifyQuestion, {
       tipo: "arreglo_pedido",
@@ -710,7 +710,10 @@ describe("detenerse y preguntar (ADR 0023)", () => {
       instruccion: "x",
       origen: "terminal",
     });
-    const byHand = [...verifyQuestion, ev({ tipo: "arreglo_manual_iniciado", origen: "terminal" })];
+    const byHand = [
+      ...verifyQuestion,
+      ev({ tipo: "arreglo_manual_iniciado", origen: "terminal", base: "abc1234" }),
+    ];
     same(byHand, { tipo: "aceptado", fase: "verificar", motivo: "x", origen: "terminal" });
     same(byHand, { tipo: "arreglo_pedido", unidades: ["ST-2"], instruccion: "x", origen: "orca" });
     const untestedByHand = [
@@ -719,7 +722,7 @@ describe("detenerse y preguntar (ADR 0023)", () => {
       ...ok("aprobar"),
       ...upTo("implementar", "verificar", "revisar"),
       ...done("probar", { tipo: "falla", clase: "sin_probar", motivo: "AC-1 sin probar" }),
-      ev({ tipo: "arreglo_manual_iniciado", origen: "terminal" }),
+      ev({ tipo: "arreglo_manual_iniciado", origen: "terminal", base: "abc1234" }),
     ];
     same(untestedByHand, { tipo: "sin_probar_aceptado", motivo: "x" });
     same(untestedByHand, { tipo: "aceptado", fase: "probar", motivo: "x", origen: "terminal" });

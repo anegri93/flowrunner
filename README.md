@@ -226,8 +226,9 @@ panel de Orca dicen el motivo, a qué sub-task se atribuye y tus respuestas, com
 - `flowrunner fix <run> --unidad ST-n "<qué cambiar>"`: que esa sub-task lo corrija con tu instrucción,
   sobre el código que ya está.
 - `flowrunner fix <run> --yo`: lo arreglás vos en el worktree de la feature, que el comando te dice, y
-  después `flowrunner resume <run>` commitea tu cambio y vuelve a verificar. No se commitea un cambio
-  que toque `.git`, cambie un test bloqueado del plan o agregue un secreto; un `CLAUDE.md`, sí.
+  después `flowrunner resume <run>` commitea tu cambio y vuelve a verificar. Podés commitear vos
+  también: resume chequea todo lo que cambió desde `fix --yo`. No pasa un cambio que toque `.git`,
+  cambie un test bloqueado del plan o agregue un secreto; un `CLAUDE.md`, sí.
 - `flowrunner accept <run> "<por qué>"`: seguir a la fase siguiente igual. Tu motivo queda en el
   informe y en la PR.
 - `flowrunner rerun <run> --desde planificar`: replanificar, o `flowrunner abort <run>` para cortarlo.

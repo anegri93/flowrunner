@@ -257,3 +257,152 @@ describe("checkCommand", () => {
     );
   });
 });
+
+// Caminos que la spec no nombraba y que el shell sí toma: cada caso pasaba con la regla literal de la
+// spec, y lo que hace el shell está comprobado en macOS (`sh` es bash en modo POSIX, sed y grep de BSD).
+describe("checkCommand, lo que el shell hace distinto de lo que parece", () => {
+  const s = () =>
+    base({
+      writable: ["src/a/"],
+      unreadable: [".env.local", "config/.env"],
+      comandos: comandos({
+        ampliables: ["npx vitest run tests/a.test.ts"],
+        exactos: ["npm install zod"],
+      }),
+    });
+
+  // Si regresiona, `cat -n .env.local` imprime los secretos: la opción se llevaba la ruta como su valor.
+  test("una opción de lectura no se lleva la ruta que sigue, ni el valor de --opción=archivo", () => {
+    noPasa(
+      s(),
+      "cat -n .env.local",
+      "file -f .env.local",
+      "diff -c .env.local src/a/x.ts",
+      "diff --from-file=.env.local src/a/x.ts",
+      "wc --files0-from=.env.local",
+      "cat -- .env.local",
+    );
+    pasa(s(), "head -n 20 src/a/x.ts", "tail -n +285 src/a/x.ts", "cut -d: -f1 src/a/x.ts");
+  });
+
+  // Si regresiona, `cat ./.env*` o `cat .*/.env.local` leen el secreto, y `ls .*` lista la carpeta de arriba.
+  test("un comodín no abarca un env_file ni sale del worktree por ./, .* o una carpeta", () => {
+    noPasa(s(), "cat ./.env*", "cat .*/.env.local", "cat src/../.env*", "grep -r TOKEN c*");
+    noPasa(base(), "ls .*", "cat .?/x");
+    pasa(s(), "cat .prettierrc* 2>/dev/null", "ls src/a/*.ts");
+  });
+
+  // Si regresiona, un grep recursivo sin ruta lee el .env de la raíz: grep de BSD busca en `.` aunque
+  // le llegue un pipe, y `-A 3` hacía pasar a 3 por el patrón y al patrón por una ruta.
+  test("grep recursivo sin ruta busca en la raíz aunque una opción tome valor o venga de un pipe", () => {
+    noPasa(
+      s(),
+      "grep -r -A 3 TOKEN",
+      "grep -rn -m 1 TOKEN",
+      "ls | grep -r TOKEN",
+      "grep -f .env.local src/a/x.ts",
+      "diff -r config src",
+    );
+    pasa(s(), "ls | rg TOKEN", "grep -rn -A 3 TOKEN src", "git status | grep -c M");
+  });
+
+  // Si regresiona, `sed -n '$w .git/config'` escribe la config de git (y con ella, un comando que corre
+  // git), y `sed -n '1r .env.local'` lee el secreto: la regla miraba solo `w` al principio.
+  test("sed no escribe, no lee ni ejecuta por un comando con dirección, un flag de s/// ni una opción en grupo", () => {
+    const sedEscribe =
+      "`sed -i` y los scripts de sed que escriben no se usan: para cambiar un archivo usá Edit; para mirar, `sed -n 10,40p archivo`";
+    for (const c of [
+      "sed -n '1w /tmp/x' src/a/x.ts",
+      "sed -n '$w .git/config' src/a/x.ts",
+      "sed -n '1,$W out' src/a/x.ts",
+      "sed -n '1r .env.local' src/a/x.ts",
+      "sed -n '/x/R .env.local' src/a/x.ts",
+      "sed -n '1e id' src/a/x.ts",
+      "sed -n 's/x/id/e' src/a/x.ts",
+      "sed -n 's/x/y/gw out' src/a/x.ts",
+      "sed -ni s/a/b/ src/a/x.ts",
+      "sed -nI '' s/a/b/ src/a/x.ts",
+      "sed -n --file=x src/a/x.ts",
+      "sed -n -e p -e '1w out' src/a/x.ts",
+    ])
+      expect(motivo(checkCommand(s(), c)), c).toBe(sedEscribe);
+    pasa(
+      s(),
+      "sed -n '/error/p' src/a/x.ts",
+      "sed -n '$p' src/a/x.ts",
+      "sed -nE 's/(a|b)+/x/gp' src/a/x.ts",
+      "sed -n -e '1,5p' -e '/^export/=' src/a/x.ts",
+      "sed -n '/^import/,/^$/{p;}' src/a/x.ts",
+      "sed -n 's|a/b|c|p' src/a/x.ts",
+    );
+  });
+
+  // Si regresiona, awk corre un comando (`system (…)`, `@load`, `-l`) o lee el .env por ARGV.
+  test("awk no ejecuta ni lee otros archivos: system con espacio, @load, ARGV y opciones de gawk", () => {
+    noPasa(
+      s(),
+      `awk '{system ("id")}' src/a/x.ts`,
+      `awk '@load "x"' src/a/x.ts`,
+      `awk 'BEGIN{ARGV[1]=".env.local"}{print}' src/a/x.ts`,
+      "awk -l x '{}' src/a/x.ts",
+      "awk -E prog.awk src/a/x.ts",
+      "awk -i inc '{}' src/a/x.ts",
+    );
+    pasa(s(), "awk -F: -v n=2 '{print $1}' src/a/x.ts", "awk '{print FILENAME}' src/a/x.ts");
+  });
+
+  // Si regresiona, una opción de un programa de lectura escribe (`sort -no`, `tree -o`, `file -C`),
+  // ejecuta (`--compress-program`), lee el .env como programa (`jq -f`) o no termina (`tail -fn`).
+  test("sort, tree, file, jq y tail no escriben, no ejecutan ni se cuelgan por una opción", () => {
+    noPasa(
+      s(),
+      "sort -no src/a/y.ts src/a/x.ts",
+      "sort --compress-program=id src/a/x.ts",
+      "sort -T src/a src/a/x.ts",
+      "tree -o .git/x",
+      "file -C -m src/a/m",
+      "jq -f .env.local",
+      "jq -rf .env.local",
+      "tail -fn 5 src/a/x.ts",
+    );
+    pasa(s(), "sort -t: -k2 -n src/a/x.ts", "jq -r .name package.json", "tree -L 2 src");
+  });
+
+  // Si regresiona, git que mira lee el .env sin versionar o abre un editor que no termina.
+  test("git que mira no lee archivos sin versionar ni abre un editor", () => {
+    noPasa(
+      s(),
+      "git blame --contents .env.local src/a/x.ts",
+      "git blame --contents=.env.local src/a/x.ts",
+      "git grep --untracked TOKEN",
+      "git grep --no-exclude-standard TOKEN",
+      "git branch --edit-description",
+    );
+    pasa(s(), "git blame -L 1,20 src/a/x.ts", "git status --untracked-files=all");
+  });
+
+  // Si regresiona, una variable de entorno hace que git o ls corran otro programa: GIT_EXTERNAL_DIFF,
+  // GIT_CONFIG_* con core.fsmonitor, o un PATH que empieza en el alcance.
+  test("las asignaciones solo van delante de un criterio o de instalar: no cambian cómo corre git o ls", () => {
+    for (const c of [
+      "GIT_EXTERNAL_DIFF=rm git diff",
+      "PATH=src/a git status",
+      "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.fsmonitor GIT_CONFIG_VALUE_0=id git status",
+      "LC_ALL=C ls src",
+    ])
+      expect(motivo(checkCommand(s(), c)), c).toBe(
+        "las variables de entorno (`NOMBRE=valor`) solo van delante de los comandos de tus criterios o de instalar",
+      );
+    noPasa(s(), "PATH=src/a; git status", "PATH=src/a");
+    pasa(s(), "CI=1 npx vitest run tests/a.test.ts -t x", "CI=1 npm install zod");
+  });
+
+  // Si regresiona, `cat $'.env.local'` lee el secreto: el shell junta `$'…'` en `.env.local` y la
+  // política comprobaba `$.env.local`.
+  test("$'…' y $\"…\" se rechazan: el shell los lee distinto de lo que se comprueba", () => {
+    const sintaxis = "no pude leer el comando: revisá las comillas y los operadores";
+    expect(motivo(checkCommand(s(), "cat $'.env.local'"))).toBe(sintaxis);
+    expect(motivo(checkCommand(s(), 'cat $".env.local"'))).toBe(sintaxis);
+    pasa(s(), "grep -n 'x$' src/a/x.ts", 'grep -nE "^(a|b)$" src/a/x.ts', "grep -n x$ src/a/x.ts");
+  });
+});

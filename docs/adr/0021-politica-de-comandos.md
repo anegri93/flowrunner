@@ -51,6 +51,29 @@ La lista exacta se reemplaza por una política que evalúa cada tramo del comand
 Un criterio tal cual pasa siempre, aunque encadene pasos con `&&`: es lo que ya permitía la lista
 exacta. Detalle en `docs/plan-de-raiz/pr-03-politica-de-comandos.md`.
 
+### Lo que la spec no nombraba
+
+El shell toma caminos que las reglas literales no veían. Se cierran así, cada uno con su caso en
+`comandos.test.ts`:
+
+- **Las asignaciones solo van delante de un criterio o de instalar.** Delante de `git` o `ls`,
+  `GIT_EXTERNAL_DIFF`, `GIT_CONFIG_*` (con `core.fsmonitor`) o `PATH` hacen correr otro programa.
+- **Las opciones de los programas de lectura no se llevan la ruta que sigue.** `cat -n .env.local`
+  pasaba porque `-n` se tomaba como opción con valor. El valor de `--from-file=x` o `-fx` también se
+  comprueba como ruta. `diff -r` busca como `grep -r`.
+- **Un comodín se mira como lo ve el shell desde la raíz:** `./.env*`, `src/../.env*`, un `.*` que
+  abarca `..`, y una carpeta que contiene un `env_file` en una búsqueda recursiva.
+- **`grep -r` sin rutas busca en `.` aunque le llegue un pipe** (grep de BSD y de GNU); solo `rg` lee
+  el pipe. Las opciones con valor (`-A 3`, `-m 1`) no corren el patrón, y `-f archivo` se comprueba.
+- **sed se lee comando por comando:** `1w x`, `$w x`, `1r x`, `1e x` y `s///e` escriben, leen o
+  ejecutan; `-ni` y `-I` editan en el lugar.
+- **awk:** `system (` con espacio, `@load`, `ARGV` y las opciones de gawk (`-l`, `-i`, `-E`).
+- **Opciones que escriben, ejecutan o no terminan:** `sort -o` en un grupo, `-T` y
+  `--compress-program`; `tree -o`; `file -C`; `jq -f`; `tail -f` en un grupo.
+- **git que mira:** `blame --contents`, `grep --untracked` y `--no-exclude-standard`, y
+  `branch --edit-description`.
+- **`$'…'` y `$"…"`** se rechazan: bash los lee con escapes propios.
+
 ## Alternativas descartadas
 
 - **Una lista más larga de comandos exactos:** no cubre las variantes de opciones (`-5` o `-10`,
@@ -61,4 +84,5 @@ exacta. Detalle en `docs/plan-de-raiz/pr-03-politica-de-comandos.md`.
 ## Verificación
 
 `src/tripwires/comandos.test.ts`, con la tabla de los 135 comandos reales
-(`src/tripwires/fixtures/comandos-rechazados.json`): pasan 117 y siguen rechazados 18.
+(`src/tripwires/fixtures/comandos-rechazados.json`): pasan 117 y siguen rechazados 18. Los caminos de
+arriba tienen su propio bloque de tests.

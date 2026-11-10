@@ -114,6 +114,8 @@ export const eventSchema = z.discriminatedUnion("tipo", [
   }),
   z.strictObject({ tipo: z.literal("cambios_pedidos"), at, motivo: z.string().min(1) }),
   z.strictObject({ tipo: z.literal("reanudado"), at }),
+  /** No había lugar en el repo (`max_runs`): espera sin proceso hasta que se libere uno. */
+  z.strictObject({ tipo: z.literal("encolado"), at }),
   /** La persona decidió entregar aunque probar dejó criterios sin probar, y dijo por qué. */
   z.strictObject({ tipo: z.literal("sin_probar_aceptado"), at, motivo: z.string().min(1) }),
   z.strictObject({ tipo: z.literal("rehacer"), at, desde: phaseSchema }),

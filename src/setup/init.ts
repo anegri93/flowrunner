@@ -22,9 +22,17 @@ import { BIN } from "../cli/runs.ts";
 import { installSkill, skillUpToDate } from "../cli/skill.ts";
 import { flowrunnerHome, loadRepoConfig } from "../config/load.ts";
 import { ConfigError } from "../config/schemas.ts";
-import { fetchOrigin, git, GitError, pushBranch, removeWorktree } from "../git/git.ts";
+import {
+  addDetachedWorktree,
+  fetchOrigin,
+  git,
+  GitError,
+  pushBranch,
+  removeWorktree,
+} from "../git/git.ts";
 import { createPr, findPr, type PullRequest } from "../github/gh.ts";
 import { runVerify } from "../phases/verify.ts";
+import { conTurno, turnoFile } from "../store/turno.ts";
 import { repoNode } from "../proc/node.ts";
 import { runProc, runShell, tail } from "../proc/proc.ts";
 import type { Deps, RunPaths } from "../runner/types.ts";
@@ -178,7 +186,7 @@ async function brainSteps(
     ];
   }
   await removeWorktree(repo, worktree, env);
-  await git(repo, ["worktree", "add", "--quiet", "--detach", worktree, `origin/${base}`], env);
+  await addDetachedWorktree(repo, worktree, `origin/${base}`, env);
   try {
     const files = (await git(worktree, ["ls-files"], env)).split("\n").filter(Boolean);
     const pkgFile = join(worktree, "package.json");
@@ -218,7 +226,12 @@ async function brainSteps(
     });
     const verify =
       setup.code === 0
-        ? await runVerify(worktree, config, node.env)
+        ? // Con el turno del entorno del proyecto: un run suyo puede estar corriendo verify (ADR 0019).
+          await conTurno(
+            turnoFile(flowrunnerHome(env), projectNameFor(repo), "entorno"),
+            `init-${projectNameFor(repo)}`,
+            () => runVerify(worktree, config, node.env),
+          )
         : { ok: false as const, detail: `el setup salió ${String(setup.code)}:\n${tail(setup)}` };
     if (!verify.ok) {
       pasos.push({
@@ -345,7 +358,7 @@ export async function draftExistingBrain(
   const worktree = join(flowrunnerHome(env), "init", `${name}-borrador`);
   progress(`preparando un worktree limpio de origin/${base}`);
   await removeWorktree(repo, worktree, env);
-  await git(repo, ["worktree", "add", "--quiet", "--detach", worktree, `origin/${base}`], env);
+  await addDetachedWorktree(repo, worktree, `origin/${base}`, env);
   try {
     const brain = loadBrain(worktree);
     const drafted = [brain.convenciones, brain.contexto, brain.queEsBien].some((t) =>

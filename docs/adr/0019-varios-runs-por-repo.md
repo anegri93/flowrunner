@@ -16,8 +16,9 @@ runs compartan el entorno de `verify` y `probar`, el `.git` del checkout y la PR
 - **El que no encuentra lugar queda `en_cola`**, sin proceso, y sale el más viejo primero. Lo
   despacha el proceso que suelta un lugar, y `tick` como respaldo.
 - **Turnos con nombre** para lo compartido: `entorno` (verify, comandos de criterio en verificar y
-  probar), `git` (fetch y worktrees) y `lecciones` (la PR de aprender). Se esperan con un límite de
-  2 horas.
+  probar, hasta 2 horas de espera), `git` (fetch, push y worktrees, en el `.git` común) y
+  `lecciones` (la PR de aprender). Contar lugares y despachar la cola también van con turno.
+- **Dos runs vivos de la misma clave no se permiten:** trabajarían en la misma rama.
 - **Al aprobar un plan se avisa** si su alcance se pisa con el de otro run cuya PR no se cerró. No
   bloquea.
 
@@ -32,5 +33,5 @@ Detalle en `docs/specs/2026-11-09-varios-runs-por-repo.md`.
 
 ## Verificación
 
-`src/store/lugares.test.ts`, `src/store/turno.test.ts` y `test/varios-runs.int.test.ts`, según la
-spec.
+`src/store/lugares.test.ts`, `src/store/turno.test.ts`, `src/cli/approval.test.ts` y
+`test/varios-runs.int.test.ts`, según la spec.

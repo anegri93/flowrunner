@@ -18,6 +18,7 @@ import { repairTest } from "./reparar.ts";
 import { featureWorktree, prepared } from "./inputs.ts";
 import { SETUP_TIMEOUT_MS } from "./preparar.ts";
 import { readPlan } from "./planificar.ts";
+import { conEntorno } from "./turno-entorno.ts";
 import { runVerify } from "./verify.ts";
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -110,24 +111,27 @@ export const verificar: PhaseFn = async (ctx) => {
   envCheck.remove();
 
   // Los .env solo mientras corren los comandos: diagnosticar y reparar leen este worktree.
+  // Con el turno del entorno por tanda, no por fase: entre tandas corren diagnosticar y reparar.
   const runCriteria = (criteria: readonly (typeof plan.criterios)[number][]) =>
-    withEnvFiles(ctx.state.repo, worktree, config.env_files, async () => {
-      const run = acceptanceRunner(worktree, deps.env);
-      const failing: (Failing & { hint: string | undefined })[] = [];
-      for (const criterion of criteria) {
-        const result = await run(criterion.comando);
-        if (result.code !== 0) {
-          failing.push({
-            id: criterion.id,
-            comando: criterion.comando,
-            subtarea: criterion.subtarea,
-            detalle: `${criterion.id} sigue en rojo: \`${criterion.comando}\` salió ${result.code}:\n${tail(result, 20)}`,
-            hint: environmentHint(`${result.stdout}\n${result.stderr}`),
-          });
+    conEntorno(ctx, () =>
+      withEnvFiles(ctx.state.repo, worktree, config.env_files, async () => {
+        const run = acceptanceRunner(worktree, deps.env);
+        const failing: (Failing & { hint: string | undefined })[] = [];
+        for (const criterion of criteria) {
+          const result = await run(criterion.comando);
+          if (result.code !== 0) {
+            failing.push({
+              id: criterion.id,
+              comando: criterion.comando,
+              subtarea: criterion.subtarea,
+              detalle: `${criterion.id} sigue en rojo: \`${criterion.comando}\` salió ${result.code}:\n${tail(result, 20)}`,
+              hint: environmentHint(`${result.stdout}\n${result.stderr}`),
+            });
+          }
         }
-      }
-      return failing;
-    });
+        return failing;
+      }),
+    );
 
   let failing = await runCriteria(plan.criterios);
   // Una señal de entorno no la arregla una sub-task: se reinstala y se repite una vez.
@@ -203,7 +207,7 @@ export const verificar: PhaseFn = async (ctx) => {
     }
   }
 
-  const verify = await runVerify(worktree, config, deps.env);
+  const verify = await conEntorno(ctx, () => runVerify(worktree, config, deps.env));
   if (!verify.ok) {
     if (verify.unrunnable) return { tipo: "falla", clase: "entorno", motivo: verify.detail };
     // Se atribuye por los archivos que nombra la salida: vuelve la sub-task dueña de cada uno. Sin

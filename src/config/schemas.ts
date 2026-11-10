@@ -14,6 +14,9 @@ export const AGENT_PHASES = [
 ] as const;
 export type AgentPhase = (typeof AGENT_PHASES)[number];
 
+/** Dos runs a la vez: con `max_parallel` 3 ya son hasta seis sesiones de agente juntas. */
+export const MAX_RUNS_DEFAULT = 2;
+
 const modelChoice = z.strictObject({ model: z.enum(MODEL_IDS), effort: z.enum(EFFORTS) });
 export type ModelChoice = z.infer<typeof modelChoice>;
 
@@ -50,6 +53,8 @@ export const repoConfigSchema = z
     lockfiles: z.array(relativePath).default([]),
     manifests: z.array(relativePath).default([]),
     max_parallel: z.int().min(1).max(16).default(3),
+    /** Runs de este repo que avanzan a la vez; el resto espera en cola (ADR 0019). */
+    max_runs: z.int().min(1).max(8).default(MAX_RUNS_DEFAULT),
     /** Tope opcional en USD por run. Sin él, el run no se corta por gasto. */
     budget: z.strictObject({ run_usd: z.number().positive() }).optional(),
     models: z.partialRecord(z.enum(AGENT_PHASES), modelChoice).default({}),

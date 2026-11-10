@@ -53,8 +53,8 @@ Alternativas descartadas:
   proceso que se corta justo antes de soltar el lugar al pasar a esperar no lo deja tomado.
 - **En disco:** `~/.flowrunner/locks/<proyecto>/lugares/<runId>.json`, con `{ run_id, pid }` (el
   esquema de hoy).
-- **Tomar un lugar** pasa bajo un lock corto, `locks/<proyecto>/lugares.lock` (`wx` con el pid; se
-  pisa si su pid murió o el archivo no se lee). Adentro: se borran los lugares que no valen, se
+- **Tomar un lugar** pasa bajo el turno corto `lugares` (sección 3), en
+  `locks/<proyecto>/lugares.lock`. Adentro: se borran los lugares que no valen, se
   cuentan los demás, y si son menos que `max_runs` se escribe el propio. Un run
   que ya tiene su lugar lo reescribe con el pid nuevo, que es lo que hace `handOver` hoy.
 - **Soltar un lugar:** `runProcess` lo suelta al terminar si el run no quedó `activo` (pasó a esperar,
@@ -72,15 +72,18 @@ Alternativas descartadas:
   ya existe, cuando el run consigue lugar. El reductor del engine y todo lo que enumera estados lo
   incorpora: `src/engine/engine.ts`, `src/store/runs.ts`, `src/cli/contracts.ts`, `src/cli/runs.ts`,
   `src/cli/tick.ts`, `src/watch/render.ts`, `orca/src/runs.ts` y la skill.
+- **Dos runs vivos de la misma clave no se permiten:** trabajarían en la misma rama. `flowrunner run`
+  se niega y nombra el run vivo (cualquiera que no esté `cerrado`, `abortado` ni `entregado`).
 - **Entran en la cola** los comandos que lanzan o retoman el proceso de un run y no encuentran
   lugar: `run`, `approve`, `changes`, `resume`, `rerun` y la reanudación de `tick`. Anotan
   `encolado` y responden con `ok: true`, la acción `en cola, <n>.º — corren <ids>` y el campo
   `cola: { posicion, corriendo }`.
 - **Orden:** primero el run en cola con el `run_creado` más viejo. Un run que ya pasó por
   planificar y vuelve a la cola pasa antes que uno recién lanzado.
-- **`despacharCola(home, proyecto)`:** bajo `lugares.lock`, recorre los runs en cola del más viejo
-  al más nuevo mientras haya lugar; a cada uno le reserva el lugar con su propio pid, anota
-  `reanudado` y lo lanza con `handOver`. Se llama:
+- **`despacharCola(home, proyecto)`:** bajo el turno `cola`, recorre los runs en cola del más viejo
+  al más nuevo mientras haya lugar; a cada uno, si sigue en cola, le anota `reanudado`, le reserva el
+  lugar con su propio pid y lo lanza. Lanzar un run desde un comando (`lanzarOEncolar`) toma el
+  mismo turno: así un run nunca termina con dos procesos. Se llama:
   1. en un `finally` al final de `runProcess`, salga como salga;
   2. en `abort`, después de soltar el lugar;
   3. en cada `tick`, como respaldo: la cola nunca queda trabada más de `tick_minutes`.
@@ -91,8 +94,11 @@ Alternativas descartadas:
 
 Una primitiva, `conTurno(home, proyecto, nombre, runId, fn)`:
 
-- Toma `locks/<proyecto>/<nombre>.lock` con `wx` y `{ run_id, pid }`, corre `fn` y suelta en un
-  `finally`.
+- Crea el archivo del turno con `{ run_id, pid, token }` de forma atómica (escribe aparte y hace
+  `link`), corre `fn` y lo suelta en un `finally`. Solo lo suelta quien tiene el token.
+- Dentro de un mismo proceso, las esperas del mismo archivo hacen fila en memoria, en orden de
+  llegada: dos sub-tasks del mismo run no pagan la demora de revisar el archivo.
+- Un turno vencido se rompe moviéndolo a un nombre propio y borrándolo solo si es el que se leyó.
 - El turno está vencido si su pid murió o el archivo no se lee. Quien espera un turno siempre tiene
   un proceso vivo, así que no hay espera sin proceso.
 - Mientras espera, revisa con un intervalo que crece de 2 a 15 segundos, y anota **un** `aviso` con
@@ -104,7 +110,9 @@ Una primitiva, `conTurno(home, proyecto, nombre, runId, fn)`:
 | Turno | Cubre | Por qué |
 |---|---|---|
 | `entorno` | `runVerify` en preparar (`src/phases/preparar.ts:59`), en verificar (`src/phases/verificar.ts:206`) y en init (`src/setup/init.ts:221`); cada llamada a `runCriteria` en verificar; la fase `probar` desde antes de `levantarEntorno` hasta después de bajar | puertos fijos, base local, URLs de `probar` |
-| `git` | `fetchOrigin`, `addWorktree` y `removeWorktree` (`src/git/git.ts`) | `.git/worktrees` y los refs son del checkout compartido; dura segundos |
+| `git` | `fetchOrigin`, `addWorktree`, `addDetachedWorktree`, `removeWorktree`, `pushBranch` (`src/git/git.ts`) y el borrado de worktrees de abort. Vive en el `.git` común del repo (`flowrunner.lock`), no en `locks/` | `.git/worktrees` y los refs son del checkout compartido, también entre sub-tasks del mismo run; dura segundos, con un límite de 15 min |
+| `lugares` | contar y escribir lugares (sección 1) | dura milisegundos, con un límite de 10 s |
+| `cola` | despachar la cola y lanzar un run | un run nunca termina con dos procesos |
 | `lecciones` | la publicación de `aprender`: worktree, commit, push y PR | dos PRs de lecciones se pisarían en `lecciones.md` |
 
 - En verificar, el turno va alrededor de cada tanda de comandos y no de la fase entera: entre tanda
@@ -113,8 +121,9 @@ Una primitiva, `conTurno(home, proyecto, nombre, runId, fn)`:
   `espera` sin esperar, como hoy, y el próximo `tick` reintenta.
 - El chequeo de `probar` de "ya hay algo respondiendo antes de levantar" se queda. Con el turno ya
   no lo dispara otro run, solo un entorno de la persona que quedó prendido.
-- `git` es el turno más interno: ningún código que tenga el turno `git` pide otro. Así no hay un
-  orden de toma que pueda trabarse.
+- Los turnos se anidan siempre en el mismo orden: `cola` → `lugares` y `lecciones` → `git`. `git` y
+  `lugares` son los más internos: quien los tiene no pide otro. Así no hay un orden de toma que pueda
+  trabarse.
 
 Quedan afuera a propósito:
 
@@ -142,12 +151,14 @@ Quedan afuera a propósito:
 - **Muere un proceso con lugar o turno:** su pid queda muerto y el próximo que intenta tomar ese
   lugar o turno lo da por vencido. La cola se despacha en el próximo `tick` aunque nadie lo haya
   hecho.
-- **Archivo de lugar, de turno o `lugares.lock` corrupto:** `readLock` devuelve `undefined` y se
+- **Archivo de lugar o de turno corrupto:** su lectura devuelve `undefined` y se
   trata como vencido.
 - **Bajar `max_runs` con runs corriendo:** los que tienen lugar lo conservan; los nuevos esperan a
   que el conteo baje.
-- **Abortar un run que espera un turno:** recibe SIGTERM como hoy y el `finally` suelta el turno.
-- **Dos tomas de lugar simultáneas:** `lugares.lock` las serializa; nunca entran más de `max_runs`.
+- **Abortar un run que espera o tiene un turno:** recibe SIGTERM como hoy y el proceso termina sin
+  pasar por el `finally`; su turno queda con un pid muerto y el próximo que lo pide lo rompe.
+- **Dos tomas de lugar simultáneas:** el turno `lugares` las serializa; nunca entran más de
+  `max_runs`.
 
 ## 6. Tests
 
@@ -155,26 +166,37 @@ Cada test nuevo se muestra fallando contra `main` antes del cambio.
 
 Unitarios:
 
-- `src/store/lugares.test.ts`: con tope 2 el tercero no consigue lugar; un lugar con pid muerto se
-  libera; un lugar de un run `esperando` o `en_cola` se libera aunque su pid viva; dos tomas concurrentes con un lugar libre dejan entrar
-  exactamente una; el lock viejo se migra a un lugar.
-- `src/store/turno.test.ts`: espera mientras el dueño vive; toma si el dueño murió; suelta aunque
-  `fn` tire; falla al cumplirse el límite, con reloj inyectado; anota un solo aviso.
-- `src/cli/approval.test.ts` o el del módulo que calcule `se_pisa_con`: archivo igual, carpeta que
-  contiene, sin choque; `entregado` incluido, `cerrado` y `abortado` excluidos.
+- `src/store/lugares.test.ts`: con tope 2 el tercero no consigue lugar; el que ya tenía lugar lo
+  conserva con el pid nuevo; un lugar con pid muerto se libera; un lugar de un run que no está en
+  curso se libera aunque su pid viva; otro proyecto no cuenta; el lock viejo se migra a un lugar.
+- `src/store/turno.test.ts`: ocupado para otro aunque sea del mismo proceso; toma si el dueño murió
+  o el archivo no se lee; solo suelta su dueño; suelta aunque `fn` tire; espera mientras el dueño
+  vive con un solo aviso; falla al cumplirse el límite, con reloj inyectado; tres esperas a la vez
+  nunca están adentro juntas.
+- `src/store/runs.test.ts`: qué estados ocupan lugar y el orden de la cola.
+- `src/engine/engine.test.ts`: `encolado` y `reanudado` dejan el run como estaba.
+- `src/cli/approval.test.ts` (`pisadas`): archivo igual, carpeta que contiene, lockfile cuando los
+  dos agregan dependencias; `cerrado`, `abortado`, otro proyecto y un plan ilegible no cuentan.
+- `orca/src/runs.test.ts`: la frase y la etiqueta de un run en cola, y el aviso en la pestaña del
+  plan.
 
-Integración (`test/varios-runs.int.test.ts`, con `test/hooks/fake-phases.ts`):
+Integración (`test/varios-runs.int.test.ts`, con `test/hooks/fake-phases.ts`; las fases falsas
+esperan un archivo semáforo para que los casos de cola no dependan de tiempos):
 
-- Dos runs del mismo repo llegan los dos a `esperando_aprobacion`. Contra `main`, el segundo se
-  niega.
+- Dos runs del mismo repo llegan los dos a `esperando_aprobacion`.
+- Con `max_runs: 1`, un run en `esperando_aprobacion` no bloquea a otro.
 - Con `max_runs: 1`, el segundo queda `en_cola` y arranca solo cuando el primero se entrega.
-- Un run en `esperando_aprobacion` no bloquea a otro con `max_runs: 1`.
-- Dos runs en verificar nunca tienen el turno `entorno` a la vez: las fases falsas anotan su
-  intervalo y el test comprueba que no se superponen.
-- `tick` despacha la cola cuando el proceso que tenía que hacerlo murió.
+- Tres `run` lanzados a la vez con `max_runs: 1`: uno corre, dos quedan en cola, y nunca hay más de
+  un lugar.
+- `tick` despacha la cola cuando el proceso que tenía que hacerlo murió con `kill -9`.
+- Abortar un run en cola lo saca sin lanzarlo.
+- Un segundo run de la misma clave se niega y nombra el run vivo.
+- Dos preparar reales de runs distintos nunca corren `verify` a la vez.
 
-Cambio de contrato: los tests de `test/cli-runs.int.test.ts` que esperan "ya tiene un run en curso"
-pasan a esperar `en_cola`. No es un test debilitado; la PR lo nombra así.
+Cambios de contrato en tests existentes: el aviso de aprobar ya no espera que el lock quede (esperar
+suelta el lugar); el mensaje de `tick` para una PR mergeada nombra el turno de lecciones; el test de
+`cli-runs` que esperaba que un segundo run del mismo repo se niegue se borra, porque ese rechazo ya
+no existe, y lo reemplaza el de la misma clave.
 
 ## Fuera de alcance
 

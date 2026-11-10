@@ -3,6 +3,7 @@
 import { nextAction, stateOf, type RunState } from "../engine/engine.ts";
 import { outcomeSchema, type Outcome } from "../store/events.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
+import { TurnoAgotadoError } from "../store/turno.ts";
 import type { Deps, PhaseRegistry, RunPaths } from "./types.ts";
 
 /** Espera antes de reintentar una falla de infraestructura: 5 s, 20 s. */
@@ -20,6 +21,9 @@ async function runPhase(
     if (checked.success) return checked.data;
     return { tipo: "falla", clase: "infra", motivo: `la fase devolvió un resultado inválido` };
   } catch (error) {
+    // Esperar más el turno de otro run no lo libera: se detiene y la persona retoma (ADR 0019).
+    if (error instanceof TurnoAgotadoError)
+      return { tipo: "falla", clase: "entorno", motivo: error.message };
     const motivo = error instanceof Error ? error.message : String(error);
     return { tipo: "falla", clase: "infra", motivo: motivo === "" ? "error sin mensaje" : motivo };
   }

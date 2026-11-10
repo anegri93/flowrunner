@@ -1,7 +1,9 @@
 // Las operaciones de git de flowrunner. Ningún agente llama a git hacia afuera: solo este módulo.
+import { execFileSync } from "node:child_process";
 import { readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { runProc } from "../proc/proc.ts";
+import { conTurno, conTurnoSync, type EsperaTurno } from "../store/turno.ts";
 
 export class GitError extends Error {
   constructor(args: readonly string[], stderr: string) {
@@ -24,8 +26,39 @@ export async function git(
   return result.stdout.trim();
 }
 
+/**
+ * El turno de git del checkout: `fetch` y `worktree add/remove/prune` tocan refs y `.git/worktrees`,
+ * que comparten todos los runs y las sub-tasks del repo. Vive en el `.git` común, al lado de los
+ * locks de git. Es el turno más interno: quien lo tiene no pide otro (ADR 0019).
+ */
+function gitTurnoFile(repo: string): string {
+  const args = ["rev-parse", "--git-common-dir"];
+  let common: string;
+  try {
+    common = execFileSync("git", ["-C", repo, ...args], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  } catch (error) {
+    const stderr = (error as { stderr?: unknown }).stderr;
+    throw new GitError(args, typeof stderr === "string" ? stderr : String(error));
+  }
+  return join(resolve(repo, common), "flowrunner.lock");
+}
+
+/** Dura segundos; quince minutos sin tomarlo es otro proceso colgado, no una espera. */
+const GIT_TURNO: EsperaTurno = { limiteMs: 15 * 60_000, pausaMs: { desde: 50, hasta: 1_000 } };
+
+export function conTurnoGit<T>(repo: string, fn: () => Promise<T>): Promise<T> {
+  return conTurno(gitTurnoFile(repo), "git", fn, GIT_TURNO);
+}
+
+export function conTurnoGitSync<T>(repo: string, fn: () => T): T {
+  return conTurnoSync(gitTurnoFile(repo), "git", fn, GIT_TURNO);
+}
+
 export async function fetchOrigin(repo: string, env?: NodeJS.ProcessEnv): Promise<void> {
-  await git(repo, ["fetch", "--quiet", "origin"], env);
+  await conTurnoGit(repo, () => git(repo, ["fetch", "--quiet", "origin"], env));
 }
 
 /** Crea `path` como worktree en una rama nueva desde `startPoint`; si ya existían, los rehace. */
@@ -36,10 +69,24 @@ export async function addWorktree(
   startPoint: string,
   env?: NodeJS.ProcessEnv,
 ): Promise<string> {
-  await git(repo, ["worktree", "remove", "--force", path], env).catch(() => undefined);
-  await git(repo, ["worktree", "prune"], env);
-  await git(repo, ["worktree", "add", "--quiet", "-B", branch, path, startPoint], env);
+  await conTurnoGit(repo, async () => {
+    await git(repo, ["worktree", "remove", "--force", path], env).catch(() => undefined);
+    await git(repo, ["worktree", "prune"], env);
+    await git(repo, ["worktree", "add", "--quiet", "-B", branch, path, startPoint], env);
+  });
   return headSha(path, env);
+}
+
+/** Un worktree sin rama en `commit`, como los de init y reparar; con el turno de git. */
+export async function addDetachedWorktree(
+  repo: string,
+  path: string,
+  commit: string,
+  env?: NodeJS.ProcessEnv,
+): Promise<void> {
+  await conTurnoGit(repo, () =>
+    git(repo, ["worktree", "add", "--quiet", "--detach", path, commit], env),
+  );
 }
 
 export function headSha(worktree: string, env?: NodeJS.ProcessEnv): Promise<string> {
@@ -51,8 +98,10 @@ export async function removeWorktree(
   path: string,
   env?: NodeJS.ProcessEnv,
 ): Promise<void> {
-  await git(repo, ["worktree", "remove", "--force", path], env).catch(() => undefined);
-  await git(repo, ["worktree", "prune"], env);
+  await conTurnoGit(repo, async () => {
+    await git(repo, ["worktree", "remove", "--force", path], env).catch(() => undefined);
+    await git(repo, ["worktree", "prune"], env);
+  });
 }
 
 export async function resetHard(
@@ -130,10 +179,13 @@ export async function pushBranch(
       ["push", branch],
       "flowrunner solo empuja ramas feat/, chore/lecciones-, chore/flowrunner-init y chore/flowrunner-borrador",
     );
-  await git(
-    worktree,
-    ["push", "--quiet", "--force-with-lease", "origin", `HEAD:refs/heads/${branch}`],
-    env,
+  // Con el turno de git: el push actualiza refs/remotes/origin, que un fetch de otro run reescribe.
+  await conTurnoGit(worktree, () =>
+    git(
+      worktree,
+      ["push", "--quiet", "--force-with-lease", "origin", `HEAD:refs/heads/${branch}`],
+      env,
+    ),
   );
 }
 

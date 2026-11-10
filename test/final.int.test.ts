@@ -5,11 +5,11 @@ import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import type { Plan } from "../src/gates/plan.ts";
-import { isAlive, readLock } from "../src/store/lock.ts";
+import { isAlive } from "../src/store/lock.ts";
 import { readLog } from "../src/store/run-log.ts";
 import { runCli } from "./helpers/cli.ts";
 import { git, tempDir } from "./helpers/git.ts";
-import { waitFor } from "./helpers/runs.ts";
+import { lockPid, waitFor } from "./helpers/runs.ts";
 import type { SimScript } from "./helpers/sim-sdk.ts";
 import { simWorld } from "./helpers/sim-world.ts";
 import { execFileSync } from "node:child_process";
@@ -109,7 +109,7 @@ describe("recorrido completo", () => {
       }
     };
     const killAndResume = async (id: string) => {
-      const pid = await waitFor("el pid", () => readLock(w.home, "acme-api")?.pid);
+      const pid = await waitFor("el pid", () => lockPid(w, id));
       process.kill(pid, "SIGKILL");
       await waitFor("muerto", () => !isAlive(pid));
       expect(runCli(["resume", id], w.env).status).toBe(0);

@@ -1,22 +1,38 @@
 // `flowrunner plan`, `approve` y `changes`: la persona revisa el plan, desde Claude Code o la terminal.
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
+import { loadRepoConfig } from "../config/load.ts";
 import {
   allDependencies,
   cambioExistenteSchema,
+  effectiveScope,
+  scopeOverlap,
   subtaskSchema,
   type CambioExistente,
+  type PlanRepoRules,
+  type Subtask,
 } from "../gates/plan.ts";
 import { git } from "../git/git.ts";
 import { prepared } from "../phases/inputs.ts";
 import { planChanges, previousDir } from "../phases/plan-anterior.ts";
 import { readPlan, readPlanAt } from "../phases/planificar.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
-import { loadState, runPaths } from "../store/runs.ts";
+import { listRunIds, loadState, runPaths } from "../store/runs.ts";
 import { summarize, runSummarySchema } from "./contracts.ts";
 import { UserError } from "./output.ts";
-import { handOver } from "./runs.ts";
+import { lanzamiento, lanzarOEncolar } from "./runs.ts";
+
+/** Otro run del proyecto cuyo alcance se pisa con este plan. Avisa; no bloquea (ADR 0019). */
+export const pisadaSchema = z.strictObject({
+  run: z.string(),
+  status: runSummarySchema.shape.status,
+  /** La PR del otro run, si ya la abrió: un run entregado soltó su lugar, pero su PR sigue abierta. */
+  pr: z.int().nullable(),
+  /** Las rutas de este plan que también toca el otro. */
+  archivos: z.array(z.string()).min(1),
+});
+export type Pisada = z.infer<typeof pisadaSchema>;
 
 export const planViewSchema = z.strictObject({
   ok: z.literal(true),
@@ -28,6 +44,8 @@ export const planViewSchema = z.strictObject({
   diff_tests: z.string(),
   /** Lo que hoy existe y el plan cambia. Con algo acá, `approve` pide `--acepto-cambios`. */
   cambia_lo_existente: z.array(cambioExistenteSchema),
+  /** Los otros runs del proyecto, con la PR sin cerrar, cuyo alcance se pisa con este plan. */
+  se_pisa_con: z.array(pisadaSchema),
   /** Qué cambió contra el plan anterior; null en el primer plan. */
   cambios: z
     .strictObject({
@@ -63,10 +81,60 @@ export async function showPlan(home: string, id: string, env: NodeJS.ProcessEnv)
     tests: Object.keys(plan.locked),
     diff_tests: diff,
     cambia_lo_existente: plan.cambia_lo_existente,
+    se_pisa_con: pisadas(home, id, plan.subtareas, loadRepoConfig(prep.worktree)),
     cambios: existsSync(join(previousDir(run), "plan.md"))
       ? planChanges(readPlanAt(previousDir(run)), plan)
       : null,
   });
+}
+
+/** Las sub-tasks de otro run, o nada si su plan no está o no se lee: el aviso no inventa choques. */
+function subtasksOf(home: string, id: string): Subtask[] | undefined {
+  const file = join(runPaths(home, id).dir, "tasks.json");
+  if (!existsSync(file)) return undefined;
+  try {
+    const parsed = z.array(subtaskSchema).safeParse(JSON.parse(readFileSync(file, "utf8")));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    // Un tasks.json a medio escribir por el planificador del otro run: se mira en el próximo plan.
+    return undefined;
+  }
+}
+
+/**
+ * Compara el alcance efectivo de este plan con el de cada otro run del proyecto cuya PR no se cerró.
+ * Los tripwires no dejan escribir fuera del alcance, así que es un techo de lo que cada run toca.
+ */
+export function pisadas(
+  home: string,
+  id: string,
+  subtareas: readonly Subtask[],
+  rules: PlanRepoRules,
+): Pisada[] {
+  const proyecto = loadState(home, id).proyecto;
+  const own = subtareas.flatMap((t) => effectiveScope(t, rules));
+  const out: Pisada[] = [];
+  for (const other of listRunIds(home)) {
+    if (other === id) continue;
+    const state = loadState(home, other);
+    if (state.proyecto !== proyecto || state.status === "cerrado" || state.status === "abortado")
+      continue;
+    const theirs = subtasksOf(home, other);
+    if (theirs === undefined) continue;
+    const archivos = scopeOverlap(
+      own,
+      theirs.flatMap((t) => effectiveScope(t, rules)),
+    );
+    if (archivos.length === 0) continue;
+    const pr = readLog(runPaths(home, other).dir).events.findLast((e) => e.tipo === "pr");
+    out.push({
+      run: other,
+      status: state.status,
+      pr: pr?.tipo === "pr" ? pr.numero : null,
+      archivos,
+    });
+  }
+  return out;
 }
 
 export function describePlan(view: z.infer<typeof planViewSchema>): string {
@@ -75,6 +143,7 @@ export function describePlan(view: z.infer<typeof planViewSchema>): string {
     `${view.run.id} · ${view.run.status}`,
     `${view.subtareas.length} sub-tasks · ${view.criterios.length} criterios con tests en rojo · arrancan juntas: ${parallel.join(", ")}`,
     ...existingText(view.cambia_lo_existente),
+    ...overlapText(view.se_pisa_con),
     "",
     ...view.subtareas.map(
       (t) =>
@@ -99,6 +168,19 @@ function existingText(cambios: readonly CambioExistente[]): string[] {
     "",
     `⚠ Cambia lo que ya existe (${String(cambios.length)}). Aprobar pide --acepto-cambios:`,
     ...cambios.map((c) => `  - ${c.que} (${c.donde}) ← ${c.criterio}`),
+  ];
+}
+
+/** Al lado de lo que cambia: decidir si aprobar igual o esperar al otro run es de la persona. */
+function overlapText(pisadas: readonly Pisada[]): string[] {
+  if (pisadas.length === 0) return [];
+  return [
+    "",
+    "⚠ Se pisa con otros runs del proyecto. No bloquea: aprobá, esperá al otro o abortá:",
+    ...pisadas.map(
+      (p) =>
+        `  - ${p.run} (${p.status}${p.pr === null ? "" : `, PR #${String(p.pr)}`}): ${p.archivos.join(", ")}`,
+    ),
   ];
 }
 
@@ -149,7 +231,7 @@ export function approveRun(
   env: NodeJS.ProcessEnv,
   aceptaCambios = false,
 ) {
-  const state = waitingOrExplain(home, id);
+  waitingOrExplain(home, id);
   const run = runPaths(home, id);
   const cambios = readPlan(run).cambia_lo_existente;
   if (cambios.length > 0 && !aceptaCambios) {
@@ -159,8 +241,12 @@ export function approveRun(
     );
   }
   appendEvent(run.dir, { tipo: "aprobado", cambios_aceptados: cambios.length });
-  handOver(home, state.proyecto, run, env);
-  return { ok: true as const, id, accion: "aprobado: implementar arrancó" };
+  return lanzamiento(
+    id,
+    "aprobado: implementar arrancó",
+    "aprobado",
+    lanzarOEncolar(home, id, env),
+  );
 }
 
 export function requestChanges(
@@ -175,9 +261,13 @@ export function requestChanges(
       `flowrunner changes ${id} "<qué cambiar>"`,
     );
   }
-  const state = waitingOrExplain(home, id);
+  waitingOrExplain(home, id);
   const run = runPaths(home, id);
   appendEvent(run.dir, { tipo: "cambios_pedidos", motivo: motivo.trim() });
-  handOver(home, state.proyecto, run, env);
-  return { ok: true as const, id, accion: "cambios pedidos: planificar vuelve a correr" };
+  return lanzamiento(
+    id,
+    "cambios pedidos: planificar vuelve a correr",
+    "cambios pedidos",
+    lanzarOEncolar(home, id, env),
+  );
 }

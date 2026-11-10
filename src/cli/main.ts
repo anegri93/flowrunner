@@ -227,7 +227,7 @@ export async function main(
         return 0;
       }
       case "abort": {
-        const aborted = abortRun(home, runArg(home, first));
+        const aborted = abortRun(home, runArg(home, first), env);
         print(aborted, `run ${aborted.id} ${aborted.accion}`);
         return 0;
       }

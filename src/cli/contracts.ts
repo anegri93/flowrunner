@@ -11,6 +11,7 @@ export const runSummarySchema = z.strictObject({
   repo: z.string(),
   status: z.enum([
     "en_curso",
+    "en_cola",
     "esperando_aprobacion",
     "entregado",
     "cerrado",
@@ -45,6 +46,8 @@ export const runStartedSchema = z.strictObject({
   ok: z.literal(true),
   id: z.string(),
   accion: z.string(),
+  /** Solo si no había lugar en el repo: su posición en la cola y los runs que ocupan los lugares. */
+  cola: z.strictObject({ posicion: z.int().positive(), corriendo: z.array(z.string()) }).optional(),
 });
 
 export function summarize(state: RunState): RunSummary {

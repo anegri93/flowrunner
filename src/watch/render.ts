@@ -72,6 +72,7 @@ const RUN: Record<RunTree["status"], { kind: Kind; text: string; urgency: number
   esperando_aprobacion: { kind: "blocked", text: "te espera", urgency: 0 },
   detenido: { kind: "failed", text: "detenido", urgency: 1 },
   en_curso: { kind: "running", text: "en curso", urgency: 2 },
+  en_cola: { kind: "waiting", text: "en cola", urgency: 3 },
   pausado_por_limite: { kind: "waiting", text: "en pausa", urgency: 3 },
   entregado: { kind: "waiting", text: "PR abierta", urgency: 4 },
   cerrado: { kind: "done", text: "cerrado", urgency: 5 },

@@ -4,6 +4,8 @@ import type { Outcome, Phase, RunEvent } from "../store/events.ts";
 
 export type RunStatus =
   | "en_curso"
+  /** Lista para avanzar, esperando un lugar del repo; no tiene proceso (ADR 0019). */
+  | "en_cola"
   | "esperando_aprobacion"
   | "entregado"
   | "cerrado"
@@ -11,7 +13,7 @@ export type RunStatus =
   | "pausado_por_limite"
   | "abortado";
 
-/** Estados en los que el run ya no avanza: el lock se puede tomar. */
+/** Estados en los que el run ya no avanza. */
 export const TERMINAL: ReadonlySet<RunStatus> = new Set(["cerrado", "abortado"]);
 
 /** Intentos por entrada a cada fase ante una falla de gate. */
@@ -262,7 +264,11 @@ export function reduce(state: RunState, event: RunEvent): RunState {
       return state.status === "esperando_aprobacion"
         ? enter(state, "planificar", { instruccion: event.motivo })
         : state;
+    case "encolado":
+      return state.status === "en_curso" ? { ...state, status: "en_cola" } : state;
     case "reanudado":
+      // Sale de la cola tal como entró: misma fase, intentos e instrucción.
+      if (state.status === "en_cola") return { ...state, status: "en_curso" };
       if (state.status === "detenido" || state.status === "pausado_por_limite") {
         return {
           ...enter(state, state.fase),

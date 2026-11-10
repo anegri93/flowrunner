@@ -10,7 +10,7 @@ import { writeReport } from "../report/report.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
 import { listRunIds, loadState, runPaths } from "../store/runs.ts";
 import { UserError } from "./output.ts";
-import { handOver } from "./runs.ts";
+import { despacharCola, lanzarOEncolar } from "./runs.ts";
 
 /** Un lock de archivo con el pid: si el dueño murió, se toma. */
 function tryLock(file: string): boolean {
@@ -26,12 +26,12 @@ function tryLock(file: string): boolean {
 }
 
 /**
- * Por qué un run entregado sigue esperando: tu merge, o, con la PR ya mergeada, que el proyecto se
- * libere para aprender (corre un run a la vez por proyecto).
+ * Por qué un run entregado sigue esperando: tu merge, o, con la PR ya mergeada, que otro run del
+ * proyecto termine de publicar sus lecciones (una PR de lecciones a la vez).
  */
 export function waitingReason(events: readonly RunEvent[]): string {
   return events.some((e) => e.tipo === "pr_cerrada" && e.mergeada)
-    ? "PR mergeada: aprende cuando se libere el proyecto"
+    ? "PR mergeada: aprende cuando otro run del proyecto termine de publicar sus lecciones"
     : "la PR sigue abierta";
 }
 
@@ -60,15 +60,26 @@ export async function tick(home: string, env: NodeJS.ProcessEnv, now: Date) {
   if (!tryLock(lock)) return { ok: true as const, acciones: ["otro tick está corriendo"] };
   const acciones: string[] = [];
   try {
+    const conCola = new Set<string>();
     for (const id of listRunIds(home)) {
       const state = loadState(home, id);
       if (state.status === "pausado_por_limite" && (state.pausaHasta ?? 0) <= now.getTime()) {
         appendEvent(runPaths(home, id).dir, { tipo: "reanudado" });
-        handOver(home, state.proyecto, runPaths(home, id), env);
-        acciones.push(`${id}: retomado después del límite`);
+        const lanzado = lanzarOEncolar(home, id, env);
+        acciones.push(
+          lanzado.tipo === "lanzado"
+            ? `${id}: retomado después del límite`
+            : `${id}: listo después del límite, en cola (${String(lanzado.posicion)}.º)`,
+        );
       } else if (state.status === "entregado") {
         acciones.push(`${id}: ${await learnRun(home, id, env)}`);
+      } else if (state.status === "en_cola") {
+        conCola.add(state.proyecto);
       }
+    }
+    // El respaldo de la cola: el proceso que soltó un lugar pudo morir sin despacharla.
+    for (const proyecto of conCola) {
+      for (const id of despacharCola(home, proyecto, env)) acciones.push(`${id}: salió de la cola`);
     }
   } finally {
     rmSync(lock, { force: true });

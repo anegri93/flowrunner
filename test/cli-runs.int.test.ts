@@ -114,16 +114,6 @@ describe("CLI de runs", () => {
     expect(executions(w, id)).toEqual(["preparar"]);
   });
 
-  test("un segundo run sobre el mismo repo se niega y nombra el run que tiene el lock", async () => {
-    const w = world({ FAKE_DELAY_MS: "2000" });
-    const first = launch(w);
-    await waitFor("el lock del primero", () => lockPid(w));
-    const second = runCli(["run", w.feature], w.env);
-    expect(second.status).toBe(1);
-    expect(second.stderr).toContain(first);
-    runCli(["abort", first], w.env);
-  });
-
   // Si regresiona, la skill de consola lee una forma distinta a la que documenta el contrato.
   test("status --json valida contra su schema, y un error con --json también es JSON", async () => {
     const w = world();

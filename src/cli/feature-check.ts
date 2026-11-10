@@ -1,5 +1,5 @@
 // `flowrunner feature check <archivo>`: la feature, su proyecto y la config de su repo, validados.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { loadGlobalConfig, loadRepoConfig } from "../config/load.ts";
 import type { RepoConfig } from "../config/schemas.ts";
@@ -83,6 +83,11 @@ const SCRIPT_USES = new RegExp(
 export function scriptsInexistentes(
   feature: Feature,
   scripts: Record<string, string> | undefined,
+  /**
+   * Los binarios de `node_modules/.bin`: sin un script con ese nombre, `pnpm tsc` y `yarn jest` los
+   * corren igual. `npm run tsc`, no.
+   */
+  binarios: ReadonlySet<string> = new Set(),
 ): string[] {
   if (scripts === undefined) return [];
   const avisos: string[] = [];
@@ -93,6 +98,7 @@ export function scriptsInexistentes(
       const s = npmRun ?? npmBuiltin ?? gestor;
       // `pnpm run x` lo toma la primera opción del grupo; `pnpm run` solo, o `pnpm install`, no son scripts.
       if (s === undefined || (gestor !== undefined && GESTOR_BUILTINS.has(gestor))) continue;
+      if (gestor !== undefined && binarios.has(gestor)) continue;
       if (Object.hasOwn(scripts, s) || vistos.has(s)) continue;
       vistos.add(s);
       avisos.push(
@@ -107,7 +113,7 @@ export function scriptsInexistentes(
 const DOC_MENTIONS =
   /(?<![\w./-])(?:[\w./-]*\.(?:mdx?|rst|adoc|txt)\b|docs?\/(?:[\w./-]*[\w/-])?|README\b)/g;
 /** De esos ya avisa `protectedMentions`, y más fuerte: ningún agente los puede escribir. */
-const PROTECTED_DOC = /(^|\/)(CLAUDE|AGENTS)\.md$/;
+const PROTECTED_DOC = /(^|\/)(CLAUDE|AGENTS)\.md$|(^|\/)\.(claude|flowrunner)\//;
 
 /** Avisos para los criterios que solo se comprueban leyendo documentación. */
 export function soloDocumentacion(feature: Feature): string[] {
@@ -137,6 +143,15 @@ function readPackageJson(repo: string): string | undefined {
   }
 }
 
+/** Los binarios instalados en la raíz del repo; vacío si no hay node_modules o no se lee. */
+function localBinaries(repo: string): Set<string> {
+  try {
+    return new Set(readdirSync(join(repo, "node_modules", ".bin")));
+  } catch {
+    return new Set();
+  }
+}
+
 export function checkFeature(path: string, env: NodeJS.ProcessEnv): CheckedFeature {
   const file = resolve(path);
   if (!existsSync(file)) throw new UserError(`no existe la feature ${file}`);
@@ -156,7 +171,11 @@ export function checkFeature(path: string, env: NodeJS.ProcessEnv): CheckedFeatu
     repoConfig: loadRepoConfig(project.path),
     avisos: [
       ...protectedMentions(feature),
-      ...scriptsInexistentes(feature, scriptsDe(readPackageJson(project.path))),
+      ...scriptsInexistentes(
+        feature,
+        scriptsDe(readPackageJson(project.path)),
+        localBinaries(project.path),
+      ),
       ...soloDocumentacion(feature),
     ],
   };

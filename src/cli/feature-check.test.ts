@@ -88,3 +88,37 @@ test("avisa un criterio que se comprueba solo en documentación, salvo los archi
   ]);
   expect(protectedMentions(f)).toEqual([expect.stringMatching(/^AC-3 nombra CLAUDE\.md/)]);
 });
+
+// Si regresiona, `pnpm tsc --noEmit pasa` avisa «el criterio no se puede cumplir»: pnpm y yarn corren
+// el binario de node_modules/.bin cuando no hay un script con ese nombre. npm run, no.
+test("un pnpm o yarn de un binario de node_modules/.bin no es un script que falta", () => {
+  const f = feature(
+    [
+      "- AC-1: `pnpm tsc --noEmit` pasa.",
+      "- AC-2: `yarn vitest run` pasa.",
+      "- AC-3: `npm run tsc` pasa.",
+      "- AC-4: `pnpm build` compila.",
+    ].join("\n"),
+  );
+  expect(scriptsInexistentes(f, { test: "vitest" }, new Set(["tsc", "vitest"]))).toEqual([
+    sinScript("AC-3", "npm run tsc", "tsc"),
+    sinScript("AC-4", "pnpm build", "build"),
+  ]);
+});
+
+// Si regresiona, «corre npm run test.» avisa que falta el script "test." aunque `test` exista.
+test("el punto que cierra la oración no es parte del nombre del script", () => {
+  expect(scriptsInexistentes(feature("- AC-1: corre npm run test."), { test: "vitest" })).toEqual(
+    [],
+  );
+});
+
+// Si regresiona, un criterio sobre .claude/ o .flowrunner/ da dos avisos: el de documentación y el de
+// protectedMentions, que ya dice lo que importa.
+test("un archivo de documentación bajo .claude/ o .flowrunner/ no da el aviso de documentación", () => {
+  const f = feature(
+    "- AC-1: .claude/commands/deploy.md documenta el deploy.\n- AC-2: .flowrunner/notas.md lista los pasos.",
+  );
+  expect(soloDocumentacion(f)).toEqual([]);
+  expect(protectedMentions(f)).toHaveLength(2);
+});

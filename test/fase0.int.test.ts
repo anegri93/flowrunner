@@ -1,5 +1,5 @@
 // Gate de la Fase 0: el CLI real valida una feature contra el proyecto y la config de su repo.
-import { rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { homeWith, runCli } from "./helpers/cli.ts";
@@ -45,6 +45,27 @@ describe("Fase 0 ensamblada", () => {
     expect(parsed.repoConfig.max_parallel).toBe(3);
     expect(parsed.repoConfig.models.planificar.model).toBe("claude-opus-5-5");
     expect(parsed.feature.criterios).toHaveLength(1);
+  });
+
+  // Si regresiona, feature check no lee el package.json del repo, o no ve sus binarios locales, y los
+  // avisos de scripts faltan o sobran.
+  test("feature check avisa un script que no está en el package.json del repo, y no un binario local", () => {
+    const { repo, env, feature } = setup();
+    writeFileSync(join(repo, "package.json"), JSON.stringify({ scripts: { test: "vitest" } }));
+    mkdirSync(join(repo, "node_modules", ".bin"), { recursive: true });
+    writeFileSync(join(repo, "node_modules", ".bin", "tsc"), "");
+    writeFileSync(
+      feature,
+      FEATURE.replace(
+        "- AC-1: GET /pedidos.csv devuelve text/csv.",
+        "- AC-1: `npm run mac` levanta el trabajador.\n- AC-2: `pnpm tsc --noEmit` pasa.",
+      ),
+    );
+    const result = runCli(["feature", "check", feature, "--json"], env);
+    expect(result.status).toBe(0);
+    expect((JSON.parse(result.stdout) as { avisos: string[] }).avisos).toEqual([
+      'AC-1 usa `npm run mac`, y el package.json del repo no tiene el script "mac". Si la feature lo crea, el plan tiene que poner package.json en el alcance de una sub-task; si no, el criterio no se puede cumplir',
+    ]);
   });
 
   test("un repo sin .flowrunner/config.yaml sale 1 con el motivo", () => {

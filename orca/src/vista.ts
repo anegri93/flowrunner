@@ -310,7 +310,7 @@ function etapa(e: Estado, run: Run, row: StageRow): string {
               clase: `lnk${row.actual ? " fuerte" : ""}`,
             },
           );
-  return `<div class="etapa${row.actual ? " es-actual" : ""}"><div class="fila entre"><div class="fila">${ind}${nombre}${row.actual ? texto(row.texto, "chico", row.tone) : ""}</div>${texto(row.meta, "chico apagado num")}</div>${row.actual ? actual(e, run) : ""}</div>`;
+  return `<div class="etapa${row.actual ? " es-actual" : ""}"><div class="fila entre"><div class="fila">${ind}${nombre}${row.actual || row.estado === "salteada" ? texto(row.texto, "chico", row.tone) : ""}</div>${texto(row.meta, "chico apagado num")}</div>${row.actual ? actual(e, run) : ""}</div>`;
 }
 
 function tarjeta(e: Estado, run: Run): string {

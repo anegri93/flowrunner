@@ -326,3 +326,23 @@ test("la versión del plan cambia cuando planificar vuelve a correr", () => {
   // Un snapshot sin sesiones de planificar, de un flowrunner viejo, también tiene versión.
   assert.equal(planVersion({ ...piz3, fases: [] }), `${piz3.id}#0`);
 });
+
+// Si regresiona, un probar que no corrió se ve con ✓, o pasa a ser la etapa actual y tapa a la que
+// de verdad espera.
+test("una etapa salteada dice salteada, no listo, y no es la actual", () => {
+  const revisar = byKey("VF-1").fases.find((p) => p.fase === "revisar");
+  assert.ok(revisar !== undefined);
+  const skipped: Run = {
+    ...byKey("VF-1"),
+    fases: [
+      ...byKey("VF-1").fases,
+      { ...revisar, fase: "probar", estado: "salteada", detalle: "sin `probar` en la config" },
+    ],
+  };
+  const probar = stageRows(skipped).find((r) => r.fase === "probar");
+  assert.deepEqual(
+    [probar?.mark, probar?.texto, probar?.tone, probar?.actual],
+    ["–", "salteada", "warning", false],
+  );
+  assert.equal(headlineOf(skipped).texto, "Aprender — espera merge");
+});

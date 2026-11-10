@@ -194,7 +194,7 @@ export interface Station {
   /** El nombre de la etapa, como en el diagrama: `Implementar`. */
   readonly nombre: string;
   readonly fase: string;
-  /** El estado de la fase en flowrunner: pendiente, corriendo, ok, espera, vuelve, falla, pausa. */
+  /** El estado de la fase en flowrunner: pendiente, corriendo, ok, salteada, espera, vuelve, falla, pausa. */
   readonly estado: string;
 }
 
@@ -215,6 +215,8 @@ export function phaseLabel(
       return { mark: "●", texto: "trabajando", tone: "accent" };
     case "cortada":
       return { mark: "–", texto: "cortada", tone: "neutral" };
+    case "salteada":
+      return { mark: "–", texto: "salteada", tone: "warning" };
     case "espera":
       return fase === "aprobar"
         ? { mark: "●", texto: "te espera", tone: "warning" }
@@ -276,6 +278,9 @@ export interface StageRow {
   readonly actual: boolean;
 }
 
+/** Lo que no es la etapa actual: lo terminado, lo salteado y lo que todavía no empezó. */
+const RESUELTA: readonly string[] = ["ok", "salteada", "pendiente"];
+
 /** Las nueve etapas como filas de una lista, con su tiempo y sus intentos. */
 export function stageRows(run: Run): StageRow[] {
   return stationsOf(run).map((station) => {
@@ -294,7 +299,7 @@ export function stageRows(run: Run): StageRow[] {
       tone: label.tone,
       texto: label.texto,
       meta: join([tries, time]),
-      actual: !["ok", "pendiente"].includes(station.estado),
+      actual: !RESUELTA.includes(station.estado),
     };
   });
 }
@@ -311,7 +316,7 @@ export interface Headline {
 
 /** La fase en la que está el run: la primera que no está lista ni pendiente, o la próxima. */
 const activePhase = (run: Run) =>
-  run.fases.find((p) => !["ok", "pendiente"].includes(p.estado)) ??
+  run.fases.find((p) => !RESUELTA.includes(p.estado)) ??
   run.fases.find((p) => p.estado === "pendiente");
 
 const EMOJI: Record<Tone, string> = {

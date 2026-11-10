@@ -153,6 +153,15 @@ function localBinaries(repo: string): Set<string> {
   }
 }
 
+/** Sin `probar` en la config, la fase probar se saltea: ningún criterio se prueba en la app. */
+export function sinProbar(config: RepoConfig): string[] {
+  return config.probar === undefined
+    ? [
+        "el repo no tiene `probar` en .flowrunner/config.yaml: la fase probar se va a saltear y ningún criterio se va a probar en la app. Para que pruebe, agregá cómo levantar el entorno (README, «Probar la feature en el entorno»)",
+      ]
+    : [];
+}
+
 export function checkFeature(path: string, env: NodeJS.ProcessEnv): CheckedFeature {
   const file = resolve(path);
   if (!existsSync(file)) throw new UserError(`no existe la feature ${file}`);
@@ -173,11 +182,12 @@ export function checkFeature(path: string, env: NodeJS.ProcessEnv): CheckedFeatu
   });
   if (problemas.length > 0)
     throw new ConfigError(problemas.map((message) => ({ where: `${file} › Contexto`, message })));
+  const repoConfig = loadRepoConfig(project.path);
   return {
     file,
     feature,
     project,
-    repoConfig: loadRepoConfig(project.path),
+    repoConfig,
     avisos: [
       ...protectedMentions(feature),
       ...scriptsInexistentes(
@@ -186,6 +196,7 @@ export function checkFeature(path: string, env: NodeJS.ProcessEnv): CheckedFeatu
         localBinaries(project.path),
       ),
       ...soloDocumentacion(feature),
+      ...sinProbar(repoConfig),
     ],
   };
 }

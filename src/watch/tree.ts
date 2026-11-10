@@ -49,8 +49,17 @@ export interface UnitNode {
   readonly sesiones: SessionNode[];
 }
 
+/** `salteada`: terminó sin correr, como probar sin `probar` en la config; `detalle` dice por qué. */
 export type PhaseState =
-  "pendiente" | "corriendo" | "cortada" | "ok" | "espera" | "falla" | "vuelve" | "pausa";
+  | "pendiente"
+  | "corriendo"
+  | "cortada"
+  | "ok"
+  | "salteada"
+  | "espera"
+  | "falla"
+  | "vuelve"
+  | "pausa";
 
 export interface PhaseNode {
   readonly fase: Phase;
@@ -343,7 +352,9 @@ export function runTree(input: TreeInput): RunTree {
             ? "pausa"
             : r.tipo === "pregunta"
               ? "falla"
-              : r.tipo;
+              : r.tipo === "ok" && r.salteada !== undefined
+                ? "salteada"
+                : r.tipo;
     const estado: PhaseState =
       redo !== undefined ? "pendiente" : overtaken === undefined ? raw : "ok";
     const verbo = failed ? "falló" : "volvió";
@@ -356,11 +367,13 @@ export function runTree(input: TreeInput): RunTree {
           ? undefined
           : `${verbo} en una corrida anterior; el run siguió desde ${overtaken}`;
     const detalle =
-      redo === undefined &&
-      overtaken === undefined &&
-      (r?.tipo === "falla" || r?.tipo === "pregunta" || r?.tipo === "vuelve")
-        ? r.motivo
-        : undefined;
+      redo !== undefined || overtaken !== undefined
+        ? undefined
+        : r?.tipo === "falla" || r?.tipo === "pregunta" || r?.tipo === "vuelve"
+          ? r.motivo
+          : r?.tipo === "ok"
+            ? r.salteada
+            : undefined;
     const mine = sessions.filter((s) => s.owner?.fase === fase);
     const unidades =
       fase === "implementar"

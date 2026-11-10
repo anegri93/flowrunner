@@ -151,6 +151,8 @@ function phaseRow(
       return { kind: "running", status: "trabajando", note: toolNote(p.sesiones) };
     case "cortada":
       return { kind: "inactive", status: "cortada", note: undefined };
+    case "salteada":
+      return { kind: "inactive", status: "salteada", note: p.detalle };
     case "ok": {
       const status =
         p.fase === "aprobar" ? "aprobado" : p.fase === "entregar" ? "PR creada" : "listo";

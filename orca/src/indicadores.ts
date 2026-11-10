@@ -75,6 +75,7 @@ export function indicadorDeEtapa(fase: string, estado: string, prMergeada = fals
     case "falla":
       return "falla";
     case "cortada":
+    case "salteada":
       return "cortada";
     default:
       return "pendiente";

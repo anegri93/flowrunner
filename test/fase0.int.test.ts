@@ -17,6 +17,9 @@ Un administrador descarga los pedidos como CSV.
 - AC-1: GET /pedidos.csv devuelve text/csv.
 `;
 
+const SIN_PROBAR =
+  "el repo no tiene `probar` en .flowrunner/config.yaml: la fase probar se va a saltear y ningún criterio se va a probar en la app. Para que pruebe, agregá cómo levantar el entorno (README, «Probar la feature en el entorno»)";
+
 function setup() {
   const repo = repoWith({
     ".flowrunner/config.yaml": "setup: pnpm install\ntests_globs: [tests/**]\n",
@@ -65,7 +68,26 @@ describe("Fase 0 ensamblada", () => {
     expect(result.status).toBe(0);
     expect((JSON.parse(result.stdout) as { avisos: string[] }).avisos).toEqual([
       'AC-1 usa `npm run mac`, y el package.json del repo no tiene el script "mac". Si la feature lo crea, el plan tiene que poner package.json en el alcance de una sub-task; si no, el criterio no se puede cumplir',
+      SIN_PROBAR,
     ]);
+  });
+
+  // Si regresiona, una feature se lanza sin saber que probar se va a saltear, y la PR llega sin
+  // que nadie la haya probado en la app.
+  test("feature check avisa que probar se saltea si el repo no lo configura, y calla si lo configura", () => {
+    const { repo, env, feature } = setup();
+    const avisos = () =>
+      (
+        JSON.parse(runCli(["feature", "check", feature, "--json"], env).stdout) as {
+          avisos: string[];
+        }
+      ).avisos;
+    expect(avisos()).toEqual([SIN_PROBAR]);
+    writeFileSync(
+      join(repo, ".flowrunner/config.yaml"),
+      "setup: pnpm install\ntests_globs: [tests/**]\nprobar:\n  levantar: pnpm dev\n  urls: { web: http://localhost:5173 }\n",
+    );
+    expect(avisos()).toEqual([]);
   });
 
   // Si regresiona, una cita al código que la feature va a crear, o a una línea que ya no está, llega al

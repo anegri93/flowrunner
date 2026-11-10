@@ -196,7 +196,8 @@ desde la copia de la feature, llama a la API y navega la plataforma con Chrome. 
 vuelve a su sub-task con la evidencia. Un criterio que no se pudo probar detiene el run: arreglás lo que
 faltó y rehacés probar, o decidís entregar igual con `flowrunner accept-untested <run> "<por qué>"`, y
 ese motivo queda en la PR. Para eso el repo dice cómo levantar el entorno en
-`.flowrunner/config.yaml`; sin esto, probar se saltea con un aviso:
+`.flowrunner/config.yaml`. Sin esto, probar se saltea: `feature check` lo avisa antes de lanzar, y
+`watch` y el panel de Orca muestran la etapa «salteada» con el motivo, no como lista:
 
 ```yaml
 probar:

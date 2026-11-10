@@ -75,8 +75,8 @@ El shell toma caminos que las reglas literales no veían. Se cierran así, cada 
 - **`$'…'` y `$"…"`** se rechazan: bash los lee con escapes propios.
 - **Un `#` al principio de palabra es un comentario hasta el fin de la línea,** como para `sh`: las
   comillas que hay ahí no abren nada.
-- **Las opciones largas abreviadas cuentan como las enteras** (`--recur`, `--outp`, `--no-ind`,
-  `--conte`), y un grupo de opciones cortas se lee letra por letra (`git grep -lO<pager>`,
+- **Las opciones largas abreviadas cuentan como las enteras**, hasta de una letra (`--o`, `--recur`,
+  `--no-ind`, `--conte`), y un grupo de opciones cortas se lee letra por letra (`git grep -lO<pager>`,
   `file -bf<archivo>`).
 - **diff recorre siempre como una búsqueda:** `diff -N . src` imprime lo que hay en `.`.
 - **awk:** un `>` fuera de las cadenas es una redirección, salvo `>=` o una comparación con un número.
@@ -87,6 +87,11 @@ El shell toma caminos que las reglas literales no veían. Se cierran así, cada 
 - **Las rutas se resuelven con las mayúsculas del disco** (`realpathSync.native`): en APFS,
   `.ENV.LOCAL` es `.env.local`.
 - **`$[…]`**, la aritmética de bash, se rechaza como una sustitución.
+- **git no recibe archivos como valor de una opción** (`grep -f`, `blame -S`,
+  `--ignore-revs-file`, `--pathspec-from-file`, `ls-files -X`): imprime en el error las líneas que
+  no entiende.
+- **Cada programa de lectura sabe qué letras toman valor:** `file -m` lee un archivo; las de `cut`
+  son listas o delimitadores, así que `cut -d /` no se comprueba como ruta.
 
 ## Alternativas descartadas
 

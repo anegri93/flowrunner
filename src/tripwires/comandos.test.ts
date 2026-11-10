@@ -507,7 +507,7 @@ describe("checkCommand, los caminos que encontró la revisión", () => {
 
   // Si regresiona, `file -bf.env.local` imprime cada línea del .env en el error.
   test("una opción de lectura agrupada se lleva el valor pegado: file -bf.env.local", () => {
-    noPasa(s(), "file -bf.env.local", "head -qn.env.local", "cut -sd.env.local");
+    noPasa(s(), "file -bf.env.local", "head -qn.env.local");
     pasa(s(), "file -b src/a/x.ts", "head -qn5 src/a/x.ts");
   });
 
@@ -558,6 +558,55 @@ describe("checkCommand, los caminos que encontró la revisión", () => {
     const sustitucion = "`$( )`, backticks y `<( )` no se usan: corré cada comando por separado";
     expect(motivo(checkCommand(s(), "cat $[1]"))).toBe(sustitucion);
     expect(motivo(checkCommand(s(), 'cat "$[1]"'))).toBe(sustitucion);
+  });
+
+  // Segunda pasada de la revisión.
+  // Si regresiona, `sort --o=CLAUDE.md` escribe CLAUDE.md: el sort de macOS acepta `--o` por `--output`.
+  test("una opción larga abreviada a una letra también cuenta: sort --o, git branch --u", () => {
+    noPasa(s(), "sort --o=CLAUDE.md src/a/x.ts", "git branch --u", "git branch --e");
+  });
+
+  // Si regresiona, `grep -d RECURSE` busca en todo `.`: grep de BSD lee el valor sin mayúsculas.
+  test("grep -d recurse es recursivo con cualquier mayúscula o abreviado", () => {
+    noPasa(
+      s(),
+      "grep -d RECURSE SECRET .",
+      "grep --directories=Recurse SECRET .",
+      "grep -d rec SECRET",
+    );
+    pasa(s(), "grep -d skip SECRET src/a/x.ts");
+  });
+
+  // Si regresiona, awk escribe CLAUDE.md: una `"` dentro de `/…/` se tomaba por el comienzo de una
+  // cadena, y el `>` real quedaba adentro.
+  test("awk: una comilla dentro de una regex no esconde el > que sigue", () => {
+    noPasa(s(), `awk '!/"/ {print "}" > "CLAUDE.md"}' src/a/x.ts`);
+  });
+
+  // Si regresiona, git imprime líneas del .env en su mensaje de error al leerlo como lista de
+  // patrones, de commits a ignorar o de injertos.
+  test("git no lee archivos que se le pasan como valor de una opción", () => {
+    noPasa(
+      s(),
+      "git grep -f .env.local -- src",
+      "git grep -nf.env.local",
+      "git blame --ignore-revs-file=.env.local src/a/x.ts",
+      "git blame -S .env.local src/a/x.ts",
+      "git log --pathspec-from-file=.env.local",
+      "git ls-files -X .env.local",
+    );
+    pasa(s(), "git log -S foo --oneline", "git blame -L 1,5 src/a/x.ts");
+  });
+
+  // Si regresiona, `file -m.env.local` imprime el .env en las advertencias del archivo de magic.
+  test("cada programa de lectura sabe qué letras toman valor: file -m es un archivo, cut -d no", () => {
+    noPasa(
+      s(),
+      "file -m.env.local src/a/x.ts",
+      "file -bm.env.local src/a/x.ts",
+      "file -m .env.local",
+    );
+    pasa(s(), "cut -d/ -f2 src/a/x.ts", "cut -d / -f 2 src/a/x.ts");
   });
 
   // Si regresiona, un criterio permitido abre la puerta a otro comando encadenado.

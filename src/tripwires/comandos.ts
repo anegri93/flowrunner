@@ -419,12 +419,13 @@ const nombreLargo = (t: string) => {
 };
 /**
  * Si `t` es la opción larga `opcion`, entera o abreviada: getopt_long, git y el sort de macOS aceptan
- * cualquier prefijo (`--recur`, `--outp`, `--no-ind`). Un prefijo ambiguo también cuenta: sobra.
+ * cualquier prefijo, hasta de una letra (`--o`, `--recur`, `--no-ind`). Un prefijo ambiguo también
+ * cuenta: da un rechazo de más, no uno de menos.
  */
 const esLarga = (t: string, opcion: string) => {
   const nombre = nombreLargo(t);
   return (
-    t.startsWith("--") && (nombre === opcion || (nombre.length > 3 && opcion.startsWith(nombre)))
+    t.startsWith("--") && (nombre === opcion || (nombre.length >= 3 && opcion.startsWith(nombre)))
   );
 };
 /** Las letras de un grupo de opciones cortas (`-lO…` da `lO…`), o "" si no es uno. */
@@ -459,6 +460,16 @@ const GIT_LARGAS_PROHIBIDAS = [
 ];
 /** `git grep` que busca también en lo que no está versionado, como los .env que copia flowrunner. */
 const GIT_GREP_SIN_VERSIONAR = ["--untracked", "--no-exclude-standard"];
+/**
+ * Opciones que leen un archivo del worktree: git imprime en el error las líneas que no entiende, y
+ * así mostraba el .env. Sin comprobar la ruta: no se usan.
+ */
+const GIT_LEEN_ARCHIVO = ["--pathspec-from-file", "--ignore-revs-file", "--exclude-from", "--file"];
+const GIT_CORTAS_LEEN_ARCHIVO: Readonly<Record<string, RegExp>> = {
+  grep: /f/,
+  blame: /S/,
+  "ls-files": /X/,
+};
 const GIT_BRANCH_LARGAS = [
   "--delete",
   "--move",
@@ -497,7 +508,9 @@ const git: Regla = (_scope, args) => {
     (t) =>
       cortas(t).includes("O") ||
       GIT_LARGAS_PROHIBIDAS.some((o) => esLarga(t, o)) ||
-      (sub === "grep" && GIT_GREP_SIN_VERSIONAR.some((o) => esLarga(t, o))),
+      (sub === "grep" && GIT_GREP_SIN_VERSIONAR.some((o) => esLarga(t, o))) ||
+      GIT_LEEN_ARCHIVO.some((o) => esLarga(t, o)) ||
+      GIT_CORTAS_LEEN_ARCHIVO[sub]?.test(cortas(t)) === true,
   );
   return prohibido === undefined ? OK : no(MOTIVO.git(`${sub} ${prohibido}`));
 };
@@ -509,6 +522,14 @@ const git: Regla = (_scope, args) => {
  * `cat -n .env.local`.
  */
 const TOMA_VALOR = "ncLIdf";
+/**
+ * Los programas con otras letras de valor. `file -m` y `-f` leen un archivo. Las de `cut` son
+ * listas y delimitadores, nunca archivos, y siempre toman valor: `cut -d / -f2` no lee `/`.
+ */
+const VALOR_DE: Readonly<Record<string, { letras: string; rutas: boolean }>> = {
+  file: { letras: "mfFeP", rutas: true },
+  cut: { letras: "bcdf", rutas: false },
+};
 
 /** Opciones que hacen que un programa de lectura escriba, ejecute o no termine. */
 const LECTURA_PROHIBIDA: Readonly<Record<string, { cortas: string; largas: readonly string[] }>> = {
@@ -523,9 +544,15 @@ const lecturaSimple =
     // diff recorre una carpeta aunque no lleve -r: `diff -N . src` imprime todo lo que hay en `.`.
     const recursivo = programa === "diff";
     const prohibida = LECTURA_PROHIBIDA[programa];
+    const { letras: conValor, rutas: valorEsRuta } = VALOR_DE[programa] ?? {
+      letras: TOMA_VALOR,
+      rutas: true,
+    };
     const rutas: Palabra[] = [];
     let opciones = true;
-    for (const palabra of args) {
+    for (let i = 0; i < args.length; i++) {
+      const palabra = args[i];
+      if (palabra === undefined) continue;
       const t = palabra.texto;
       if (!opciones || !esOpcion(t)) {
         if (!esNumero(t)) rutas.push(palabra);
@@ -547,13 +574,15 @@ const lecturaSimple =
           const letra = letras.charAt(k);
           if (prohibida?.cortas.includes(letra) === true)
             return no(MOTIVO.noPermitido(`${programa} ${t}`, scope.comandos));
-          if (TOMA_VALOR.includes(letra)) {
+          if (conValor.includes(letra)) {
             valor = letras.slice(k + 1);
+            // Un valor que no es ruta se lleva la palabra siguiente si no va pegado.
+            if (!valorEsRuta && valor === "") i++;
             break;
           }
         }
       }
-      if (valor !== "" && !esNumero(valor)) rutas.push({ ...palabra, texto: valor });
+      if (valorEsRuta && valor !== "" && !esNumero(valor)) rutas.push({ ...palabra, texto: valor });
     }
     for (const ruta of rutas) {
       const verdict = leer(scope, ruta, recursivo);
@@ -632,7 +661,10 @@ const buscar =
       if (["-e", "--regexp", "-f", "--file"].some((o) => nombre === o || esLarga(nombre, o)))
         visto.patronAparte = true;
       const directorios = nombre === "-d" || esLarga(nombre, "--directories");
-      if (!esRg && directorios && valor?.texto === "recurse") visto.recursivo = true;
+      // grep de BSD lee el valor sin mayúsculas y abreviado: `-d RECURSE`, `-d rec`.
+      const recurse = valor !== undefined && valor.texto !== "";
+      if (!esRg && directorios && recurse && "recurse".startsWith(valor.texto.toLowerCase()))
+        visto.recursivo = true;
       if ([...VALOR_ES_ARCHIVO].some((o) => nombre === o || esLarga(nombre, o)) && valor)
         archivos.push(valor);
     };
@@ -918,7 +950,8 @@ const awk: Regla = (scope, args) => {
   if (AWK_ESCRIBE.some((re) => re.test(codigo) || re.test(sinCadenas)))
     return no(MOTIVO.script("awk"));
   // Fuera de las cadenas, un `>` es una redirección, salvo `>=` o una comparación con un número.
-  if (/>(?!=)(?!\s*\d)/.test(sinCadenas)) return no(MOTIVO.script("awk"));
+  // Sobre el código tal cual también: una `"` dentro de `/…/` desalinea las cadenas de `sinCadenas`.
+  if ([sinCadenas, codigo].some((c) => />(?!=)(?!\s*\d)/.test(c))) return no(MOTIVO.script("awk"));
   for (const ruta of rutas) {
     const verdict = leer(scope, ruta);
     if (!verdict.ok) return verdict;

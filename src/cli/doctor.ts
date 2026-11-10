@@ -94,7 +94,10 @@ export function appCheck(env: NodeJS.ProcessEnv): Check {
       dir !== undefined &&
       resolvesToApp(join(dir, "flowrunner"), env) &&
       (!existsSync(plist) || plistRunsApp(plist, env)),
-    arreglo: "corré `flowrunner self-update`",
+    arreglo:
+      dir === undefined
+        ? "agregá ~/.local/bin a tu PATH y corré `flowrunner self-update`"
+        : "corré `flowrunner self-update`",
   };
 }
 

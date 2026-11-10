@@ -1,9 +1,10 @@
 // `flowrunner skill install`: la skill de consola en ~/.claude/skills y, con confirmación, las reglas
 // ask para que Claude Code pregunte antes de aprobar, pedir cambios o entregar sin probar.
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { shellQuote } from "../agent/env.ts";
+import { appBin } from "../setup/app.ts";
 import { UserError } from "./output.ts";
 import { BIN } from "./runs.ts";
 
@@ -41,6 +42,40 @@ function sessionStart(settings: Record<string, unknown>): HookEntry[] {
 const hasSessionHook = (settings: Record<string, unknown>) =>
   sessionStart(settings).some((e) => e.hooks?.some((h) => h.command === SESSION_HOOK) === true);
 
+/** Los hooks de flowrunner que se quedan: el de este código y el de la app (ADR 0020). */
+function keptHooks(env: NodeJS.ProcessEnv): Set<string> {
+  const bins = [appBin(env)];
+  try {
+    bins.push(realpathSync(appBin(env)));
+  } catch {
+    // Sin app instalada, se queda solo el de este código.
+  }
+  return new Set([SESSION_HOOK, ...bins.map((b) => `${shellQuote(b)} hook session-start`)]);
+}
+
+/**
+ * El hook de otro flowrunner, como el del checkout de desarrollo después de `self-update`: dejarlo
+ * duplica el contexto de cada sesión y corre el código de un checkout que cambia de rama.
+ */
+const isStaleHook = (command: string | undefined, kept: Set<string>) =>
+  command !== undefined &&
+  !kept.has(command) &&
+  /\/bin\/flowrunner\.js'? hook session-start$/.test(command);
+
+const staleHooks = (settings: Record<string, unknown>, kept: Set<string>): string[] =>
+  sessionStart(settings).flatMap((e) =>
+    (e.hooks ?? []).flatMap((h) => (isStaleHook(h.command, kept) ? [h.command ?? ""] : [])),
+  );
+
+/** SessionStart sin los hooks de otro flowrunner; una entrada que se queda sin hooks se va. */
+function withoutStaleHooks(settings: Record<string, unknown>, kept: Set<string>): HookEntry[] {
+  return sessionStart(settings).flatMap((e) => {
+    if (e.hooks === undefined) return [e];
+    const hooks = e.hooks.filter((h) => !isStaleHook(h.command, kept));
+    return hooks.length === 0 ? [] : [{ ...e, hooks }];
+  });
+}
+
 /** La skill instalada es la de este flowrunner, y las reglas ask y el hook están en settings.json. */
 export function skillUpToDate(env: NodeJS.ProcessEnv): boolean {
   const claude = claudeDir(env);
@@ -56,7 +91,12 @@ export function skillUpToDate(env: NodeJS.ProcessEnv): boolean {
     return false;
   }
   const ask = ((settings.permissions ?? {}) as { ask?: unknown }).ask;
-  return Array.isArray(ask) && ASK_RULES.every((r) => ask.includes(r)) && hasSessionHook(settings);
+  return (
+    Array.isArray(ask) &&
+    ASK_RULES.every((r) => ask.includes(r)) &&
+    hasSessionHook(settings) &&
+    staleHooks(settings, keptHooks(env)).length === 0
+  );
 }
 
 export function installSkill(env: NodeJS.ProcessEnv, confirmed: boolean) {
@@ -70,21 +110,29 @@ export function installSkill(env: NodeJS.ProcessEnv, confirmed: boolean) {
   const ask = Array.isArray(permissions.ask) ? (permissions.ask as string[]) : [];
   const missing: string[] = ASK_RULES.filter((r) => !ask.includes(r));
   const hookMissing = !hasSessionHook(settings);
-  if (confirmed && (missing.length > 0 || hookMissing)) {
+  const kept = keptHooks(env);
+  const stale = staleHooks(settings, kept);
+  if (confirmed && (missing.length > 0 || hookMissing || stale.length > 0)) {
     settings.permissions = { ...permissions, ask: [...ask, ...missing] };
-    if (hookMissing) {
+    if (hookMissing || stale.length > 0) {
       const hooks = (settings.hooks ?? {}) as Record<string, unknown>;
       settings.hooks = {
         ...hooks,
         SessionStart: [
-          ...sessionStart(settings),
-          { hooks: [{ type: "command", command: SESSION_HOOK, timeout: 10 }] },
+          ...withoutStaleHooks(settings, kept),
+          ...(hookMissing
+            ? [{ hooks: [{ type: "command", command: SESSION_HOOK, timeout: 10 }] }]
+            : []),
         ],
       };
     }
     writeFileSync(settingsFile, `${JSON.stringify(settings, null, 2)}\n`);
   }
-  const pending = [...missing, ...(hookMissing ? [`hook SessionStart: ${SESSION_HOOK}`] : [])];
+  const pending = [
+    ...missing,
+    ...(hookMissing ? [`hook SessionStart: ${SESSION_HOOK}`] : []),
+    ...stale.map((c) => `quitar el hook SessionStart de otro flowrunner: ${c}`),
+  ];
   return {
     ok: true as const,
     skill: target,

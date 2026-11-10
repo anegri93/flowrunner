@@ -2,14 +2,21 @@
 // Cambiar de rama en el checkout con un run en curso le cambiaba los prompts a mitad de camino (ML-1).
 // `flowrunner self-update` lo crea o lo mueve a origin/main y re-apunta el comando, launchd, Orca y la
 // skill desde su código (ADR 0020).
-import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import { UserError } from "../cli/output.ts";
 import { flowrunnerHome } from "../config/load.ts";
-import { addDetachedWorktree, fetchOrigin, git, GitError, headSha } from "../git/git.ts";
+import {
+  addDetachedWorktree,
+  conTurnoGit,
+  fetchOrigin,
+  git,
+  GitError,
+  headSha,
+} from "../git/git.ts";
 import { runProc, runShell, tail } from "../proc/proc.ts";
-import { isAlive } from "../store/lock.ts";
+import { isAlive, tryLock } from "../store/lock.ts";
 import { leerLugar } from "../store/lugares.ts";
 
 const INSTALL_TIMEOUT_MS = 10 * 60_000;
@@ -83,20 +90,46 @@ async function commonDir(dir: string, env: NodeJS.ProcessEnv): Promise<string | 
 }
 
 export async function selfUpdate(env: NodeJS.ProcessEnv): Promise<SelfUpdate> {
-  const vivos = procesosVivos(flowrunnerHome(env));
+  const home = flowrunnerHome(env);
+  const vivos = procesosVivos(home);
   if (vivos.length > 0) {
     throw new UserError(
       `no actualizo con runs corriendo: ${vivos.join(", ")}`,
       "esperá a que terminen o corré flowrunner status",
     );
   }
+  // Con el lock del tick: uno que lance launchd mientras dura el install correría la app a medio
+  // actualizar, y podría retomar o despachar runs con ese código. Ese tick sale sin hacer nada.
+  mkdirSync(home, { recursive: true });
+  const tickLock = join(home, "tick.lock");
+  if (!tryLock(tickLock)) {
+    throw new UserError(
+      "no actualizo con un tick corriendo",
+      "esperá a que termine y volvé a correr self-update",
+    );
+  }
+  try {
+    return await actualizar(env);
+  } finally {
+    rmSync(tickLock, { force: true });
+  }
+}
+
+async function actualizar(env: NodeJS.ProcessEnv): Promise<SelfUpdate> {
   const repo = await commonDir(SOURCE_REPO, env);
   if (repo === undefined) throw new UserError(`${SOURCE_REPO} no es un repo de git`);
-  await fetchOrigin(SOURCE_REPO, env);
+  try {
+    await fetchOrigin(SOURCE_REPO, env);
+  } catch (error) {
+    if (!(error instanceof GitError)) throw error;
+    throw new UserError(`no pude traer origin: ${error.message}`);
+  }
 
   const app = appDir(env);
   const creado = !existsSync(app);
   if (creado) {
+    // Una app borrada a mano sigue registrada como worktree, y `worktree add` se negaría.
+    await conTurnoGit(SOURCE_REPO, () => git(SOURCE_REPO, ["worktree", "prune"], env));
     await addDetachedWorktree(SOURCE_REPO, app, "origin/main", env);
   } else {
     // Su raíz tiene que ser la app misma: una carpeta adentro de otro checkout también da su `.git`.
@@ -110,9 +143,11 @@ export async function selfUpdate(env: NodeJS.ProcessEnv): Promise<SelfUpdate> {
         `${app} existe y no es un worktree de flowrunner: borralo y volvé a correr self-update`,
       );
     }
-    await git(app, ["checkout", "--detach", "--quiet", "origin/main"], env);
+    // --force: nadie edita la app; lo que un proceso haya escrito ahí no pasa al código nuevo.
+    await git(app, ["checkout", "--detach", "--force", "--quiet", "origin/main"], env);
     await git(app, ["clean", "-fdq", "-e", "node_modules"], env);
   }
+  const sha = await headSha(app, env);
 
   const install = await runShell(env.FLOWRUNNER_APP_INSTALL ?? "pnpm install --frozen-lockfile", {
     cwd: app,
@@ -120,7 +155,10 @@ export async function selfUpdate(env: NodeJS.ProcessEnv): Promise<SelfUpdate> {
     timeoutMs: INSTALL_TIMEOUT_MS,
   });
   if (install.code !== 0) {
-    throw new UserError(`no se pudieron instalar las dependencias en ${app}:\n${tail(install)}`);
+    throw new UserError(
+      `la app quedó en ${sha.slice(0, 7)} sin sus dependencias: no se pudieron instalar en ${app}:\n${tail(install)}`,
+      "arreglá lo de arriba y volvé a correr flowrunner self-update",
+    );
   }
 
   // Con el código de la app: así BIN, ORCA_PLUGIN_DIR y la skill salen de ahí, no de este checkout.
@@ -140,5 +178,5 @@ export async function selfUpdate(env: NodeJS.ProcessEnv): Promise<SelfUpdate> {
   } catch {
     throw new UserError(`no se pudo re-apuntar a ${app}:\n${tail(reapuntar)}`);
   }
-  return { ok: true, app, sha: await headSha(app, env), creado, reapuntado };
+  return { ok: true, app, sha, creado, reapuntado };
 }

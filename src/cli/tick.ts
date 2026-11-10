@@ -1,29 +1,16 @@
 // `flowrunner tick`, lo que corre launchd, y `flowrunner learn <run>`, lo mismo para un run a pedido.
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { notifyMac } from "../notify/notify.ts";
 import { productionRuntime } from "../runner/production.ts";
 import { runUntilStop } from "../runner/runner.ts";
-import { isAlive } from "../store/lock.ts";
+import { tryLock } from "../store/lock.ts";
 import type { RunEvent } from "../store/events.ts";
 import { writeReport } from "../report/report.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
 import { listRunIds, loadState, runPaths } from "../store/runs.ts";
 import { UserError } from "./output.ts";
 import { avisarCambio, despacharCola, lanzarOEncolar } from "./runs.ts";
-
-/** Un lock de archivo con el pid: si el dueño murió, se toma. */
-function tryLock(file: string): boolean {
-  try {
-    writeFileSync(file, String(process.pid), { flag: "wx" });
-    return true;
-  } catch {
-    const pid = Number(readFileSync(file, "utf8"));
-    if (Number.isInteger(pid) && pid !== process.pid && isAlive(pid)) return false;
-    writeFileSync(file, String(process.pid));
-    return true;
-  }
-}
 
 /**
  * Por qué un run entregado sigue esperando: tu merge, o, con la PR ya mergeada, que otro run del

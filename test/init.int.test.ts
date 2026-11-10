@@ -266,6 +266,22 @@ describe("init", () => {
     expect(paso(renewed.stdout, "skill de Claude Code")).toMatchObject({ estado: "hecho" });
   }, 180_000);
 
+  // Si regresiona, init da por instalado un comando que no quedó en ningún lado del PATH.
+  test("sin ~/.local/bin en el PATH, el paso de la app falta y dice qué hacer", () => {
+    const w = world();
+    const localBin = join(w.home, ".local", "bin");
+    w.env.PATH = (w.env.PATH ?? "")
+      .split(":")
+      .filter((d) => d !== localBin)
+      .join(":");
+    const out = runCli(["init", w.work, "--aplicar", "--json"], w.env);
+    expect(out.status).toBe(1);
+    expect(paso(out.stdout, "flowrunner instalado en ~/.flowrunner/app")).toMatchObject({
+      estado: "falta",
+      detalle: "agregá ~/.local/bin a tu PATH",
+    });
+  }, 120_000);
+
   // Si regresiona, init abre una PR sobre una base roja y el primer run se detiene en preparar.
   test("con la base en rojo, --aplicar sale 1 y no empuja nada", () => {
     const w = world("node -e 'process.exit(1)'");

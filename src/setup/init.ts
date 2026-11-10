@@ -515,6 +515,7 @@ export async function init(path: string, deps: Deps, aplicar: boolean, progress:
       "flowrunner instalado en ~/.flowrunner/app",
       installedFromApp(env),
       async () => {
+        if (commandDir(env) === undefined) throw new Error("agregá ~/.local/bin a tu PATH");
         const updated = await selfUpdate(env);
         return `${updated.app} (${updated.sha.slice(0, 7)}): ${updated.reapuntado.join(", ")}`;
       },

@@ -52,6 +52,9 @@ describe("appCheck", () => {
     expect(appCheck(env).ok).toBe(false);
     writeFileSync(plist, `<string>${appBin}</string>`);
     expect(appCheck(env).ok).toBe(true);
-    expect(appCheck({ ...env, PATH: "/usr/bin" }).ok).toBe(false);
+    // Sin ~/.local/bin en el PATH, self-update solo no lo arregla: el arreglo lo dice.
+    const sinPath = appCheck({ ...env, PATH: "/usr/bin" });
+    expect(sinPath.ok).toBe(false);
+    expect(sinPath.arreglo).toContain("agregá ~/.local/bin a tu PATH");
   });
 });

@@ -68,6 +68,28 @@ describe("Fase 0 ensamblada", () => {
     ]);
   });
 
+  // Si regresiona, una cita al código que la feature va a crear, o a una línea que ya no está, llega al
+  // planificador como el código de hoy.
+  test("feature check frena una cita de Contexto que no está en el repo y cuenta las que valen", () => {
+    const { env, feature } = setup();
+    const conContexto = (citas: string) =>
+      FEATURE.replace("## Criterios", `## Contexto\n${citas}\n\n## Criterios`);
+    writeFileSync(feature, conContexto("- src/index.ts:1 — exporta nada"));
+    const ok = runCli(["feature", "check", feature], env);
+    expect(ok.status).toBe(0);
+    expect(ok.stdout).toContain("1 citas de código en Contexto");
+    writeFileSync(
+      feature,
+      conContexto("- src/index.ts:1-5 — exporta nada\n- src/nuevo.ts — lo que se va a crear"),
+    );
+    const mal = runCli(["feature", "check", feature], env);
+    expect(mal.status).toBe(1);
+    expect(mal.stderr).toContain("Contexto cita src/index.ts:1-5, pero el archivo tiene 1 líneas");
+    expect(mal.stderr).toContain(
+      "Contexto cita src/nuevo.ts, que no existe en el repo: las citas son del código de hoy",
+    );
+  });
+
   test("un repo sin .flowrunner/config.yaml sale 1 con el motivo", () => {
     const { repo, env, feature } = setup();
     rmSync(join(repo, ".flowrunner"), { recursive: true });

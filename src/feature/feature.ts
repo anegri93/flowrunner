@@ -19,6 +19,14 @@ export interface Clarification {
   readonly answer: string;
 }
 
+/** Una línea de `## Contexto`: código de hoy que quien escribió la feature ya comprobó. */
+export interface Cita {
+  readonly ruta: string;
+  readonly desde?: number;
+  readonly hasta?: number;
+  readonly que: string;
+}
+
 export interface Feature {
   readonly clave: string;
   readonly proyecto: string;
@@ -27,10 +35,13 @@ export interface Feature {
   readonly criterios: readonly Criterion[];
   readonly aclaraciones: readonly Clarification[];
   readonly fueraDeAlcance: readonly string[];
+  /** Solo lo leen planificar y explorar: no entra en `featureText` (PR 12). */
+  readonly contexto: readonly Cita[];
 }
 
 const SECTIONS = {
   descripción: "descripcion",
+  contexto: "contexto",
   criterios: "criterios",
   aclaraciones: "aclaraciones",
   "fuera de alcance": "fuera",
@@ -124,6 +135,41 @@ export function parseFeature(file: string, text: string): Feature {
     }
   }
 
+  // `ruta[:desde[-hasta]] — qué hace`: la raya larga, con un espacio a cada lado, separa la cita.
+  const CITA = /^([^\s:]+?)(?::(\d+)(?:-(\d+))?)?\s+—\s+(.+)$/;
+  const contexto: Cita[] = [];
+  for (const item of listItems(sections.get("contexto") ?? [])) {
+    const m = CITA.exec(item);
+    if (m === null) {
+      problems.push({
+        where: `${file} › Contexto`,
+        message: `"${item}" no tiene la forma ruta:línea — qué hace`,
+      });
+      continue;
+    }
+    const [, ruta = "", desde, hasta, que = ""] = m;
+    const d = desde === undefined ? undefined : Number(desde);
+    // Una sola línea, `:12`, es el rango 12-12.
+    const h = hasta === undefined ? d : Number(hasta);
+    if (
+      ruta.startsWith("/") ||
+      ruta.startsWith("./") ||
+      ruta.split("/").includes("..") ||
+      (d !== undefined && h !== undefined && (d < 1 || h < d))
+    ) {
+      problems.push({
+        where: `${file} › Contexto`,
+        message: `"${item}": la ruta va relativa al repo, sin ./ ni .., y las líneas desde 1, con desde <= hasta`,
+      });
+      continue;
+    }
+    contexto.push({
+      ruta,
+      ...(d === undefined || h === undefined ? {} : { desde: d, hasta: h }),
+      que: que.trim(),
+    });
+  }
+
   if (problems.length > 0 || frontmatter === undefined) throw new ConfigError(problems);
   return {
     ...frontmatter,
@@ -131,5 +177,6 @@ export function parseFeature(file: string, text: string): Feature {
     criterios,
     aclaraciones,
     fueraDeAlcance: listItems(sections.get("fuera") ?? []),
+    contexto,
   };
 }

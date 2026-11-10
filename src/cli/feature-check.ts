@@ -1,8 +1,9 @@
 // `flowrunner feature check <archivo>`: la feature, su proyecto y la config de su repo, validados.
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { loadGlobalConfig, loadRepoConfig } from "../config/load.ts";
-import type { RepoConfig } from "../config/schemas.ts";
+import { ConfigError, type RepoConfig } from "../config/schemas.ts";
+import { checkCitas } from "../feature/citas.ts";
 import { parseFeature, type Feature } from "../feature/feature.ts";
 import { UserError } from "./output.ts";
 
@@ -164,6 +165,14 @@ export function checkFeature(path: string, env: NodeJS.ProcessEnv): CheckedFeatu
       `flowrunner project add <ruta del repo>`,
     );
   }
+  // Las citas son del código de hoy: una a un archivo que no está, o a una línea de más, frena la
+  // feature antes de que el planificador la tome por cierta.
+  const problemas = checkCitas(feature.contexto, (ruta) => {
+    const abs = join(project.path, ruta);
+    return existsSync(abs) && statSync(abs).isFile() ? readFileSync(abs, "utf8") : undefined;
+  });
+  if (problemas.length > 0)
+    throw new ConfigError(problemas.map((message) => ({ where: `${file} › Contexto`, message })));
   return {
     file,
     feature,
@@ -187,6 +196,7 @@ export function describeCheckedFeature(checked: CheckedFeature): string {
     `${feature.clave} · ${feature.titulo}`,
     `proyecto ${project.name} en ${project.path}`,
     `${feature.criterios.length} criterios, ${feature.aclaraciones.length} aclaraciones`,
+    `${feature.contexto.length} citas de código en Contexto`,
     ...feature.criterios.map((c) => `  ${c.id}: ${c.text}`),
     ...checked.avisos.map((a) => `⚠ ${a}`),
   ].join("\n");

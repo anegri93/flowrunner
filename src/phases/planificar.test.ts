@@ -1,6 +1,6 @@
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
@@ -9,10 +9,12 @@ import { contextFor, makeProject, newRun, testDeps } from "../../test/helpers/pr
 import { validandoAlFinal } from "../../test/helpers/mcp.ts";
 import { simQuery, type SimScript } from "../../test/helpers/sim-sdk.ts";
 import type { Plan } from "../gates/plan.ts";
+import { contextoGraft } from "../graft/contexto.ts";
+import { buildIndex } from "../graft/graft.ts";
 import { respuestaValidar } from "../gates/validar-plan.ts";
 import type { RunEvent } from "../store/events.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
-import { prepared } from "./inputs.ts";
+import { graftIndex, prepared } from "./inputs.ts";
 import { gateRechazado, planificar, readPlan, sesionAnterior } from "./planificar.ts";
 import { preparar } from "./preparar.ts";
 
@@ -60,6 +62,7 @@ async function prepared_(
   format?: string,
   lint_fix?: string,
   files?: Record<string, string>,
+  feature = FEATURE,
 ) {
   const { work } = makeProject({
     ...(files === undefined ? {} : { files }),
@@ -70,13 +73,26 @@ async function prepared_(
       ...(lint_fix === undefined ? {} : { lint_fix }),
     },
   });
-  const run = newRun(work, FEATURE);
+  const run = newRun(work, feature);
   const sim = simQuery(scripts);
   const deps = testDeps({ query: sim.query });
   expect(await preparar(contextFor(run, "preparar", deps))).toEqual({ tipo: "ok" });
   const worktree = prepared(readLog(run.dir).events).worktree;
   return { run, deps, sim, worktree };
 }
+
+/** Código que ya existe, para que graft tenga API y llamadores que contar. */
+const PEDIDOS = {
+  "src/export/pedidos.js":
+    "export function pedidosDelRango(desde, hasta) {\n  return [desde, hasta];\n}\n",
+  "src/index.js":
+    'import { pedidosDelRango } from "./export/pedidos.js";\nexport const todos = pedidosDelRango(1, 2);\n',
+};
+
+const CON_CONTEXTO = FEATURE.replace(
+  "## Criterios",
+  "## Contexto\n- src/export/pedidos.js:1-3 — arma la consulta de pedidos por rango\n\n## Criterios",
+);
 
 describe("planificar", () => {
   // Si regresiona, implementar arranca sin tests bloqueados contra los que verificar.
@@ -216,6 +232,249 @@ describe("planificar", () => {
     });
     expect(Object.keys(sim.records[0]?.options?.mcpServers ?? {})).toEqual(["graft", "gate"]);
     expect(sim.records[0]?.prompt).toContain("pasalo por `validar_plan`");
+  });
+
+  describe("el código que ya ubicó la feature", () => {
+    // Si regresiona, el planificador vuelve a buscar desde cero lo que la feature ya comprobó y citó: en
+    // VF-1, 97 Read en 267 turnos para el primer plan.
+    test("el prompt trae las citas de la feature y el contexto de graft de esos archivos", async () => {
+      const { run, deps, sim, worktree } = await prepared_(
+        [{ calls: [writeTest], output: goodPlan }],
+        undefined,
+        undefined,
+        PEDIDOS,
+        CON_CONTEXTO,
+      );
+      expect(await planificar(contextFor(run, "planificar", deps))).toEqual({ tipo: "ok" });
+      const prompt = sim.records[0]?.prompt ?? "";
+      expect(prompt).toContain(
+        "- src/export/pedidos.js:1-3 — arma la consulta de pedidos por rango",
+      );
+      const contexto = await contextoGraft({
+        repo: worktree,
+        indexDir: graftIndex(run),
+        archivos: ["src/export/pedidos.js"],
+        env: deps.env,
+      });
+      // Contexto de verdad, no el texto de falla de graft.
+      expect(contexto).toContain("function pedidosDelRango(desde, hasta)");
+      expect(contexto).toContain("← `src/index.js");
+      expect(prompt).toContain(contexto);
+      // El Contexto no entra en la feature que leen las demás fases (decisión 5): no se repite.
+      expect(prompt.split("arma la consulta de pedidos por rango")).toHaveLength(2);
+    });
+
+    // Si regresiona, una feature sin Contexto deja al planificador sin nada aunque nombre sus archivos,
+    // o le hace creer que ya se ubicó un código que no existe.
+    test("sin Contexto, el prompt toma los archivos que nombra la feature, y sin ninguno lo dice", async () => {
+      const nombra = FEATURE.replace(
+        "Exportar pedidos.",
+        "Exportar pedidos, sobre `src/export/pedidos.js`.",
+      );
+      const conNombre = await prepared_(
+        [{ calls: [writeTest], output: goodPlan }],
+        undefined,
+        undefined,
+        PEDIDOS,
+        nombra,
+      );
+      await planificar(contextFor(conNombre.run, "planificar", conNombre.deps));
+      const prompt = conNombre.sim.records[0]?.prompt ?? "";
+      expect(prompt).toContain(
+        "La feature no trae citas; estos son los archivos que nombra: src/export/pedidos.js.",
+      );
+      expect(prompt).toContain("function pedidosDelRango(desde, hasta)");
+      expect(prompt).not.toContain("La feature no ubicó código");
+
+      // FEATURE nombra src/export/csv.js, que todavía no existe.
+      const sinNada = await prepared_([{ calls: [writeTest], output: goodPlan }]);
+      await planificar(contextFor(sinNada.run, "planificar", sinNada.deps));
+      expect(sinNada.sim.records[0]?.prompt).toContain(
+        "La feature no ubicó código: explorá vos, con graft y el explorador.",
+      );
+    });
+
+    /** Un graft que solo falla al construir: las consultas sobre el índice viejo responderían. */
+    function graftSinBuild<D extends { env: NodeJS.ProcessEnv }>(deps: D): D {
+      const real = execFileSync("sh", ["-c", "command -v graft"], {
+        encoding: "utf8",
+        env: deps.env,
+      }).trim();
+      const dir = tempDir("flowrunner-graft-sin-build-");
+      writeFileSync(
+        join(dir, "graft"),
+        `#!/bin/sh\ncase " $* " in *" build "*) echo 'graft roto' >&2; exit 1;; esac\nexec '${real}' "$@"\n`,
+      );
+      chmodSync(join(dir, "graft"), 0o755);
+      return { ...deps, env: { ...deps.env, PATH: `${dir}:${deps.env.PATH ?? ""}` } };
+    }
+
+    /** Lo que deja implementar: un commit de flowrunner en la rama y el índice reconstruido sobre ella. */
+    async function implementado(run: Parameters<typeof graftIndex>[0], worktree: string) {
+      writeFileSync(
+        join(worktree, "src/export/pedidos.js"),
+        `${PEDIDOS["src/export/pedidos.js"]}export function deLaRamaVieja() {\n  return 1;\n}\n`,
+      );
+      git(worktree, "commit", "-qam", "feat: algo", "-m", `Flowrunner-Run: ${run.id}`);
+      await buildIndex(worktree, graftIndex(run), testDeps().env);
+    }
+
+    // Si regresiona, un replan que no conserva nada le describe al planificador la rama que indexó
+    // implementar, con funciones que ya no están en su worktree.
+    test("en un replan, el contexto de graft es el de la rama que ve la sesión, no el del índice que dejó implementar", async () => {
+      const { run, deps, sim, worktree } = await prepared_(
+        [
+          { calls: [writeTest], output: goodPlan },
+          { calls: [], output: goodPlan },
+        ],
+        undefined,
+        undefined,
+        PEDIDOS,
+        CON_CONTEXTO,
+      );
+      expect(await planificar(contextFor(run, "planificar", deps))).toEqual({ tipo: "ok" });
+      await implementado(run, worktree);
+      appendEvent(run.dir, { tipo: "cambios_pedidos", motivo: "otra vuelta" });
+      expect(
+        await planificar(contextFor(run, "planificar", deps, { instruccion: "otra vuelta" })),
+      ).toEqual({ tipo: "ok" });
+      const prompt = sim.records[1]?.prompt ?? "";
+      expect(prompt).toContain("function pedidosDelRango(desde, hasta)");
+      expect(prompt).not.toContain("deLaRamaVieja");
+    });
+
+    // Si regresiona, sin índice nuevo el planificador recibe como cierto el contexto de un índice viejo,
+    // o la fase se cae por algo que es solo una ayuda.
+    test("si el índice no se pudo reconstruir, el prompt dice que no hay contexto de graft y planifica igual", async () => {
+      const { run, deps, sim, worktree } = await prepared_(
+        [
+          { calls: [writeTest], output: goodPlan },
+          { calls: [], output: goodPlan },
+        ],
+        undefined,
+        undefined,
+        PEDIDOS,
+        CON_CONTEXTO,
+      );
+      expect(await planificar(contextFor(run, "planificar", deps))).toEqual({ tipo: "ok" });
+      await implementado(run, worktree);
+      const sinBuild = graftSinBuild(deps);
+      appendEvent(run.dir, { tipo: "cambios_pedidos", motivo: "otra vuelta" });
+      expect(
+        await planificar(contextFor(run, "planificar", sinBuild, { instruccion: "otra vuelta" })),
+      ).toEqual({ tipo: "ok" });
+      const prompt = sim.records[1]?.prompt ?? "";
+      expect(prompt).toContain(
+        "(graft no pudo armar el contexto: graft no pudo reconstruir el índice",
+      );
+      expect(prompt).not.toContain("deLaRamaVieja");
+      // Las citas de la feature no dependen de graft: llegan igual.
+      expect(prompt).toContain(
+        "- src/export/pedidos.js:1-3 — arma la consulta de pedidos por rango",
+      );
+    });
+
+    // Revisión: `graft mcp` refresca el índice en cada consulta. Si regresiona, el reintento de un primer
+    // plan le da al planificador como llamadores los tests que escribió y descartó el intento anterior.
+    test("el reintento de un primer plan no recibe llamadores de los tests que descartó el intento anterior", async () => {
+      const llama = {
+        tool: "Write",
+        input: {
+          file_path: "tests/ac1.mjs",
+          content:
+            'import { pedidosDelRango } from "../src/export/pedidos.js";\npedidosDelRango(1, 2);\nprocess.exit(1);\n',
+        },
+      };
+      const sinAc2 = { ...goodPlan, tests: ["tests/ac1.mjs", "tests/ac2.mjs"] };
+      const { run, deps, sim, worktree } = await prepared_(
+        [
+          { calls: [llama], output: sinAc2 },
+          { calls: [writeTest], output: goodPlan },
+        ],
+        undefined,
+        undefined,
+        PEDIDOS,
+        CON_CONTEXTO,
+      );
+      expect(await planificar(contextFor(run, "planificar", deps))).toMatchObject({
+        tipo: "falla",
+        clase: "gate",
+      });
+      // Lo que hace el MCP de la sesión con cada consulta: refrescar el índice con el worktree de ese momento.
+      const refrescado = execFileSync(
+        "graft",
+        ["--dir", graftIndex(run), "callers", "--json", "--", "pedidosDelRango", worktree],
+        { cwd: worktree, encoding: "utf8", env: { ...deps.env, DO_NOT_TRACK: "1" } },
+      );
+      expect(refrescado).toContain("tests/ac1.mjs");
+      // Sin instrucción: un intento nuevo, no el retomado.
+      expect(await planificar(contextFor(run, "planificar", deps))).toEqual({ tipo: "ok" });
+      const prompt = sim.records[1]?.prompt ?? "";
+      expect(prompt).toContain("← `src/index.js");
+      expect(prompt).not.toContain("`tests/ac1.mjs`");
+    });
+
+    // Revisión: si regresiona, un replan sin nada que conservar pierde el resume solo porque graft no pudo
+    // reconstruir un índice que su gate no consulta, y cada rechazo es una sesión entera nueva.
+    test("sin nada que conservar, un plan rechazado se retoma aunque el índice no se haya podido reconstruir", async () => {
+      const writeAc2 = {
+        tool: "Write",
+        input: { file_path: "tests/ac2.mjs", content: writeTest.input.content },
+      };
+      const twoTests: Plan = { ...goodPlan, tests: ["tests/ac1.mjs", "tests/ac2.mjs"] };
+      const { run, deps, sim } = await prepared_(
+        [
+          { calls: [writeTest], output: goodPlan },
+          { calls: [], output: twoTests },
+          { calls: [writeAc2], output: twoTests },
+        ],
+        undefined,
+        undefined,
+        PEDIDOS,
+        CON_CONTEXTO,
+      );
+      expect(await planificar(contextFor(run, "planificar", deps))).toEqual({ tipo: "ok" });
+      const sinBuild = graftSinBuild(deps);
+      appendEvent(run.dir, { tipo: "cambios_pedidos", motivo: "otra vuelta" });
+      appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+      const rechazado = await planificar(
+        contextFor(run, "planificar", sinBuild, { instruccion: "otra vuelta" }),
+      );
+      expect(rechazado).toMatchObject({ tipo: "falla", clase: "gate" });
+      if (rechazado.tipo !== "falla") return;
+      appendEvent(run.dir, { tipo: "accion_terminada", fase: "planificar", resultado: rechazado });
+      appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+      expect(
+        await planificar(
+          contextFor(run, "planificar", sinBuild, { intento: 2, instruccion: rechazado.motivo }),
+        ),
+      ).toEqual({ tipo: "ok" });
+      expect(sim.records[2]?.options?.resume).toBe(sim.records[1]?.options?.sessionId);
+    });
+
+    // Revisión: feature check compara las citas con el checkout de la persona, no con la rama de la
+    // sesión. Si regresiona, el planificador lee como cierto un rango que en su worktree no existe.
+    test("una cita que no coincide con el worktree de la sesión llega marcada", async () => {
+      const feature = FEATURE.replace(
+        "## Criterios",
+        "## Contexto\n- src/export/pedidos.js:2-9 — el cuerpo\n- src/export/otro.js — algo que no está\n\n## Criterios",
+      );
+      const { run, deps, sim } = await prepared_(
+        [{ calls: [writeTest], output: goodPlan }],
+        undefined,
+        undefined,
+        PEDIDOS,
+        feature,
+      );
+      await planificar(contextFor(run, "planificar", deps));
+      const prompt = sim.records[0]?.prompt ?? "";
+      expect(prompt).toContain(
+        "- src/export/pedidos.js:2-9 — el cuerpo · ⚠ en este worktree el archivo tiene 3 líneas",
+      );
+      expect(prompt).toContain(
+        "- src/export/otro.js — algo que no está · ⚠ no está en este worktree",
+      );
+    });
   });
 
   describe("lo que ya existe", () => {
@@ -459,6 +718,8 @@ describe("planificar", () => {
       expect(prompt.startsWith("El gate rechazó el plan que devolviste")).toBe(true);
       expect(prompt).toContain(first.motivo);
       expect(prompt).not.toContain("Exportar pedidos a CSV");
+      // El contexto de la feature tampoco: la conversación ya lo tiene.
+      expect(prompt).not.toContain("Lo que dice graft");
       expect(existsSync(join(worktree, "tests/ac1.mjs"))).toBe(true);
       expect(second).toEqual({ tipo: "ok" });
       expect(Object.keys(readPlan(run).locked).sort()).toEqual(["tests/ac1.mjs", "tests/ac2.mjs"]);

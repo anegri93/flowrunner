@@ -480,6 +480,27 @@ describe("implementar", () => {
       expect(sim.records[0]?.prompt).toContain("Para ST-1: usá jsqr");
     });
 
+    // Revisión: si regresiona, después de un replan la ST-1 nueva cierra «sin cambios» con la
+    // integración de la ST-1 del plan anterior, sin haberse hecho.
+    test("una integración de antes de la última aprobación no cuenta como su código", async () => {
+      const sim = simQuery(byUnit({ "ST-1": [{ text: "sigo sin poder" }] }));
+      const deps = testDeps({ query: sim.query });
+      const { run, featureWt } = await plannedRun(chained, TESTS, deps);
+      const sha = git(featureWt, "rev-parse", "HEAD");
+      appendEvent(run.dir, {
+        tipo: "unidad",
+        fase: "implementar",
+        unidad: "ST-1",
+        estado: "integrada",
+        sha,
+      });
+      appendEvent(run.dir, { tipo: "aprobado" });
+      stuck(run.dir);
+      const outcome = await implementar(contextFor(run, "implementar", deps, fix));
+      expect(outcome).toMatchObject({ tipo: "pregunta", unidades: ["ST-1", "ST-2"] });
+      expect(unitEvents(run.dir)).not.toContain("ST-1:sin_cambios");
+    });
+
     // Revisión: si regresiona, la que esperaba por la trabada arranca, no hace nada y pasa como hecha.
     test("la que esperaba por ella y no cambia nada pregunta, aunque entre con el fix", async () => {
       const sim = simQuery(

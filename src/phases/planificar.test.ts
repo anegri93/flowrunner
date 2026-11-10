@@ -350,15 +350,26 @@ describe("planificar", () => {
     // Si regresiona, un rechazo por una sola declaración faltante vuelve a explorar todo el repo en una
     // sesión nueva: en ML-1 y VF-5 eso costó US$ 2 a 2,8 y 10 minutos por reintento.
     test("un plan rechazado por el gate se corrige retomando la misma sesión, con el motivo como único mensaje", async () => {
-      const { run, deps, sim, worktree } = await prepared_([
+      const preparado = await prepared_([
         { calls: [writeTest], output: twoTests },
         { calls: [writeAc2], output: twoTests },
       ]);
+      const { run, sim, worktree } = preparado;
+      const borradas: string[] = [];
+      const deps = {
+        ...preparado.deps,
+        deleteSession: (id: string) => {
+          borradas.push(id);
+          return Promise.resolve();
+        },
+      };
       appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
       const first = await planificar(contextFor(run, "planificar", deps));
       expect(first.tipo === "falla" && first.motivo).toContain(
         "el plan declara el test tests/ac2.mjs, pero no está escrito",
       );
+      // La conversación marcada para retomar no se borra: sin ella, cada resume fallaría.
+      expect(borradas).toEqual([]);
       // La sesión rechazada queda persistida y anotada para el reintento.
       const sessionId = sim.records[0]?.options?.sessionId;
       expect(sessionId).toMatch(/^[0-9a-f-]{36}$/);
@@ -388,6 +399,8 @@ describe("planificar", () => {
       // Cada sesión emite su propio uso.
       const usos = readLog(run.dir).events.flatMap((e) => (e.tipo === "uso" ? [e.sesion] : []));
       expect(usos).toEqual(["planificar-1", "planificar-2"]);
+      // Con el plan aprobado por el gate, la conversación ya no hace falta.
+      expect(borradas).toEqual([sessionId]);
     });
 
     // Si regresiona, una sesión que no se puede retomar (expiró, el CLI falló) deja el intento en falla
@@ -541,9 +554,8 @@ describe("planificar", () => {
       expect(sim.records[1]?.prompt).toContain("Exportar pedidos a CSV");
     });
 
-    // Si regresiona, un corte en el gate de un intento retomado (o después de commitear los tests) deja
-    // la marca: el siguiente retoma con el motivo de un rechazo viejo, o sobre la rama con los tests ya
-    // commiteados, y el gate dice «no escribió ningún test» hasta detener el run.
+    // Si regresiona, un corte en el gate de un intento retomado deja la marca, y el siguiente retoma la
+    // sesión con el motivo de un rechazo viejo, de un plan que ese gate nunca evaluó.
     test("si el proceso muere en el gate de un intento retomado, el siguiente no retoma con el motivo viejo", async () => {
       const { run, deps, sim } = await prepared_([
         { calls: [writeTest], output: twoTests },

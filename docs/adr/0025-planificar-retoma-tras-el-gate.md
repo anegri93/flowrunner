@@ -47,7 +47,8 @@ turnos. Un replan con contexto (VF-6) cuesta entre US$ 0,69 y 1,03, en 2,5 a 3,7
 - **Residuo en modo token:** la conversación vive en la config de Claude de flowrunner
   (`~/.flowrunner/claude/projects/`), y el `deleteSession` del proceso, que no lleva esa config, no la
   encuentra. En modo token queda ahí la conversación de cada sesión de planificar, de cada run. En
-  modo login se borra; queda solo la de un proceso que murió o de un run abortado a mitad. Es solo de
+  modo login se borra, salvo que el proceso de flowrunner tenga su propio `CLAUDE_CONFIG_DIR`, que el
+  CLI no hereda; queda la de un proceso que murió o de un run abortado a mitad. Es solo de
   planificar.
 - Si una versión del SDK cambia la semántica de `resume`, lo atrapa el fallback y queda el aviso en
   el log.

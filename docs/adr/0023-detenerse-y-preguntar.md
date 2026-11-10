@@ -30,9 +30,11 @@ Recién sigue cuando la persona elige una. Es el contrato C1 a C5 del plan de ra
    - esperando un arreglo a mano: `resume` y `abort`;
    - cualquier otra (entorno, invariante, infraestructura agotada, presupuesto): el `siguiente` de
      siempre y `abort`.
-3. **Un comando de la persona vale solo si el halt actual lo ofrece.** `fix --unidad`, `fix --yo` y
-   `accept` lo comprueban por el prefijo exacto del comando, en el CLI y otra vez en el reductor.
-   `resume` y `rerun` siguen como antes.
+3. **Un comando de la persona vale solo si el halt actual lo ofrece.** `fix --unidad` (con cada
+   sub-task entera entre las del halt), `fix --yo` y `accept` lo comprueban en el CLI, con el turno de
+   la cola para que dos respuestas a la vez no se validen contra el mismo halt, y otra vez en el
+   reductor: un evento que no se ofreció no hace nada. `resume` y `rerun` siguen como antes, salvo
+   durante un arreglo a mano (abajo).
 4. **Las vueltas automáticas son 0 por defecto (D4).** Cada repo puede pedir de 0 a 3 con `vueltas` en
    su config. El valor se congela en `run_creado`: un run sin el campo es de antes y vale 2, así que
    los runs en curso no cambian a mitad de camino. Con 0, el primer `vuelve` ya es una pregunta.
@@ -51,8 +53,10 @@ Recién sigue cuando la persona elige una. Es el contrato C1 a C5 del plan de ra
 8. **`fix --yo` y `resume` (D2).** `fix --yo` deja el run esperando y dice la ruta del worktree de la
    feature, sin lanzar nada. `resume` mira lo que cambió sin commitear y lo commitea con el trailer
    `Flowrunner-Manual: <run>`, salvo que toque `.git`, cambie un test bloqueado del plan (por su hash)
-   o agregue un secreto. Si algo de eso pasa, no commitea ni escribe nada, sale con 1 y lista los
-   problemas. Las rutas protegidas (`ALWAYS_PROTECTED`) no se chequean: protegen de los agentes, no de
+   o agregue un secreto (un repo git embebido cuenta como `.git`). Si algo de eso pasa, no commitea
+   ni escribe nada, sale con 1 y lista los problemas. Mientras el arreglo espera, `accept-untested` y
+   un `rerun` con cambios sin commitear se niegan: entregarían una rama sin el cambio que se
+   verificó. Las rutas protegidas (`ALWAYS_PROTECTED`) no se chequean: protegen de los agentes, no de
    la persona, y arreglar a mano el `CLAUDE.md` de VF-6 es para lo que existe `fix --yo`.
 9. **`--origen terminal|claude|orca`** en `fix` y `accept`, por defecto `terminal`: la skill pasa
    `claude` y el panel de Orca, `orca`. Queda en el evento.
@@ -78,8 +82,9 @@ Detalle en `docs/plan-de-raiz/pr-05-detenido-con-pregunta.md`.
 - El run espera más a la persona, y le pide decidir en el primer rojo. A cambio, cada respuesta es un
   comando que el run ya validó.
 - `resume` sobre un arreglo a mano chequea lo que cambió sin commitear. Lo que la persona commitee
-  por su cuenta en el worktree no pasa por esos chequeos; verificar vuelve a comparar los hashes de
-  los tests bloqueados de todos modos.
+  por su cuenta en el worktree no pasa por esos chequeos: verificar vuelve a comparar los hashes de
+  los tests bloqueados, pero un secreto commiteado así llega a la PR. Cerrarlo pide guardar el HEAD
+  de `fix --yo`, un campo que C4 no tiene; queda para decidir.
 
 ## Verificación
 

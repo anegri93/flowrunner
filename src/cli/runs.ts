@@ -3,7 +3,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, openSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { stateOf, type RunState } from "../engine/engine.ts";
+import { offers, offersFix, stateOf, type RunState } from "../engine/engine.ts";
 import { changesSince, commitAll, headSha } from "../git/git.ts";
 import { avisoDeEstado, cambiosDelPlan } from "../notify/estado.ts";
 import { notifyMac } from "../notify/notify.ts";
@@ -22,7 +22,7 @@ import { lugarDe, ocupados, soltarLugar, tomarLugar, type Reglas } from "../stor
 import { repoNode } from "../proc/node.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
 import { colaDe, createRun, listRunIds, loadState, ocupaLugar, runPaths } from "../store/runs.ts";
-import { conTurnoSync, turnoFile } from "../store/turno.ts";
+import { conTurno, conTurnoSync, turnoFile } from "../store/turno.ts";
 import {
   runStartedSchema,
   statusListSchema,
@@ -222,7 +222,7 @@ export async function resumeRun(home: string, id: string, env: NodeJS.ProcessEnv
   const state = loadOrExplain(home, id);
   if (isRunning(home, state))
     throw new UserError(`el run ${id} ya está corriendo`, `flowrunner status ${id}`);
-  if (state.aMano) return resumeByHand(home, id, env);
+  if (state.status === "detenido" && state.aMano) return resumeByHand(home, id, state, env);
   const resumable =
     state.status === "detenido" ||
     state.status === "pausado_por_limite" ||
@@ -247,23 +247,30 @@ export async function resumeRun(home: string, id: string, env: NodeJS.ProcessEnv
  * vuelve a verificar. Si el cambio toca `.git`, cambia un test bloqueado o agrega un secreto, no
  * commitea ni escribe nada (ADR 0023).
  */
-async function resumeByHand(home: string, id: string, env: NodeJS.ProcessEnv) {
+async function resumeByHand(home: string, id: string, state: RunState, env: NodeJS.ProcessEnv) {
   const run = runPaths(home, id);
   const { worktree } = prepared(readLog(run.dir).events);
-  const changes = await changesSince(worktree, await headSha(worktree, env), env);
-  const problems = manualChangeProblems(worktree, changes, readPlan(run).locked, id);
-  if (problems.length > 0) {
-    throw new UserError(
-      `tu arreglo a mano no se commitea:\n${problems.map((p) => `- ${p}`).join("\n")}`,
-      `corregilo en ${worktree} y volvé a correr: flowrunner resume ${id}`,
-    );
-  }
-  const sha =
-    changes.length === 0
-      ? null
-      : ((await commitAll(worktree, "fix: arreglo a mano", { "Flowrunner-Manual": id }, env)) ??
-        null);
-  appendEvent(run.dir, { tipo: "arreglo_manual", sha });
+  // Con el turno de la cola: dos `resume` a la vez no commitean ni escriben dos veces.
+  const sha = await conTurno(answerTurno(home, state), id, async () => {
+    if (!loadState(home, id).aMano) {
+      throw new UserError(`el run ${id} ya retomó tu arreglo a mano`, `flowrunner status ${id}`);
+    }
+    const changes = await changesSince(worktree, await headSha(worktree, env), env);
+    const problems = manualChangeProblems(worktree, changes, readPlan(run).locked, id);
+    if (problems.length > 0) {
+      throw new UserError(
+        `tu arreglo a mano no se commitea:\n${problems.map((p) => `- ${p}`).join("\n")}`,
+        `corregilo en ${worktree} y volvé a correr: flowrunner resume ${id}`,
+      );
+    }
+    const committed =
+      changes.length === 0
+        ? null
+        : ((await commitAll(worktree, "fix: arreglo a mano", { "Flowrunner-Manual": id }, env)) ??
+          null);
+    appendEvent(run.dir, { tipo: "arreglo_manual", sha: committed });
+    return committed;
+  });
   return launchAnswer(
     home,
     id,
@@ -296,16 +303,14 @@ function launchAnswer(
   return lanzamiento(id, arranco, encolado, lanzarOEncolar(home, id, env));
 }
 
-/** El halt actual ofrece este comando: lo que valida `fix` y `accept` (ADR 0023). */
-function offered(state: RunState, prefix: string): boolean {
-  return (
-    state.status === "detenido" &&
-    (state.halt?.opciones ?? []).some((o) => o.comando.startsWith(prefix))
-  );
-}
+/**
+ * El turno en que una respuesta de la persona se valida y se escribe: el de la cola del proyecto.
+ * Así dos respuestas a la vez no se validan contra el mismo halt (ADR 0023).
+ */
+const answerTurno = (home: string, state: RunState) => turnoFile(home, state.proyecto, "cola");
 
-function requireOffered(state: RunState, id: string, prefix: string): void {
-  if (offered(state, prefix)) return;
+function requireOffered(state: RunState, id: string, offered: boolean): void {
+  if (offered) return;
   const opciones = state.status === "detenido" ? (state.halt?.opciones ?? []) : [];
   throw new UserError(
     `el run ${id} no ofrece eso ahora (está ${state.status} en ${state.fase})${opciones.length === 0 ? "" : `. Ofrece:\n${opciones.map((o) => `  ${o.comando}`).join("\n")}`}`,
@@ -328,17 +333,20 @@ export function fixRun(
   },
   env: NodeJS.ProcessEnv,
 ) {
-  const state = loadOrExplain(home, id);
+  const first = loadOrExplain(home, id);
   const run = runPaths(home, id);
   if (opts.yo && opts.unidades.length > 0)
     throw new UserError("--yo y --unidad no van juntos: elegí una", `flowrunner status ${id}`);
   if (opts.yo) {
-    requireOffered(state, id, `flowrunner fix ${id} --yo`);
-    const events = readLog(run.dir).events;
-    if (!events.some((e) => e.tipo === "preparado"))
-      throw new UserError("el run todavía no tiene worktree", `flowrunner status ${id}`);
-    const { worktree } = prepared(events);
-    appendEvent(run.dir, { tipo: "arreglo_manual_iniciado", origen: opts.origen });
+    const worktree = conTurnoSync(answerTurno(home, first), id, () => {
+      const state = loadState(home, id);
+      requireOffered(state, id, offers(state, `flowrunner fix ${id} --yo`));
+      const events = readLog(run.dir).events;
+      if (!events.some((e) => e.tipo === "preparado"))
+        throw new UserError("el run todavía no tiene worktree", `flowrunner status ${id}`);
+      appendEvent(run.dir, { tipo: "arreglo_manual_iniciado", origen: opts.origen });
+      return prepared(events).worktree;
+    });
     return runStartedSchema.parse({
       ok: true,
       id,
@@ -352,17 +360,20 @@ export function fixRun(
       `flowrunner status ${id}`,
     );
   }
-  for (const u of unidades) requireOffered(state, id, `flowrunner fix ${id} --unidad ${u} `);
   const instruccion = opts.instruccion?.trim() ?? "";
-  if (instruccion === "") {
-    throw new UserError(
-      "falta la instrucción: qué tiene que cambiar",
-      `flowrunner fix ${id} --unidad ${unidades[0] ?? "ST-n"} "<qué cambiar>"`,
-    );
-  }
-  if (isRunning(home, state))
-    throw new UserError(`el run ${id} ya está corriendo`, `flowrunner status ${id}`);
-  appendEvent(run.dir, { tipo: "arreglo_pedido", unidades, instruccion, origen: opts.origen });
+  conTurnoSync(answerTurno(home, first), id, () => {
+    const state = loadState(home, id);
+    requireOffered(state, id, offersFix(state, unidades));
+    if (instruccion === "") {
+      throw new UserError(
+        "falta la instrucción: qué tiene que cambiar",
+        `flowrunner fix ${id} --unidad ${unidades[0] ?? "ST-n"} "<qué cambiar>"`,
+      );
+    }
+    if (isRunning(home, state))
+      throw new UserError(`el run ${id} ya está corriendo`, `flowrunner status ${id}`);
+    appendEvent(run.dir, { tipo: "arreglo_pedido", unidades, instruccion, origen: opts.origen });
+  });
   return launchAnswer(home, id, `arreglando ${unidades.join(", ")}`, "arreglo pedido", env);
 }
 
@@ -377,18 +388,21 @@ export function acceptRun(
   origen: Origen,
   env: NodeJS.ProcessEnv,
 ) {
-  const state = loadOrExplain(home, id);
-  requireOffered(state, id, `flowrunner accept ${id} `);
-  if (motivo === undefined || motivo.trim() === "") {
-    throw new UserError(
-      "falta el motivo: por qué seguir así",
-      `flowrunner accept ${id} "<por qué>"`,
-    );
-  }
-  if (isRunning(home, state))
-    throw new UserError(`el run ${id} ya está corriendo`, `flowrunner status ${id}`);
+  const first = loadOrExplain(home, id);
   const run = runPaths(home, id);
-  appendEvent(run.dir, { tipo: "aceptado", fase: state.fase, motivo: motivo.trim(), origen });
+  conTurnoSync(answerTurno(home, first), id, () => {
+    const state = loadState(home, id);
+    requireOffered(state, id, offers(state, `flowrunner accept ${id} `));
+    if (motivo === undefined || motivo.trim() === "") {
+      throw new UserError(
+        "falta el motivo: por qué seguir así",
+        `flowrunner accept ${id} "<por qué>"`,
+      );
+    }
+    if (isRunning(home, state))
+      throw new UserError(`el run ${id} ya está corriendo`, `flowrunner status ${id}`);
+    appendEvent(run.dir, { tipo: "aceptado", fase: state.fase, motivo: motivo.trim(), origen });
+  });
   const next = loadState(home, id).fase;
   return launchAnswer(home, id, `aceptado: ${next} arrancó`, `aceptado: sigue en ${next}`, env);
 }
@@ -410,6 +424,7 @@ export function acceptUntested(
     );
   }
   const state = loadOrExplain(home, id);
+  if (state.status === "detenido" && state.aMano) throw pendingByHand(id);
   if (state.status !== "detenido" || !state.sinProbar) {
     throw new UserError(
       `el run ${id} no está detenido por criterios sin probar (está ${state.status} en ${state.fase})`,
@@ -441,12 +456,35 @@ export function rerunRun(
   if (state.status === "abortado") throw new UserError(`el run ${id} fue abortado`);
   if (isRunning(home, state))
     throw new UserError(`el run ${id} ya está corriendo`, `flowrunner abort ${id}`);
+  // Rehacer sobre un arreglo a mano sin commitear verificaría ese cambio y entregaría la rama sin él.
+  if (state.status === "detenido" && state.aMano && hasUncommitted(home, id))
+    throw pendingByHand(id);
   appendEvent(runPaths(home, id).dir, { tipo: "rehacer", desde: from as Phase });
   return lanzamiento(
     id,
     `rehaciendo desde ${from}`,
     `listo para rehacer desde ${from}`,
     lanzarOEncolar(home, id, env),
+  );
+}
+
+/** El error de un comando que perdería un arreglo a mano todavía sin commitear. */
+function pendingByHand(id: string): UserError {
+  return new UserError(
+    `el run ${id} espera tu arreglo a mano, sin commitear: commitealo y seguí con resume, o descartá esos cambios del worktree antes`,
+    `flowrunner resume ${id}`,
+  );
+}
+
+/** Si el worktree de la feature tiene cambios sin commitear. Sin worktree, no tiene. */
+function hasUncommitted(home: string, id: string): boolean {
+  const events = readLog(runPaths(home, id).dir).events;
+  if (!events.some((e) => e.tipo === "preparado")) return false;
+  const { worktree } = prepared(events);
+  if (!existsSync(worktree)) return false;
+  return (
+    execFileSync("git", ["-C", worktree, "status", "--porcelain"], { encoding: "utf8" }).trim() !==
+    ""
   );
 }
 

@@ -332,10 +332,25 @@ export function initialState(): RunState {
   };
 }
 
-/** Una respuesta de la persona que el halt actual ofrece: el CLI valida igual (ADR 0023). */
-const offers = (state: RunState, prefix: string): boolean =>
+/**
+ * El halt actual ofrece una respuesta que empieza con `prefix`. El CLI lo valida antes de escribir el
+ * evento, y el reductor otra vez: un evento que no se ofreció no hace nada (ADR 0023).
+ */
+export const offers = (state: RunState, prefix: string): boolean =>
   state.status === "detenido" &&
   (state.halt?.opciones ?? []).some((o) => o.comando.startsWith(prefix));
+
+/**
+ * El halt ofrece que cada una de esas sub-tasks lo arregle. Cada una se compara entera con las del
+ * halt: por prefijo del comando, `ST-1 "<qué` también pasaba.
+ */
+export const offersFix = (state: RunState, unidades: readonly string[]): boolean =>
+  unidades.length > 0 &&
+  unidades.every(
+    (u) =>
+      (state.halt?.unidades ?? []).includes(u) &&
+      offers(state, `flowrunner fix ${state.runId} --unidad ${u} `),
+  );
 
 export function reduce(state: RunState, event: RunEvent): RunState {
   if (state.status === "abortado") return state;
@@ -395,9 +410,12 @@ export function reduce(state: RunState, event: RunEvent): RunState {
       }
       return state;
     case "sin_probar_aceptado":
-      return state.status === "detenido" && state.sinProbar ? enter(state, "entregar") : state;
+      // Durante un arreglo a mano no: la PR saldría sin el cambio, que queda sin commitear.
+      return state.status === "detenido" && state.sinProbar && !state.aMano
+        ? enter(state, "entregar")
+        : state;
     case "arreglo_pedido": {
-      if (!offers(state, `flowrunner fix ${state.runId} --unidad `)) return state;
+      if (!offersFix(state, event.unidades)) return state;
       // Desde una pregunta de implementar entran también las que quedaron bloqueadas por la que se
       // arregla: si no, no arrancarían nunca. Las de verificar, revisar o probar ya están integradas.
       if (state.fase === "implementar") {
@@ -412,7 +430,7 @@ export function reduce(state: RunState, event: RunEvent): RunState {
       });
     }
     case "arreglo_manual_iniciado":
-      return state.status === "detenido"
+      return offers(state, `flowrunner fix ${state.runId} --yo`)
         ? halt(
             { ...state, aMano: true },
             "Esperando tu arreglo a mano en el worktree de la feature. Cuando termines, retomá el run: flowrunner commitea tu cambio y vuelve a verificar.",
@@ -423,7 +441,7 @@ export function reduce(state: RunState, event: RunEvent): RunState {
     case "aceptado": {
       const next = NEXT[event.fase];
       const applies =
-        state.status === "detenido" &&
+        offers(state, `flowrunner accept ${state.runId} `) &&
         event.fase === state.fase &&
         isRoundPhase(event.fase) &&
         next !== undefined;

@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { tempDir } from "../../test/helpers/git.ts";
-import type { FileChange } from "../git/git.ts";
+import { git, repoWithRemote, tempDir } from "../../test/helpers/git.ts";
+import { addWorktree, changesSince, type FileChange } from "../git/git.ts";
 import { manualChangeProblems } from "./manual.ts";
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -17,6 +17,14 @@ function worktree(files: Record<string, string>): string {
   }
   return root;
 }
+
+const ENV = {
+  ...process.env,
+  GIT_AUTHOR_NAME: "t",
+  GIT_AUTHOR_EMAIL: "t@e",
+  GIT_COMMITTER_NAME: "t",
+  GIT_COMMITTER_EMAIL: "t@e",
+};
 
 const change = (path: string, added: string[], status: FileChange["status"] = "modificado") => ({
   path,
@@ -88,19 +96,29 @@ describe("manualChangeProblems", () => {
     ).toEqual([]);
   });
 
-  // Si regresiona, un arreglo a mano puede escribir la config o los hooks de git del worktree.
-  test("un arreglo a mano que toca .git no se commitea", () => {
-    const root = worktree({});
-    expect(
-      manualChangeProblems(
-        root,
-        [change(".git/hooks/pre-commit", ["rm -rf ~"], "agregado")],
-        {},
-        "R",
-      ),
-    ).toEqual([".git/hooks/pre-commit es parte de .git: no se commitea"]);
-    expect(
-      manualChangeProblems(root, [change("vendor/x/.git/config", ["x"], "agregado")], {}, "R"),
-    ).toEqual(["vendor/x/.git/config es parte de .git: no se commitea"]);
+  // Si regresiona, un repo git embebido entra como gitlink con lo que tenga adentro, sin chequear.
+  test("un arreglo a mano que agrega un repo git adentro del worktree no se commitea", async () => {
+    const { work } = repoWithRemote({ "a.txt": "1\n" });
+    const wt = join(tempDir(), "w");
+    const base = await addWorktree(work, wt, "feat/w", "origin/main", ENV);
+    mkdirSync(join(wt, "vendor", "x"), { recursive: true });
+    git(join(wt, "vendor", "x"), "init", "-q");
+    writeFileSync(join(wt, "vendor", "x", "k.ts"), `const k = "AKIA${"A".repeat(16)}";\n`);
+    const changes = await changesSince(wt, base, ENV);
+    expect(manualChangeProblems(wt, changes, {}, "R")).toEqual([
+      "vendor/x/ es un repositorio git adentro del worktree: no se commitea",
+    ]);
+  });
+
+  // Regresión: un archivo con tildes en el nombre se commiteaba sin mirar si traía un secreto.
+  test("un secreto en un archivo con tildes en el nombre tampoco se commitea", async () => {
+    const { work } = repoWithRemote({ "a.txt": "1\n" });
+    const wt = join(tempDir(), "w");
+    const base = await addWorktree(work, wt, "feat/w", "origin/main", ENV);
+    writeFileSync(join(wt, "contraseña.ts"), `const k = "AKIA${"A".repeat(16)}";\n`);
+    const changes = await changesSince(wt, base, ENV);
+    expect(manualChangeProblems(wt, changes, {}, "R")).toEqual([
+      "contraseña.ts agrega una access key de AWS; los secretos no se commitean",
+    ]);
   });
 });

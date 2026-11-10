@@ -70,6 +70,10 @@ describe("detenido con pregunta", () => {
     const sinInstruccion = runCli(["fix", id, "--unidad", "ST-1"], w.env);
     expect(sinInstruccion.status).toBe(1);
     expect(sinInstruccion.stderr).toMatch(/falta la instrucción/);
+    // Una sub-task se compara entera, no por prefijo del comando que ofrece el halt.
+    const prefix = runCli(["fix", id, "--unidad", 'ST-1 "<qué', "x"], w.env);
+    expect(prefix.status).toBe(1);
+    expect(prefix.stderr).toContain("no ofrece eso ahora");
     const both = runCli(["fix", id, "--yo", "--unidad", "ST-1", "x"], w.env);
     expect(both.status).toBe(1);
     expect(both.stderr).toContain("--yo y --unidad no van juntos");
@@ -185,5 +189,50 @@ describe("detenido con pregunta", () => {
     };
     await waitFor("el informe de la entrega", () => report().includes("entregado"));
     expect(report()).toContain("## Lo que aceptaste al seguir\n\n- en verificar: AC-1 es flaky");
+  });
+
+  // Regresión de la revisión: accept-untested o rerun durante un arreglo a mano entregaban una PR sin
+  // el cambio, que quedaba sin commitear en el worktree; y un run abortado se intentaba retomar.
+  test("con un arreglo a mano pendiente, accept-untested y rerun se niegan; abortado, resume también", async () => {
+    const { work } = makeProject();
+    const env: NodeJS.ProcessEnv = {
+      ...homeWith(`github_user: yo\nprojects:\n  - { name: acme-api, path: ${work} }\n`),
+      FLOWRUNNER_TEST_HOOKS: FAKE_PHASES,
+      FAKE_KEEP_REAL: "preparar",
+      FAKE_SIN_PROBAR: "1",
+      GIT_AUTHOR_NAME: "t",
+      GIT_AUTHOR_EMAIL: "t@e",
+      GIT_COMMITTER_NAME: "t",
+      GIT_COMMITTER_EMAIL: "t@e",
+    };
+    const home = join(env.HOME ?? "", ".flowrunner");
+    const feature = join(tempDir(), "SHOP-214.md");
+    writeFileSync(feature, FEATURE);
+    const started = runCli(["run", feature, "--json"], env);
+    expect(started.status, started.stderr).toBe(0);
+    const id = (JSON.parse(started.stdout) as { id: string }).id;
+    const run = runPaths(home, id);
+    const w = { home, env, repo: work, feature };
+    await waitFor("el run detenido", () => stateNow(w, id).status === "detenido", 60_000);
+    expect(stateNow(w, id)).toMatchObject({ fase: "probar", sinProbar: true });
+    writePlanArtifacts(run, PLAN, {});
+    expect(runCli(["fix", id, "--yo"], env).status).toBe(0);
+    const preparado = events(run.dir).find((e) => e.tipo === "preparado");
+    const worktree = preparado?.tipo === "preparado" ? preparado.worktree : "";
+    writeFileSync(join(worktree, "arreglo.ts"), "export const x = 1;\n");
+    const before = readFileSync(join(run.dir, "events.jsonl"), "utf8");
+
+    const untested = runCli(["accept-untested", id, "igual"], env);
+    expect(untested.status).toBe(1);
+    expect(untested.stderr).toContain(`flowrunner resume ${id}`);
+    const rerun = runCli(["rerun", id, "--desde", "probar"], env);
+    expect(rerun.status).toBe(1);
+    expect(rerun.stderr).toContain("sin commitear");
+    expect(readFileSync(join(run.dir, "events.jsonl"), "utf8")).toBe(before);
+
+    expect(runCli(["abort", id], env).status).toBe(0);
+    const resumed = runCli(["resume", id], env);
+    expect(resumed.status).toBe(1);
+    expect(resumed.stderr).toMatch(/está abortado: no hay nada que retomar/);
   });
 });

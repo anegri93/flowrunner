@@ -684,4 +684,44 @@ describe("detenerse y preguntar (ADR 0023)", () => {
     expect(commands(s)).toEqual([`flowrunner resume ${R}`, `flowrunner abort ${R}`]);
     expect(s.halt?.siguiente).toBe(`flowrunner resume ${R}`);
   });
+
+  // Regresión de la revisión: el reductor aceptaba respuestas que el halt no ofrecía, y una carrera
+  // de dos comandos o un accept-untested durante un arreglo a mano salteaban fases o lo perdían.
+  test("una respuesta que el halt no ofrece no cambia nada, tampoco durante un arreglo a mano", () => {
+    const same = (before: RunEvent[], event: NewEvent) =>
+      expect(stateOf([...before, ev(event)])).toEqual(stateOf(before));
+    const porEntorno = [
+      withRounds(0),
+      ...implemented,
+      ...done("verificar", { tipo: "falla", clase: "entorno", motivo: "falta jsqr" }),
+    ];
+    same(porEntorno, { tipo: "aceptado", fase: "verificar", motivo: "x", origen: "terminal" });
+    same(porEntorno, { tipo: "arreglo_manual_iniciado", origen: "terminal" });
+    // Una sub-task que el halt no nombra, aunque ofrezca otras.
+    same(verifyQuestion, {
+      tipo: "arreglo_pedido",
+      unidades: ["ST-99"],
+      instruccion: "x",
+      origen: "terminal",
+    });
+    same(verifyQuestion, {
+      tipo: "arreglo_pedido",
+      unidades: ["ST-2", "ST-99"],
+      instruccion: "x",
+      origen: "terminal",
+    });
+    const byHand = [...verifyQuestion, ev({ tipo: "arreglo_manual_iniciado", origen: "terminal" })];
+    same(byHand, { tipo: "aceptado", fase: "verificar", motivo: "x", origen: "terminal" });
+    same(byHand, { tipo: "arreglo_pedido", unidades: ["ST-2"], instruccion: "x", origen: "orca" });
+    const untestedByHand = [
+      withRounds(0),
+      ...upTo("preparar", "planificar"),
+      ...ok("aprobar"),
+      ...upTo("implementar", "verificar", "revisar"),
+      ...done("probar", { tipo: "falla", clase: "sin_probar", motivo: "AC-1 sin probar" }),
+      ev({ tipo: "arreglo_manual_iniciado", origen: "terminal" }),
+    ];
+    same(untestedByHand, { tipo: "sin_probar_aceptado", motivo: "x" });
+    same(untestedByHand, { tipo: "aceptado", fase: "probar", motivo: "x", origen: "terminal" });
+  });
 });

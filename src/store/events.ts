@@ -171,6 +171,17 @@ export const eventSchema = z.discriminatedUnion("tipo", [
   }),
   /** `resume` commiteó el arreglo a mano; `sha` es null si no había cambios. */
   z.strictObject({ tipo: z.literal("arreglo_manual"), at, sha: z.string().nullable() }),
+  /**
+   * La persona eligió Autofix (ADR 0026): flowrunner pasó el lint y el formateador del repo por lo que
+   * cambió la rama y vuelve a verificar; si una fase sigue en rojo, sus sub-tasks lo corrigen solas,
+   * una vez. `sha`, el commit de las herramientas, o null si no cambiaron nada.
+   */
+  z.strictObject({
+    tipo: z.literal("autofix"),
+    at,
+    origen: origenSchema,
+    sha: z.string().nullable(),
+  }),
   /** La persona decidió seguir a la fase siguiente con la fase en rojo, y dijo por qué. */
   z.strictObject({
     tipo: z.literal("aceptado"),

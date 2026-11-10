@@ -114,6 +114,11 @@ export interface RunState {
   readonly sinProbar: boolean;
   /** Detenido esperando que la persona arregle el worktree a mano y lo retome (`fix --yo`). */
   readonly aMano: boolean;
+  /**
+   * Autofix en curso (ADR 0026): el próximo rojo con sub-tasks vuelve a implementar con su motivo en
+   * vez de detenerse. Se gasta una vez; cualquier detención lo apaga.
+   */
+  readonly autofix: boolean;
 }
 
 export type Action =
@@ -143,8 +148,9 @@ function queHace(comando: string, runId: string, fase: Phase): string {
  * acepta `fix` y `accept` solo si el halt actual los ofrece (ADR 0023). Nunca devuelve una lista vacía.
  *
  * Los comandos son parte del contrato del log: el reductor decide si `arreglo_pedido`,
- * `arreglo_manual_iniciado` y `aceptado` valen comparando con ellos (`offers`), y se recalculan en
- * cada replay. Cambiar su texto, o sacar uno de una fila, cambia cómo se reduce un log ya escrito.
+ * `arreglo_manual_iniciado`, `autofix` y `aceptado` valen comparando con ellos (`offers`), y se
+ * recalculan en cada replay. Cambiar su texto, o sacar uno de una fila, cambia cómo se reduce un log
+ * ya escrito.
  */
 export function opcionesDe(
   state: RunState,
@@ -156,6 +162,11 @@ export function opcionesDe(
   const byHand: Opcion = {
     comando: `flowrunner fix ${R} --yo`,
     que: "lo arreglás vos en el worktree; `resume` lo commitea y vuelve a verificar",
+  };
+  // Sin texto de la persona: lo que pide es justamente no escribir nada (ADR 0026).
+  const autofix: Opcion = {
+    comando: `flowrunner fix ${R} --auto`,
+    que: "formateador y lint del repo, y volver a verificar; si sigue en rojo, las sub-tasks lo corrigen solas",
   };
   const accept = (que: string): Opcion => ({ comando: `flowrunner accept ${R} "<por qué>"`, que });
   const replan: Opcion = {
@@ -172,6 +183,8 @@ export function opcionesDe(
         comando: `flowrunner resume ${R}`,
         que: "commitear tu cambio a mano y volver a verificar",
       },
+      // Si la persona no llegó a tocar nada: el CLI lo comprueba antes de escribir el evento.
+      autofix,
       abort,
     ];
   }
@@ -190,6 +203,7 @@ export function opcionesDe(
   if (isRoundPhase(fase) && fixes.length > 0 && next !== undefined) {
     return [
       ...fixes,
+      autofix,
       byHand,
       accept(`seguir a ${next} igual; tu motivo queda en la PR`),
       replan,
@@ -227,6 +241,7 @@ function halt(
     ...state,
     status: "detenido",
     halt: { ...base, siguiente: first.comando, opciones },
+    autofix: false,
   };
 }
 
@@ -270,6 +285,15 @@ function onOutcome(state: RunState, fase: Phase, outcome: Outcome): RunState {
         );
       }
       const vueltas = { ...state.vueltas, [fase]: state.vueltas[fase] + 1 };
+      // Autofix ya pasó las herramientas y sigue en rojo: la persona pidió que lo corrijan las
+      // sub-tasks sin preguntarle, una vez (ADR 0026). Sin sub-tasks a quién dárselo, pregunta.
+      if (vueltas[fase] > state.vueltasMax && state.autofix && outcome.unidades.length > 0) {
+        return enter({ ...state, vueltas }, "implementar", {
+          unidades: outcome.unidades,
+          instruccion: outcome.motivo,
+          autofix: false,
+        });
+      }
       if (vueltas[fase] > state.vueltasMax) {
         return halt(
           { ...state, vueltas },
@@ -364,6 +388,7 @@ export function initialState(): RunState {
     interrumpida: false,
     sinProbar: false,
     aMano: false,
+    autofix: false,
   };
 }
 
@@ -474,6 +499,12 @@ export function reduce(state: RunState, event: RunEvent): RunState {
         : state;
     case "arreglo_manual":
       return state.status === "detenido" && state.aMano ? enter(state, "verificar") : state;
+    // Lo de las herramientas ya está commiteado (el CLI lo hizo antes de escribir el evento): se
+    // verifica, y el próximo rojo con sub-tasks vuelve a implementar sin preguntar.
+    case "autofix":
+      return offers(state, `flowrunner fix ${state.runId} --auto`)
+        ? enter(state, "verificar", { autofix: true })
+        : state;
     case "aceptado": {
       const next = NEXT[event.fase];
       const applies =
@@ -484,7 +515,7 @@ export function reduce(state: RunState, event: RunEvent): RunState {
       return applies ? enter(state, next) : state;
     }
     case "rehacer":
-      return enter({ ...state, vueltas: NO_ROUNDS }, event.desde);
+      return enter({ ...state, vueltas: NO_ROUNDS, autofix: false }, event.desde);
     case "abortado":
       return { ...state, status: "abortado" };
     case "pr_cerrada":

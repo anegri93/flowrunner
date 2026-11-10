@@ -1,10 +1,12 @@
 // Los comandos que lanzan y operan runs: run, status, resume, fix, accept, rerun, abort y el proceso
 // `_run`.
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, openSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { offers, offersFix, reduce, stateOf, type RunState } from "../engine/engine.ts";
-import { changesSince, commitAll, commitChanges, headSha, isAncestor } from "../git/git.ts";
+import { changesSince, commitAll, commitChanges, git, headSha, isAncestor } from "../git/git.ts";
+import { runFixers } from "../phases/fixers.ts";
 import { avisoDeEstado, cambiosDelPlan } from "../notify/estado.ts";
 import { notifyMac } from "../notify/notify.ts";
 import { productionRuntime } from "../runner/production.ts";
@@ -15,7 +17,7 @@ import { prepared } from "../phases/inputs.ts";
 import { readPlan } from "../phases/planificar.ts";
 import { PHASES, type Origen, type Phase, type RunEvent } from "../store/events.ts";
 import { loadRepoConfig } from "../config/load.ts";
-import { ConfigError, MAX_RUNS_DEFAULT } from "../config/schemas.ts";
+import { ConfigError, MAX_RUNS_DEFAULT, type RepoConfig } from "../config/schemas.ts";
 import { conTurnoGitSync } from "../git/git.ts";
 import { isAlive } from "../store/lock.ts";
 import { lugarDe, ocupados, soltarLugar, tomarLugar, type Reglas } from "../store/lugares.ts";
@@ -414,6 +416,106 @@ export function fixRun(
     });
   });
   return launchAnswer(home, id, answer, `arreglando ${unidades.join(", ")}`, "arreglo pedido", env);
+}
+
+const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
+
+/**
+ * Autofix (ADR 0026): el lint y el formateador del repo sobre lo que cambió la rama, en un commit
+ * propio, y a verificar. Si una fase sigue en rojo con sub-tasks, el engine se las devuelve con su
+ * motivo, una vez, sin preguntar. Las herramientas son las de la config de hoy del repo, no las del
+ * worktree: un repo que las sumó después de lanzar el run, como en PIZ-2, también se destraba.
+ */
+export async function autofixRun(home: string, id: string, origen: Origen, env: NodeJS.ProcessEnv) {
+  loadOrExplain(home, id);
+  const run = runPaths(home, id);
+  const answer = await conTurno(answerTurno(home, id), id, async () => {
+    const state = loadState(home, id);
+    requireOffered(state, id, offers(state, `flowrunner fix ${id} --auto`));
+    if (isRunning(home, state))
+      throw new UserError(`el run ${id} ya está corriendo`, `flowrunner status ${id}`);
+    const events = readLog(run.dir).events;
+    if (!events.some((e) => e.tipo === "preparado"))
+      throw new UserError("el run todavía no tiene worktree", `flowrunner status ${id}`);
+    const { worktree, base_sha } = prepared(events);
+    if (!existsSync(worktree))
+      throw new UserError(`el worktree ${worktree} ya no existe`, `flowrunner status ${id}`);
+    const head = await headSha(worktree, env);
+    // Lo que no está commiteado no es de las herramientas: no se mezcla en su commit. Durante un
+    // arreglo a mano, lo que la persona haya tocado lo commitea `resume`, con sus chequeos.
+    const started = events.findLast((e) => e.tipo === "arreglo_manual_iniciado");
+    const touched =
+      (await changesSince(worktree, head, env)).length > 0 ||
+      (state.aMano && (started?.tipo !== "arreglo_manual_iniciado" || started.base !== head));
+    if (touched) {
+      throw new UserError(
+        state.aMano
+          ? `ya empezaste a arreglarlo a mano en ${worktree}: tu cambio lo commitea resume`
+          : `el worktree ${worktree} tiene cambios sin commitear`,
+        state.aMano ? `flowrunner resume ${id}` : `flowrunner status ${id}`,
+      );
+    }
+    let config: RepoConfig;
+    try {
+      config = loadRepoConfig(state.repo);
+    } catch (error) {
+      if (error instanceof ConfigError)
+        throw new UserError(`la config del repo no carga: ${error.message}`, "flowrunner doctor");
+      throw error;
+    }
+    const paths = (
+      await git(worktree, ["diff", "--name-only", "--diff-filter=d", "-z", base_sha, "HEAD"], env)
+    )
+      .split("\0")
+      .filter((p) => p !== "");
+    // Una herramienta que no arregla todo no frena: verificar dice qué quedó, y las sub-tasks siguen.
+    for (const f of await runFixers(worktree, config, paths, env))
+      appendEvent(run.dir, { tipo: "aviso", fase: state.fase, texto: `autofix: ${f.falla}` });
+    const fixed = (await changesSince(worktree, head, env))
+      .map((c) => c.path)
+      .filter((p) => paths.includes(p));
+    let sha: string | null = null;
+    if (fixed.length > 0) {
+      await git(worktree, ["add", "--", ...fixed], env);
+      await git(
+        worktree,
+        [
+          "commit",
+          "--quiet",
+          "--no-verify",
+          "-m",
+          "style: formateador y lint del repo (autofix)",
+          "--trailer",
+          `Flowrunner-Run: ${id}`,
+        ],
+        env,
+      );
+      sha = await headSha(worktree, env);
+      // Un test bloqueado que formatearon las herramientas prueba lo mismo: hash nuevo, como en
+      // verificar. Sin esto, verificar lo daría por cambiado a mano.
+      const { locked } = readPlan(run);
+      const relocked = fixed.filter((p) => locked[p] !== undefined);
+      if (relocked.length > 0) {
+        const hashes = relocked.map((p) => [p, sha256(readFileSync(join(worktree, p), "utf8"))]);
+        writeFileSync(
+          join(run.dir, "locked.json"),
+          `${JSON.stringify({ ...locked, ...Object.fromEntries(hashes) }, null, 2)}\n`,
+        );
+      }
+    }
+    return appendEvent(run.dir, { tipo: "autofix", origen, sha });
+  });
+  const sha = answer.tipo === "autofix" ? answer.sha : null;
+  return launchAnswer(
+    home,
+    id,
+    answer,
+    sha === null
+      ? "autofix: las herramientas no cambiaron nada; verificar arrancó"
+      : "autofix: formato y lint commiteados; verificar arrancó",
+    "autofix pedido",
+    env,
+  );
 }
 
 /**

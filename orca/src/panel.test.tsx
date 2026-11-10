@@ -179,6 +179,7 @@ test("un run detenido muestra Arreglar ST-n, que pide qué corregir y lo manda",
               comando: `flowrunner fix ${id} --unidad ST-2 "<qué cambiar>"`,
               que: "que ST-2 lo corrija",
             },
+            { comando: `flowrunner fix ${id} --auto`, que: "formateador y lint" },
             { comando: `flowrunner fix ${id} --yo`, que: "lo arreglás vos" },
             { comando: `flowrunner accept ${id} "<por qué>"`, que: "seguir igual" },
             { comando: `flowrunner abort ${id}`, que: "cortar el run" },
@@ -198,7 +199,8 @@ test("un run detenido muestra Arreglar ST-n, que pide qué corregir y lo manda",
     }),
     async (view) => {
       assert.ok(view.find({ text: "Parece ser de: ST-2" }));
-      assert.ok(view.find({ role: "button", text: "Lo arreglo yo" }));
+      assert.ok(view.find({ role: "button", text: "Autofix" }));
+      assert.equal(view.find({ role: "button", text: "Lo arreglo yo" }), null);
       assert.ok(view.find({ role: "button", text: "Seguir igual" }));
       await view.press({ role: "button", text: "Arreglar ST-2" });
       assert.deepEqual(sent, []);

@@ -58,8 +58,8 @@ async function decide(run: string, decision: Decision, after: () => Promise<void
   try {
     const answer = await plugin.request("flowrunner.decidir", { run, decision });
     if (answer.ok) set(draft, "");
-    // Lo que dice al aprender, y la ruta del worktree para arreglarlo a mano, se muestran aunque salga.
-    if (!answer.ok || decision.accion === "aprender" || decision.accion === "aMano")
+    // Lo que dice al aprender, y si Autofix commiteó algo, se muestran aunque salga.
+    if (!answer.ok || decision.accion === "aprender" || decision.accion === "autofix")
       set(said, { run, ...answer });
   } catch (error) {
     set(said, { run, ok: false, mensaje: error instanceof Error ? error.message : String(error) });
@@ -191,8 +191,8 @@ export function Decisions({
         ? "¿Aprobar el plan? Arranca implementar."
         : mine.accion === "reanudar"
           ? `¿Reanudar ${run.clave}?`
-          : mine.accion === "aMano"
-            ? `¿Lo arreglás vos en el worktree de ${run.clave}? Después, Reanudar commitea tu cambio y vuelve a verificar.`
+          : mine.accion === "autofix"
+            ? `¿Autofix en ${run.clave}? Pasa el formateador y el lint y vuelve a verificar; si sigue en rojo, las sub-tasks lo corrigen solas.`
             : `¿Rehacer ${run.clave} desde ${mine.accion === "rehacer" ? mine.desde : ""}?`;
     return (
       <Stack gap="xs">
@@ -273,9 +273,9 @@ export function Decisions({
             {`Arreglar ${unidad}`}
           </Button>
         ))}
-        {offered.includes("aMano") ? (
-          <Button size="sm" variant="outline" onPress={() => ask({ accion: "aMano" })}>
-            Lo arreglo yo
+        {offered.includes("autofix") ? (
+          <Button size="sm" icon="zap" onPress={() => ask({ accion: "autofix" })}>
+            Autofix
           </Button>
         ) : null}
         {offered.includes("aceptar") ? (

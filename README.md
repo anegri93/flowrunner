@@ -289,6 +289,9 @@ panel de Orca dicen el motivo, a qué sub-task se atribuye y tus respuestas, com
 
 - `flowrunner fix <run> --unidad ST-n "<qué cambiar>"`: que esa sub-task lo corrija con tu instrucción,
   sobre el código que ya está.
+- `flowrunner fix <run> --auto` (Autofix): pasa el lint y el formateador del repo (`lint_fix` y `format`
+  de su config de hoy) por lo que cambió la rama, lo commitea y vuelve a verificar. Si sigue en rojo,
+  las sub-tasks lo corrigen solas con el motivo, una vez; si tampoco alcanza, te vuelve a preguntar.
 - `flowrunner fix <run> --yo`: lo arreglás vos en el worktree de la feature, que el comando te dice, y
   después `flowrunner resume <run>` commitea tu cambio y vuelve a verificar. Podés commitear vos
   también: resume chequea todo lo que cambió desde `fix --yo`. No pasa un cambio que toque `.git`,
@@ -352,8 +355,8 @@ Si usás [Orca](https://www.onorca.dev), el plugin de [`orca/`](orca/README.md) 
 barra derecha, con el ícono del cohete. Cada run es una tarjeta con su estado, su tiempo y las ocho
 etapas del flujo, cada una con su tiempo. La que trabaja gira, y debajo dice qué está haciendo. Desde
 ahí decidís lo que el run espera: aprobar o pedir cambios al plan, reanudar o rehacer un run detenido,
-o responder su pregunta: «Arreglar ST-n» con lo que tiene que corregir, «Lo arreglo yo» o «Seguir
-igual» con tu motivo.
+o responder su pregunta: «Arreglar ST-n» con lo que tiene que corregir, «Autofix» o «Seguir igual»
+con tu motivo. Arreglarlo a mano queda en la terminal (`fix --yo`).
 Aprobar se habilita después de abrir el plan (el botón Plan o el link de la etapa Aprobar). Un plan
 corregido se vuelve a abrir.
 Al pie de cada run vivo, «Abortar el run» lo corta en cualquier etapa.

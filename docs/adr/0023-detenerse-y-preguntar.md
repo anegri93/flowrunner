@@ -92,6 +92,10 @@ Cada intento es una sesión entera. Ahora implementar no paga el segundo a ciega
   `pregunta`, nunca una falla de gate, con `unidades` en las fallidas, en el orden del plan, más las
   que quedaron sin arrancar porque dependen de ellas. Las fallas de entorno y el límite siguen como
   antes.
+- **`resume` se niega sobre una pregunta con sub-tasks,** de implementar o de una fase con vueltas
+  agotadas, y lista sus opciones: rehacía la fase entera a ciegas, también lo ya integrado. Las demás
+  detenciones se retoman como antes, aunque ofrezcan `rerun`. La regla vive solo en el CLI: el
+  reductor no puede ignorar un `reanudado` viejo sin cambiar cómo se lee un log ya escrito (C8).
 
 Detalle en `docs/plan-de-raiz/pr-06-subtask-trabada-pregunta.md`.
 

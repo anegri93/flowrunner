@@ -4,6 +4,8 @@
 // FAKE_ESPERA_APROBAR: aprobar espera la aprobación, como el de verdad.
 // FAKE_SEMAFORO: cada fase espera a que exista ese archivo, para que el test decida cuándo sigue.
 // FAKE_VUELVE: una sub-task, como "ST-1": verificar se la devuelve a implementar solo la primera vez.
+// FAKE_PREGUNTA: sub-tasks separadas por comas: implementar pregunta por ellas la primera vez.
+// FAKE_FALLA: "fase:clase", como "preparar:entorno": esa fase falla siempre, con otro motivo cada vez.
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PhaseFn, PhaseRegistry } from "../../src/runner/types.ts";
@@ -27,6 +29,18 @@ const fake: PhaseFn = async (ctx) => {
     if (ran.filter((f) => f === "verificar").length === 1) {
       return { tipo: "vuelve", unidades: [vuelve], motivo: "AC-1 sigue en rojo" };
     }
+  }
+  const ran = () =>
+    readFileSync(join(ctx.run.dir, "ejecuciones.txt"), "utf8")
+      .split("\n")
+      .filter((f) => f === ctx.action.fase).length;
+  const pregunta = (process.env.FAKE_PREGUNTA ?? "").split(",").filter((u) => u !== "");
+  if (ctx.action.fase === "implementar" && pregunta.length > 0 && ran() === 1) {
+    return { tipo: "pregunta", motivo: "una sub-task no pudo terminar", unidades: pregunta };
+  }
+  const [fase, clase] = (process.env.FAKE_FALLA ?? "").split(":");
+  if (ctx.action.fase === fase && (clase === "entorno" || clase === "gate")) {
+    return { tipo: "falla", clase, motivo: `falla ${String(ran())}` };
   }
   // FAKE_SIN_PROBAR: probar deja un criterio sin probar, como cuando falta simular una falla.
   if (ctx.action.fase === "probar" && process.env.FAKE_SIN_PROBAR === "1") {

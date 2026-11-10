@@ -11,11 +11,13 @@ import { runPaths } from "../src/store/runs.ts";
 import { homeWith, runCli } from "./helpers/cli.ts";
 import { git, tempDir } from "./helpers/git.ts";
 import { makeProject } from "./helpers/project.ts";
+import { isAlive } from "../src/store/lock.ts";
 import {
   executions,
   FAKE_PHASES,
   FEATURE,
   launch,
+  lockPid,
   runDir,
   stateNow,
   waitFor,
@@ -235,6 +237,78 @@ describe("detenido con pregunta", () => {
     const resumed = runCli(["resume", id], env);
     expect(resumed.status).toBe(1);
     expect(resumed.stderr).toMatch(/está abortado: no hay nada que retomar/);
+  });
+
+  // Si regresiona, `resume` sobre una pregunta con sub-tasks rehace la fase entera a ciegas, también lo
+  // ya integrado, sin la instrucción que la pregunta pedía.
+  test("resume sobre una pregunta de implementar se niega y lista las opciones", async () => {
+    const w = world({ FAKE_PREGUNTA: "ST-1,ST-2" });
+    const id = launch(w);
+    await waitFor("el run detenido", () => stateNow(w, id).status === "detenido");
+    expect(stateNow(w, id).fase).toBe("implementar");
+    const before = readFileSync(join(runDir(w, id), "events.jsonl"), "utf8");
+    const resumed = runCli(["resume", id], w.env);
+    expect(resumed.status).toBe(1);
+    expect(resumed.stderr).toContain(
+      `el run ${id} no ofrece eso ahora (está detenido en implementar)`,
+    );
+    expect(resumed.stderr).toContain(`flowrunner fix ${id} --unidad ST-1 "<qué cambiar>"`);
+    expect(resumed.stderr).toContain(`flowrunner fix ${id} --unidad ST-2 "<qué cambiar>"`);
+    expect(resumed.stderr).toContain(`flowrunner fix ${id} --yo`);
+    expect(readFileSync(join(runDir(w, id), "events.jsonl"), "utf8")).toBe(before);
+    expect(executions(w, id).filter((f) => f === "implementar")).toHaveLength(1);
+  });
+
+  // Si regresiona, `resume` saltea la pregunta de verificar y gasta otra vuelta que nadie pidió.
+  test("resume sobre una pregunta de verificar con vueltas agotadas también se niega", async () => {
+    const w = world({ FAKE_VUELVE: "ST-1" });
+    const id = launch(w);
+    await waitFor("el run detenido", () => stateNow(w, id).status === "detenido");
+    expect(stateNow(w, id).fase).toBe("verificar");
+    const before = readFileSync(join(runDir(w, id), "events.jsonl"), "utf8");
+    const resumed = runCli(["resume", id], w.env);
+    expect(resumed.status).toBe(1);
+    expect(resumed.stderr).toContain(
+      `el run ${id} no ofrece eso ahora (está detenido en verificar)`,
+    );
+    expect(resumed.stderr).toContain(`flowrunner accept ${id} "<por qué>"`);
+    expect(readFileSync(join(runDir(w, id), "events.jsonl"), "utf8")).toBe(before);
+  });
+
+  // Si regresiona, la regla de arriba deja sin salida a las detenciones que sí se retoman.
+  test("resume sigue valiendo para una detención por entorno y para un run cortado", async () => {
+    // Entorno: ofrece resume.
+    const entorno = world({ FAKE_FALLA: "preparar:entorno" });
+    const a = launch(entorno);
+    await waitFor("detenido por entorno", () => stateNow(entorno, a).status === "detenido");
+    expect(runCli(["resume", a], entorno.env).status).toBe(0);
+    await waitFor(
+      "preparar otra vez",
+      () => executions(entorno, a).filter((f) => f === "preparar").length === 2,
+    );
+
+    // N intentos sin pasar el gate: ofrece rerun, y resume sigue andando como antes.
+    const gate = world({ FAKE_FALLA: "planificar:gate" });
+    const b = launch(gate);
+    await waitFor("detenido por el gate", () => stateNow(gate, b).status === "detenido");
+    expect(stateNow(gate, b).halt?.motivo).toContain("3 intentos sin pasar el gate");
+    expect(runCli(["resume", b], gate.env).status).toBe(0);
+    await waitFor(
+      "planificar otra vez",
+      () => executions(gate, b).filter((f) => f === "planificar").length > 3,
+    );
+
+    // Cortado: en curso con el proceso muerto.
+    const semaforo = join(tempDir(), "sigue");
+    const cortado = world({ FAKE_SEMAFORO: semaforo });
+    const c = launch(cortado);
+    const pid = await waitFor("el pid", () => lockPid(cortado, c));
+    process.kill(pid, "SIGKILL");
+    await waitFor("muerto", () => !isAlive(pid));
+    expect(stateNow(cortado, c).status).toBe("en_curso");
+    expect(runCli(["resume", c], cortado.env).status).toBe(0);
+    writeFileSync(semaforo, "");
+    await waitFor("entregado", () => stateNow(cortado, c).status === "entregado");
   });
 
   /** Un run detenido en verificar con el arreglo a mano iniciado: el worktree, listo para editar. */

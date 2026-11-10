@@ -239,8 +239,9 @@ export function approveRun(
   if (cambios.length > 0 && !aceptaCambios) {
     throw new UserError(
       `el plan de ${id} cambia lo que ya existe:\n${cambios.map((c) => `- ${c.que} (${c.donde}) ← ${c.criterio}`).join("\n")}\nSi esos cambios van, aprobá con --acepto-cambios; si no, pedí cambios`,
-      // El comando sugerido conserva el origen: si Claude lo sigue tal cual, sigue siendo de Claude.
-      `flowrunner approve ${id} --acepto-cambios${origen === "terminal" ? "" : ` --origen ${origen}`}`,
+      // Si Claude sigue el comando tal cual, sigue siendo de Claude. El de Orca no lleva origen: el
+      // panel se lo muestra a la persona, que lo corre en la terminal.
+      `flowrunner approve ${id} --acepto-cambios${origen === "claude" ? " --origen claude" : ""}`,
     );
   }
   appendEvent(run.dir, { tipo: "aprobado", cambios_aceptados: cambios.length, origen });

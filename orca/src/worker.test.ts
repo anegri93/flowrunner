@@ -352,8 +352,21 @@ test("aprobar solo corre si el plan sigue en la versión que se abrió", async (
       run: id,
       decision: { accion: "aprobar", plan: `${id}#1` },
     });
+    // Un run que ya no espera aprobación tampoco se aprueba, aunque la versión coincida.
+    const running = await worker.request("flowrunner.decidir", {
+      run: "VF-2-20261109-001527",
+      decision: { accion: "aprobar", plan: "VF-2-20261109-001527#1" },
+    });
+    assert.deepEqual(running, {
+      ok: false,
+      mensaje: "el run VF-2-20261109-001527 ya no espera aprobación",
+    });
+    assert.equal(
+      decided(calls()).some((c) => c.startsWith("approve VF-2")),
+      false,
+    );
     assert.deepEqual(fresh, { ok: true, mensaje: "aprobado: implementar arrancó" });
-    assert.equal(calls().at(-1), `approve ${id} --origen orca --json`);
+    assert.equal(decided(calls()).at(-1), `approve ${id} --origen orca --json`);
   } finally {
     await worker.deactivate();
   }

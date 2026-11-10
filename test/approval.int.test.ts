@@ -203,6 +203,10 @@ describe("aprobar un plan que cambia lo existente", () => {
     expect(fromClaude.stderr).toContain(
       `flowrunner approve ${id} --acepto-cambios --origen claude`,
     );
+    // El de Orca, no: el panel lo muestra a la persona, que lo corre en la terminal.
+    const fromOrca = runCli(["approve", id, "--origen", "orca"], w.env);
+    expect(fromOrca.stderr).toContain(`flowrunner approve ${id} --acepto-cambios`);
+    expect(fromOrca.stderr).not.toContain("--origen orca");
 
     expect(runCli(["approve", id, "--acepto-cambios"], w.env).status).toBe(0);
   });

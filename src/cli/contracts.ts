@@ -1,7 +1,7 @@
 // Las formas `--json` del CLI. La skill de consola lee estas formas; cambiarlas es cambiar su contrato.
 import { z } from "zod";
 import type { RunState } from "../engine/engine.ts";
-import { phaseSchema, type RunEvent } from "../store/events.ts";
+import { arregloSchema, phaseSchema, type RunEvent } from "../store/events.ts";
 
 export const runSummarySchema = z.strictObject({
   id: z.string(),
@@ -26,7 +26,16 @@ export const runSummarySchema = z.strictObject({
       motivo: z.string(),
       siguiente: z.string(),
       /** Las respuestas posibles, en orden; la primera es `siguiente` (ADR 0023). */
-      opciones: z.array(z.strictObject({ comando: z.string(), que: z.string() })).min(1),
+      opciones: z
+        .array(
+          z.strictObject({
+            comando: z.string(),
+            que: z.string(),
+            /** Un `fix --unidad` con la instrucción ya escrita (ADR 0028). */
+            arreglo: arregloSchema.optional(),
+          }),
+        )
+        .min(1),
       /** Las sub-tasks a las que se atribuye el problema, si hay. */
       unidades: z.array(z.string()).optional(),
     })

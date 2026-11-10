@@ -9,6 +9,7 @@ Una lista de `hallazgos`, cada uno con:
 - `afirmacion`: qué está mal y por qué, en una o dos frases verificables.
 - `regla`: la convención o el criterio que rompe, citado; vacío si no hay uno.
 - `subtarea`: la sub-task responsable, una de: {{subtareas}}.
+- `arreglos`: en un `bloqueante`, de 1 a 3 formas concretas de resolverlo, la que recomendás primero. Cada una es la instrucción que le darías a esa sub-task: en imperativo, en una línea, que se entienda sin leer el hallazgo, y nombrando el archivo o el valor que cambia (por ejemplo: «Subí `engines.node` a `>=24` en package.json y en el README», «Usá una versión de unpdf que ande en Node 20.6»). Si hay más de un camino, como cambiar el código o cambiar lo que el repo promete, dá uno por camino. En un `aviso`, vacío.
 
 Desconfiá de un test que solo busca un texto en la documentación o en un archivo de configuración: no prueba que lo documentado funcione. Si el diff documenta un comando, un script o una ruta, comprobá con Read que exista de verdad; si no existe, es `bloqueante`.
 

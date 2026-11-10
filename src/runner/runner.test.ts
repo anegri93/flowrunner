@@ -175,3 +175,93 @@ describe("runUntilStop", () => {
     expect(executions(run).at(-1)).toBe("aprobar");
   });
 });
+
+describe("Autofix solo (ADR 0028)", () => {
+  /** Un run con 0 vueltas, como los de ahora: el primer rojo con sub-tasks ya es una detención. */
+  function zeroRounds(): RunPaths {
+    const dir = mkdtempSync(join(tmpdir(), "fr-runner-"));
+    appendEvent(dir, {
+      tipo: "run_creado",
+      run_id: "R1",
+      clave: "SHOP-1",
+      proyecto: "acme",
+      repo: "/r",
+      vueltas: 0,
+    });
+    return { id: "R1", home: dir, dir, worktrees: join(dir, "wt") };
+  }
+  const red: Outcome = { tipo: "vuelve", unidades: ["ST-2"], motivo: "AC-1 sigue en rojo" };
+
+  /** Lo que hace el Autofix de verdad, sin herramientas: escribir el evento, y contar las veces. */
+  function autofixer(run: RunPaths) {
+    const calls: number[] = [];
+    const autofixSolo = () => {
+      calls.push(1);
+      appendEvent(run.dir, { tipo: "autofix", origen: "flowrunner", sha: null });
+      return Promise.resolve();
+    };
+    return { calls, autofixSolo };
+  }
+
+  // Si regresiona, la persona tiene que apretar Autofix en cada detención (PIZ-3), o flowrunner lo
+  // repite solo vuelta tras vuelta.
+  test("en una detención con sub-tasks lo corre una vez; si sigue en rojo, se detiene y avisa una vez", async () => {
+    const run = zeroRounds();
+    const phases = recordingPhases(run, { verificar: [red, red, red] });
+    const { calls, autofixSolo } = autofixer(run);
+    notified.length = 0;
+    const state = await runUntilStop(run, phases, deps, { autofixSolo });
+    expect(calls).toHaveLength(1);
+    expect(state.status).toBe("detenido");
+    expect(state.halt?.opciones.map((o) => o.comando)).toContain("flowrunner fix R1 --auto");
+    // Autofix vuelve a verificar; el rojo siguiente lo corrige ST-2 sola; el tercero pregunta.
+    expect(executions(run).filter((f) => f === "verificar")).toHaveLength(3);
+    expect(executions(run).filter((f) => f === "implementar")).toHaveLength(2);
+    expect(notified).toEqual(["SHOP-1: el run se detuvo"]);
+  });
+
+  // Si regresiona, un Autofix que se niega (cambios sin commitear) deja el run girando o sin decir por qué.
+  test("si se niega, se detiene como antes, con el motivo en un aviso", async () => {
+    const run = zeroRounds();
+    const phases = recordingPhases(run, { verificar: [red] });
+    let calls = 0;
+    const state = await runUntilStop(run, phases, deps, {
+      autofixSolo: () => {
+        calls++;
+        return Promise.reject(new Error("el worktree /w tiene cambios sin commitear"));
+      },
+    });
+    expect(calls).toBe(1);
+    expect(state.status).toBe("detenido");
+    expect(executions(run).filter((f) => f === "verificar")).toHaveLength(1);
+    expect(readLog(run.dir).events).toContainEqual(
+      expect.objectContaining({
+        tipo: "aviso",
+        fase: "verificar",
+        texto: "Autofix no corrió solo: el worktree /w tiene cambios sin commitear",
+      }),
+    );
+  });
+
+  // Si regresiona, flowrunner corre Autofix donde la persona no lo podría elegir, o en un run que ya
+  // te esperaba antes de que este proceso arrancara.
+  test("no corre en una detención sin Autofix ni en una que el proceso no causó", async () => {
+    const run = zeroRounds();
+    const { calls, autofixSolo } = autofixer(run);
+    const porEntorno = recordingPhases(run, {
+      verificar: [{ tipo: "falla", clase: "entorno", motivo: "falta jsqr" }],
+    });
+    expect((await runUntilStop(run, porEntorno, deps, { autofixSolo })).status).toBe("detenido");
+    expect(calls).toHaveLength(0);
+
+    const waiting = zeroRounds();
+    const other = autofixer(waiting);
+    await runUntilStop(waiting, recordingPhases(waiting, { verificar: [red] }), deps);
+    expect(other.calls).toHaveLength(0);
+    const again = await runUntilStop(waiting, recordingPhases(waiting), deps, {
+      autofixSolo: other.autofixSolo,
+    });
+    expect(again.status).toBe("detenido");
+    expect(other.calls).toHaveLength(0);
+  });
+});

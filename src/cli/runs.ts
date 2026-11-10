@@ -15,7 +15,13 @@ import { runUntilStop } from "../runner/runner.ts";
 import type { RunPaths } from "../runner/types.ts";
 import { prepared } from "../phases/inputs.ts";
 import { readPlan } from "../phases/planificar.ts";
-import { PHASES, type Origen, type Phase, type RunEvent } from "../store/events.ts";
+import {
+  PHASES,
+  type Origen,
+  type OrigenAutofix,
+  type Phase,
+  type RunEvent,
+} from "../store/events.ts";
 import { loadRepoConfig } from "../config/load.ts";
 import { ConfigError, MAX_RUNS_DEFAULT, type RepoConfig } from "../config/schemas.ts";
 import { conTurnoGitSync } from "../git/git.ts";
@@ -428,8 +434,34 @@ const sha256 = (text: string) => createHash("sha256").update(text).digest("hex")
  */
 export async function autofixRun(home: string, id: string, origen: Origen, env: NodeJS.ProcessEnv) {
   loadOrExplain(home, id);
+  const answer = await aplicarAutofix(home, id, origen, env);
+  const sha = answer.tipo === "autofix" ? answer.sha : null;
+  return launchAnswer(
+    home,
+    id,
+    answer,
+    sha === null
+      ? "autofix: las herramientas no cambiaron nada; verificar arrancó"
+      : "autofix: formato y lint commiteados; verificar arrancó",
+    "autofix pedido",
+    env,
+  );
+}
+
+/**
+ * Lo mecánico de Autofix, sin lanzar nada: comprueba que la detención lo ofrezca, pasa las
+ * herramientas, commitea y escribe el evento `autofix`. Si se niega (cambios sin commitear, un arreglo
+ * a mano empezado, la config que no carga), sale con un `UserError` sin escribir nada. Lo usan
+ * `fix --auto` y el proceso del run, que lo corre solo al detenerse (ADR 0028).
+ */
+export async function aplicarAutofix(
+  home: string,
+  id: string,
+  origen: OrigenAutofix,
+  env: NodeJS.ProcessEnv,
+): Promise<RunEvent> {
   const run = runPaths(home, id);
-  const answer = await conTurno(answerTurno(home, id), id, async () => {
+  return conTurno(answerTurno(home, id), id, async () => {
     const state = loadState(home, id);
     requireOffered(state, id, offers(state, `flowrunner fix ${id} --auto`));
     if (isRunning(home, state))
@@ -505,17 +537,6 @@ export async function autofixRun(home: string, id: string, origen: Origen, env: 
     }
     return appendEvent(run.dir, { tipo: "autofix", origen, sha });
   });
-  const sha = answer.tipo === "autofix" ? answer.sha : null;
-  return launchAnswer(
-    home,
-    id,
-    answer,
-    sha === null
-      ? "autofix: las herramientas no cambiaron nada; verificar arrancó"
-      : "autofix: formato y lint commiteados; verificar arrancó",
-    "autofix pedido",
-    env,
-  );
 }
 
 /**
@@ -720,7 +741,12 @@ export async function runProcess(home: string, id: string, env: NodeJS.ProcessEn
         notifyMac(title, body, env);
       },
     );
-    const final = await runUntilStop(run, phases, deps);
+    // Autofix solo (ADR 0028): el mismo de `fix --auto`, con las herramientas en el Node del repo.
+    const final = await runUntilStop(run, phases, deps, {
+      autofixSolo: async () => {
+        await aplicarAutofix(home, id, "flowrunner", deps.env);
+      },
+    });
     // El informe se escribe siempre al terminar el proceso: completo o parcial si se detuvo.
     writeReport(run, readLog(run.dir).events);
     return final;

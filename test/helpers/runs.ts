@@ -2,6 +2,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { stateOf, type RunState } from "../../src/engine/engine.ts";
+import { isAlive } from "../../src/store/lock.ts";
 import { lugarDe, lugaresDir, type Lugar } from "../../src/store/lugares.ts";
 import { readLog } from "../../src/store/run-log.ts";
 import { homeWith, runCli } from "./cli.ts";
@@ -97,4 +98,21 @@ export async function waitFor<T>(
     if (Date.now() - start > ms) throw new Error(`timeout esperando: ${what}`);
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
+}
+
+/**
+ * El run detenido y su proceso terminado. Al detenerse con sub-tasks, el proceso corre Autofix solo
+ * (ADR 0028) antes de soltar su lugar: un `detenido` visto antes es el de un instante, y una respuesta
+ * en ese momento choca con «ya está corriendo».
+ */
+export function waitStopped(w: World, id: string, ms = 30_000): Promise<boolean> {
+  return waitFor(
+    "el run detenido, sin proceso",
+    () => {
+      if (stateOf(readLog(runDir(w, id)).events).status !== "detenido") return false;
+      const pid = lugarDe(w.home, "acme-api", id)?.pid;
+      return pid === undefined || !isAlive(pid);
+    },
+    ms,
+  );
 }

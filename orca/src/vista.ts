@@ -21,6 +21,7 @@ import {
   planVersion,
   rerunPhase,
   runChip,
+  suggestedFixes,
   sortRuns,
   stageRows,
   tail,
@@ -203,6 +204,16 @@ function decisiones(e: Estado, run: Run): string {
   const seen = planSeen(e, run);
   const desde = rerunPhase(run);
   const units = offered.includes("arreglar") ? fixUnits(run) : [];
+  // El arreglo ya escrito se elige con un toque: elegirlo es la confirmación, como en el CLI.
+  const suggested = offered.includes("arreglar")
+    ? suggestedFixes(run).map((a) =>
+        boton(
+          { t: "decidir", run: run.id, decision: { accion: "arreglar", ...a } },
+          `${esc(a.unidad)} · ${esc(a.instruccion)}`,
+          { clase: "btn arreglo" },
+        ),
+      )
+    : [];
   const botones = [
     offered.includes("aprender")
       ? boton({ t: "decidir", run: run.id, decision: { accion: "aprender" } }, "Aprender ahora")
@@ -241,6 +252,8 @@ function decisiones(e: Estado, run: Run): string {
           "warning",
         )
       : ""
+  }${
+    suggested.length === 0 ? "" : `<div class="pila">${suggested.join("")}</div>`
   }<div class="botones">${botones}</div>${
     offered.includes("aprobar") && !seen
       ? texto("Abrí el plan para poder aprobar.", "chico apagado")
@@ -403,6 +416,7 @@ button:focus-visible, .campo:focus-visible { outline: 2px solid var(--orca-ring,
 .btn { font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--orca-border); background: var(--orca-secondary, transparent); color: var(--orca-secondary-foreground, inherit); }
 .btn:hover:not(:disabled) { border-color: var(--fr-muted); }
 .btn.ghost { background: none; border-color: transparent; }
+.btn.arreglo { text-align: left; width: 100%; }
 .btn.solid { border-color: transparent; color: #fff; }
 .btn.solid.success { background: var(--fr-success); } .btn.solid.warning { background: var(--fr-warning); } .btn.solid.danger { background: var(--fr-danger); } .btn.solid.accent { background: var(--fr-accent); }
 html.dark .btn.solid { color: #0b0b0b; }

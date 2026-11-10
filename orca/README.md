@@ -31,6 +31,9 @@ como `flowrunner watch`, pensada para el ancho angosto de la barra:
   recuerda aunque lo recargues. Si el plan cambió desde que lo abriste, el panel no lo aprueba y te
   pide abrirlo de nuevo. Aprobar, pedir cambios, arreglar, arreglarlo a mano y seguir igual llegan a
   flowrunner con `--origen orca`.
+- Un run detenido por la revisión muestra sus arreglos ya escritos, uno por botón, arriba de «Arreglar
+  ST-n»: tocar uno lo manda, sin confirmar, porque elegirlo es la decisión. «Arreglar ST-n» sigue para
+  escribir otro.
 - Si el plan cambia lo que ya existe, la tarjeta lo avisa y la pestaña del plan lo pone arriba de
   todo. Aprobar muestra cada cambio, con dónde está y qué criterio lo pide, y el botón pasa a ser
   «Acepto los cambios y apruebo», que aprueba con `--acepto-cambios`. Si alguno no va, pedí cambios.

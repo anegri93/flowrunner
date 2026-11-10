@@ -8,7 +8,7 @@ import {
   type Phase,
   type RunEvent,
 } from "../store/events.ts";
-import { MAX_ATTEMPTS, nextAction, stateOf, type RunState } from "./engine.ts";
+import { correAutofixSolo, MAX_ATTEMPTS, nextAction, stateOf, type RunState } from "./engine.ts";
 import { TOKEN_REJECTED } from "./motivos.ts";
 
 const AT = "2026-11-07T10:00:00.000Z";
@@ -915,5 +915,204 @@ describe("Autofix (ADR 0026)", () => {
     expect(stateOf([...porEntorno, autofix])).toEqual(stateOf(porEntorno));
     const running = [zero, ...ok("preparar")];
     expect(stateOf([...running, autofix])).toEqual(stateOf(running));
+  });
+});
+
+describe("arreglos escritos y Autofix solo (ADR 0028)", () => {
+  const R = "R1";
+  const zero: RunEvent = { ...created, vueltas: 0 };
+  const implemented = [...upTo("preparar", "planificar"), ...ok("aprobar"), ...ok("implementar")];
+  const commands = (s: RunState) => s.halt?.opciones.map((o) => o.comando);
+  const motivo = "la revisión encontró bloqueantes:\n- ST-2 · package.json:5: unpdf pide Node 24";
+  const arreglos = [
+    { unidad: "ST-2", instruccion: "Subí `engines.node` a `>=24` en package.json y en el README" },
+    {
+      unidad: "ST-2",
+      instruccion: "Usá una versión de unpdf que ande en Node 20.6, sin el 'fork'",
+    },
+    // De una sub-task que la detención no nombra: no se ofrece.
+    { unidad: "ST-9", instruccion: "Borrá todo" },
+  ];
+  const reviewed = [
+    zero,
+    ...implemented,
+    ...ok("verificar"),
+    ...done("revisar", { tipo: "vuelve", unidades: ["ST-2"], motivo, arreglos }),
+  ];
+
+  // Si regresiona, la persona vuelve a escribir a mano lo que el revisor ya sabía (PIZ-3), o el
+  // comando que se copia ejecuta lo que está entre backticks.
+  test("la detención ofrece cada arreglo con su texto, antes del fix genérico, que se queda", () => {
+    const s = stateOf(reviewed);
+    expect(commands(s)).toEqual([
+      "flowrunner fix R1 --unidad ST-2 'Subí `engines.node` a `>=24` en package.json y en el README'",
+      "flowrunner fix R1 --unidad ST-2 'Usá una versión de unpdf que ande en Node 20.6, sin el '\\''fork'\\'''",
+      `flowrunner fix ${R} --unidad ST-2 "<qué cambiar>"`,
+      `flowrunner fix ${R} --auto`,
+      `flowrunner fix ${R} --yo`,
+      `flowrunner accept ${R} "<por qué>"`,
+      `flowrunner rerun ${R} --desde planificar`,
+      `flowrunner abort ${R}`,
+    ]);
+    expect(s.halt?.opciones[0]).toEqual({
+      comando: commands(s)?.[0],
+      que: "que ST-2 lo corrija así: Subí `engines.node` a `>=24` en package.json y en el README",
+      arreglo: arreglos[0],
+    });
+    expect(s.halt?.siguiente).toBe(commands(s)?.[0]);
+  });
+
+  // Si regresiona, un run que ya estaba detenido cambia de opciones, o de estado, al actualizar
+  // flowrunner: los comandos se recalculan en cada replay (C8). Es un log como el de PIZ-3.
+  test("un log de antes, sin arreglos, se reduce exactamente igual", () => {
+    const at = "2026-11-10T10:00:00.000Z";
+    const lines = [
+      `{"tipo":"run_creado","at":"${at}","run_id":"R1","clave":"PIZ-3","proyecto":"pizarra","repo":"/r","vueltas":0,"reintentos_red":3}`,
+      ...["preparar", "planificar", "aprobar", "implementar", "verificar"].flatMap((fase) => [
+        `{"tipo":"accion_iniciada","at":"${at}","fase":"${fase}"}`,
+        `{"tipo":"accion_terminada","at":"${at}","fase":"${fase}","resultado":{"tipo":"ok"}}`,
+      ]),
+      `{"tipo":"accion_iniciada","at":"${at}","fase":"revisar"}`,
+      `{"tipo":"accion_terminada","at":"${at}","fase":"revisar","resultado":{"tipo":"vuelve","unidades":["ST-2"],"motivo":"unpdf pide Node 24"}}`,
+    ];
+    const old = lines.map((line) => eventSchema.parse(JSON.parse(line)));
+    const s = stateOf(old);
+    expect(s).toMatchObject({ status: "detenido", fase: "revisar", autofix: false });
+    expect(s.halt).toEqual({
+      motivo: "revisar: unpdf pide Node 24",
+      siguiente: `flowrunner fix ${R} --unidad ST-2 "<qué cambiar>"`,
+      unidades: ["ST-2"],
+      opciones: [
+        {
+          comando: `flowrunner fix ${R} --unidad ST-2 "<qué cambiar>"`,
+          que: "que ST-2 lo corrija con tu instrucción, sobre el código que ya está",
+        },
+        {
+          comando: `flowrunner fix ${R} --auto`,
+          que: "formateador y lint del repo, y volver a verificar; si sigue en rojo, las sub-tasks lo corrigen solas",
+        },
+        {
+          comando: `flowrunner fix ${R} --yo`,
+          que: "lo arreglás vos en el worktree; `resume` lo commitea y vuelve a verificar",
+        },
+        {
+          comando: `flowrunner accept ${R} "<por qué>"`,
+          que: "seguir a probar igual; tu motivo queda en la PR",
+        },
+        { comando: `flowrunner rerun ${R} --desde planificar`, que: "replanificar" },
+        { comando: `flowrunner abort ${R}`, que: "cortar el run; la rama queda" },
+      ],
+    });
+    // Las respuestas que valían siguen valiendo igual: un Autofix de la persona y un fix con texto.
+    const autofixed = stateOf([...old, ev({ tipo: "autofix", origen: "orca", sha: null })]);
+    expect(autofixed).toMatchObject({ status: "en_curso", fase: "verificar", autofix: true });
+    const fixed = nextAction(
+      stateOf([
+        ...old,
+        ev({ tipo: "arreglo_pedido", unidades: ["ST-2"], instruccion: "x", origen: "terminal" }),
+      ]),
+    );
+    expect(fixed).toMatchObject({ fase: "implementar", unidades: ["ST-2"], instruccion: "x" });
+  });
+
+  const red = (fase: Phase = "verificar") =>
+    done(fase, { tipo: "vuelve", unidades: ["ST-2"], motivo: "rojo" });
+  const asked = [zero, ...implemented, ...red()];
+  const solo = ev({ tipo: "autofix", origen: "flowrunner", sha: null });
+
+  // Si regresiona, la vuelta que sigue a Autofix (o una automática) no recibe la solución que la
+  // revisión ya había escrito, y repite el rojo a ciegas.
+  test("la vuelta que nadie eligió recibe el motivo con los arreglos propuestos", () => {
+    const afterAutofix = stateOf([
+      ...asked,
+      solo,
+      ...ok("verificar"),
+      ...done("revisar", { tipo: "vuelve", unidades: ["ST-2"], motivo, arreglos }),
+    ]);
+    expect(nextAction(afterAutofix)).toMatchObject({
+      fase: "implementar",
+      unidades: ["ST-2"],
+      instruccion: `${motivo}\n\nArreglos propuestos:\n- ST-2: ${arreglos[0]?.instruccion ?? ""}\n- ST-2: ${arreglos[1]?.instruccion ?? ""}`,
+    });
+    // Sin arreglos, el motivo solo, como antes.
+    expect(nextAction(stateOf([...asked, solo, ...red()]))).toMatchObject({ instruccion: "rojo" });
+  });
+
+  // Si regresiona, flowrunner no corre Autofix donde la persona lo elegiría, o lo corre donde no sirve.
+  test("corre solo en una detención de verificar, revisar o probar con sub-tasks, y no en otra", () => {
+    expect(correAutofixSolo(stateOf(asked))).toBe(true);
+    expect(correAutofixSolo(stateOf(reviewed))).toBe(true);
+    const byHand = stateOf([
+      ...asked,
+      ev({ tipo: "arreglo_manual_iniciado", origen: "terminal", base: "abc1234" }),
+    ]);
+    expect(correAutofixSolo(byHand)).toBe(false);
+    const untested = stateOf([
+      zero,
+      ...implemented,
+      ...upTo("verificar", "revisar"),
+      ...done("probar", { tipo: "falla", clase: "sin_probar", motivo: "AC-1 sin probar" }),
+    ]);
+    expect(correAutofixSolo(untested)).toBe(false);
+    const implementQuestion = stateOf([
+      zero,
+      ...upTo("preparar", "planificar"),
+      ...ok("aprobar"),
+      ...done("implementar", { tipo: "pregunta", motivo: "x", unidades: ["ST-1"] }),
+    ]);
+    expect(correAutofixSolo(implementQuestion)).toBe(false);
+    const porEntorno = stateOf([
+      zero,
+      ...implemented,
+      ...done("verificar", { tipo: "falla", clase: "entorno", motivo: "falta jsqr" }),
+    ]);
+    expect(correAutofixSolo(porEntorno)).toBe(false);
+    expect(correAutofixSolo(stateOf([zero, ...ok("preparar")]))).toBe(false);
+  });
+
+  // Si regresiona, flowrunner repite Autofix en cada vuelta y gasta sin que nadie lo pida (PIZ-3).
+  test("una vez por detención: después de un Autofix, solo o elegido, la detención siguiente pregunta", () => {
+    // Solo hace lo mismo que el de la persona: verifica, y el próximo rojo va a las sub-tasks.
+    expect(stateOf([...asked, solo])).toMatchObject({
+      status: "en_curso",
+      fase: "verificar",
+      autofix: true,
+    });
+    const chain = [...asked, solo, ...red(), ...ok("implementar"), ...red()];
+    const again = stateOf(chain);
+    expect(again.status).toBe("detenido");
+    expect(commands(again)).toContain(`flowrunner fix ${R} --auto`);
+    expect(correAutofixSolo(again)).toBe(false);
+    const chosen = ev({ tipo: "autofix", origen: "orca", sha: null });
+    const afterChosen = stateOf([...asked, chosen, ...red(), ...ok("implementar"), ...red()]);
+    expect(correAutofixSolo(afterChosen)).toBe(false);
+  });
+
+  // Si regresiona, después de la primera vez Autofix no vuelve a correr solo nunca más en el run.
+  test("una respuesta de la persona que manda a trabajar abre otra detención en la que sí corre", () => {
+    const chain = [...asked, solo, ...red(), ...ok("implementar"), ...red()];
+    const cases: [string, RunEvent[]][] = [
+      [
+        "arreglo_pedido",
+        [
+          ev({ tipo: "arreglo_pedido", unidades: ["ST-2"], instruccion: "x", origen: "orca" }),
+          ...ok("implementar"),
+          ...red(),
+        ],
+      ],
+      [
+        "aceptado",
+        [
+          ev({ tipo: "aceptado", fase: "verificar", motivo: "x", origen: "orca" }),
+          ...red("revisar"),
+        ],
+      ],
+      ["rehacer", [ev({ tipo: "rehacer", desde: "implementar" }), ...ok("implementar"), ...red()]],
+    ];
+    for (const [answer, rest] of cases) {
+      const s = stateOf([...chain, ...rest]);
+      expect(s.status, answer).toBe("detenido");
+      expect(correAutofixSolo(s), answer).toBe(true);
+    }
   });
 });

@@ -70,6 +70,14 @@ export interface Run {
 export interface Opcion {
   readonly comando: string;
   readonly que: string;
+  /** Un arreglo con la instrucción ya escrita: se elige con un toque (ADR 0028). */
+  readonly arreglo?: Arreglo;
+}
+
+/** Lo que una sub-task haría con un arreglo propuesto: la instrucción de `fix --unidad`. */
+export interface Arreglo {
+  readonly unidad: string;
+  readonly instruccion: string;
 }
 
 /** Un comportamiento de hoy que el plan cambia: qué, dónde lo fija el código y qué criterio lo pide. */
@@ -482,12 +490,19 @@ export type Decision =
 /** Un run vivo se puede abortar, en cualquier etapa: todos menos los cerrados y los abortados. */
 export const canAbort = (run: Run) => run.status !== "cerrado" && run.status !== "abortado";
 
-/** Las sub-tasks que el run detenido ofrece arreglar, de sus opciones `fix <run> --unidad ST-n`. */
+/**
+ * Las sub-tasks que el run detenido ofrece arreglar con tu instrucción, de sus opciones
+ * `fix <run> --unidad ST-n`. Las que traen el arreglo escrito van aparte, en `suggestedFixes`.
+ */
 export const fixUnits = (run: Run): string[] =>
   (run.opciones ?? []).flatMap((o) => {
     const unidad = /--unidad (ST-\d+)/.exec(o.comando)?.[1];
-    return unidad === undefined ? [] : [unidad];
+    return unidad === undefined || o.arreglo !== undefined ? [] : [unidad];
   });
+
+/** Los arreglos que el run detenido propone, ya escritos, en el orden en que los ofrece. */
+export const suggestedFixes = (run: Run): Arreglo[] =>
+  (run.opciones ?? []).flatMap((o) => (o.arreglo === undefined ? [] : [o.arreglo]));
 
 /** El run detenido ofrece ese comando entre sus opciones. */
 export function offers(run: Run, comando: "fix --auto" | "accept" | "resume"): boolean {
@@ -504,7 +519,7 @@ function stoppedDecisions(run: Run): Decision["accion"][] {
   if (run.opciones === undefined)
     return rerunPhase(run) === undefined ? ["reanudar"] : ["reanudar", "rehacer"];
   const out: Decision["accion"][] = [];
-  if (fixUnits(run).length > 0) out.push("arreglar");
+  if (fixUnits(run).length > 0 || suggestedFixes(run).length > 0) out.push("arreglar");
   if (offers(run, "fix --auto")) out.push("autofix");
   if (offers(run, "accept")) out.push("aceptar");
   if (offers(run, "resume")) out.push("reanudar");

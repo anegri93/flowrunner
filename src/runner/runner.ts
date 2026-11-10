@@ -1,6 +1,7 @@
 // El loop del run: lee el log, pide la siguiente acción al engine y la ejecuta con su fase.
 // Cada acción queda entre `accion_iniciada` y `accion_terminada`; una iniciada sin terminar se rehace.
 import {
+  correAutofixSolo,
   esEsperaDeRed,
   nextAction,
   stateOf,
@@ -37,18 +38,49 @@ async function runPhase(
   }
 }
 
+export interface RunOpts {
+  /** `tick` es el job de launchd: el único que corre aprender sobre un run entregado. */
+  readonly tick?: boolean;
+  /**
+   * Autofix sin la persona (ADR 0028): pasa las herramientas, commitea y escribe `autofix`, o sale con
+   * un error que dice por qué se niega, sin escribir nada. Sin esto, el run se detiene como antes.
+   */
+  readonly autofixSolo?: () => Promise<void>;
+}
+
 export async function runUntilStop(
   run: RunPaths,
   registry: PhaseRegistry,
   deps: Deps,
-  opts: { readonly tick?: boolean } = {},
+  opts: RunOpts = {},
 ): Promise<RunState> {
   let inicial: RunStatus | undefined;
+  // Autofix solo corre en una detención a la que llegó este proceso: no en la de un run que ya
+  // esperaba a la persona antes de arrancar, y una sola vez por detención aunque se niegue.
+  let avanzo = false;
+  let autofixIntentado = false;
   for (;;) {
     const { events } = readLog(run.dir);
     const state = stateOf(events);
     inicial ??= state.status;
     const action = nextAction(state, opts);
+    if (action.tipo === "fin" && avanzo && !autofixIntentado && opts.autofixSolo !== undefined) {
+      if (correAutofixSolo(state)) {
+        autofixIntentado = true;
+        try {
+          await opts.autofixSolo();
+        } catch (error) {
+          // Si se niega, se detiene como siempre, y el motivo queda para el informe y watch.
+          const motivo = error instanceof Error ? error.message : String(error);
+          appendEvent(
+            run.dir,
+            { tipo: "aviso", fase: state.fase, texto: `Autofix no corrió solo: ${motivo}` },
+            deps.now,
+          );
+        }
+        continue;
+      }
+    }
     if (action.tipo === "fin") {
       // El proceso avanza solo: cada estado al que llega es algo que la persona no pidió recién.
       const aviso = avisoDeEstado(inicial, state, {
@@ -66,6 +98,9 @@ export async function runUntilStop(
       : [...events, emit({ tipo: "accion_iniciada", fase: action.fase })];
     const outcome = await runPhase(registry, { run, state, action, events: current, emit, deps });
     emit({ tipo: "accion_terminada", fase: action.fase, resultado: outcome });
+    avanzo = true;
+    // Una detención nueva puede volver a correr Autofix solo; el engine decide si toca.
+    autofixIntentado = false;
     // En un tick, aprender corre una sola vez: con la PR abierta vuelve a probar en el próximo tick.
     if (opts.tick === true && action.fase === "aprender") {
       const after = readLog(run.dir).events;

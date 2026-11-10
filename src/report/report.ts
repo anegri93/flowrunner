@@ -9,7 +9,7 @@ import type { CambioExistente } from "../gates/plan.ts";
 import { lastTestDir, readTests } from "../phases/probar.ts";
 import { reviewSchema } from "../phases/revisar.ts";
 import type { RunPaths } from "../runner/types.ts";
-import { PHASES, type Origen, type Phase, type RunEvent } from "../store/events.ts";
+import { PHASES, type OrigenAutofix, type Phase, type RunEvent } from "../store/events.ts";
 
 /** Texto de un modelo o de un comando, seguro para Markdown: sin HTML. */
 export const plain = (text: string) =>
@@ -140,7 +140,8 @@ function quote(text: string): string {
 /** Una decisión de la persona: qué decidió, de dónde vino, desde qué espera se mide y lo que va al final. */
 interface Decided {
   readonly que: string;
-  readonly origen: Origen | undefined;
+  /** `flowrunner` solo en un Autofix que corrió sin la persona (ADR 0028). */
+  readonly origen: OrigenAutofix | undefined;
   /** Aprobar y pedir cambios se miden desde que el plan esperó; lo demás, desde que el run se detuvo. */
   readonly alPlan: boolean;
   readonly cola: string;
@@ -175,7 +176,7 @@ function decided(e: RunEvent): Decided | undefined {
       return { que: "elegiste arreglarlo a mano", origen: e.origen, alPlan: false, cola: "" };
     case "autofix":
       return {
-        que: "elegiste Autofix",
+        que: e.origen === "flowrunner" ? "flowrunner corrió Autofix solo" : "elegiste Autofix",
         origen: e.origen,
         alPlan: false,
         cola: e.sha === null ? "" : `: formato y lint en ${e.sha.slice(0, 7)}`,
@@ -210,6 +211,11 @@ function personDecisions(events: readonly RunEvent[]): string[] {
     }
     const decision = decided(e);
     if (decision === undefined || after === before) return;
+    // Lo que flowrunner hizo sin esperarte no tiene origen ni demora: va en orden, entre lo tuyo.
+    if (decision.origen === "flowrunner") {
+      lines.push(`- ${hour(e.at)} · ${decision.que}, sin esperarte${decision.cola}`);
+      return;
+    }
     const since = decision.alPlan ? planWaiting : stopped;
     const origen =
       decision.origen === undefined ? "desde un origen desconocido" : `desde ${decision.origen}`;

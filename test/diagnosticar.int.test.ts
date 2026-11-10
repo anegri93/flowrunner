@@ -175,6 +175,16 @@ describe("cuando algo falla y reintentar no alcanza", () => {
       }),
     );
     expect(w.prompts()).toContain("src/b/b.js tiene que exportar 'bien'");
+    // Lo que el diagnóstico le pide a ST-2 viaja escrito: si el run se detuviera, sería una opción.
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        tipo: "accion_terminada",
+        fase: "verificar",
+        resultado: expect.objectContaining({
+          arreglos: [{ unidad: "ST-2", instruccion: "src/b/b.js tiene que exportar 'bien'" }],
+        }) as unknown,
+      }),
+    );
   }, 200_000);
 
   // Si regresiona, flowrunner fuerza código para cumplir un criterio que está mal escrito.

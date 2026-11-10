@@ -20,6 +20,7 @@ import {
   clock,
   sortRuns,
   stationsOf,
+  suggestedFixes,
   tokenCount,
   type Run,
 } from "./runs";
@@ -224,6 +225,43 @@ test("fixUnits saca las sub-tasks de las opciones", () => {
   assert.deepEqual(fixUnits({ ...asked, opciones: [] }), []);
   const { opciones: _sin, ...old } = asked;
   assert.deepEqual(fixUnits(old), []);
+});
+
+// Si regresiona, el panel pide escribir un arreglo que flowrunner ya trae escrito (PIZ-3), o duplica
+// el botón «Arreglar ST-n» por cada arreglo de esa sub-task.
+test("los arreglos escritos van aparte del Arreglar genérico, en el orden de las opciones", () => {
+  const instruccion = "Subí `engines.node` a `>=24` en package.json";
+  const withFixes: Run = {
+    ...asked,
+    opciones: [
+      {
+        comando: `flowrunner fix ${ID} --unidad ST-2 'Subí \`engines.node\` a \`>=24\` en package.json'`,
+        que: `que ST-2 lo corrija así: ${instruccion}`,
+        arreglo: { unidad: "ST-2", instruccion },
+      },
+      {
+        comando: `flowrunner fix ${ID} --unidad ST-10 'Usá unpdf 1'`,
+        que: "que ST-10 lo corrija así: Usá unpdf 1",
+        arreglo: { unidad: "ST-10", instruccion: "Usá unpdf 1" },
+      },
+      ...(asked.opciones ?? []),
+    ],
+  };
+  assert.deepEqual(suggestedFixes(withFixes), [
+    { unidad: "ST-2", instruccion },
+    { unidad: "ST-10", instruccion: "Usá unpdf 1" },
+  ]);
+  assert.deepEqual(fixUnits(withFixes), ["ST-2", "ST-10"]);
+  assert.deepEqual(suggestedFixes(asked), []);
+  // Solo arreglos escritos, sin el genérico: igual se ofrece arreglar.
+  const onlyWritten: Run = {
+    ...withFixes,
+    opciones: withFixes.opciones?.filter(
+      (o) => o.arreglo !== undefined || !o.comando.includes("--unidad"),
+    ),
+  };
+  assert.deepEqual(fixUnits(onlyWritten), []);
+  assert.equal(decisionsFor(onlyWritten).includes("arreglar"), true);
 });
 
 // Si regresiona, un run vivo no se puede abortar desde el panel, o se ofrece abortar uno terminado.

@@ -1,14 +1,15 @@
 // El run que se detiene y pregunta (ADR 0023), con el CLI real y las fases falsas: FAKE_VUELVE hace
 // que verificar devuelva trabajo la primera vez.
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { PLAN } from "./helpers/plan-fixtures.ts";
 import { writePlanArtifacts } from "../src/phases/planificar.ts";
 import { readLog } from "../src/store/run-log.ts";
 import { runPaths } from "../src/store/runs.ts";
-import { homeWith, runCli } from "./helpers/cli.ts";
+import { BIN, homeWith, runCli } from "./helpers/cli.ts";
 import { git, tempDir } from "./helpers/git.ts";
 import { makeProject } from "./helpers/project.ts";
 import { isAlive } from "../src/store/lock.ts";
@@ -21,6 +22,7 @@ import {
   runDir,
   stateNow,
   waitFor,
+  waitStopped,
   world,
 } from "./helpers/runs.ts";
 
@@ -32,7 +34,7 @@ describe("detenido con pregunta", () => {
   test("con 0 vueltas, verificar en rojo detiene; fix --unidad corre solo esa sub-task y vuelve a verificar", async () => {
     const w = world({ FAKE_VUELVE: "ST-1" });
     const id = launch(w);
-    await waitFor("el run detenido", () => stateNow(w, id).status === "detenido");
+    await waitStopped(w, id, 60_000);
     const halted = stateNow(w, id);
     expect(halted.fase).toBe("verificar");
     expect(halted.halt?.unidades).toEqual(["ST-1"]);
@@ -63,7 +65,7 @@ describe("detenido con pregunta", () => {
   test("fix sobre un run que no ofrece fix sale 1 y lista las opciones", async () => {
     const w = world({ FAKE_VUELVE: "ST-1" });
     const id = launch(w);
-    await waitFor("el run detenido", () => stateNow(w, id).status === "detenido");
+    await waitStopped(w, id, 60_000);
     // Detenido en verificar, ofrece ST-1 y no ST-9.
     const other = runCli(["fix", id, "--unidad", "ST-9", "x"], w.env);
     expect(other.status).toBe(1);
@@ -120,7 +122,7 @@ describe("detenido con pregunta", () => {
     const id = (JSON.parse(started.stdout) as { id: string }).id;
     const run = runPaths(home, id);
     const w = { home, env, repo: work, feature };
-    await waitFor("el run detenido", () => stateNow(w, id).status === "detenido", 60_000);
+    await waitStopped(w, id, 60_000);
     // Planificar es falsa: el plan que leería resume lo deja el test, sin tests bloqueados.
     writePlanArtifacts(run, PLAN, {});
 
@@ -134,7 +136,8 @@ describe("detenido con pregunta", () => {
       accion: `editá ${worktree} y después: flowrunner resume ${id}`,
     });
     expect(stateNow(w, id)).toMatchObject({ status: "detenido", aMano: true });
-    expect(executions(w, id).filter((f) => f === "verificar")).toHaveLength(1);
+    // Hasta la detención: el rojo, el Autofix que flowrunner corrió solo y la vuelta de ST-1.
+    expect(executions(w, id).filter((f) => f === "verificar")).toHaveLength(3);
 
     // Un secreto no se commitea: resume sale 1, lo dice y no escribe nada.
     writeFileSync(join(worktree, "secreto.ts"), `export const t = "ghp_${"a".repeat(36)}";\n`);
@@ -156,15 +159,15 @@ describe("detenido con pregunta", () => {
     );
     expect(events(run.dir).some((e) => e.tipo === "reanudado")).toBe(false);
     await waitFor("el run entregado", () => stateNow(w, id).status === "entregado", 60_000);
-    expect(executions(w, id).filter((f) => f === "verificar")).toHaveLength(2);
-    expect(executions(w, id).filter((f) => f === "implementar")).toHaveLength(1);
+    expect(executions(w, id).filter((f) => f === "verificar")).toHaveLength(4);
+    expect(executions(w, id).filter((f) => f === "implementar")).toHaveLength(2);
   });
 
   // Si regresiona, seguir con un rojo no queda dicho en la PR, o no se puede seguir sin replanificar.
   test("accept con motivo sigue a revisar, y el motivo queda en el informe", async () => {
     const w = world({ FAKE_VUELVE: "ST-1" });
     const id = launch(w);
-    await waitFor("el run detenido", () => stateNow(w, id).status === "detenido");
+    await waitStopped(w, id, 60_000);
     const sinMotivo = runCli(["accept", id], w.env);
     expect(sinMotivo.status).toBe(1);
     expect(sinMotivo.stderr).toMatch(/falta el motivo/);
@@ -216,7 +219,7 @@ describe("detenido con pregunta", () => {
     const id = (JSON.parse(started.stdout) as { id: string }).id;
     const run = runPaths(home, id);
     const w = { home, env, repo: work, feature };
-    await waitFor("el run detenido", () => stateNow(w, id).status === "detenido", 60_000);
+    await waitStopped(w, id, 60_000);
     expect(stateNow(w, id)).toMatchObject({ fase: "probar", sinProbar: true });
     writePlanArtifacts(run, PLAN, {});
     expect(runCli(["fix", id, "--yo"], env).status).toBe(0);
@@ -244,7 +247,7 @@ describe("detenido con pregunta", () => {
   test("resume sobre una pregunta de implementar se niega y lista las opciones", async () => {
     const w = world({ FAKE_PREGUNTA: "ST-1,ST-2" });
     const id = launch(w);
-    await waitFor("el run detenido", () => stateNow(w, id).status === "detenido");
+    await waitStopped(w, id, 60_000);
     expect(stateNow(w, id).fase).toBe("implementar");
     const before = readFileSync(join(runDir(w, id), "events.jsonl"), "utf8");
     const resumed = runCli(["resume", id], w.env);
@@ -263,7 +266,7 @@ describe("detenido con pregunta", () => {
   test("resume sobre una pregunta de verificar con vueltas agotadas también se niega", async () => {
     const w = world({ FAKE_VUELVE: "ST-1" });
     const id = launch(w);
-    await waitFor("el run detenido", () => stateNow(w, id).status === "detenido");
+    await waitStopped(w, id, 60_000);
     expect(stateNow(w, id).fase).toBe("verificar");
     const before = readFileSync(join(runDir(w, id), "events.jsonl"), "utf8");
     const resumed = runCli(["resume", id], w.env);
@@ -350,7 +353,7 @@ describe("detenido con pregunta", () => {
     const id = (JSON.parse(started.stdout) as { id: string }).id;
     const run = runPaths(home, id);
     const w = { home, env, repo: work, feature };
-    await waitFor("el run detenido", () => stateNow(w, id).status === "detenido", 60_000);
+    await waitStopped(w, id, 60_000);
     writePlanArtifacts(run, PLAN, locked);
     const yo = runCli(["fix", id, "--yo"], env);
     expect(yo.status, yo.stdout + yo.stderr).toBe(0);
@@ -414,5 +417,46 @@ describe("detenido con pregunta", () => {
     expect(resumed.status).toBe(1);
     expect(resumed.stderr).toContain("el worktree ya no parte de donde lo dejó fix --yo");
     expect(events(r.run.dir).some((e) => e.tipo === "arreglo_manual")).toBe(false);
+  });
+
+  // Si regresiona, la persona tiene que escribir lo que el revisor ya sabía (PIZ-3), el comando que
+  // se copia corre lo que está entre backticks, o el fix ofrecido no se acepta.
+  test("el arreglo escrito se ofrece primero, se corre tal cual en un shell y anda como un fix", async () => {
+    const arreglo = "Subí `engines.node` a `>=24` en package.json y en el README";
+    const w = world({ FAKE_VUELVE: "ST-1", FAKE_ARREGLO: arreglo });
+    const id = launch(w);
+    await waitStopped(w, id, 60_000);
+    const status = runCli(["status", id, "--json"], w.env);
+    const { run } = JSON.parse(status.stdout) as {
+      run: { detenido: { opciones: { comando: string; arreglo?: unknown }[] } };
+    };
+    const [first, second] = run.detenido.opciones;
+    expect(first).toMatchObject({ arreglo: { unidad: "ST-1", instruccion: arreglo } });
+    expect(second?.comando).toBe(`flowrunner fix ${id} --unidad ST-1 "<qué cambiar>"`);
+
+    // El comando ofrecido, copiado a un shell: `flowrunner` es el CLI de este checkout.
+    const bin = tempDir();
+    writeFileSync(
+      join(bin, "flowrunner"),
+      `#!/bin/sh\nexec "${process.execPath}" --disable-warning=ExperimentalWarning "${BIN}" "$@"\n`,
+    );
+    chmodSync(join(bin, "flowrunner"), 0o755);
+    const shell = spawnSync("/bin/sh", ["-c", `${first?.comando ?? ""} --origen orca --json`], {
+      cwd: bin,
+      env: { ...w.env, PATH: `${bin}:${w.env.PATH ?? ""}` },
+      encoding: "utf8",
+    });
+    expect(shell.status, shell.stdout + shell.stderr).toBe(0);
+    expect(existsSync(join(bin, "=24"))).toBe(false);
+    expect(events(runDir(w, id))).toContainEqual(
+      expect.objectContaining({
+        tipo: "arreglo_pedido",
+        unidades: ["ST-1"],
+        instruccion: arreglo,
+        origen: "orca",
+      }),
+    );
+    await waitFor("el run entregado", () => stateNow(w, id).status === "entregado");
+    expect(executions(w, id).filter((f) => f === "implementar")).toHaveLength(2);
   });
 });

@@ -14,7 +14,7 @@ import type { PhaseFn } from "../runner/types.ts";
 import { SIN_COMANDOS } from "../tripwires/comandos.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
 import { WRITE_TOOLS } from "../tripwires/rules.ts";
-import type { RunEvent } from "../store/events.ts";
+import type { Arreglo, RunEvent } from "../store/events.ts";
 import { featureWorktree, graftIndex, prepared, runFeature } from "./inputs.ts";
 import { brainVars, readPlan, sessionName } from "./planificar.ts";
 
@@ -25,6 +25,11 @@ export const findingSchema = z.object({
   afirmacion: z.string().min(1),
   regla: z.string(),
   subtarea: z.string(),
+  /**
+   * De 1 a 3 arreglos concretos de un bloqueante, cada uno una instrucción para la sub-task, en una
+   * línea (ADR 0028). Con default: un review.json de antes de este campo se sigue leyendo.
+   */
+  arreglos: z.array(z.string()).default([]),
 });
 export const reviewSchema = z.object({
   hallazgos: z.array(findingSchema),
@@ -36,6 +41,28 @@ export const reviewSchema = z.object({
 export type Review = z.input<typeof reviewSchema>;
 
 export const REVISAR_TIMEOUT_MS = 30 * 60_000;
+/** Los arreglos que se ofrecen por bloqueante: más que eso es una lista, no una opción. */
+const MAX_ARREGLOS = 3;
+
+/**
+ * Los arreglos de los bloqueantes, como opciones para la persona: en una línea, sin repetir, y hasta
+ * `MAX_ARREGLOS` por bloqueante. Undefined si el revisor no propuso ninguno.
+ */
+function arreglosDe(blockers: readonly z.infer<typeof findingSchema>[]): Arreglo[] | undefined {
+  const seen = new Set<string>();
+  const out: Arreglo[] = [];
+  for (const b of blockers) {
+    const lines = b.arreglos.map((a) => a.replaceAll(/\s+/g, " ").trim()).filter((a) => a !== "");
+    for (const instruccion of lines.slice(0, MAX_ARREGLOS)) {
+      const key = `${b.subtarea}\0${instruccion}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ unidad: b.subtarea, instruccion });
+    }
+  }
+  return out.length === 0 ? undefined : out;
+}
+
 /** Un diff más largo que esto se corta en el prompt; el revisor puede leer los archivos con Read. */
 export const MAX_DIFF_CHARS = 60_000;
 
@@ -142,9 +169,11 @@ export const revisar: PhaseFn = async (ctx) => {
   }
   const blockers = review.hallazgos.filter((h) => h.severidad === "bloqueante");
   if (blockers.length === 0) return { tipo: "ok" };
+  const arreglos = arreglosDe(blockers);
   return {
     tipo: "vuelve",
     unidades: [...new Set(blockers.map((b) => b.subtarea))],
+    ...(arreglos === undefined ? {} : { arreglos }),
     motivo: `la revisión encontró bloqueantes:\n${blockers
       .map(
         (b) =>

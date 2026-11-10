@@ -89,6 +89,26 @@ describe("validar_plan", () => {
     expect(ok.content[0]?.text).toBe(respuestaValidar([]));
   });
 
+  // Si regresiona, un git que falla en medio de los chequeos llega al planificador como una falla de la
+  // herramienta, y el paso 8 del prompt lo deja reintentando en vez de devolver el plan al gate.
+  test("si los chequeos no se pueden correr, lo dice sin dar error: el gate de afuera chequea igual", async () => {
+    const dir = repoWith({ "src/a.js": "x\n" });
+    const gate = validarPlanServer({
+      feature,
+      worktree: dir,
+      base: "no-existe",
+      desde: "no-existe",
+      config: repoConfigSchema.parse({ setup: "true", tests_globs: ["tests/**"] }),
+      env: process.env,
+      esVerify: () => false,
+    });
+    const r = await llamar(gate, "validar_plan", plan);
+    expect(r.isError).toBe(false);
+    expect(r.content[0]?.text).toMatch(
+      /^no se pudo validar el plan \(.+\): el gate de afuera lo chequea igual al devolverlo\.$/s,
+    );
+  });
+
   // Si regresiona, validar_plan rechaza el criterio de verify que el planificador dejó en una sub-task,
   // que el gate de afuera pasa al run sin rechazar: el planificador lo corrige por nada.
   test("aplica delRun antes de chequear, como el gate de afuera", async () => {

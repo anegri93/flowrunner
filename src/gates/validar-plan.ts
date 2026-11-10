@@ -28,9 +28,18 @@ export function validarPlanServer(ctx: Omit<EstaticosInput, "plan" | "conserva">
         "Corre sobre el plan los chequeos del gate que no ejecutan nada: forma, alcances que se pisan, rutas protegidas, llamadores fuera del alcance, tests existentes sin declarar y tests declarados sin escribir. Pasale el mismo JSON que vas a devolver.",
         planSchema.shape,
         async (plan) => {
-          // Como el gate de afuera: un criterio de verify es del run, lo haya asignado a quien sea.
-          const problemas = await chequeosEstaticos({ ...ctx, plan: delRun(plan, ctx.esVerify) });
-          return { content: [{ type: "text", text: respuestaValidar(problemas) }], isError: false };
+          let text: string;
+          try {
+            // Como el gate de afuera: un criterio de verify es del run, lo haya asignado a quien sea.
+            const problemas = await chequeosEstaticos({ ...ctx, plan: delRun(plan, ctx.esVerify) });
+            text = respuestaValidar(problemas);
+          } catch (error) {
+            // Nunca una falla de la herramienta: el planificador no tiene nada que corregir, y el gate de
+            // afuera corre los mismos chequeos al devolver el plan.
+            const motivo = (error instanceof Error ? error.message : String(error)).split("\n")[0];
+            text = `no se pudo validar el plan (${motivo ?? ""}): el gate de afuera lo chequea igual al devolverlo.`;
+          }
+          return { content: [{ type: "text", text }], isError: false };
         },
       ),
     ],

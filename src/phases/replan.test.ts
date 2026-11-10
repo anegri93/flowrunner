@@ -123,13 +123,19 @@ async function fase(
 const aprobar: PhaseFn = () => Promise.resolve({ tipo: "espera" });
 
 /** Un run con el primer plan aprobado e implementado entero, detenido en verificar por ST-6. */
-async function implementado(planner: SimScript[]) {
-  const { work } = makeProject({ config: { setup: "true", tests_globs: ["tests/**"] } });
+async function implementado(
+  planner: SimScript[],
+  project: Parameters<typeof makeProject>[0] = {
+    config: { setup: "true", tests_globs: ["tests/**"] },
+  },
+  unit: (prompt: string) => SimScript = unitScript,
+) {
+  const { work } = makeProject(project);
   const run = newRun(work, FEATURE);
   let worktree = "";
   const seen: { prompt: string; s1: boolean }[] = [];
   const sim = simQuery((prompt) => {
-    if (isUnit(prompt)) return unitScript(prompt);
+    if (isUnit(prompt)) return unit(prompt);
     const k = seen.length;
     seen.push({ prompt, s1: existsSync(join(worktree, "src/s1/s1.js")) });
     return planner[Math.min(k, planner.length - 1)] ?? {};
@@ -448,6 +454,84 @@ describe("un replan conserva el código", { timeout: 30_000 }, () => {
       expect(await fase(run, deps, "planificar", planificar)).toEqual({ tipo: "ok" });
       expect(subjects(worktree, base)).toContain("fix: arreglo a mano");
       expect(existsSync(join(worktree, "NOTAS.md"))).toBe(true);
+    });
+
+    // Si regresiona, el texto de un gate rechazado (que nombra sub-tasks) queda como si fuera un
+    // pedido, y el intento que corrige el plan ya no puede conservar lo que el gate nombró.
+    test("lo que dijo un gate rechazado no cuenta como un pedido que nombra a la sub-task", async () => {
+      const malST1: SimScript = {
+        ...SCRIPT_2,
+        output: {
+          ...PLAN_2,
+          subtareas: PLAN_2.subtareas.map((t) =>
+            t.id === "ST-1" ? { ...t, alcance: ["src/s1/", "src/otra/"] } : t,
+          ),
+        },
+      };
+      const { run, deps } = await implementado([SCRIPT_1, malST1, SCRIPT_2]);
+      appendEvent(run.dir, { tipo: "rehacer", desde: "planificar" });
+      const first = await fase(run, deps, "planificar", planificar);
+      expect(first.tipo === "falla" && first.motivo).toContain("ST-1 cambió su alcance");
+      const motivo = first.tipo === "falla" ? first.motivo : "";
+      expect(
+        await fase(run, deps, "planificar", planificar, { intento: 2, instruccion: motivo }),
+      ).toEqual({ tipo: "ok" });
+      expect(Object.keys(readPlan(run).conservadas)).toEqual([
+        "ST-1",
+        "ST-2",
+        "ST-3",
+        "ST-4",
+        "ST-5",
+      ]);
+    });
+
+    // Si regresiona, una conservada que agregó un paquete se rechaza porque su criterio corre con las
+    // dependencias de la base: planificar no reinstalaba.
+    test("si lo conservado cambia las dependencias, se reinstalan antes de correr sus criterios", async () => {
+      const project = {
+        files: { ".gitignore": ".instaladas\n" },
+        config: {
+          setup: "if [ -f deps.lock ]; then cp deps.lock .instaladas; fi",
+          tests_globs: ["tests/**"],
+          lockfiles: ["deps.lock"],
+        },
+      };
+      const conDeps = (plan: Plan): Plan => ({
+        ...plan,
+        subtareas: plan.subtareas.map((t) =>
+          t.id === "ST-1" ? { ...t, dependencias: ["algo"] } : t,
+        ),
+      });
+      // AC-1 pasa con el archivo de ST-1 y su dependencia instalada.
+      const ac1 = {
+        tool: "Write",
+        input: {
+          file_path: "tests/ac1.mjs",
+          content:
+            'import { existsSync } from "node:fs";\nprocess.exit(existsSync("src/s1/s1.js") && existsSync(".instaladas") ? 0 : 1);\n',
+        },
+      };
+      const script1: SimScript = {
+        calls: [ac1, ...(SCRIPT_1.calls ?? []).slice(1)],
+        output: conDeps(PLAN_1),
+      };
+      const script2: SimScript = { ...SCRIPT_2, output: conDeps(PLAN_2) };
+      const unit = (prompt: string): SimScript => {
+        const base = unitScript(prompt);
+        return /# Sub-task ST-1\b/.test(prompt)
+          ? {
+              calls: [
+                ...(base.calls ?? []),
+                { tool: "Write", input: { file_path: "deps.lock", content: "algo@1\n" } },
+              ],
+            }
+          : base;
+      };
+      const { run, deps, worktree } = await implementado([script1, script2], project, unit);
+      expect(existsSync(join(worktree, "deps.lock"))).toBe(true);
+      appendEvent(run.dir, { tipo: "rehacer", desde: "planificar" });
+      expect(await fase(run, deps, "planificar", planificar)).toEqual({ tipo: "ok" });
+      expect(Object.keys(readPlan(run).conservadas)).toContain("ST-1");
     });
   });
 });

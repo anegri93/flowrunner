@@ -32,9 +32,11 @@ funcionar.
    pasan con su código. **Si graft no puede decir quién llama a un símbolo** (un `GraftError` de
    `llamadoresDe`, como el grep cortado de un nombre muy usado, o un índice que no se pudo
    reconstruir), ninguna sub-task se conserva: no saber no es «nadie lo llama». Un `conserva` inválido
-   rechaza el plan; no se ignora en silencio. Los pedidos y el motivo con que empezó el replan se
-   guardan con las candidatas: el engine reemplaza la instrucción por el motivo del gate en cada
-   reintento, y sin eso el segundo intento podía conservar justo lo que motivó el replan.
+   rechaza el plan; no se ignora en silencio. Para la regla de los pedidos cuentan los pedidos de la
+   persona y el motivo de la detención que llevó al `rerun`, guardados con las candidatas: el engine
+   reemplaza la instrucción por el motivo del gate en cada reintento. El texto de un gate rechazado no
+   cuenta: nombra sub-tasks porque las rechaza, no porque cambien. Si lo conservado cambió manifiestos
+   o lockfiles, el setup se corre antes de sus criterios, como en verificar.
 4. **El índice de graft se reconstruye antes de la sesión** cuando la rama trae código de antes, como
    revisar lo reconstruye antes de revisar (ADR 0015: segundos). Sin eso, el planificador y
    `llamadoresDe` verían la API de la base y no la del código conservado.

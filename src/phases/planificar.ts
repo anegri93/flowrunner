@@ -34,6 +34,7 @@ import { tripwireHook } from "../tripwires/hook.ts";
 import { isTestFile } from "../tripwires/rules.ts";
 import { copyEnvFiles } from "./env-files.ts";
 import { runFixers } from "./fixers.ts";
+import { reinstalarSiCambiaron } from "./reinstalar.ts";
 import { graftIndex, prepared, runFeature } from "./inputs.ts";
 import {
   conLosTests,
@@ -144,7 +145,10 @@ export const planificar: PhaseFn = async (ctx) => {
     if (content !== undefined && sha256(content) === hash) restored.push([path, content]);
   }
   const replan = replanOf(ctx.events, action.instruccion);
-  const textos = [...replan.pedidos, ...(replan.motivo === undefined ? [] : [replan.motivo])];
+  // Para la regla (c), lo que dijo la persona o la detención: los pedidos y el motivo del `rerun`. No
+  // el texto de un gate rechazado, que nombra sub-tasks porque las rechaza, no porque cambien.
+  const rerun = replanOf(ctx.events, undefined).motivo;
+  const textos = [...replan.pedidos, ...(rerun === undefined ? [] : [rerun])];
   const rama =
     previous === undefined
       ? { subtasks: [], manuales: [], textos }
@@ -338,6 +342,11 @@ export const planificar: PhaseFn = async (ctx) => {
     problems.push(`el plan declara el test ${declared}, pero no está escrito`);
   }
   if (problems.length === 0) {
+    // Lo conservado puede haber agregado paquetes: sus criterios corren con ellos instalados.
+    if (kept.length > 0) {
+      const reinstalar = await reinstalarSiCambiaron(worktree, config, base, deps.env);
+      if (reinstalar !== undefined) return { tipo: "falla", clase: "entorno", motivo: reinstalar };
+    }
     const env = copyEnvFiles(ctx.state.repo, worktree, config.env_files);
     if (!env.ok) return { tipo: "falla", clase: "entorno", motivo: env.motivo };
     try {

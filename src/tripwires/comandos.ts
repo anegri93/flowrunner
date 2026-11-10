@@ -523,11 +523,11 @@ const git: Regla = (_scope, args) => {
  */
 const TOMA_VALOR = "ncLIdf";
 /**
- * Los programas con otras letras de valor. `file -m` y `-f` leen un archivo. Las de `cut` son
+ * Los programas con otras letras de valor. `file -m`, `-M` y `-f` leen un archivo. Las de `cut` son
  * listas y delimitadores, nunca archivos, y siempre toman valor: `cut -d / -f2` no lee `/`.
  */
 const VALOR_DE: Readonly<Record<string, { letras: string; rutas: boolean }>> = {
-  file: { letras: "mfFeP", rutas: true },
+  file: { letras: "mMfFeP", rutas: true },
   cut: { letras: "bcdf", rutas: false },
 };
 

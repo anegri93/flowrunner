@@ -605,6 +605,7 @@ describe("checkCommand, los caminos que encontró la revisión", () => {
       "file -m.env.local src/a/x.ts",
       "file -bm.env.local src/a/x.ts",
       "file -m .env.local",
+      "file -M.env.local src/a/x.ts",
     );
     pasa(s(), "cut -d/ -f2 src/a/x.ts", "cut -d / -f 2 src/a/x.ts");
   });

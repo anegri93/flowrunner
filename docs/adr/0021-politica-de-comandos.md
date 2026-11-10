@@ -90,7 +90,7 @@ El shell toma caminos que las reglas literales no veían. Se cierran así, cada 
 - **git no recibe archivos como valor de una opción** (`grep -f`, `blame -S`,
   `--ignore-revs-file`, `--pathspec-from-file`, `ls-files -X`): imprime en el error las líneas que
   no entiende.
-- **Cada programa de lectura sabe qué letras toman valor:** `file -m` lee un archivo; las de `cut`
+- **Cada programa de lectura sabe qué letras toman valor:** `file -m` y `-M` leen un archivo; las de `cut`
   son listas o delimitadores, así que `cut -d /` no se comprueba como ruta.
 
 ## Alternativas descartadas

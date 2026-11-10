@@ -1,9 +1,11 @@
 import { expect, test } from "vitest";
+import { repoConfigSchema } from "../config/schemas.ts";
 import { parseFeature } from "../feature/feature.ts";
 import {
   protectedMentions,
   scriptsDe,
   scriptsInexistentes,
+  soloChequeosDelRepo,
   soloDocumentacion,
 } from "./feature-check.ts";
 
@@ -121,4 +123,43 @@ test("un archivo de documentación bajo .claude/ o .flowrunner/ no da el aviso d
   );
   expect(soloDocumentacion(f)).toEqual([]);
   expect(protectedMentions(f)).toHaveLength(2);
+});
+
+const config = repoConfigSchema.parse({ setup: "true", tests_globs: ["tests/**"] });
+const soloChequeos = (id: string) =>
+  `${id} solo pide que el repo pase sus chequeos: eso ya lo corre verificar en cada vuelta, y probar no puede correr comandos, así que el criterio sobra y frena el run. Sacalo; si a .flowrunner/verify.sh le falta un chequeo, sumáselo ahí`;
+
+// Regresión de PIZ-3: «AC-9: `npm run check` pasa» era el verify del repo. verificar ya lo corría,
+// probar no puede correr comandos, y el criterio quedó sin probar y frenó el run.
+test("avisa un criterio que solo pide que pasen los chequeos del repo o su verify", () => {
+  const f = feature(
+    [
+      "- AC-1: `npm run check` pasa (formato, lint, typecheck, tests y build).",
+      "- AC-2: `./.flowrunner/verify.sh` en verde.",
+      "- AC-3: el build pasa.",
+      "- AC-4: los tests que ya existen siguen pasando.",
+      "- AC-5: `pnpm verify` queda en verde.",
+      "- AC-6: formato, lint y typecheck sin errores.",
+    ].join("\n"),
+  );
+  expect(soloChequeosDelRepo(f, config)).toEqual(
+    ["AC-1", "AC-2", "AC-3", "AC-4", "AC-5", "AC-6"].map(soloChequeos),
+  );
+});
+
+// Si regresiona, la feature avisa de más: estos criterios piden un comportamiento, o corren un test
+// puntual que el gate pone en rojo y verificar corre por su cuenta.
+test("no avisa un criterio que corre un test puntual o pide un comportamiento", () => {
+  const f = feature(
+    [
+      "- AC-1: `npx vitest run servidor/api.test.ts` pasa.",
+      "- AC-2: `pnpm test -- tests/pedidos.test.ts` pasa.",
+      '- AC-3: `npx vitest run -t "importar un documento"` pasa.',
+      "- AC-4: GET /pedidos devuelve 200 y los tests pasan.",
+      "- AC-5: el test de importar pasa.",
+      "- AC-6: el build genera dist/app.js.",
+      "- AC-7: `npm run dev` levanta la app.",
+    ].join("\n"),
+  );
+  expect(soloChequeosDelRepo(f, config)).toEqual([]);
 });

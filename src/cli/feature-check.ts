@@ -1,7 +1,7 @@
 // `flowrunner feature check <archivo>`: la feature, su proyecto y la config de su repo, validados.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { loadGlobalConfig, loadRepoConfig } from "../config/load.ts";
+import { isVerifyCommand, loadGlobalConfig, loadRepoConfig } from "../config/load.ts";
 import { ConfigError, type RepoConfig } from "../config/schemas.ts";
 import { checkCitas } from "../feature/citas.ts";
 import { parseFeature, type Feature } from "../feature/feature.ts";
@@ -133,6 +133,44 @@ export function soloDocumentacion(feature: Feature): string[] {
   return avisos;
 }
 
+/** Los chequeos de todo el repo, como los nombraría una feature: «el build», «los tests existentes». */
+const CHEQUEO = String.raw`(?:(?:el|la|los|las)\s+)?(?:build|compilaci[oó]n|lint|linter|typecheck|type-check|tipos|formato|format|tests?|suite(?:\s+de\s+tests)?|verify|chequeos|checks?|ci|repo(?:\s+entero)?)`;
+const CHEQUEOS = String.raw`(?:tod[oa]s?\s+)?${CHEQUEO}(?:\s*(?:,|\by\b|\be\b)\s*${CHEQUEO})*(?:\s+(?:del\s+repo|existentes|que\s+ya\s+existen|de\s+siempre|complet[oa]s?|enter[oa]s?))*`;
+const EN_VERDE = String.raw`(?:pasan?|siguen?\s+(?:pasando|en\s+verde)|quedan?\s+en\s+verde|est[aá]n?\s+en\s+verde|en\s+verde|dan?\s+verde|salen?\s+(?:en\s+verde|con\s+(?:c[oó]digo\s+)?0|0)|corren?\s+sin\s+errores|sin\s+errores)`;
+/** El criterio entero: «`npm run check` pasa (formato, lint y tests).», «el build pasa». Nada más. */
+const SOLO_CHEQUEOS = new RegExp(
+  String.raw`^\s*(?:\x60([^\x60]+)\x60|${CHEQUEOS})\s+${EN_VERDE}(?:\s*\([^)]*\))?\s*\.?\s*$`,
+  "i",
+);
+/** Un script o una herramienta que chequea todo el repo, sin un archivo ni un filtro detrás. */
+const COMANDO_DE_TODO = new RegExp(
+  String.raw`^(?:npm\s+(?:run(?:-script)?\s+)?|(?:pnpm|yarn|bun)\s+(?:run\s+)?|npx\s+)(?:check|checks|verify|ci|validate|tests?|t|lint|typecheck|type-check|types|tsc|format|fmt|build|vitest|jest|eslint|prettier)(?::[\w:-]+)?(?:\s+(?:--?[\w-]+|run|\.))*\s*$`,
+);
+
+/**
+ * Avisos para los criterios que solo piden que el repo pase sus chequeos. Eso lo comprueba verificar
+ * en cada vuelta, y probar no corre comandos: en PIZ-3, «`npm run check` pasa» quedó sin probar y
+ * frenó el run. Solo el criterio entero: uno que además pide un comportamiento no avisa.
+ */
+export function soloChequeosDelRepo(feature: Feature, config: RepoConfig): string[] {
+  const avisos: string[] = [];
+  for (const c of feature.criterios) {
+    const m = SOLO_CHEQUEOS.exec(c.text);
+    if (m === null) continue;
+    const [, comando] = m;
+    if (
+      comando !== undefined &&
+      !isVerifyCommand(config, comando) &&
+      !COMANDO_DE_TODO.test(comando.trim())
+    )
+      continue;
+    avisos.push(
+      `${c.id} solo pide que el repo pase sus chequeos: eso ya lo corre verificar en cada vuelta, y probar no puede correr comandos, así que el criterio sobra y frena el run. Sacalo; si a ${config.verify} le falta un chequeo, sumáselo ahí`,
+    );
+  }
+  return avisos;
+}
+
 /** Sin package.json en la raíz, o si no se puede leer, no hay chequeo de scripts. */
 function readPackageJson(repo: string): string | undefined {
   const pkg = join(repo, "package.json");
@@ -196,6 +234,7 @@ export function checkFeature(path: string, env: NodeJS.ProcessEnv): CheckedFeatu
         localBinaries(project.path),
       ),
       ...soloDocumentacion(feature),
+      ...soloChequeosDelRepo(feature, repoConfig),
       ...sinProbar(repoConfig),
     ],
   };

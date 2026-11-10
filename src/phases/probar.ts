@@ -6,7 +6,7 @@ import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } fr
 import { join } from "node:path";
 import { z } from "zod";
 import { runSession } from "../agent/session.ts";
-import { loadRepoConfig } from "../config/load.ts";
+import { isVerifyCommand, loadRepoConfig } from "../config/load.ts";
 import { decisionSchema } from "../gates/plan.ts";
 import { levantarEntorno } from "../probar/entorno.ts";
 import {
@@ -108,6 +108,12 @@ export const probar: PhaseFn = async (ctx) => {
     const origins = [...new Set(urls.map(([, u]) => new URL(u).origin))];
     const plan = readPlan(run);
     const ids = plan.subtareas.map((t) => t.id);
+    // Un criterio que es el verify del repo, como «`npm run check` pasa», ya lo comprobó verificar en
+    // verde antes de llegar acá, y probar no corre comandos: no se prueba ni cuenta como sin probar.
+    // En PIZ-3 frenó el run sin nada que arreglar.
+    const delVerify = new Set(
+      plan.criterios.filter((c) => isVerifyCommand(config, c.comando)).map((c) => c.id),
+    );
     const declaradas = probarConfig.fallas;
     const hayFallas = Object.keys(declaradas).length > 0;
     const fallas = fallasServer(declaradas, {
@@ -141,6 +147,10 @@ export const probar: PhaseFn = async (ctx) => {
                   .join("\n")
               : "El repo no declaró fallas: un criterio que pide provocar una no se puede probar acá.",
             subtareas: ids.join(", "),
+            verificados:
+              delVerify.size === 0
+                ? ""
+                : `${[...delVerify].join(", ")}: es el verify del repo y verificar ya lo comprobó en verde. No lo pruebes.`,
             instruccion:
               action.instruccion === undefined
                 ? ""
@@ -208,7 +218,9 @@ export const probar: PhaseFn = async (ctx) => {
         emit({ tipo: "decision", fase: "probar", que: d.que, por_que: d.por_que });
       const etiqueta = (p: Pruebas["pruebas"][number]) =>
         p.criterio === "" ? p.que : `${p.criterio} (${p.que})`;
-      const untested = tests.pruebas.filter((x) => x.resultado === "no_probado");
+      const untested = tests.pruebas.filter(
+        (x) => x.resultado === "no_probado" && !delVerify.has(x.criterio),
+      );
       for (const p of untested) {
         emit({
           tipo: "aviso",

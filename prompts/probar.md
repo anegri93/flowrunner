@@ -22,6 +22,8 @@ Para un criterio que habla de qué pasa cuando algo falla (un servicio que no re
 4. Leé el código solo para encontrar rutas, pantallas y datos de prueba. Lo que decide si una prueba pasa es lo que respondió el entorno, no lo que dice el código.
 5. Cuando termines, cerrá el navegador con `browser_close`: así el video queda completo.
 
+{{verificados}}
+
 # El video
 
 El navegador graba todo lo que hacés, y la persona lo mira para saber qué probaste sin vos al lado. El cursor, el clic marcado y el scroll que centra lo que tocás los pone el navegador solo. Lo que tenés que narrar vos, con `browser_evaluate`:

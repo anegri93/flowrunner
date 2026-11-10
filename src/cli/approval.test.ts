@@ -6,7 +6,8 @@ import type { Subtask } from "../gates/plan.ts";
 import type { NewEvent } from "../store/events.ts";
 import { appendEvent } from "../store/run-log.ts";
 import { createRun } from "../store/runs.ts";
-import { pisadas } from "./approval.ts";
+import type { z } from "zod";
+import { describePlan, pisadas, type planViewSchema } from "./approval.ts";
 
 const task = (alcance: string[], dependencias: string[] = []): Subtask => ({
   id: "ST-1",
@@ -77,4 +78,25 @@ describe("pisadas", () => {
     writeFileSync(join(home, "runs", roto, "tasks.json"), "{a medio escribir");
     expect(pisadas(home, me, [task(["src/a.ts"])], rules)).toEqual([]);
   });
+});
+
+// Si regresiona, el plan muestra «AC-2 → run» y quien aprueba busca una sub-task «run» que no existe.
+test("un criterio del run se muestra como del run, no como una sub-task", () => {
+  const view = {
+    run: { id: "r-1", status: "esperando_aprobacion" },
+    plan: "p",
+    subtareas: [task(["src/a.ts"])],
+    criterios: [
+      { id: "AC-1", comando: "node tests/ac1.mjs", subtarea: "ST-1" },
+      { id: "AC-2", comando: "./.flowrunner/verify.sh", subtarea: "run" },
+    ],
+    tests: [],
+    diff_tests: "",
+    cambia_lo_existente: [],
+    se_pisa_con: [],
+    cambios: null,
+  } as unknown as z.infer<typeof planViewSchema>;
+  const text = describePlan(view);
+  expect(text).toContain("  AC-1 → ST-1: node tests/ac1.mjs");
+  expect(text).toContain("  AC-2 → del run (lo comprueba verificar): ./.flowrunner/verify.sh");
 });

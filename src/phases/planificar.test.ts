@@ -93,6 +93,38 @@ describe("planificar", () => {
     expect(decisions).toHaveLength(1);
   });
 
+  // Regresión de VF-6: «AC-12: verify.sh en verde» quedó en ST-6, que no era dueña de lo que se rompía.
+  // El planificador lo puede asignar a una sub-task igual: planificar lo pasa al run antes del gate.
+  test("un criterio de verify que el planificador asignó a una sub-task queda del run en ac-map", async () => {
+    const { work } = makeProject({ config: { setup: "true", tests_globs: ["tests/**"] } });
+    const run = newRun(
+      work,
+      FEATURE.replace(
+        "- AC-1: existe src/export/csv.js.",
+        "- AC-1: existe src/export/csv.js.\n- AC-2: el repo sigue en verde.",
+      ),
+    );
+    const sim = simQuery([
+      {
+        calls: [writeTest],
+        output: {
+          ...goodPlan,
+          criterios: [
+            { id: "AC-1", comando: "node tests/ac1.mjs", subtarea: "ST-1" },
+            { id: "AC-2", comando: "./.flowrunner/verify.sh", subtarea: "ST-1" },
+          ],
+        },
+      },
+    ]);
+    const deps = testDeps({ query: sim.query });
+    expect(await preparar(contextFor(run, "preparar", deps))).toEqual({ tipo: "ok" });
+    expect(await planificar(contextFor(run, "planificar", deps))).toEqual({ tipo: "ok" });
+    expect(readPlan(run).criterios).toEqual([
+      { id: "AC-1", comando: "node tests/ac1.mjs", subtarea: "ST-1" },
+      { id: "AC-2", comando: "./.flowrunner/verify.sh", subtarea: "run" },
+    ]);
+  });
+
   // Regresión: en CUENTAS-1, otra herramienta reescribió `.claude/helpers/*` en el worktree mientras
   // planificaba. `add -A` lo commiteó como «tests en rojo», lo bloqueó por hash y llegó a la PR.
   test("lo que cambió fuera de los tests y no escribió el planificador se descarta, con un aviso", async () => {

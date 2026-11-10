@@ -99,6 +99,8 @@ Homebrew; si no está instalada, verify no corre y el run se detiene diciendo c�
 
 1. Abrí Claude Code en el repo y pedile la feature, como se la pedirías a una persona.
 2. La skill te hace preguntas de a una, escribe la feature y la lanza. Desde ahí el run corre solo.
+   Antes de lanzar, `feature check` avisa si un criterio usa un script que no existe o si solo se
+   comprueba leyendo documentación.
 3. Para ver cómo va, usá la pestaña de flowrunner en Orca o, en una terminal:
 
    ```bash

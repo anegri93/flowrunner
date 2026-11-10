@@ -1,6 +1,6 @@
 // El plan anterior de un run: lo que una nueva vuelta de planificar tiene que conservar. Sin él, cada
 // pedido de cambios rehacía el diseño entero y perdía lo que habían corregido los pedidos de antes.
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { stateOf } from "../engine/engine.ts";
 import type { Plan } from "../gates/plan.ts";
@@ -8,6 +8,8 @@ import type { RunPaths } from "../runner/types.ts";
 import type { RunEvent } from "../store/events.ts";
 
 const ARTIFACTS = ["plan.md", "tasks.json", "ac-map.json", "locked.json"] as const;
+/** Los que un run planificado antes de que existieran no tiene. */
+const OPTIONAL_ARTIFACTS = ["cambios-existentes.json"] as const;
 
 export const previousDir = (run: RunPaths) => join(run.dir, "anterior");
 
@@ -16,6 +18,11 @@ export function archivePlan(run: RunPaths): boolean {
   if (!existsSync(join(run.dir, "plan.md"))) return false;
   mkdirSync(previousDir(run), { recursive: true });
   for (const name of ARTIFACTS) copyFileSync(join(run.dir, name), join(previousDir(run), name));
+  for (const name of OPTIONAL_ARTIFACTS) {
+    const from = join(run.dir, name);
+    if (existsSync(from)) copyFileSync(from, join(previousDir(run), name));
+    else rmSync(join(previousDir(run), name), { force: true });
+  }
   return true;
 }
 
@@ -53,8 +60,20 @@ export function replanOf(events: readonly RunEvent[], instruccion: string | unde
   };
 }
 
+/** Una sub-task del plan anterior con su código en el worktree, para el prompt del replan. */
+export interface Implementada {
+  readonly id: string;
+  readonly titulo: string;
+  readonly alcance: readonly string[];
+  readonly commits: number;
+}
+
 /** La sección del prompt con el plan anterior y la historia, o la instrucción sola si no hay plan anterior. */
-export function replanText(previous: PlanSnapshot | undefined, replan: Replan): string {
+export function replanText(
+  previous: PlanSnapshot | undefined,
+  replan: Replan,
+  implementadas: readonly Implementada[] = [],
+): string {
   if (previous === undefined) {
     return replan.motivo === undefined
       ? ""
@@ -94,6 +113,19 @@ export function replanText(previous: PlanSnapshot | undefined, replan: Replan): 
     "```json",
     JSON.stringify(previous.criterios, null, 2),
     "```",
+    ...(implementadas.length === 0
+      ? []
+      : [
+          "",
+          "## Ya implementado en el worktree",
+          "",
+          "Estas sub-tasks del plan anterior están implementadas y su código está en el worktree que ves. Si una sigue igual (mismo id, mismo alcance, y ni los pedidos ni el motivo de este intento la tocan), devolvela con `conserva: true`: su código queda y no se vuelve a implementar. Si cambia, devolvela con `conserva: false` o sin el campo: su código se saca antes de implementar.",
+          "",
+          ...implementadas.map(
+            (t) =>
+              `- ${t.id} · ${t.titulo} · ${t.alcance.join(", ")} · ${String(t.commits)} commits`,
+          ),
+        ]),
   ].join("\n");
 }
 

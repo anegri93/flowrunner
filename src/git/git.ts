@@ -109,6 +109,20 @@ export async function removeWorktree(
   });
 }
 
+/** El contenido de `path` en `rev`, tal cual, o undefined si no existe ahí. */
+export async function fileAt(
+  worktree: string,
+  rev: string,
+  path: string,
+  env?: NodeJS.ProcessEnv,
+): Promise<string | undefined> {
+  const result = await runProc("git", ["show", `${rev}:${path}`], {
+    cwd: worktree,
+    env: env ?? process.env,
+  });
+  return result.code === 0 ? result.stdout : undefined;
+}
+
 export async function resetHard(
   worktree: string,
   sha: string,

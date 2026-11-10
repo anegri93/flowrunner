@@ -25,6 +25,8 @@ export const subtaskSchema = z.object({
   /** Paquetes de desarrollo y de tests que puede agregar. */
   dependencias_dev: z.array(packageName).optional(),
   depende_de: z.array(z.string()),
+  /** Solo en un replan: la sub-task ya está implementada y su código se conserva tal cual. */
+  conserva: z.boolean().optional(),
 });
 export type Subtask = z.infer<typeof subtaskSchema>;
 
@@ -86,8 +88,8 @@ export interface PlanRepoRules {
   readonly manifests: readonly string[];
 }
 
-const normalize = (p: string) => p.replace(/^\.\//, "").replace(/\/+$/, "");
-const overlaps = (a: string, b: string) =>
+export const normalize = (p: string) => p.replace(/^\.\//, "").replace(/\/+$/, "");
+export const overlaps = (a: string, b: string) =>
   a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
 
 /**
@@ -112,7 +114,11 @@ export function effectiveScope(task: Subtask, rules: PlanRepoRules): string[] {
 }
 
 /** Las sub-tasks de las que depende `id`, directa o indirectamente. */
-function ancestors(tasks: readonly Subtask[], id: string, seen = new Set<string>()): Set<string> {
+export function ancestors(
+  tasks: readonly Subtask[],
+  id: string,
+  seen = new Set<string>(),
+): Set<string> {
   for (const dep of tasks.find((t) => t.id === id)?.depende_de ?? []) {
     if (!seen.has(dep)) {
       seen.add(dep);
@@ -266,6 +272,34 @@ export async function checkCommandsFail(
         `${criterion.id} ya pasa antes de implementar: \`${criterion.comando}\` tiene que fallar`,
       );
     }
+  }
+  return problems;
+}
+
+/**
+ * Los criterios de las sub-tasks conservadas de un replan (ADR 0024): su código ya está y no vuelve a
+ * correr, así que cada comando que es solo de ellas tiene que pasar. Uno compartido con una sub-task
+ * nueva lo corre `checkCommandsFail`, en rojo.
+ */
+export async function checkCommandsPass(
+  plan: Plan,
+  worktree: string,
+  env: NodeJS.ProcessEnv,
+  kept: readonly string[],
+  skip: (comando: string) => boolean = () => false,
+): Promise<string[]> {
+  const onlyKept = (comando: string) =>
+    plan.criterios.filter((c) => c.comando === comando).every((c) => kept.includes(c.subtarea));
+  const run = acceptanceRunner(worktree, env);
+  const problems: string[] = [];
+  for (const c of plan.criterios.filter(
+    (c) => kept.includes(c.subtarea) && onlyKept(c.comando) && !skip(c.comando),
+  )) {
+    const result = await run(c.comando);
+    if (result.code !== 0)
+      problems.push(
+        `${c.subtarea} tiene conserva: true pero ${c.id} no pasa con su código (\`${c.comando}\`, exit ${String(result.code)}): sacale conserva, o asigná el criterio a la sub-task que lo implementa:\n${tail(result, 8)}`,
+      );
   }
   return problems;
 }

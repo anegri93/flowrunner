@@ -17,6 +17,7 @@ import { runFixers } from "./fixers.ts";
 import { repairTest } from "./reparar.ts";
 import { featureWorktree, prepared } from "./inputs.ts";
 import { SETUP_TIMEOUT_MS } from "./preparar.ts";
+import { reinstalarSiCambiaron } from "./reinstalar.ts";
 import { readPlan } from "./planificar.ts";
 import { conEntorno } from "./turno-entorno.ts";
 import { runVerify } from "./verify.ts";
@@ -39,26 +40,13 @@ export const verificar: PhaseFn = async (ctx) => {
   const config = loadRepoConfig(worktree);
   const plan = readPlan(run);
 
-  const depFiles = new Set([...config.lockfiles, ...config.manifests]);
-  const changed = (
-    await git(worktree, ["diff", "--name-only", prepared(ctx.events).base_sha, "HEAD"], deps.env)
-  )
-    .split("\n")
-    .filter((f) => depFiles.has(f));
-  if (changed.length > 0) {
-    const setup = await runShell(config.setup, {
-      cwd: worktree,
-      env: deps.env,
-      timeoutMs: SETUP_TIMEOUT_MS,
-    });
-    if (setup.code !== 0) {
-      return {
-        tipo: "falla",
-        clase: "entorno",
-        motivo: `la feature cambió ${changed.join(", ")} y el setup \`${config.setup}\` salió ${String(setup.code)} al reinstalar:\n${tail(setup)}`,
-      };
-    }
-  }
+  const reinstalar = await reinstalarSiCambiaron(
+    worktree,
+    config,
+    prepared(ctx.events).base_sha,
+    deps.env,
+  );
+  if (reinstalar !== undefined) return { tipo: "falla", clase: "entorno", motivo: reinstalar };
 
   for (const [path, hash] of Object.entries(plan.locked)) {
     const file = join(worktree, path);

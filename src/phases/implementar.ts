@@ -18,6 +18,7 @@ import {
   commitAll,
   git,
   headSha,
+  isAncestor,
   removeWorktree,
   type FileChange,
 } from "../git/git.ts";
@@ -580,6 +581,26 @@ export const implementar: PhaseFn = async (ctx) => {
   const integrated = new Set(
     todo.filter((t) => lastOf(t.id)?.estado === "integrada").map((t) => t.id),
   );
+  // Lo que un replan conservó ya está en la rama: se da por integrado al entrar después de aprobar,
+  // con el evento de siempre, así watch, Orca y una vuelta posterior lo ven como cualquier integrada.
+  // Con `unidades` (un `fix` o una vuelta) no: si nombra una conservada, corre sobre su código.
+  if (action.unidades === undefined) {
+    for (const t of todo) {
+      const sha = plan.conservadas[t.id]?.at(-1);
+      if (sha === undefined || integrated.has(t.id)) continue;
+      // Un replan posterior, rechazado, pudo haberlo sacado de la rama: sin su commit, se implementa.
+      if (!(await isAncestor(featureWt, sha, deps.env))) continue;
+      emit({
+        tipo: "unidad",
+        fase: "implementar",
+        unidad: t.id,
+        estado: "integrada",
+        sha,
+        motivo: "conservada del plan anterior",
+      });
+      integrated.add(t.id);
+    }
+  }
   const failed = new Map<string, UnitResult>();
   const running = new Map<string, Promise<void>>();
   for (;;) {

@@ -1,3 +1,4 @@
+import { parse } from "yaml";
 import { describe, expect, test } from "vitest";
 import { BRAIN_FILES } from "../brain/brain.ts";
 import {
@@ -5,7 +6,9 @@ import {
   docFiles,
   DRAFT_HEADING,
   inventedSources,
+  PROBAR_COMMENT,
   withDraft,
+  withProbar,
   withoutDraft,
   type Draft,
 } from "./draft.ts";
@@ -16,6 +19,14 @@ const draft = (fuentes: string[]): Draft => ({
   convenciones: part(["package.json"]),
   contexto: part(fuentes),
   que_es_bien: part(["test/init.int.test.ts"]),
+  probar: { config: null, motivo: "no hay app", fuentes: ["package.json"] },
+});
+
+const CONFIG = "# Lo armó flowrunner init.\nsetup: npm ci\ntests_globs: [test/**]\n";
+const probar = (urls: Record<string, string>, bajar: string | null = null): Draft["probar"] => ({
+  config: { levantar: "PORT=4399 npm run dev", sigue_corriendo: true, bajar, urls, notas: "" },
+  motivo: "`dev` en package.json levanta el servidor",
+  fuentes: ["package.json"],
 });
 
 describe("describeToolUse", () => {
@@ -113,5 +124,32 @@ describe("docFiles", () => {
       "apps/api/CLAUDE.md",
       "docs/adr/0001-algo.md",
     ]);
+  });
+});
+
+describe("withProbar", () => {
+  // Si regresiona, init no deja cómo probar y cada run saltea probar sin que nadie lo sepa (PIZ-2).
+  test("agrega la sección al final, comentada, sin tocar lo que ya estaba", () => {
+    const next = withProbar(CONFIG, probar({ web: "http://127.0.0.1:4399" }));
+    expect("text" in next).toBe(true);
+    const text = "text" in next ? next.text : "";
+    expect(text.startsWith(CONFIG.trimEnd())).toBe(true);
+    for (const line of PROBAR_COMMENT) expect(text).toContain(line);
+    expect((parse(text) as { probar: unknown }).probar).toEqual({
+      levantar: "PORT=4399 npm run dev",
+      sigue_corriendo: true,
+      urls: { web: "http://127.0.0.1:4399" },
+    });
+  });
+
+  // Si regresiona, la fase probar navega o llama a un entorno de afuera, con datos reales.
+  test("rechaza URLs que no son de esta máquina, y una propuesta sin config dice qué falta", () => {
+    expect(
+      withProbar(CONFIG, probar({ web: "http://localhost:3000", api: "https://api.ejemplo.com" })),
+    ).toEqual({ motivo: "propuso URLs que no son de esta máquina: https://api.ejemplo.com" });
+    expect(withProbar(CONFIG, probar({}))).toEqual({ motivo: "no propuso ninguna URL" });
+    expect(
+      withProbar(CONFIG, { config: null, motivo: "falta la base de datos", fuentes: ["x"] }),
+    ).toEqual({ motivo: "falta la base de datos" });
   });
 });

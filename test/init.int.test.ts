@@ -39,8 +39,21 @@ const GRAFT_DIR = dirname(
 );
 const SYSTEM_BIN = [GRAFT_DIR, "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"];
 
+/** Cómo levantar la app, como lo propone la sesión simulada. */
+const PROBAR_PROPUESTO = {
+  config: {
+    levantar: "PORT=4399 PIZARRA_GENERADOR=falso npm run dev",
+    sigue_corriendo: true,
+    bajar: null,
+    urls: { web: "http://127.0.0.1:4399" },
+    notas: "El generador es falso: no gasta en Claude.",
+  },
+  motivo: "`dev` en package.json levanta el servidor; `servidor/api.ts` lee el puerto",
+  fuentes: ["package.json", "servidor/api.ts"],
+};
+
 /** El borrador que redacta la sesión simulada: cita archivos del repo de prueba. */
-function draftScript(fuente = "servidor/api.ts"): SimScript {
+function draftScript(fuente = "servidor/api.ts", probar: unknown = PROBAR_PROPUESTO): SimScript {
   return {
     match: "Sos el que arma el cerebro",
     calls: [{ tool: "Read", input: { file_path: "servidor/api.ts" } }],
@@ -57,6 +70,7 @@ function draftScript(fuente = "servidor/api.ts"): SimScript {
         texto: "- Cada endpoint nuevo trae su test al lado, como `servidor/api.test.ts`.",
         fuentes: ["servidor/api.test.ts"],
       },
+      probar,
     },
   };
 }
@@ -186,6 +200,59 @@ describe("init", () => {
     expect(prompt).toContain("verify contra CI");
   }, 120_000);
 
+  // Regresión: pizarra-en-vivo pasó por init sin `probar`, y PIZ-2 llegó a la PR sin que nadie usara
+  // la feature en la app.
+  test("con --aplicar propone cómo levantar la app para probar, comentado para revisar en la PR", () => {
+    const w = world();
+    const out = runCli(["init", w.work, "--aplicar", "--json"], w.env);
+    expect(out.status, out.stdout + out.stderr).toBe(0);
+    expect(paso(out.stdout, "probar")).toMatchObject({ estado: "inferido" });
+    expect(paso(out.stdout, "probar")?.detalle).toContain("http://127.0.0.1:4399");
+    const config = brainFile(w.remote, "config.yaml");
+    expect(config).toContain("# Lo propuso flowrunner init leyendo el repo, sin revisión humana.");
+    expect((parse(config) as { probar: unknown }).probar).toEqual({
+      levantar: "PORT=4399 PIZARRA_GENERADOR=falso npm run dev",
+      sigue_corriendo: true,
+      urls: { web: "http://127.0.0.1:4399" },
+      notas: "El generador es falso: no gasta en Claude.",
+    });
+    expect(prBody(w.env)).toContain(
+      "- **probar:** `PORT=4399 PIZARRA_GENERADOR=falso npm run dev`",
+    );
+    expect(readFileSync(join(w.home, "prompts.log"), "utf8")).toContain(
+      "La config no tiene `probar`: proponelo.",
+    );
+  }, 120_000);
+
+  // Si regresiona, init escribe un `probar` contra un entorno de afuera, o calla que falta.
+  test("si la propuesta no es local o no la hay, no la escribe y dice qué falta", () => {
+    for (const [probar, motivo] of [
+      [
+        {
+          ...PROBAR_PROPUESTO,
+          config: { ...PROBAR_PROPUESTO.config, urls: { web: "https://pizarra.ejemplo.com" } },
+        },
+        "propuso URLs que no son de esta máquina: https://pizarra.ejemplo.com",
+      ],
+      [
+        {
+          config: null,
+          motivo: "la app necesita una base de datos que el repo no levanta",
+          fuentes: ["package.json"],
+        },
+        "la app necesita una base de datos que el repo no levanta",
+      ],
+    ] as const) {
+      const w = world("node -e 0", draftScript("servidor/api.ts", probar));
+      const out = runCli(["init", w.work, "--aplicar", "--json"], w.env);
+      expect(out.status, out.stdout + out.stderr).toBe(0);
+      expect(paso(out.stdout, "probar")).toMatchObject({ estado: "pendiente" });
+      expect(paso(out.stdout, "probar")?.detalle).toContain(`no lo pude deducir: ${motivo}`);
+      expect(parse(brainFile(w.remote, "config.yaml"))).not.toHaveProperty("probar");
+      expect(paso(out.stdout, "borrador del cerebro")).toMatchObject({ estado: "inferido" });
+    }
+  }, 240_000);
+
   // Si regresiona, la PR del cerebro afirma reglas sobre archivos que no existen en el repo.
   test("si el borrador cita un archivo que no existe, quedan las plantillas y la PR igual se abre", () => {
     const w = world("node -e 0", draftScript("servidor/inventado.ts"));
@@ -308,6 +375,11 @@ describe("init", () => {
     // Si regresiona, nada le dice a la persona cómo pedir el borrador para un cerebro existente.
     expect(paso(out.stdout, "cerebro del repo")?.detalle).toContain("flowrunner brain draft");
     expect(paso(out.stdout, "setup")).toBeUndefined();
+    // Si regresiona, un repo que ya usa flowrunner saltea probar en cada run y nadie se entera.
+    expect(paso(out.stdout, "probar")).toMatchObject({ estado: "pendiente" });
+    expect(paso(out.stdout, "probar")?.detalle).toContain(
+      "origin/main no tiene `probar` en .flowrunner/config.yaml",
+    );
   }, 120_000);
 
   // Regresión: con el borrador ya mergeado en videoFactory, init seguía sugiriendo correr
@@ -328,6 +400,14 @@ describe("init", () => {
       estado: "ya estaba",
       detalle: "en origin/main, con el borrador leído del código",
     });
+    // Con `probar` en la config de la base, init no lo pide.
+    writeFileSync(
+      join(w.work, ".flowrunner", "config.yaml"),
+      'setup: "true"\nprobar:\n  levantar: npm run dev\n  urls: { web: "http://127.0.0.1:4399" }\n',
+    );
+    git(w.work, "commit", "-qam", "probar");
+    git(w.work, "push", "-q", "origin", "main");
+    expect(paso(runCli(["init", w.work, "--json"], w.env).stdout, "probar")).toBeUndefined();
   }, 120_000);
 });
 
@@ -370,6 +450,9 @@ describe("brain draft", () => {
     expect(convenciones).toContain("Los errores de la API salen como `ErrorDeApi`");
     expect(git(w.remote, "show", `${DRAFT_REF}/contexto.md`)).toContain("Qué reusar");
     expect(prBody(w.env)).toContain("`flowrunner brain draft` dedujo del repo");
+    // La config de `brain init` no tiene `probar`: el borrador lo propone en la misma PR.
+    expect(git(w.remote, "show", `${DRAFT_REF}/config.yaml`)).toContain("PIZARRA_GENERADOR=falso");
+    expect(prBody(w.env)).toContain("- **probar:**");
     // La sesión vio lo que ya decía el cerebro, para no repetirlo.
     expect(readFileSync(join(w.home, "prompts.log"), "utf8")).toContain(PERSONA);
 

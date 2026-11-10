@@ -1,8 +1,8 @@
 // Ayudas para los tests que lanzan runs con el CLI real y fases falsas.
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { stateOf, type RunState } from "../../src/engine/engine.ts";
-import { readLock } from "../../src/store/lock.ts";
+import { lugarDe, lugaresDir, type Lugar } from "../../src/store/lugares.ts";
 import { readLog } from "../../src/store/run-log.ts";
 import { homeWith, runCli } from "./cli.ts";
 import { repoWith, tempDir } from "./git.ts";
@@ -71,8 +71,18 @@ export function executions(w: Pick<World, "home">, id: string): string[] {
   }
 }
 
-export function lockPid(w: World): number | undefined {
-  return readLock(w.home, "acme-api")?.pid;
+/** El lugar de un run del proyecto, o el de cualquiera si no se dice cuál. */
+export function slotOf(w: Pick<World, "home">, id?: string): Lugar | undefined {
+  if (id !== undefined) return lugarDe(w.home, "acme-api", id);
+  const dir = lugaresDir(w.home, "acme-api");
+  if (!existsSync(dir)) return undefined;
+  const first = readdirSync(dir).find((e) => e.endsWith(".json"));
+  return first === undefined ? undefined : lugarDe(w.home, "acme-api", first.slice(0, -5));
+}
+
+/** El pid del proceso que tiene el lugar: el del run, o el de cualquiera. */
+export function lockPid(w: Pick<World, "home">, id?: string): number | undefined {
+  return slotOf(w, id)?.pid;
 }
 
 export async function waitFor<T>(

@@ -1,9 +1,8 @@
 // Gate de la Fase 4: preparar, planificar y aprobar reales con el SDK simulado; el resto falso.
 import { describe, expect, test } from "vitest";
-import { isAlive, readLock } from "../src/store/lock.ts";
 import { runCli } from "./helpers/cli.ts";
 import { FEATURE, PLAN, WRITE_TEST } from "./helpers/plan-fixtures.ts";
-import { executions, waitFor } from "./helpers/runs.ts";
+import { executions, lockPid, waitFor } from "./helpers/runs.ts";
 import { simWorld } from "./helpers/sim-world.ts";
 
 describe("Fase 4 ensamblada", () => {
@@ -21,8 +20,8 @@ describe("Fase 4 ensamblada", () => {
     });
     const id = w.launch();
     await waitFor("primera espera", () => w.state(id).status === "esperando_aprobacion", 60_000);
-    const holder = readLock(w.home, "acme-api");
-    await waitFor("sin proceso", () => holder !== undefined && !isAlive(holder.pid), 10_000);
+    // El proceso suelta su lugar al terminar: esperar no ocupa lugar (ADR 0019).
+    await waitFor("sin proceso", () => lockPid(w, id) === undefined, 10_000);
 
     expect(runCli(["changes", id, "separá la validación"], w.env).status).toBe(0);
     await waitFor(

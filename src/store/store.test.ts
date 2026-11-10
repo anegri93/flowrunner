@@ -2,7 +2,6 @@ import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { acquireLock, LockHeldError, readLock, releaseLock, type HolderStatus } from "./lock.ts";
 import { appendEvent, CorruptLogError, logFile, readLog } from "./run-log.ts";
 
 const runDir = () => mkdtempSync(join(tmpdir(), "fr-run-"));
@@ -59,60 +58,5 @@ describe("events.jsonl", () => {
     const dir = runDir();
     appendEvent(dir, created, () => new Date("2026-11-07T10:00:00Z"));
     expect(readFileSync(logFile(dir), "utf8")).toContain('"at":"2026-11-07T10:00:00.000Z"');
-  });
-});
-
-describe("lock por repo", () => {
-  const statusOf =
-    (map: Record<string, HolderStatus>) =>
-    (runId: string): HolderStatus =>
-      map[runId] ?? "activo";
-
-  test("dos runs que toman el lock: el segundo falla nombrando el run del primero", () => {
-    const home = runDir();
-    acquireLock(home, "acme", "RUN-A", process.pid, statusOf({}));
-    expect(() => acquireLock(home, "acme", "RUN-B", process.pid, statusOf({}))).toThrow(
-      LockHeldError,
-    );
-    expect(() => acquireLock(home, "acme", "RUN-B", process.pid, statusOf({}))).toThrow(/RUN-A/);
-  });
-
-  test("un lock con un pid muerto y su run en curso se toma", () => {
-    const home = runDir();
-    acquireLock(home, "acme", "RUN-A", 999_999, statusOf({}), () => true);
-    acquireLock(home, "acme", "RUN-B", process.pid, statusOf({}), () => false);
-    expect(readLock(home, "acme")?.run_id).toBe("RUN-B");
-  });
-
-  // Si regresiona, un segundo run arranca sobre el repo mientras el primero espera tu aprobación.
-  test("un lock con un pid muerto y su run esperando aprobación no se toma", () => {
-    const home = runDir();
-    acquireLock(home, "acme", "RUN-A", 999_999, statusOf({}));
-    expect(() =>
-      acquireLock(
-        home,
-        "acme",
-        "RUN-B",
-        process.pid,
-        statusOf({ "RUN-A": "esperando" }),
-        () => false,
-      ),
-    ).toThrow(LockHeldError);
-  });
-
-  test("un lock de un run terminado se toma aunque su proceso viva", () => {
-    const home = runDir();
-    acquireLock(home, "acme", "RUN-A", process.pid, statusOf({}));
-    acquireLock(home, "acme", "RUN-B", process.pid, statusOf({ "RUN-A": "terminado" }), () => true);
-    expect(readLock(home, "acme")?.run_id).toBe("RUN-B");
-  });
-
-  test("soltar el lock de otro run no lo suelta", () => {
-    const home = runDir();
-    acquireLock(home, "acme", "RUN-A", process.pid, statusOf({}));
-    releaseLock(home, "acme", "RUN-B");
-    expect(readLock(home, "acme")?.run_id).toBe("RUN-A");
-    releaseLock(home, "acme", "RUN-A");
-    expect(readLock(home, "acme")).toBeUndefined();
   });
 });

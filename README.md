@@ -99,6 +99,18 @@ Homebrew; si no está instalada, verify no corre y el run se detiene diciendo c�
 6. Revisá la PR, corregí lo que haga falta y mergeala. En el próximo chequeo, que corre cada 10 minutos,
    flowrunner aprende de tus correcciones y cierra el run.
 
+### Varias features del mismo repo a la vez
+
+Hasta dos runs de un repo avanzan a la vez. Un run que espera tu aprobación o está en pausa no ocupa
+lugar. El que no entra queda en cola y arranca solo cuando se libera un lugar, el más viejo primero.
+Verify, los comandos de los criterios en verificar y probar usan tu entorno de desarrollo, así que
+esos pasos se turnan entre runs. Si el plan que vas a aprobar toca los mismos archivos que otro run
+con la PR sin cerrar, el plan te lo avisa. Para cambiar el tope:
+
+```yaml
+max_runs: 3 # de 1 a 8; por defecto 2
+```
+
 ### Archivos fuera de git que necesitan los criterios
 
 La copia de la feature sale de git: no tiene tus `.env`. Si los comandos de los criterios los

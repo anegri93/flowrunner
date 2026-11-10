@@ -3,6 +3,7 @@
 
 export type RunStatus =
   | "en_curso"
+  | "en_cola"
   | "esperando_aprobacion"
   | "entregado"
   | "cerrado"
@@ -142,6 +143,7 @@ export const runChip = (run: Run): { texto: string; tone: Tone } =>
 /** El estado del run en una etiqueta, con las palabras de `flowrunner watch`. */
 export const RUN_CHIP: Record<RunStatus, { texto: string; tone: Tone }> = {
   en_curso: { texto: "EN CURSO", tone: "accent" },
+  en_cola: { texto: "EN COLA", tone: "neutral" },
   esperando_aprobacion: { texto: "TE ESPERA", tone: "warning" },
   detenido: { texto: "DETENIDO", tone: "danger" },
   pausado_por_limite: { texto: "EN PAUSA", tone: "warning" },
@@ -317,6 +319,9 @@ export function headlineOf(run: Run): Headline {
     return { emoji: EMOJI.neutral, texto: "abortado", tone: "neutral" };
   const phase = activePhase(run);
   if (phase === undefined) return { emoji: EMOJI.neutral, texto: run.status, tone: "neutral" };
+  // Sin proceso hasta que se libere un lugar del repo: no está trabajando ni te espera (ADR 0019).
+  if (run.status === "en_cola")
+    return { emoji: EMOJI.neutral, texto: `${capitalize(phase.fase)} — en cola`, tone: "neutral" };
   const label = phaseLabel(phase.fase, phase.estado, run.prMergeada === true);
   const integradas =
     phase.unidades.length === 0
@@ -499,8 +504,13 @@ export function planMarkdown(clave: string, data: unknown): string {
     criterios?: { id: string; comando: string; subtarea: string }[];
     cambios?: Record<string, string[]> | null;
     cambia_lo_existente?: ExistingChange[];
+    se_pisa_con?: { run: string; status: string; pr: number | null; archivos: string[] }[];
   };
   const existing = (d.cambia_lo_existente ?? []).map((c) => `- ${describeExisting(c)}`);
+  const overlaps = (d.se_pisa_con ?? []).map(
+    (p) =>
+      `- **${p.run}** (${p.status}${p.pr === null ? "" : `, PR #${String(p.pr)}`}): \`${p.archivos.join("`, `")}\``,
+  );
   const tasks = (d.subtareas ?? []).map(
     (t) =>
       `- **${t.id}** ${t.titulo}${t.alcance === undefined || t.alcance.length === 0 ? "" : ` — \`${t.alcance.join("`, `")}\``}${t.depende_de === undefined || t.depende_de.length === 0 ? "" : ` · depende de ${t.depende_de.join(", ")}`}`,
@@ -522,6 +532,16 @@ export function planMarkdown(clave: string, data: unknown): string {
           "Aprobar el plan es aceptar estos cambios. Si alguno no va, pedí cambios.",
           "",
           ...existing,
+          "",
+        ]),
+    ...(overlaps.length === 0
+      ? []
+      : [
+          `## ⚠ Se pisa con otros runs del proyecto (${String(overlaps.length)})`,
+          "",
+          "No bloquea: aprobá igual, esperá a que el otro se mergee o abortá uno.",
+          "",
+          ...overlaps,
           "",
         ]),
     ...(changes.length === 0 ? [] : ["## Contra el plan anterior", "", ...changes, ""]),

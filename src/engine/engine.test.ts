@@ -262,6 +262,31 @@ describe("transiciones", () => {
     );
   });
 
+  // Si regresiona, un run que sale de la cola pierde la instrucción o los intentos que llevaba, o un
+  // run en cola arranca sin lugar.
+  test("encolado deja el run en cola sin proceso; reanudado lo devuelve como estaba", () => {
+    const before = state(ok("preparar"), gate("planificar", "falta un test"));
+    const queued = state(ok("preparar"), gate("planificar", "falta un test"), [
+      ev({ tipo: "encolado" }),
+    ]);
+    expect(queued.status).toBe("en_cola");
+    expect(nextAction(queued)).toEqual({ tipo: "fin", status: "en_cola" });
+    const back = state(ok("preparar"), gate("planificar", "falta un test"), [
+      ev({ tipo: "encolado" }),
+      ev({ tipo: "reanudado" }),
+    ]);
+    expect(back).toEqual(before);
+  });
+
+  test("encolado no cambia un run que no está en curso", () => {
+    const waiting = state(upTo("preparar", "planificar"), done("aprobar", { tipo: "espera" }));
+    expect(
+      state(upTo("preparar", "planificar"), done("aprobar", { tipo: "espera" }), [
+        ev({ tipo: "encolado" }),
+      ]),
+    ).toEqual(waiting);
+  });
+
   test("rehacer desde una fase la reinicia con vueltas en cero", () => {
     const s = stateOf([
       created,

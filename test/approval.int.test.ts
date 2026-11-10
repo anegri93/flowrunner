@@ -1,9 +1,8 @@
 // T4.3: el run espera la aprobación sin proceso; plan, approve y changes desde el CLI real.
 import { describe, expect, test } from "vitest";
 import { planViewSchema } from "../src/cli/approval.ts";
-import { isAlive, readLock } from "../src/store/lock.ts";
 import { runCli } from "./helpers/cli.ts";
-import { waitFor } from "./helpers/runs.ts";
+import { lockPid, waitFor } from "./helpers/runs.ts";
 import { FEATURE, PLAN, WRITE_TEST } from "./helpers/plan-fixtures.ts";
 import { simWorld } from "./helpers/sim-world.ts";
 
@@ -17,13 +16,12 @@ const world = () =>
 
 describe("aprobar", () => {
   // Si regresiona, el run deja un proceso vivo durante horas esperando que vuelvas.
-  test("al llegar a la espera el proceso termina, el aviso dice qué pedirle a Claude y el lock queda", async () => {
+  // Desde el ADR 0019 esperar suelta el lugar: un plan que espera no le traba el repo a otro run.
+  test("al llegar a la espera el proceso termina y suelta su lugar, y el aviso dice qué pedirle a Claude", async () => {
     const w = world();
     const id = w.launch();
     await waitFor("esperando", () => w.state(id).status === "esperando_aprobacion", 60_000);
-    const holder = readLock(w.home, "acme-api");
-    await waitFor("proceso terminado", () => holder !== undefined && !isAlive(holder.pid), 10_000);
-    expect(readLock(w.home, "acme-api")?.run_id).toBe(id);
+    await waitFor("lugar suelto", () => lockPid(w, id) === undefined, 10_000);
     expect(w.notices()).toContain(
       "SHOP-214: el plan espera tu aprobación. Pedile a Claude que te lo muestre.",
     );

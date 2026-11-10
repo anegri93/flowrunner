@@ -90,6 +90,15 @@ const normalize = (p: string) => p.replace(/^\.\//, "").replace(/\/+$/, "");
 const overlaps = (a: string, b: string) =>
   a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
 
+/**
+ * Las rutas de `a` que se pisan con alguna de `b`: el mismo archivo, o una carpeta que contiene al
+ * otro. Es la regla con la que el gate separa sub-tasks, usada entre runs (ADR 0019).
+ */
+export function scopeOverlap(a: readonly string[], b: readonly string[]): string[] {
+  const theirs = b.map(normalize);
+  return [...new Set(a.map(normalize).filter((p) => theirs.some((q) => overlaps(p, q))))].sort();
+}
+
 /** El alcance efectivo: lo que declaró, más lockfiles y manifiestos si agrega dependencias. */
 export function effectiveScope(task: Subtask, rules: PlanRepoRules): string[] {
   const own = task.alcance.map(normalize);

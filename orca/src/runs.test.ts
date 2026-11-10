@@ -85,6 +85,18 @@ test("la frase nombra la etapa actual y su estado, como el diagrama y watch", ()
   assert.equal(nowOf(stopped).detalle, "ST-2 falló");
 });
 
+// Si regresiona, un run en cola se ve trabajando o esperándote, cuando espera un lugar del repo.
+test("un run en cola dice en qué etapa espera su lugar, sin decisiones que tomar", () => {
+  const queued: Run = { ...byKey("VF-2"), status: "en_cola" };
+  assert.deepEqual(headlineOf(queued), {
+    emoji: "⚪",
+    texto: "Implementar — en cola",
+    tone: "neutral",
+  });
+  assert.deepEqual(runChip(queued), { texto: "EN COLA", tone: "neutral" });
+  assert.deepEqual(decisionsFor(queued), []);
+});
+
 // Si regresiona, el detalle no muestra las sub-tasks ni qué hace la sesión que corre.
 test("el detalle: las sub-tasks con su estado y la sesión que corre primero", () => {
   const now = nowOf(byKey("VF-2"));
@@ -202,6 +214,17 @@ test("el plan que cambia lo que ya existe lo dice arriba de todo en su pestaña"
     /^# CUENTAS-1 · plan\n\n## ⚠ Cambia lo que ya existe \(1\)\n\n.*\n\n- el alta rechaza otro dominio; después lo acepta \(a\.ts:42\) ← AC-1\n/,
   );
   assert.ok(!planMarkdown("PIZ-3", { plan: "x" }).includes("Cambia lo que ya existe"));
+});
+
+// Si regresiona, la pestaña del plan no avisa que otro run toca los mismos archivos.
+test("el plan que se pisa con otro run lo avisa con el run, su PR y los archivos", () => {
+  const md = planMarkdown("VF-5", {
+    plan: "x",
+    se_pisa_con: [{ run: "VF-4-1", status: "entregado", pr: 70, archivos: ["src/a.ts", "src/b/"] }],
+  });
+  assert.match(md, /## ⚠ Se pisa con otros runs del proyecto \(1\)/);
+  assert.match(md, /- \*\*VF-4-1\*\* \(entregado, PR #70\): `src\/a\.ts`, `src\/b\/`/);
+  assert.ok(!planMarkdown("VF-6", { plan: "x", se_pisa_con: [] }).includes("Se pisa"));
 });
 
 test("una salida que no es JSON da un error legible", () => {

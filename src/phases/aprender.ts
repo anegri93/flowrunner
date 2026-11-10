@@ -25,8 +25,7 @@ import {
 import { render } from "../prompts/render.ts";
 import type { PhaseContext, PhaseFn } from "../runner/types.ts";
 import type { Phase } from "../store/events.ts";
-import { acquireLock, LockHeldError, releaseLock } from "../store/lock.ts";
-import { holderStatus } from "../store/runs.ts";
+import { intentarTurno, soltarTurno, turnoFile } from "../store/turno.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
 import { featureWorktree, runFeature } from "./inputs.ts";
 import { sessionName } from "./planificar.ts";
@@ -156,15 +155,10 @@ export const aprender: PhaseFn = async (ctx) => {
 
   const config = loadRepoConfig(state.repo);
   const feature = runFeature(run);
-  const lockId = `${run.id}-lecciones`;
-  try {
-    acquireLock(run.home, state.proyecto, lockId, process.pid, (id) =>
-      id === lockId ? "activo" : holderStatus(run.home, id),
-    );
-  } catch (error) {
-    if (error instanceof LockHeldError) return { tipo: "espera" };
-    throw error;
-  }
+  // Dos PRs de lecciones a la vez se pisarían en lecciones.md. Ocupado no se espera: tick reintenta.
+  const turno = turnoFile(run.home, state.proyecto, "lecciones");
+  const intento = intentarTurno(turno, run.id);
+  if (intento.tipo === "ocupado") return { tipo: "espera" };
   try {
     const wt = join(run.worktrees, "lecciones");
     const branch = `chore/lecciones-${feature.clave}`;
@@ -280,6 +274,6 @@ export const aprender: PhaseFn = async (ctx) => {
     await removeWorktree(state.repo, wt, deps.env);
     return { tipo: "ok" };
   } finally {
-    releaseLock(run.home, state.proyecto, lockId);
+    soltarTurno(turno, intento.dueño);
   }
 };

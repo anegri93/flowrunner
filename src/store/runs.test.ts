@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import type { Outcome, Phase } from "./events.ts";
 import { appendEvent } from "./run-log.ts";
-import { createRun, holderStatus, listRunIds, runPaths } from "./runs.ts";
+import { colaDe, createRun, listRunIds, ocupaLugar, runPaths } from "./runs.ts";
 
 function runIn(home: string, ...steps: [Phase, Outcome][]): string {
   const run = createRun(
@@ -21,15 +21,22 @@ function runIn(home: string, ...steps: [Phase, Outcome][]): string {
 
 const ok: Outcome = { tipo: "ok" };
 
-describe("holderStatus", () => {
-  // Si regresiona, otro run toma el repo mientras el plan de este espera tu aprobación.
-  test("un run esperando aprobación conserva el lock aunque no tenga proceso", () => {
+describe("ocupaLugar y colaDe", () => {
+  // Si regresiona, un plan que espera tu aprobación le traba el repo a los demás runs.
+  test("un run esperando aprobación no ocupa lugar; uno en curso sí", () => {
     const home = mkdtempSync(join(tmpdir(), "fr-home-"));
-    const id = runIn(home, ["preparar", ok], ["planificar", ok], ["aprobar", { tipo: "espera" }]);
-    expect(holderStatus(home, id)).toBe("esperando");
+    const waiting = runIn(
+      home,
+      ["preparar", ok],
+      ["planificar", ok],
+      ["aprobar", { tipo: "espera" }],
+    );
+    const running = runIn(home, ["preparar", ok]);
+    expect(ocupaLugar(home, waiting)).toBe(false);
+    expect(ocupaLugar(home, running)).toBe(true);
   });
 
-  test("un run entregado ya soltó el repo; uno en curso es activo", () => {
+  test("un run entregado, uno en cola y uno que no existe no ocupan lugar", () => {
     const home = mkdtempSync(join(tmpdir(), "fr-home-"));
     const phases: Phase[] = [
       "preparar",
@@ -41,13 +48,27 @@ describe("holderStatus", () => {
       "entregar",
     ];
     const delivered = runIn(home, ...phases.map((f): [Phase, Outcome] => [f, ok]));
-    expect(holderStatus(home, delivered)).toBe("terminado");
-    const running = runIn(home, ["preparar", ok]);
-    expect(holderStatus(home, running)).toBe("activo");
+    expect(ocupaLugar(home, delivered)).toBe(false);
+    const queued = runIn(home);
+    appendEvent(runPaths(home, queued).dir, { tipo: "encolado" });
+    expect(ocupaLugar(home, queued)).toBe(false);
+    expect(ocupaLugar(home, "NO-1")).toBe(false);
   });
 
-  test("un run que no existe cuenta como terminado", () => {
-    expect(holderStatus(mkdtempSync(join(tmpdir(), "fr-home-")), "NO-1")).toBe("terminado");
+  // Si regresiona, una feature recién lanzada pasa antes que un run que ya esperó su plan.
+  test("la cola sale por el más viejo y solo trae los runs en cola del proyecto", () => {
+    const home = mkdtempSync(join(tmpdir(), "fr-home-"));
+    const at = (iso: string) => new Date(iso);
+    const make = (clave: string, proyecto: string, iso: string) =>
+      createRun(home, { clave, proyecto, repo: "/r", featureText: "x" }, at(iso)).id;
+    const nuevo = make("B-1", "acme", "2026-11-09T12:00:00Z");
+    const viejo = make("Z-1", "acme", "2026-11-09T10:00:00Z");
+    const otroProyecto = make("C-1", "otro", "2026-11-09T09:00:00Z");
+    const enCurso = make("D-1", "acme", "2026-11-09T08:00:00Z");
+    for (const id of [nuevo, viejo, otroProyecto])
+      appendEvent(runPaths(home, id).dir, { tipo: "encolado" });
+    expect(colaDe(home, "acme").map((q) => q.id)).toEqual([viejo, nuevo]);
+    expect(colaDe(home, "acme").map((q) => q.id)).not.toContain(enCurso);
   });
 });
 

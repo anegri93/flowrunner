@@ -1,9 +1,8 @@
 // Los runs en disco: crear su directorio, encontrarlos y saber en qué están.
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { stateOf, TERMINAL, type RunState } from "../engine/engine.ts";
+import { stateOf, type RunState } from "../engine/engine.ts";
 import type { RunPaths } from "../runner/types.ts";
-import type { HolderStatus } from "./lock.ts";
 import { appendEvent, readLog } from "./run-log.ts";
 
 export function runPaths(home: string, id: string): RunPaths {
@@ -62,17 +61,30 @@ export function loadState(home: string, id: string): RunState {
   return stateOf(readLog(paths.dir).events);
 }
 
-/** Para el lock: un run entregado ya soltó el repo; uno en espera lo conserva sin proceso. */
-export function holderStatus(home: string, id: string): HolderStatus {
-  let state: RunState;
+/** Si el run ocupa un lugar del repo: solo uno en curso. Uno que no existe no ocupa. */
+export function ocupaLugar(home: string, id: string): boolean {
   try {
-    state = loadState(home, id);
+    return loadState(home, id).status === "en_curso";
   } catch {
-    return "terminado";
+    return false;
   }
-  if (TERMINAL.has(state.status) || state.status === "entregado") return "terminado";
-  if (state.status === "esperando_aprobacion" || state.status === "pausado_por_limite") {
-    return "esperando";
+}
+
+export interface EnCola {
+  readonly id: string;
+  readonly state: RunState;
+}
+
+/** Los runs del proyecto en cola, el más viejo primero: el que antes se creó, antes sale. */
+export function colaDe(home: string, proyecto: string): EnCola[] {
+  const out: (EnCola & { readonly creado: string })[] = [];
+  for (const id of listRunIds(home)) {
+    const { events } = readLog(runPaths(home, id).dir);
+    const state = stateOf(events);
+    if (state.proyecto !== proyecto || state.status !== "en_cola") continue;
+    out.push({ id, state, creado: events[0]?.at ?? "" });
   }
-  return "activo";
+  return out
+    .sort((a, b) => a.creado.localeCompare(b.creado) || a.id.localeCompare(b.id))
+    .map(({ id, state }) => ({ id, state }));
 }

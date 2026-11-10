@@ -16,7 +16,7 @@ import { dirname, join } from "node:path";
 import { runSession } from "../agent/session.ts";
 import type { RepoConfig } from "../config/schemas.ts";
 import { ACCEPTANCE_TIMEOUT_MS, type Plan } from "../gates/plan.ts";
-import { git, removeWorktree } from "../git/git.ts";
+import { addDetachedWorktree, git, removeWorktree } from "../git/git.ts";
 import { isUnrunnable, runShell } from "../proc/proc.ts";
 import { render } from "../prompts/render.ts";
 import type { PhaseContext } from "../runner/types.ts";
@@ -200,11 +200,7 @@ async function stillRedWithoutFeature(
   if (testsCommit === "") return "no encontré el commit de los tests del plan";
   const base = join(run.worktrees, "reparacion");
   await removeWorktree(input.worktree, base, deps.env).catch(() => undefined);
-  await git(
-    input.worktree,
-    ["worktree", "add", "--quiet", "--detach", base, testsCommit],
-    deps.env,
-  );
+  await addDetachedWorktree(input.worktree, base, testsCommit, deps.env);
   try {
     mkdirSync(dirname(join(base, input.archivo)), { recursive: true });
     writeFileSync(join(base, input.archivo), repaired);

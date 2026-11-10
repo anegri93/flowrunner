@@ -3,11 +3,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { readLock } from "../src/store/lock.ts";
 import { runCli } from "./helpers/cli.ts";
 import { git } from "./helpers/git.ts";
 import { FEATURE, PLAN, WRITE_TEST } from "./helpers/plan-fixtures.ts";
-import { waitFor } from "./helpers/runs.ts";
+import { slotOf, waitFor } from "./helpers/runs.ts";
 import { simWorld } from "./helpers/sim-world.ts";
 
 const write = (file_path: string, content: string) => ({
@@ -87,7 +86,7 @@ describe("Fase 6 ensamblada", () => {
     expect(informe).toContain("- **PR:** https://github.com/acme/acme-api/pull/412");
     expect(informe).toMatch(/verificar devolvió trabajo: AC-1 sigue en rojo/);
     expect(informe).toMatch(/revisar devolvió trabajo: la revisión encontró bloqueantes/);
-    expect(readLock(w.home, "acme-api")).toBeUndefined();
+    await waitFor("lugar suelto", () => slotOf(w) === undefined, 10_000);
     expect(w.notices()).toContain(
       "SHOP-214: PR abierta, 2 vueltas. Pedile a Claude que te explique el informe.",
     );

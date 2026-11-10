@@ -9,6 +9,7 @@ import { runShell, tail } from "../proc/proc.ts";
 import type { Outcome } from "../store/events.ts";
 import type { PhaseFn } from "../runner/types.ts";
 import { featureBranch, featureWorktree, graftIndex, runFeature } from "./inputs.ts";
+import { conEntorno } from "./turno-entorno.ts";
 import { runVerify } from "./verify.ts";
 
 export const SETUP_TIMEOUT_MS = 20 * 60_000;
@@ -56,7 +57,7 @@ export const preparar: PhaseFn = async (ctx) => {
   if (setup.code !== 0) {
     return entorno(`el setup \`${config.setup}\` salió ${setup.code}:\n${tail(setup)}`);
   }
-  const verify = await runVerify(worktree, config, deps.env);
+  const verify = await conEntorno(ctx, () => runVerify(worktree, config, deps.env));
   if (!verify.ok) {
     return entorno(
       verify.unrunnable

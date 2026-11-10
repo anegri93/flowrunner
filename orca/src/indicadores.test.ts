@@ -115,6 +115,22 @@ test("lo vivo se mueve y sigue donde iba al redibujar; lo terminado queda quieto
     assert.equal(PERIODO[k], undefined, k);
 });
 
+// Si regresiona, la flecha de «volvió» gira contra su propia punta.
+test("la flecha de volvió gira para el lado que apunta", () => {
+  // El arco de la flecha: barrido 1 es horario (↻), 0 antihorario (↺).
+  const barrido = /a4\.5 4\.5 0 1 ([01])/.exec(indicador("vuelve", "warning", 0))?.[1];
+  const giro = /@keyframes fr-vuelta \{[^}]*\} [^{]*\{ transform: rotate\((-?)360deg\)/.exec(
+    INDICADORES_CSS,
+  )?.[1];
+  assert.ok(barrido !== undefined && giro !== undefined);
+  assert.equal(barrido === "1", giro === "", "el arco y la animación giran para lados distintos");
+});
+
+// Si regresiona, un punto desfasado queda quieto y entero hasta arrancar: parpadea en cada redibujo.
+test("los desfasajes de puntos y barras son negativos: ninguno espera para arrancar", () => {
+  assert.doesNotMatch(INDICADORES_CSS, /var\(--fr-t, 0ms\) \+/);
+});
+
 test("con movimiento reducido, todo queda quieto", () => {
   assert.match(
     INDICADORES_CSS,

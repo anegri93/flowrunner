@@ -8,8 +8,9 @@ como `flowrunner watch`, pensada para el ancho angosto de la barra:
   Cada etapa tiene un indicador según su estado, y la que trabaja, uno animado propio: un arco al
   preparar, puntos que laten al planificar, barras en paralelo al implementar, un check que se dibuja
   al verificar, una lupa al revisar, una onda al probar, una flecha que sube al entregar. Lo que te
-  espera respira, lo que volvió da media vuelta, lo pausado titila; lo terminado y lo pendiente quedan
-  quietos, y con el movimiento reducido de macOS, todo. Debajo de la actual se ve qué está haciendo.
+  espera respira, lo que volvió da una vuelta hacia atrás, lo pausado titila; lo terminado y lo
+  pendiente quedan quietos, y con el movimiento reducido de macOS, todo. Debajo de la actual se ve
+  qué está haciendo.
 - Los más recientes arriba. Los terminados muestran solo su etapa actual hasta que los abrís.
 - Debajo de la etapa actual: las sub-tasks con su estado y lo que hace la sesión que corre. El costo
   queda chico al pie.

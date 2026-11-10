@@ -4,8 +4,12 @@ Una pestaña en la barra derecha de [Orca](https://www.onorca.dev) con el progre
 como `flowrunner watch`, pensada para el ancho angosto de la barra:
 
 - Cada run es una tarjeta, al estilo de flowindex: el estado como etiqueta («EN CURSO», «TE
-  ESPERA»), el título, el tiempo, y las ocho etapas del flujo en lista con sus intentos y su tiempo.
-  La etapa que trabaja gira, y debajo de la actual se ve qué está haciendo.
+  ESPERA»), el título, el tiempo, y las nueve etapas del flujo en lista con sus intentos y su tiempo.
+  Cada etapa tiene un indicador según su estado, y la que trabaja, uno animado propio: un arco al
+  preparar, puntos que laten al planificar, barras en paralelo al implementar, un check que se dibuja
+  al verificar, una lupa al revisar, una onda al probar, una flecha que sube al entregar. Lo que te
+  espera respira, lo que volvió da media vuelta, lo pausado titila; lo terminado y lo pendiente quedan
+  quietos, y con el movimiento reducido de macOS, todo. Debajo de la actual se ve qué está haciendo.
 - Los más recientes arriba. Los terminados muestran solo su etapa actual hasta que los abrís.
 - Debajo de la etapa actual: las sub-tasks con su estado y lo que hace la sesión que corre. El costo
   queda chico al pie.
@@ -41,7 +45,15 @@ la nave en camino en vez de los runs del anterior. Para saber cuál está enfoca
 - `src/worker.ts` corre el CLI de flowrunner en un shell de login, para tener tu PATH: `watch`,
   `report --sesion`, `plan`, y cada decisión como un comando fijo (`approve`, `changes`, `resume`,
   `rerun --desde`, `learn`, `abort`). Valida el id del run, la fase y el motivo antes de llegar al shell.
-- `src/panel.tsx` dibuja la pestaña con los componentes de Orca 1.4.247; mientras lee los runs por primera vez, por ejemplo al cambiar de proyecto, muestra la nave de `assets/nave.png`, que sale de `scripts/nave.svg` con `scripts/nave-png.mjs`. Es fija: Orca rechaza las imágenes animadas de un plugin, así que lo que se mueve es el spinner.
+- La pestaña es un frame (`sandboxed-ui`), no un panel de componentes: los componentes de Orca no
+  dibujan SVG propio y rechazan las imágenes animadas, y los indicadores son SVG con animación CSS.
+  `panel/index.html` carga `src/frame.ts`, lo único con DOM: lee los runs, escucha los clics y
+  redibuja. `src/estado.ts` tiene el estado y qué pasa al tocar cada control, y `src/vista.ts` lo
+  dibuja como HTML, con todo el texto escapado; los dos se prueban sin DOM. `src/indicadores.ts`
+  tiene un SVG por estado; cada redibujo sigue la animación donde iba. Los planes abiertos y las
+  tarjetas abiertas o cerradas quedan en el storage del plugin (`storage:own`). Mientras lee los runs
+  por primera vez muestra la nave de `assets/nave.png`, que sale de `scripts/nave.svg` con
+  `scripts/nave-png.mjs`.
 - `src/runs.ts` ordena los runs, agrupa las fases y decide qué decisiones ofrecer, sin depender de
   Orca.
 

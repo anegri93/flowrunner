@@ -352,8 +352,9 @@ dibuja una vez.
 ### En Orca
 
 Si usás [Orca](https://www.onorca.dev), el plugin de [`orca/`](orca/README.md) suma una pestaña en la
-barra derecha, con el ícono del cohete. Cada run es una tarjeta con su estado, su tiempo y las ocho
-etapas del flujo, cada una con su tiempo. La que trabaja gira, y debajo dice qué está haciendo. Desde
+barra derecha, con el ícono del cohete. Cada run es una tarjeta con su estado, su tiempo y las nueve
+etapas del flujo, cada una con su tiempo y un indicador de su estado: la que trabaja tiene una
+animación propia de su etapa, y debajo dice qué está haciendo. Desde
 ahí decidís lo que el run espera: aprobar o pedir cambios al plan, reanudar o rehacer un run detenido,
 o responder su pregunta: «Arreglar ST-n» con lo que tiene que corregir, «Autofix» o «Seguir igual»
 con tu motivo. Arreglarlo a mano queda en la terminal (`fix --yo`).

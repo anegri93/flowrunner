@@ -348,6 +348,8 @@ export function headlineOf(run: Run): Headline {
 
 export interface TaskLine {
   readonly key: string;
+  /** El estado de la sub-task en flowrunner: pendiente, corriendo, integrada, fallida… */
+  readonly estado: string;
   readonly mark: string;
   readonly tone: Tone;
   /** `ST-4 Pantallas · espera ST-1`: una línea que se recorta en el ancho angosto. */
@@ -420,7 +422,13 @@ export function nowOf(run: Run): Now {
     );
     const nota =
       u.estado === "pendiente" && waiting.length > 0 ? `espera ${waiting.join(", ")}` : t.texto;
-    return { key: u.id, mark: t.mark, tone: t.tone, texto: join([`${u.id} ${u.titulo}`, nota]) };
+    return {
+      key: u.id,
+      estado: u.estado,
+      mark: t.mark,
+      tone: t.tone,
+      texto: join([`${u.id} ${u.titulo}`, nota]),
+    };
   });
   const sessions = phase === undefined ? [] : sessionsOf(phase);
   const actividad = [

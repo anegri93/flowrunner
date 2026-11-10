@@ -1,4 +1,4 @@
-// El contrato entre el panel y el worker, declarado una vez: lo leen src/panel.tsx y src/worker.ts.
+// El contrato entre el panel y el worker, declarado una vez: lo leen src/frame.ts y src/worker.ts.
 import type { Decision, Run } from "./runs";
 
 export interface Snapshot {

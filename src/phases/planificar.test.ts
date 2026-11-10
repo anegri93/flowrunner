@@ -1018,6 +1018,191 @@ describe("planificar", () => {
     });
   });
 
+  describe("con explorar_antes", () => {
+    const informe = {
+      archivos: [
+        { ruta: "src/export/pedidos.js", lineas: "1-3", que: "arma los pedidos de un rango" },
+      ],
+      funciones: [
+        {
+          simbolo: "pedidosDelRango",
+          donde: "src/export/pedidos.js:1",
+          que: "devuelve los pedidos entre dos fechas",
+          llamadores: ["src/index.js:2"],
+        },
+      ],
+      tests_existentes: [],
+      riesgos: ["src/index.js depende de la firma de pedidosDelRango"],
+      dudas: [],
+    };
+    const esExplorador = (prompt: string) => prompt.startsWith("Sos el explorador");
+    const plan: SimScript = { calls: [writeTest], output: goodPlan };
+
+    async function conExplorar(
+      script: (prompt: string, n: number) => SimScript,
+      config: Record<string, unknown> = { explorar_antes: true },
+    ) {
+      const { work } = makeProject({
+        files: PEDIDOS,
+        config: { setup: "true", tests_globs: ["tests/**"], ...config },
+      });
+      const run = newRun(work, CON_CONTEXTO);
+      const sim = simQuery(script);
+      const deps = testDeps({ query: sim.query });
+      expect(await preparar(contextFor(run, "preparar", deps))).toEqual({ tipo: "ok" });
+      const worktree = prepared(readLog(run.dir).events).worktree;
+      return { run, deps, sim, worktree };
+    }
+    const avisosDe = (run: { dir: string }) =>
+      readLog(run.dir).events.flatMap((e) => (e.tipo === "aviso" ? [e.texto] : []));
+
+    // Si regresiona, Opus explora solo y paga cada turno por el contexto que relee (VF-1: 20,9 millones
+    // de tokens de caché en 267 turnos), o el explorador escribe en el worktree o se lleva validar_plan.
+    test("con explorar_antes, explorar corre antes del plan, solo lee, y su informe llega al prompt", async () => {
+      const intentos = [
+        { tool: "Write", input: { file_path: "src/export/csv.js", content: "x\n" } },
+        { tool: "Bash", input: { command: "touch hecho" } },
+        { tool: "Agent", input: { subagent_type: "explorador", prompt: "mirá" } },
+        { tool: "mcp__gate__validar_plan", input: goodPlan },
+        { tool: "mcp__graft__graft_find_code", input: { query: "pedidosDelRango" } },
+        { tool: "Read", input: { file_path: "src/export/pedidos.js" } },
+      ];
+      const { run, deps, sim, worktree } = await conExplorar((prompt) =>
+        esExplorador(prompt) ? { calls: intentos, output: informe } : plan,
+      );
+      expect(await planificar(contextFor(run, "planificar", deps))).toEqual({ tipo: "ok" });
+      expect(sim.records).toHaveLength(2);
+      const [explorador, planificador] = sim.records;
+      expect(explorador?.options?.model).toBe("claude-sonnet-5-5");
+      expect(Object.keys(explorador?.options?.mcpServers ?? {})).toEqual(["graft"]);
+      expect(explorador?.options?.tools).not.toContain("Write");
+      expect(explorador?.options?.tools).not.toContain("Agent");
+      expect(explorador?.options?.tools).not.toContain("Bash");
+      expect(explorador?.options?.agents).toBeUndefined();
+      expect(explorador?.decisions.map((d) => `${d.tool}: ${d.decision}`)).toEqual([
+        "Write: deny",
+        "Bash: deny",
+        "Agent: deny",
+        "mcp__gate__validar_plan: deny",
+        "mcp__graft__graft_find_code: allow",
+        "Read: allow",
+      ]);
+      expect(existsSync(join(worktree, "src/export/csv.js"))).toBe(false);
+      expect(existsSync(join(worktree, "hecho"))).toBe(false);
+      // Recibe la feature y lo que ella ya ubicó.
+      expect(explorador?.prompt).toContain("Exportar pedidos a CSV");
+      expect(explorador?.prompt).toContain(
+        "- src/export/pedidos.js:1-3 — arma la consulta de pedidos por rango",
+      );
+      const md = readFileSync(join(run.dir, "exploracion.md"), "utf8");
+      expect(md).toContain("- src/export/pedidos.js:1-3 — arma los pedidos de un rango");
+      expect(planificador?.prompt).toContain(md);
+      expect(planificador?.prompt).not.toContain("(no hubo exploración previa)");
+      // Su costo cuenta en planificar, con su propio nombre de sesión.
+      const usos = readLog(run.dir).events.flatMap((e) =>
+        e.tipo === "uso" ? [`${e.fase}/${e.sesion}`] : [],
+      );
+      expect(usos).toEqual(["planificar/explorar-1", "planificar/planificar-1"]);
+    });
+
+    // Si regresiona, cada replan, pedido de cambios o reintento paga otra exploración entera.
+    test("un replan no vuelve a explorar: reusa el informe", async () => {
+      const { run, deps, sim } = await conExplorar(() => plan);
+      const md = "## Archivos\n\n- src/export/pedidos.js:1-3 — lo que encontró antes\n";
+      writeFileSync(join(run.dir, "exploracion.md"), md);
+      expect(await planificar(contextFor(run, "planificar", deps))).toEqual({ tipo: "ok" });
+      expect(sim.records).toHaveLength(1);
+      expect(sim.records[0]?.prompt.startsWith("Sos el planificador")).toBe(true);
+      expect(sim.records[0]?.prompt).toContain(md);
+    });
+
+    // Si regresiona, una exploración rota (es una ayuda) frena el run o se pierde sin que nadie lo sepa.
+    test("si la exploración falla, planifica igual sin informe y lo avisa", async () => {
+      const { run, deps, sim } = await conExplorar((prompt) =>
+        esExplorador(prompt) ? { output: { archivos: "todo" } } : plan,
+      );
+      expect(await planificar(contextFor(run, "planificar", deps))).toEqual({ tipo: "ok" });
+      expect(sim.records).toHaveLength(2);
+      expect(avisosDe(run)).toEqual([
+        expect.stringMatching(
+          /^la exploración previa falló \(gate\): .+; se planifica sin informe$/,
+        ),
+      ]);
+      expect(existsSync(join(run.dir, "exploracion.md"))).toBe(false);
+      expect(sim.records[1]?.prompt).toContain("(no hubo exploración previa)");
+    });
+
+    // Si regresiona, la opción apagada igual paga una sesión más, o el prompt queda con la marca sin
+    // reemplazar.
+    test("sin explorar_antes no hay sesión de exploración", async () => {
+      const { run, deps, sim } = await conExplorar(() => plan, {});
+      expect(await planificar(contextFor(run, "planificar", deps))).toEqual({ tipo: "ok" });
+      expect(sim.records).toHaveLength(1);
+      expect(sim.records[0]?.prompt).toContain("(no hubo exploración previa)");
+      expect(sim.records[0]?.prompt).not.toContain("{{");
+      expect(existsSync(join(run.dir, "exploracion.md"))).toBe(false);
+    });
+
+    // Si regresiona, un explorador que choca con el límite de la suscripción deja abrir la sesión de
+    // Opus, que va a chocar igual, en vez de pausar el run (decisión 8).
+    test("si la exploración choca con el límite, vuelve el límite sin planificar", async () => {
+      const { run, deps, sim } = await conExplorar((prompt) =>
+        esExplorador(prompt) ? { limit: true } : plan,
+      );
+      expect(await planificar(contextFor(run, "planificar", deps))).toMatchObject({
+        tipo: "limite",
+      });
+      expect(sim.records).toHaveLength(1);
+      expect(existsSync(join(run.dir, "planificar-sesion.json"))).toBe(false);
+    });
+
+    // Si regresiona, la exploración pasa el tope de gasto y detiene el run, pero la fase igual abre la
+    // sesión de Opus y gasta más allá del tope.
+    test("si la exploración deja el run sin presupuesto, no planifica", async () => {
+      const { run, deps, sim } = await conExplorar((prompt) =>
+        esExplorador(prompt) ? { output: informe, costUsd: 30 } : plan,
+      );
+      appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+      expect(await planificar(contextFor(run, "planificar", deps))).toMatchObject({
+        tipo: "falla",
+      });
+      expect(sim.records).toHaveLength(1);
+      expect(readLog(run.dir).events.some((e) => e.tipo === "uso" && e.costo_usd === 30)).toBe(
+        true,
+      );
+    });
+
+    // Si regresiona, el reintento de un plan rechazado vuelve a explorar, o le manda el informe a una
+    // conversación que ya lo tiene.
+    test("un plan rechazado se retoma sin volver a explorar", async () => {
+      const twoTests: Plan = { ...goodPlan, tests: ["tests/ac1.mjs", "tests/ac2.mjs"] };
+      const writeAc2 = {
+        tool: "Write",
+        input: { file_path: "tests/ac2.mjs", content: writeTest.input.content },
+      };
+      const { run, deps, sim } = await conExplorar((prompt, n) =>
+        esExplorador(prompt)
+          ? { output: informe }
+          : n === 1
+            ? { calls: [writeTest], output: twoTests }
+            : { calls: [writeAc2], output: twoTests },
+      );
+      appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+      const first = await planificar(contextFor(run, "planificar", deps));
+      if (first.tipo !== "falla") throw new Error("el primer intento tenía que fallar");
+      appendEvent(run.dir, { tipo: "accion_terminada", fase: "planificar", resultado: first });
+      appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+      const second = await planificar(
+        contextFor(run, "planificar", deps, { intento: 2, instruccion: first.motivo }),
+      );
+      expect(second).toEqual({ tipo: "ok" });
+      expect(sim.records).toHaveLength(3);
+      expect(sim.records.filter((r) => esExplorador(r.prompt))).toHaveLength(1);
+      expect(sim.records[2]?.options?.resume).toBeDefined();
+      expect(sim.records[2]?.prompt).not.toContain("Lo que encontró el explorador");
+    });
+  });
+
   describe("con un plan anterior", () => {
     // Si regresiona, cada pedido de cambios reescribe los tests desde cero y rehace el diseño entero.
     test("los tests bloqueados del plan anterior vuelven al worktree, y el prompt trae los pedidos y el plan", async () => {

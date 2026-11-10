@@ -102,8 +102,16 @@ export const APRENDER_TIMEOUT_MS = 15 * 60_000;
 export const nextLessonNumber = (text: string) =>
   1 + Math.max(0, ...[...text.matchAll(/^### L-(\d+)/gm)].map((m) => Number(m[1])));
 
-/** Una sesión que solo lee el prompt: sin herramientas de escritura, Bash, agentes ni graft. */
-export function readOnlyHook(ctx: PhaseContext, root: string, fase: Phase = "aprender") {
+/**
+ * Una sesión que solo lee: sin herramientas de escritura, Bash ni agentes. Con `graft`, también las del
+ * MCP de graft, que solo consultan el índice (el explorador previo de planificar).
+ */
+export function readOnlyHook(
+  ctx: PhaseContext,
+  root: string,
+  fase: Phase = "aprender",
+  graft = false,
+) {
   return tripwireHook(
     {
       scope: {
@@ -123,7 +131,7 @@ export function readOnlyHook(ctx: PhaseContext, root: string, fase: Phase = "apr
       write: false,
       bash: false,
       agents: false,
-      graft: false,
+      graft,
     },
     ctx.emit,
   );

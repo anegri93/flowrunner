@@ -246,7 +246,9 @@ antes:
 
 - **Un problema del entorno**, como una dependencia sin instalar, no se le devuelve a una sub-task:
   verificar reinstala y repite. Si sigue, se detiene y dice qué falta.
-- **Una sub-task que no avanza** dos intentos seguidos se corta, con lo último que dijo.
+- **Una sub-task que no puede avanzar** también te pregunta, y las demás se integran igual. Si
+  terminó sin cambiar nada, o el bloqueo no la dejó escribir, no se reintenta: el run se detiene al
+  primer intento, con lo último que dijo y lo que se le rechazó.
 - **Si el ciclo no converge**, y el repo pidió vueltas automáticas, un agente de solo lectura
   diagnostica si el problema está en el código de alguna sub-task, en el entorno, en un test bloqueado o
   en el plan, y actúa según eso. Con 0 vueltas no corre: decidís vos.

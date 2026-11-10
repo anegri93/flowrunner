@@ -178,19 +178,19 @@ describe("instalar dependencias", () => {
 });
 
 describe("implementar", () => {
-  // Si regresiona, una sub-task trabada gasta todos sus intentos sin decir por qué, como en PIZ-2.
-  test("una sub-task que no avanza dos intentos seguidos se corta con lo último que dijo", async () => {
+  // Regresión de PIZ-2, VF-1 y VF-6: ningún reintento sin cambios salió bien, y cada uno es una
+  // sesión entera. Si regresiona, la sub-task trabada gasta otra sesión antes de preguntar.
+  test("una sub-task sin cambios pregunta al primer intento, con lo último que dijo", async () => {
     const sim = simQuery(
       byUnit({ "ST-1": [{ text: "No pude instalar jsqr: ese comando no está permitido." }] }),
     );
     const deps = testDeps({ query: sim.query });
     const { run } = await plannedRun(planWith([st("ST-1", ["src/a/"])]), TESTS, deps);
     const outcome = await implementar(contextFor(run, "implementar", deps));
-    expect(outcome).toMatchObject({ tipo: "falla", clase: "gate" });
-    const motivo = outcome.tipo === "falla" ? outcome.motivo : "";
-    expect(motivo).toContain("no avanzó en dos intentos seguidos");
+    expect(outcome).toMatchObject({ tipo: "pregunta", unidades: ["ST-1"] });
+    const motivo = outcome.tipo === "pregunta" ? outcome.motivo : "";
     expect(motivo).toContain("No pude instalar jsqr");
-    expect(unitEvents(run.dir).filter((e) => e === "ST-1:iniciada")).toHaveLength(2);
+    expect(unitEvents(run.dir)).toEqual(["ST-1:iniciada", "ST-1:fallida"]);
   });
 
   // Regresión: en COMPARTIR-1 (rskate) el worktree no tenía .env.local y los e2e de una sub-task no
@@ -339,7 +339,8 @@ describe("implementar", () => {
     expect(git(featureWt, "show", "--stat", "--format=", "HEAD")).not.toContain("generado");
   });
 
-  test("una sub-task que falla definitivamente no corta la otra, que se integra", async () => {
+  // Si regresiona, una sub-task trabada tira abajo a las demás, o la fase falla sin preguntar.
+  test("una sub-task que falla no corta la otra, que se integra, y la fase pregunta por la fallida", async () => {
     const sim = simQuery(
       byUnit({
         "ST-1": [{ calls: [write("src/fuera.js", "x")] }],
@@ -353,12 +354,29 @@ describe("implementar", () => {
       deps,
     );
     const outcome = await implementar(contextFor(run, "implementar", deps));
-    expect(outcome).toMatchObject({ tipo: "falla", clase: "gate" });
-    expect(outcome.tipo === "falla" && outcome.motivo).toMatch(
-      /ST-1 no avanzó en dos intentos seguidos/,
+    expect(outcome).toMatchObject({ tipo: "pregunta", unidades: ["ST-1"] });
+    expect(outcome.tipo === "pregunta" && outcome.motivo).toMatch(
+      /^una sub-task no pudo terminar:\n- ST-1 no cambió ningún archivo/,
     );
     expect(unitEvents(run.dir)).toContain("ST-2:integrada");
     expect(unitEvents(run.dir)).toContain("ST-1:fallida");
+  });
+
+  // Si regresiona, la persona arregla la trabada y las que esperaban por ella no arrancan nunca.
+  test("las que dependen de una sub-task trabada entran en la pregunta", async () => {
+    const sim = simQuery(byUnit({ "ST-1": [{ text: "no sé por dónde empezar" }] }));
+    const deps = testDeps({ query: sim.query });
+    const { run } = await plannedRun(
+      planWith([st("ST-1", ["src/a/"]), st("ST-2", ["src/b/"], { depende_de: ["ST-1"] })]),
+      TESTS,
+      deps,
+    );
+    const outcome = await implementar(contextFor(run, "implementar", deps));
+    expect(outcome).toMatchObject({ tipo: "pregunta", unidades: ["ST-1", "ST-2"] });
+    expect(outcome.tipo === "pregunta" && outcome.motivo).toContain(
+      "Quedaron sin arrancar, porque dependen de esas: ST-2",
+    );
+    expect(sim.records).toHaveLength(1);
   });
 
   test("devuelto por verificar: rehace solo las sub-tasks nombradas, con el motivo", async () => {
@@ -383,23 +401,35 @@ describe("implementar", () => {
   });
 
   // Regresión de VF-6: devuelta por verificar, ST-6 intentó escribir CLAUDE.md, el bloqueo lo rechazó
-  // y la sub-task cerró «sin cambios» como éxito, cuatro veces, hasta agotar las vueltas.
-  test("una sub-task devuelta que no cambió nada porque el bloqueo la frenó falla y dice qué rechazó", async () => {
+  // y la sub-task cerró «sin cambios» como éxito, cuatro veces, hasta agotar las vueltas. Si
+  // regresiona, cierra como éxito o paga otra sesión a ciegas en vez de preguntar.
+  test("una sub-task devuelta que no cambió nada porque el bloqueo la frenó pregunta y dice qué rechazó", async () => {
     const sim = simQuery(byUnit({ "ST-1": [{ calls: [write("CLAUDE.md", "# nuevo\n")] }] }));
     const deps = testDeps({ query: sim.query });
     const { run } = await plannedRun(planWith([st("ST-1", ["src/a/"])]), TESTS, deps);
     const outcome = await implementar(
       contextFor(run, "implementar", deps, { unidades: ["ST-1"], instruccion: "AC-1 rojo" }),
     );
-    expect(outcome).toMatchObject({ tipo: "falla", clase: "gate" });
-    const motivo = outcome.tipo === "falla" ? outcome.motivo : "";
+    expect(outcome).toMatchObject({ tipo: "pregunta", unidades: ["ST-1"] });
+    const motivo = outcome.tipo === "pregunta" ? outcome.motivo : "";
     expect(motivo).toContain(
       "El bloqueo rechazó lo que intentó escribir: CLAUDE.md es parte de CLAUDE.md: ningún agente lo escribe",
     );
+    expect(sim.records).toHaveLength(1);
     expect(unitEvents(run.dir)).not.toContain("ST-1:sin_cambios");
     expect(unitEvents(run.dir)).toContain("ST-1:fallida");
-    // El segundo intento lleva el motivo: el agente puede corregir un rechazo que fue error suyo.
-    expect(sim.records[1]?.prompt).toContain("El bloqueo rechazó lo que intentó escribir");
+  });
+
+  // Fija lo que no cambia: su código ya está integrado y verificar decide de qué lado está el rojo.
+  test("una sub-task devuelta sin cambios y sin rechazos sigue cerrando sin cambios", async () => {
+    const sim = simQuery(byUnit({ "ST-1": [{ text: "mi parte ya está bien" }] }));
+    const deps = testDeps({ query: sim.query });
+    const { run } = await plannedRun(planWith([st("ST-1", ["src/a/"])]), TESTS, deps);
+    const outcome = await implementar(
+      contextFor(run, "implementar", deps, { unidades: ["ST-1"], instruccion: "AC-1 rojo" }),
+    );
+    expect(outcome).toEqual({ tipo: "ok" });
+    expect(unitEvents(run.dir)).toEqual(["ST-1:iniciada", "ST-1:sin_cambios"]);
   });
 
   describe("package.json en el alcance sin dependencias", () => {
@@ -458,7 +488,7 @@ describe("implementar", () => {
         project,
       );
       const outcome = await implementar(contextFor(run, "implementar", deps));
-      expect(outcome.tipo).toBe("falla");
+      expect(outcome).toMatchObject({ tipo: "pregunta", unidades: ["ST-1"] });
       const rechazos = readLog(run.dir).events.flatMap((e) =>
         e.tipo === "rechazo" ? [e.motivo] : [],
       );

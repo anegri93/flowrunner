@@ -312,6 +312,8 @@ export const implementar: PhaseFn = async (ctx) => {
         estado: "iniciada",
         sha: start,
       });
+      // Antes de copiar los .env: armarla tarda hasta 60 s, y si tira no hay `finally` que los borre.
+      const orientacion = await orientacionDe(run, plan, task, featureWt, deps.env);
       // Sus criterios los corre el agente: los .env están mientras dura la sesión, sin poder leerse, y
       // se borran antes de mirar qué cambió, así no entran en el commit.
       const env = copyEnvFiles(state.repo, wt, config.env_files);
@@ -331,7 +333,6 @@ export const implementar: PhaseFn = async (ctx) => {
           rejectedWrites.push(event.motivo);
         return emit(event);
       };
-      const orientacion = await orientacionDe(run, plan, task, featureWt, deps.env);
       const result = await runSession(
         {
           fase: "implementar",

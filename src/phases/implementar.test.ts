@@ -1,5 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -585,6 +592,44 @@ describe("la orientación de cada sub-task", () => {
       ),
     ]);
     expect(sim.records[0]?.prompt).toContain("(graft no pudo armar el contexto:");
+  });
+
+  // Revisión: si regresiona, los secretos esperan en el worktree de la sub-task mientras graft
+  // responde, hasta 60 s, y quedan ahí si armar la orientación tira.
+  test("los env_files no están en el worktree de la sub-task mientras se arma su orientación", async () => {
+    const sim = simQuery(
+      byUnit({ "ST-1": [{ calls: [write("src/a/cuatro.ts", "export const cuatro = 4;\n")] }] }),
+    );
+    const deps = testDeps({ query: sim.query });
+    const { run, work } = await plannedRun(planWith([st("ST-1", ["src/a/"])]), TESTS, deps, {
+      files: FUENTES,
+      config: { setup: "true", tests_globs: ["tests/**"], env_files: [".env.local"] },
+    });
+    writeFileSync(join(work, ".env.local"), "DATABASE_URL=local\n");
+    // Un graft que anota si el .env de la sub-task existe cuando le preguntan.
+    const fake = mkdtempSync(join(tmpdir(), "fr-fake-graft-"));
+    writeFileSync(
+      join(fake, "graft"),
+      [
+        "#!/bin/sh",
+        'if [ "$3" = build ]; then exit 0; fi',
+        'if [ -e "$UNIT_WT/.env.local" ]; then echo visto >> "$FAKE_DIR/log"; fi',
+        `echo '{"file":"'"$7"'","entries":[],"note":"no definitions indexed for this file"}'`,
+      ].join("\n"),
+    );
+    chmodSync(join(fake, "graft"), 0o755);
+    const conFake = testDeps({
+      query: sim.query,
+      env: {
+        ...deps.env,
+        PATH: `${fake}:${deps.env.PATH ?? ""}`,
+        UNIT_WT: join(run.worktrees, "ST-1"),
+        FAKE_DIR: fake,
+      },
+    });
+    expect(await implementar(contextFor(run, "implementar", conFake))).toEqual({ tipo: "ok" });
+    expect(sim.records[0]?.prompt).toContain("### `src/a/uno.ts`");
+    expect(existsSync(join(fake, "log"))).toBe(false);
   });
 
   // Si regresiona, una sub-task ve como integrado lo que un replan ya tiró, o se ve a sí misma.

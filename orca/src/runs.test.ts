@@ -224,6 +224,22 @@ test("se puede abortar todo run vivo, en cualquier estado, y ninguno cerrado o a
     assert.equal(canAbort({ ...byKey("VF-2"), status }), false, status);
 });
 
+// Si regresiona, la pestaña del plan muestra «AC-2 → run», como si fuera una sub-task.
+test("un criterio del run se muestra como del run en la pestaña del plan", () => {
+  const md = planMarkdown("PIZ-3", {
+    plan: "p",
+    subtareas: [{ id: "ST-1", titulo: "Variables", alcance: ["src/theme.ts"], depende_de: [] }],
+    criterios: [
+      { id: "AC-1", comando: "npm test", subtarea: "ST-1" },
+      { id: "AC-2", comando: "./.flowrunner/verify.sh", subtarea: "run" },
+    ],
+  });
+  assert.ok(md.includes("- **AC-1** → ST-1: `npm test`"));
+  assert.ok(
+    md.includes("- **AC-2** → del run (lo comprueba verificar): `./.flowrunner/verify.sh`"),
+  );
+});
+
 // Si regresiona, la pestaña del plan no trae lo que hace falta para decidir: las sub-tasks con su
 // alcance, los criterios, lo que cambió y el plan entero.
 test("el plan como Markdown para su pestaña, y los pasos de una sesión", () => {

@@ -577,7 +577,9 @@ export function planMarkdown(clave: string, data: unknown): string {
       `- **${t.id}** ${t.titulo}${t.alcance === undefined || t.alcance.length === 0 ? "" : ` — \`${t.alcance.join("`, `")}\``}${t.depende_de === undefined || t.depende_de.length === 0 ? "" : ` · depende de ${t.depende_de.join(", ")}`}`,
   );
   const criteria = (d.criterios ?? []).map(
-    (c) => `- **${c.id}** → ${c.subtarea}: \`${c.comando}\``,
+    // El criterio de verify es del run (CRITERIO_DEL_RUN en src/gates/plan.ts): Orca no importa de src/.
+    (c) =>
+      `- **${c.id}** → ${c.subtarea === "run" ? "del run (lo comprueba verificar)" : c.subtarea}: \`${c.comando}\``,
   );
   const changes = Object.entries(d.cambios ?? {})
     .filter(([, items]) => items.length > 0)

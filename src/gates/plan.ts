@@ -69,7 +69,11 @@ export const planSchema = z.object({
     z.object({
       id: z.string().regex(/^AC-\d+$/),
       comando: z.string().min(1).describe("el comando que corre el test de este criterio"),
-      subtarea: z.string(),
+      subtarea: z
+        .string()
+        .describe(
+          "la sub-task que cubre el criterio: ST-n, o run si su comando es el verify del repo",
+        ),
     }),
   ),
   /** Los archivos de test que escribió, relativos al repo. */
@@ -82,6 +86,29 @@ export const planSchema = z.object({
     ),
 });
 export type Plan = z.infer<typeof planSchema>;
+
+/**
+ * La `subtarea` de un criterio cuyo comando es el verify del repo: no es de ninguna sub-task, lo
+ * comprueba verificar sobre la rama integrada. No choca con los ids, que son `ST-n`.
+ */
+export const CRITERIO_DEL_RUN = "run";
+
+/** A quién se le muestra asignado un criterio en el plan: su sub-task, o el run. */
+export const quienCubre = (subtarea: string) =>
+  subtarea === CRITERIO_DEL_RUN ? "del run (lo comprueba verificar)" : subtarea;
+
+/** Los criterios de verify pasan a ser del run, sin importar a qué sub-task los asignó el plan. */
+export function delRun<P extends Pick<Plan, "criterios">>(
+  plan: P,
+  esVerify: (comando: string) => boolean,
+): P {
+  return {
+    ...plan,
+    criterios: plan.criterios.map((c) =>
+      esVerify(c.comando) ? { ...c, subtarea: CRITERIO_DEL_RUN } : c,
+    ),
+  };
+}
 
 export interface PlanRepoRules {
   readonly lockfiles: readonly string[];
@@ -154,6 +181,8 @@ export function checkPlanShape(
   feature: Feature,
   root: string,
   rules: PlanRepoRules,
+  /** Si el comando es el verify del repo (`isVerifyCommand`): solo esos criterios pueden ser del run. */
+  esVerify: (comando: string) => boolean = () => false,
 ): string[] {
   const problems: string[] = [];
   const ids = plan.subtareas.map((t) => t.id);
@@ -163,7 +192,13 @@ export function checkPlanShape(
   for (const ac of feature.criterios) {
     const entry = plan.criterios.find((c) => c.id === ac.id);
     if (entry === undefined) problems.push(`${ac.id} no tiene comando ni sub-task`);
-    else if (!idSet.has(entry.subtarea))
+    else if (entry.subtarea === CRITERIO_DEL_RUN) {
+      // Implementar no se lo da a nadie: si no lo corre verificar, nadie lo cumple.
+      if (!esVerify(entry.comando))
+        problems.push(
+          `${ac.id} es del run, pero solo un criterio cuyo comando es el verify del repo puede serlo: asignalo a la sub-task que lo cubre`,
+        );
+    } else if (!idSet.has(entry.subtarea))
       problems.push(`${ac.id} apunta a ${entry.subtarea}, que no existe`);
   }
   for (const extra of plan.criterios.filter((c) => !feature.criterios.some((a) => a.id === c.id))) {

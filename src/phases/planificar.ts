@@ -24,6 +24,7 @@ import {
   checkCommandsFail,
   checkCommandsPass,
   checkPlanShape,
+  delRun,
   planSchema,
   type Plan,
 } from "../gates/plan.ts";
@@ -480,7 +481,10 @@ async function gateYCierre(ctx: PhaseContext, comun: Comun, intento: Intento): P
     return result.tipo === "limite"
       ? result
       : { tipo: "falla", clase: result.clase, motivo: result.motivo };
-  const plan = result.output;
+  // «verify en verde» es del run, no de una sub-task (VF-6: AC-12 en ST-6, que no era dueña de lo que
+  // se rompía). flowrunner lo corrige solo en vez de rechazar: es el plan que pasa el gate y se escribe.
+  const esVerify = (comando: string) => isVerifyCommand(config, comando);
+  const plan = delRun(result.output, esVerify);
   for (const [path] of restored.filter(([path]) => !plan.tests.includes(path))) {
     rmSync(join(worktree, path), { force: true });
   }
@@ -521,7 +525,7 @@ async function gateYCierre(ctx: PhaseContext, comun: Comun, intento: Intento): P
     });
   }
 
-  const problems = checkPlanShape(plan, feature, worktree, config);
+  const problems = checkPlanShape(plan, feature, worktree, config, esVerify);
   let kept: string[] = [];
   let rearmada = false;
   let invalid: string[] = [];
@@ -604,9 +608,7 @@ async function gateYCierre(ctx: PhaseContext, comun: Comun, intento: Intento): P
       // los puertos o la base local de otro run del proyecto (ADR 0019).
       const gate = await conEntorno(ctx, async () => [
         // Lo conservado no vuelve a correr: sus criterios tienen que pasar ya con su código.
-        ...(await checkCommandsPass(plan, worktree, deps.env, kept, (comando) =>
-          isVerifyCommand(config, comando),
-        )),
+        ...(await checkCommandsPass(plan, worktree, deps.env, kept, esVerify)),
         // «verify en verde» pasa sobre la base, como debe: lo comprueba verificar, no este rojo. Un
         // criterio de lo conservado ya pasa: su código está. Uno compartido con lo nuevo tiene que fallar.
         ...(await checkCommandsFail(
@@ -614,7 +616,7 @@ async function gateYCierre(ctx: PhaseContext, comun: Comun, intento: Intento): P
           worktree,
           deps.env,
           (comando) =>
-            isVerifyCommand(config, comando) ||
+            esVerify(comando) ||
             plan.criterios
               .filter((c) => c.comando === comando)
               .every((c) => kept.includes(c.subtarea)),

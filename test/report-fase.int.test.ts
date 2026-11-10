@@ -109,6 +109,23 @@ describe("report --fase", () => {
     expect(showPhase(run.home, run.id, "entregar")).toMatchObject({ estado: "pendiente" });
   });
 
+  // Si regresiona, la pestaña de Planificar muestra «AC-2 → run», como si fuera una sub-task.
+  test("un criterio del run se muestra como del run en Planificar", async () => {
+    const { run } = await plannedRun(PLAN, TESTS, testDeps());
+    writeFileSync(
+      join(run.dir, "ac-map.json"),
+      JSON.stringify([
+        ...PLAN.criterios,
+        { id: "AC-2", comando: "./.flowrunner/verify.sh", subtarea: "run" },
+      ]),
+    );
+    const planning = showPhase(run.home, run.id, "planificar").texto;
+    expect(planning).toContain("- **AC-1** → ST-1: `node tests/ac1.mjs`");
+    expect(planning).toContain(
+      "- **AC-2** → del run (lo comprueba verificar): `./.flowrunner/verify.sh`",
+    );
+  });
+
   // Si regresiona, Aprobar dice «quedó esperando» de un plan aprobado, y un run abortado muestra
   // para siempre una etapa «en curso».
   test("Aprobar dice cuándo se aprobó y cuánto esperó; abortar corta la etapa abierta", async () => {

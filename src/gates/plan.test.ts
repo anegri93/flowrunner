@@ -6,6 +6,7 @@ import type { Feature } from "../feature/feature.ts";
 import {
   checkCommandsFail,
   checkPlanShape,
+  delRun,
   subtaskSchema,
   type Plan,
   type Subtask,
@@ -111,6 +112,51 @@ describe("forma del plan", () => {
     expect(shape(p)).toEqual([
       "AC-1 apunta a ST-9, que no existe",
       "AC-2 no tiene comando ni sub-task",
+    ]);
+  });
+
+  const VERIFY = "./.flowrunner/verify.sh";
+  const esVerify = (comando: string) => comando === VERIFY;
+
+  // Regresión de VF-6: «AC-12: verify.sh en verde» tenía que ir a una sub-task, y fue a ST-6, que no
+  // era dueña de lo que se rompía. Un criterio de verify es del run: lo comprueba verificar.
+  test("un criterio que corre el verify del repo es del run y no necesita sub-task", () => {
+    const p = plan(
+      [task("ST-1", ["src/x.ts"])],
+      [
+        { id: "AC-1", comando: "false", subtarea: "ST-1" },
+        { id: "AC-2", comando: VERIFY, subtarea: "run" },
+      ],
+    );
+    expect(checkPlanShape(p, feature, repo, rules, esVerify)).toEqual([]);
+  });
+
+  // Si regresiona, un criterio que no es el verify queda sin sub-task que lo implemente: ninguna lo
+  // recibe en implementar y verificar lo devuelve a «run», que no existe.
+  test("solo un criterio que corre el verify puede ser del run", () => {
+    const p = plan(
+      [task("ST-1", ["src/x.ts"])],
+      [
+        { id: "AC-1", comando: "node tests/ac1.mjs", subtarea: "run" },
+        { id: "AC-2", comando: VERIFY, subtarea: "run" },
+      ],
+    );
+    expect(checkPlanShape(p, feature, repo, rules, esVerify)).toEqual([
+      "AC-1 es del run, pero solo un criterio cuyo comando es el verify del repo puede serlo: asignalo a la sub-task que lo cubre",
+    ]);
+  });
+
+  test("delRun pasa los criterios de verify a run y deja los demás", () => {
+    const p = plan(
+      [task("ST-1", ["src/x.ts"]), task("ST-6", ["src/y.ts"])],
+      [
+        { id: "AC-12", comando: VERIFY, subtarea: "ST-6" },
+        { id: "AC-1", comando: "node tests/ac1.mjs", subtarea: "ST-1" },
+      ],
+    );
+    expect(delRun(p, esVerify).criterios).toEqual([
+      { id: "AC-12", comando: VERIFY, subtarea: "run" },
+      { id: "AC-1", comando: "node tests/ac1.mjs", subtarea: "ST-1" },
     ]);
   });
 

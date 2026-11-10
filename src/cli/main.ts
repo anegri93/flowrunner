@@ -11,20 +11,23 @@ import { showReport, showSession, showUnit } from "./report.ts";
 import { showPhase } from "./etapa.ts";
 import { learnOne, tick } from "./tick.ts";
 import { describeDoctor, doctor } from "./doctor.ts";
-import { installLaunchd, uninstallLaunchd } from "./launchd.ts";
+import { installLaunchd, plistPath, uninstallLaunchd } from "./launchd.ts";
 import { installSkill } from "./skill.ts";
 import { installOrcaPlugin } from "./orca.ts";
 import { hookOutput, sessionStartContext } from "./hook.ts";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { join } from "node:path";
 import { closedRuns, loadTree, resolveRun } from "../watch/load.ts";
 
 import { renderRuns, watchLive, watchTargets } from "./watch.ts";
-import { describeInit, draftExistingBrain, init } from "../setup/init.ts";
+import { selfUpdate } from "../setup/app.ts";
+import { commandDir, describeInit, draftExistingBrain, init } from "../setup/init.ts";
 import { productionRuntime } from "../runner/production.ts";
 import { describeStats, stats } from "../report/stats.ts";
 import {
   abortRun,
   acceptUntested,
+  BIN,
   rerunRun,
   resumeRun,
   runProcess,
@@ -61,6 +64,7 @@ const USAGE = `uso: flowrunner <comando> [--json]
   tick                           lo que corre launchd: retoma pausados y aprende de PRs mergeadas
   learn <run>                    revisa la PR de un run y aprende en el momento
   doctor                         qué le falta a esta máquina para correr runs
+  self-update                    mueve el flowrunner que corre runs a origin/main
   launchd install|uninstall      instala o quita el job que corre tick
   skill install [--confirmar]    instala la skill de Claude Code; con --confirmar, las reglas ask y el hook
   orca install [--approve fp]    carga en Orca el plugin de este flowrunner, esté donde esté clonado
@@ -91,6 +95,30 @@ function describeRun(status: z.infer<typeof statusRunSchema>): string {
     lines.push(`Detenido: ${run.detenido.motivo}`, `Para seguir: ${run.detenido.siguiente}`);
   }
   return lines.join("\n");
+}
+
+/**
+ * `_reapuntar`, oculto: lo corre `self-update` con el código de la app, así el comando, launchd, Orca
+ * y la skill salen de la app y no del checkout que lanzó la actualización.
+ */
+async function reapuntar(env: NodeJS.ProcessEnv): Promise<{ ok: true; reapuntado: string[] }> {
+  const reapuntado: string[] = [];
+  const dir = commandDir(env);
+  if (dir === undefined) {
+    reapuntado.push("comando: agregá ~/.local/bin a tu PATH");
+  } else {
+    const link = join(dir, "flowrunner");
+    rmSync(link, { force: true });
+    symlinkSync(BIN, link);
+    reapuntado.push(`comando ${link}`);
+  }
+  if (existsSync(plistPath(env))) reapuntado.push(`launchd ${(await installLaunchd(env)).plist}`);
+  if (env.ORCA !== undefined || existsSync("/Applications/Orca.app")) {
+    const orca = await installOrcaPlugin(env, undefined);
+    reapuntado.push(orca.ok ? `Orca ${orca.plugin}` : `Orca ${orca.plugin}: ${orca.salida}`);
+  }
+  reapuntado.push(`skill ${installSkill(env, true).skill}`);
+  return { ok: true, reapuntado };
 }
 
 function need(value: string | undefined, what: string): string {
@@ -285,6 +313,19 @@ export async function main(
         const result = await doctor(env);
         print(result, describeDoctor(result));
         return result.ok ? 0 : 1;
+      }
+      case "self-update": {
+        const updated = await selfUpdate(env);
+        print(
+          updated,
+          `flowrunner en ${updated.app} (${updated.sha.slice(0, 7)}): ${updated.reapuntado.join(", ")}`,
+        );
+        return 0;
+      }
+      case "_reapuntar": {
+        const done = await reapuntar(env);
+        print(done, done.reapuntado.join("\n"));
+        return 0;
       }
       case "launchd": {
         if (first === "install") {

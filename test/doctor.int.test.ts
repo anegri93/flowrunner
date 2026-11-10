@@ -1,9 +1,10 @@
 // T7.4: flowrunner doctor y el job de launchd, con binarios falsos y un LaunchAgents de prueba.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test } from "vitest";
 import { plistFor } from "../src/cli/launchd.ts";
-import { homeWith, runCli } from "./helpers/cli.ts";
+import { conApp, type Fuente, fuenteClonada } from "./helpers/app.ts";
+import { homeWith, runCli, runCliFrom } from "./helpers/cli.ts";
 import { tempDir } from "./helpers/git.ts";
 
 function env(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
@@ -12,6 +13,17 @@ function env(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
     FLOWRUNNER_LAUNCH_AGENTS: tempDir("launch-agents-"),
     ...extra,
   };
+}
+
+let fuente: Fuente;
+beforeAll(() => {
+  fuente = fuenteClonada();
+});
+
+/** Con todo presente, el flowrunner que corre es el de la app: lo instala `self-update`. */
+function installApp(e: NodeJS.ProcessEnv): void {
+  const out = runCliFrom(fuente.repo, ["self-update"], e);
+  expect(out.status, out.stdout + out.stderr).toBe(0);
 }
 
 const checks = (stdout: string) =>
@@ -38,23 +50,29 @@ describe("doctor", () => {
   });
 
   // Si regresiona, doctor le exige un token a quien eligió su login, o da por buena una sesión cerrada.
-  test("con auth: login, el chequeo es la sesión de Claude Code y no el token", () => {
-    const e = {
-      ...homeWith("github_user: yo\nauth: login\nprojects: []\n"),
-      FLOWRUNNER_LAUNCH_AGENTS: tempDir("launch-agents-"),
-    };
-    expect(runCli(["launchd", "install"], e).status).toBe(0);
-    const ok = runCli(["doctor", "--json"], e);
-    expect(checks(ok.stdout).filter((c) => !c.ok)).toEqual([]);
-    expect(checks(ok.stdout).map((c) => c.nombre)).toContain("sesión de Claude Code");
-    const out = runCli(["doctor"], { ...e, FAKE_CLAUDE_LOGGED_OUT: "1" });
-    expect(out.status).toBe(1);
-    expect(out.stdout).toMatch(/✗ sesión de Claude Code: abrí `claude` y corré `\/login`/);
-  });
+  test(
+    "con auth: login, el chequeo es la sesión de Claude Code y no el token",
+    { timeout: 120_000 },
+    () => {
+      const e = conApp({
+        ...homeWith("github_user: yo\nauth: login\nprojects: []\n"),
+        FLOWRUNNER_LAUNCH_AGENTS: tempDir("launch-agents-"),
+      });
+      expect(runCli(["launchd", "install"], e).status).toBe(0);
+      installApp(e);
+      const ok = runCli(["doctor", "--json"], e);
+      expect(checks(ok.stdout).filter((c) => !c.ok)).toEqual([]);
+      expect(checks(ok.stdout).map((c) => c.nombre)).toContain("sesión de Claude Code");
+      const out = runCli(["doctor"], { ...e, FAKE_CLAUDE_LOGGED_OUT: "1" });
+      expect(out.status).toBe(1);
+      expect(out.stdout).toMatch(/✗ sesión de Claude Code: abrí `claude` y corré `\/login`/);
+    },
+  );
 
-  test("con todo presente y el job instalado: sale 0", () => {
-    const e = env({ FAKE_KEYCHAIN_TOKEN: "t" });
+  test("con todo presente y el job instalado: sale 0", { timeout: 120_000 }, () => {
+    const e = conApp(env({ FAKE_KEYCHAIN_TOKEN: "t" }));
     expect(runCli(["launchd", "install"], e).status).toBe(0);
+    installApp(e);
     const result = runCli(["doctor", "--json"], e);
     expect(checks(result.stdout).filter((c) => !c.ok)).toEqual([]);
     expect(result.status).toBe(0);

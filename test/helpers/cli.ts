@@ -14,9 +14,28 @@ export interface CliResult {
 }
 
 export function runCli(args: readonly string[], env: NodeJS.ProcessEnv, input?: string): CliResult {
+  return runBin(BIN, args, env, input);
+}
+
+/** El CLI de otro checkout de flowrunner, como el clon de `test/helpers/app.ts`. */
+export function runCliFrom(
+  repo: string,
+  args: readonly string[],
+  env: NodeJS.ProcessEnv,
+  input?: string,
+): CliResult {
+  return runBin(join(repo, "bin", "flowrunner.js"), args, env, input);
+}
+
+function runBin(
+  bin: string,
+  args: readonly string[],
+  env: NodeJS.ProcessEnv,
+  input: string | undefined,
+): CliResult {
   const result = spawnSync(
     process.execPath,
-    ["--disable-warning=ExperimentalWarning", BIN, ...args],
+    ["--disable-warning=ExperimentalWarning", bin, ...args],
     {
       env,
       encoding: "utf8",

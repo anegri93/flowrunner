@@ -1,15 +1,7 @@
 // `flowrunner init <repo>`: revisa qué hay, infiere lo que se puede y dice lo que falta. Con
 // `aplicar`, deja la máquina y el repo listos: config global, proyecto, skill, launchd, el comando en
 // el PATH y una PR con el cerebro del repo. Cada paso es idempotente.
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
@@ -18,7 +10,6 @@ import { BRAIN_FILES, initBrain, loadBrain } from "../brain/brain.ts";
 import { claudeLoggedIn, doctor } from "../cli/doctor.ts";
 import { installLaunchd, plistPath } from "../cli/launchd.ts";
 import { gitRootOf, projectNameFor, updateGlobalConfig } from "../cli/project.ts";
-import { BIN } from "../cli/runs.ts";
 import { installSkill, skillUpToDate } from "../cli/skill.ts";
 import { flowrunnerHome, loadRepoConfig } from "../config/load.ts";
 import { ConfigError } from "../config/schemas.ts";
@@ -36,6 +27,7 @@ import { conTurno, turnoFile } from "../store/turno.ts";
 import { repoNode } from "../proc/node.ts";
 import { runProc, runShell, tail } from "../proc/proc.ts";
 import type { Deps, RunPaths } from "../runner/types.ts";
+import { resolvesToApp, selfUpdate } from "./app.ts";
 import { draftBrain, DRAFT_HEADING, type Progress, withoutDraft } from "./draft.ts";
 import { ciStepsVerifyMisses, type Finding, inferRepo } from "./infer.ts";
 
@@ -78,13 +70,15 @@ async function githubUser(env: NodeJS.ProcessEnv): Promise<string | undefined> {
 }
 
 /** La carpeta del PATH donde init deja el comando: ~/.local/bin, solo si ya está en el PATH. */
-function commandDir(env: NodeJS.ProcessEnv): string | undefined {
+export function commandDir(env: NodeJS.ProcessEnv): string | undefined {
   const dir = join(env.HOME ?? homedir(), ".local", "bin");
   return (env.PATH ?? "").split(":").includes(dir) ? dir : undefined;
 }
 
-async function onPath(env: NodeJS.ProcessEnv): Promise<boolean> {
-  return (await runShell("command -v flowrunner", { cwd: process.cwd(), env })).code === 0;
+/** El comando del PATH es el de la app, no el de un checkout. */
+function installedFromApp(env: NodeJS.ProcessEnv): boolean {
+  const dir = commandDir(env);
+  return dir !== undefined && resolvesToApp(join(dir, "flowrunner"), env);
 }
 
 /**
@@ -517,13 +511,12 @@ export async function init(path: string, deps: Deps, aplicar: boolean, progress:
       async () => `tick cada ${String((await installLaunchd(env)).cada_minutos)} minutos`,
     ],
     [
-      "comando flowrunner",
-      await onPath(env),
-      () => {
-        const dir = commandDir(env);
-        if (dir === undefined) throw new Error("agregá ~/.local/bin a tu PATH");
-        symlinkSync(BIN, join(dir, "flowrunner"));
-        return Promise.resolve(join(dir, "flowrunner"));
+      // El último: re-apunta desde la app el comando, el job de launchd y la skill de los pasos de arriba.
+      "flowrunner instalado en ~/.flowrunner/app",
+      installedFromApp(env),
+      async () => {
+        const updated = await selfUpdate(env);
+        return `${updated.app} (${updated.sha.slice(0, 7)}): ${updated.reapuntado.join(", ")}`;
       },
     ],
   ];

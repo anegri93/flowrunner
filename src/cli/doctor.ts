@@ -1,11 +1,14 @@
 // `flowrunner doctor`: qué le falta a esta máquina para correr runs, cada cosa con su arreglo.
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 import { readKeychainToken } from "../agent/auth.ts";
 import { loadGlobalConfig } from "../config/load.ts";
 import { ConfigError } from "../config/schemas.ts";
 import { ghAuthOk } from "../github/gh.ts";
 import { runProc } from "../proc/proc.ts";
+import { appBin, resolvesToApp } from "../setup/app.ts";
+import { commandDir } from "../setup/init.ts";
 import { plistPath } from "./launchd.ts";
 
 export interface Check {
@@ -66,6 +69,35 @@ export function nodeSupported(version: string): boolean {
   return Number(version.split(".")[0]) >= 24;
 }
 
+/** Si el plist del tick corre el bin de la app: lo escribe con la ruta real, sin links. */
+function plistRunsApp(plist: string, env: NodeJS.ProcessEnv): boolean {
+  const text = readFileSync(plist, "utf8");
+  const bin = appBin(env);
+  if (text.includes(bin)) return true;
+  try {
+    return text.includes(realpathSync(bin));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * El comando y el tick corren la app, no un checkout donde se cambia de rama (ADR 0020). El plugin
+ * de Orca no se revisa: su CLI no dice desde dónde lo cargó.
+ */
+export function appCheck(env: NodeJS.ProcessEnv): Check {
+  const dir = commandDir(env);
+  const plist = plistPath(env);
+  return {
+    nombre: "flowrunner corre desde ~/.flowrunner/app",
+    ok:
+      dir !== undefined &&
+      resolvesToApp(join(dir, "flowrunner"), env) &&
+      (!existsSync(plist) || plistRunsApp(plist, env)),
+    arreglo: "corré `flowrunner self-update`",
+  };
+}
+
 export async function doctor(env: NodeJS.ProcessEnv) {
   const checks: Check[] = [
     {
@@ -86,6 +118,7 @@ export async function doctor(env: NodeJS.ProcessEnv) {
       ok: existsSync(plistPath(env)),
       arreglo: "corré `flowrunner launchd install`",
     },
+    appCheck(env),
   ];
   return { ok: checks.every((c) => c.ok), checks };
 }

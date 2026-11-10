@@ -67,10 +67,12 @@ const write = (file_path: string, content: string) => ({
 describe("Fase 5 ensamblada", () => {
   // Si regresiona, una rama queda con sub-tasks a medias o un criterio rojo llega a revisar.
   test("dos en paralelo y una dependiente; AC-2 vuelve una vez y la rama queda verde y lineal", async () => {
+    // Las sesiones duran lo suficiente para superponerse aunque los worktrees se creen en fila con el
+    // turno de git (ADR 0019): con 200 ms, una máquina cargada las dejaba correr de a una.
     const scripts: Record<string, SimScript[]> = {
-      "ST-1": [{ calls: [write("src/a/csv.js", "export const csv = 1;\n")], delayMs: 200 }],
+      "ST-1": [{ calls: [write("src/a/csv.js", "export const csv = 1;\n")], delayMs: 1_500 }],
       "ST-2": [
-        { calls: [write("src/b/permiso.js", "export const status = 200;\n")], delayMs: 200 },
+        { calls: [write("src/b/permiso.js", "export const status = 200;\n")], delayMs: 1_500 },
         {
           calls: [
             {

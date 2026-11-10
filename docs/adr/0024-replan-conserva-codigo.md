@@ -35,7 +35,9 @@ funcionar.
    rechaza el plan; no se ignora en silencio. Para la regla de los pedidos cuentan los pedidos de la
    persona y el motivo de la detención que llevó al `rerun`, guardados con las candidatas: el engine
    reemplaza la instrucción por el motivo del gate en cada reintento. El texto de un gate rechazado no
-   cuenta: nombra sub-tasks porque las rechaza, no porque cambien. Si lo conservado cambió manifiestos
+   cuenta, ni en un reintento ni en la detención de planificar que lo repite: nombra sub-tasks porque
+   las rechaza, no porque cambien. Los criterios del gate corren con el turno del entorno, como en
+   verificar (ADR 0019): uno que tiene que pasar no puede chocar con otro run del proyecto. Si lo conservado cambió manifiestos
    o lockfiles, el setup se corre antes de sus criterios, como en verificar.
 4. **El índice de graft se reconstruye antes de la sesión** cuando la rama trae código de antes, como
    revisar lo reconstruye antes de revisar (ADR 0015: segundos). Sin eso, el planificador y

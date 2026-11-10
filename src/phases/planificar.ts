@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { loadBrain, type Brain } from "../brain/brain.ts";
+import { stateOf } from "../engine/engine.ts";
 import { isVerifyCommand, loadRepoConfig } from "../config/load.ts";
 import type { RepoConfig } from "../config/schemas.ts";
 import { existedAt, testsInScope, testsTouched, undeclared } from "../gates/existente.ts";
@@ -35,6 +36,7 @@ import { isTestFile } from "../tripwires/rules.ts";
 import { copyEnvFiles } from "./env-files.ts";
 import { runFixers } from "./fixers.ts";
 import { reinstalarSiCambiaron } from "./reinstalar.ts";
+import { conEntorno } from "./turno-entorno.ts";
 import { graftIndex, prepared, runFeature } from "./inputs.ts";
 import {
   conLosTests,
@@ -146,8 +148,13 @@ export const planificar: PhaseFn = async (ctx) => {
   }
   const replan = replanOf(ctx.events, action.instruccion);
   // Para la regla (c), lo que dijo la persona o la detención: los pedidos y el motivo del `rerun`. No
-  // el texto de un gate rechazado, que nombra sub-tasks porque las rechaza, no porque cambien.
-  const rerun = replanOf(ctx.events, undefined).motivo;
+  // el texto de un gate rechazado, que nombra sub-tasks porque las rechaza, no porque cambien: ni el de
+  // un reintento ni el de una detención de planificar, que lo repite.
+  const rehacer = ctx.events.findLastIndex((e) => e.tipo === "rehacer" && e.desde === "planificar");
+  const rerun =
+    rehacer >= 0 && stateOf(ctx.events.slice(0, rehacer)).fase === "planificar"
+      ? undefined
+      : replanOf(ctx.events, undefined).motivo;
   const textos = [...replan.pedidos, ...(rerun === undefined ? [] : [rerun])];
   const rama =
     previous === undefined
@@ -350,13 +357,13 @@ export const planificar: PhaseFn = async (ctx) => {
     const env = copyEnvFiles(ctx.state.repo, worktree, config.env_files);
     if (!env.ok) return { tipo: "falla", clase: "entorno", motivo: env.motivo };
     try {
-      // Lo conservado no vuelve a correr: sus criterios tienen que pasar ya con su código.
-      problems.push(
+      // Con el turno del entorno, como verificar: un criterio que tiene que pasar no puede chocar con
+      // los puertos o la base local de otro run del proyecto (ADR 0019).
+      const gate = await conEntorno(ctx, async () => [
+        // Lo conservado no vuelve a correr: sus criterios tienen que pasar ya con su código.
         ...(await checkCommandsPass(plan, worktree, deps.env, kept, (comando) =>
           isVerifyCommand(config, comando),
         )),
-      );
-      problems.push(
         // «verify en verde» pasa sobre la base, como debe: lo comprueba verificar, no este rojo. Un
         // criterio de lo conservado ya pasa: su código está. Uno compartido con lo nuevo tiene que fallar.
         ...(await checkCommandsFail(
@@ -369,7 +376,8 @@ export const planificar: PhaseFn = async (ctx) => {
               .filter((c) => c.comando === comando)
               .every((c) => kept.includes(c.subtarea)),
         )),
-      );
+      ]);
+      problems.push(...gate);
     } finally {
       env.remove();
     }

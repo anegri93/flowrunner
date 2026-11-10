@@ -11,6 +11,8 @@ import type { Deps, PhaseFn, RunPaths } from "../runner/types.ts";
 import type { NewEvent, Outcome, Phase } from "../store/events.ts";
 import { commitAll, resetHard } from "../git/git.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
+import { intentarTurno, soltarTurno, turnoFile } from "../store/turno.ts";
+import { stateOf } from "../engine/engine.ts";
 import { ramaAnterior } from "./conservar.ts";
 import { implementar } from "./implementar.ts";
 import { prepared } from "./inputs.ts";
@@ -532,6 +534,48 @@ describe("un replan conserva el código", { timeout: 30_000 }, () => {
       appendEvent(run.dir, { tipo: "rehacer", desde: "planificar" });
       expect(await fase(run, deps, "planificar", planificar)).toEqual({ tipo: "ok" });
       expect(Object.keys(readPlan(run).conservadas)).toContain("ST-1");
+    });
+
+    // Si regresiona, un `rerun --desde planificar` después de que planificar se detuvo por el gate toma
+    // el texto del gate (que nombra sub-tasks) como el motivo del replan, y ya no las puede conservar.
+    test("una detención de planificar no cuenta como motivo que nombra a la sub-task", async () => {
+      const { run, deps } = await implementado([SCRIPT_1, SCRIPT_2]);
+      appendEvent(run.dir, { tipo: "rehacer", desde: "planificar" });
+      const gate =
+        "el plan no pasó el gate:\n- ST-1 cambió su alcance (antes: src/s1; ahora: src/s1, src/otra): no se puede conservar";
+      for (let i = 0; i < 2; i++) {
+        appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+        appendEvent(run.dir, {
+          tipo: "accion_terminada",
+          fase: "planificar",
+          resultado: { tipo: "falla", clase: "gate", motivo: gate },
+        });
+      }
+      const halted = stateOf(readLog(run.dir).events);
+      expect(halted.status).toBe("detenido");
+      expect(halted.halt?.motivo).toContain("ST-1 cambió su alcance");
+      appendEvent(run.dir, { tipo: "rehacer", desde: "planificar" });
+      expect(await fase(run, deps, "planificar", planificar)).toEqual({ tipo: "ok" });
+      expect(Object.keys(readPlan(run).conservadas)).toContain("ST-1");
+    });
+
+    // Si regresiona, los criterios que tienen que pasar corren mientras otro run del proyecto usa los
+    // puertos o la base local, y una conservada sana se rechaza (ADR 0019).
+    test("los criterios del gate corren con el turno del entorno", async () => {
+      const { run, deps } = await implementado([SCRIPT_1, SCRIPT_2]);
+      appendEvent(run.dir, { tipo: "rehacer", desde: "planificar" });
+      const file = turnoFile(run.home, stateOf(readLog(run.dir).events).proyecto, "entorno");
+      const otro = intentarTurno(file, "OTRO-RUN");
+      expect(otro.tipo).toBe("tomado");
+      const suelta = setTimeout(() => soltarTurno(file, otro.dueño), 1_500);
+      try {
+        expect(await fase(run, deps, "planificar", planificar)).toEqual({ tipo: "ok" });
+      } finally {
+        clearTimeout(suelta);
+        soltarTurno(file, otro.dueño);
+      }
+      const avisos = readLog(run.dir).events.flatMap((e) => (e.tipo === "aviso" ? [e.texto] : []));
+      expect(avisos).toContain("esperando el turno del entorno: lo tiene OTRO-RUN");
     });
   });
 });

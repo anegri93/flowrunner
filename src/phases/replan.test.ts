@@ -704,7 +704,19 @@ describe("un replan conserva el código", { timeout: 30_000 }, () => {
             }
           : base;
       };
-      const { run, deps, worktree, base } = await implementado([SCRIPT_1, SCRIPT_2], project, unit);
+      // Conserva todas las candidatas: la rama que ve la sesión es la que chequea el gate, y validar_plan
+      // corre todo.
+      const todas: Plan = {
+        ...PLAN_1,
+        subtareas: PLAN_1.subtareas.map((t) => ({ ...t, conserva: true })),
+      };
+      const neutro: Outcome = { tipo: "pregunta", motivo: "algo no anda", unidades: ["ST-6"] };
+      const { run, deps, worktree, base } = await implementado(
+        [SCRIPT_1, { calls: [], output: todas }],
+        project,
+        unit,
+        neutro,
+      );
       expect(git(worktree, "diff", "--name-status", base, "HEAD", "--", "src/s1/")).toContain(
         "M\tsrc/s1/s1.test.mjs",
       );
@@ -712,8 +724,59 @@ describe("un replan conserva el código", { timeout: 30_000 }, () => {
       const validando = { ...deps, query: validandoAlFinal(deps.query, respuestas) };
       appendEvent(run.dir, { tipo: "rehacer", desde: "planificar" });
       expect(await fase(run, validando, "planificar", planificar)).toEqual({ tipo: "ok" });
-      expect(Object.keys(readPlan(run).conservadas)).toContain("ST-1");
+      expect(Object.keys(readPlan(run).conservadas)).toEqual(N.map((n) => `ST-${String(n)}`));
       expect(respuestas).toEqual([respuestaValidar([])]);
+    });
+
+    // Si regresiona, validar_plan le dice «ok» a un `conserva` que el gate rechaza, y el planificador
+    // lo descubre con un intento más: justo en un replan, donde cada intento cuesta más.
+    test("en un replan con un conserva inválido, validar_plan da el mismo problema que el gate", async () => {
+      const { run, deps } = await implementado([SCRIPT_1, MAL_ST1]);
+      const respuestas: string[] = [];
+      const validando = { ...deps, query: validandoAlFinal(deps.query, respuestas) };
+      appendEvent(run.dir, { tipo: "rehacer", desde: "planificar" });
+      const first = await fase(run, validando, "planificar", planificar);
+      const motivo = first.tipo === "falla" ? first.motivo : "";
+      expect(motivo).toContain("ST-1 cambió su alcance");
+      const problemas = motivo.replace(/^el plan no pasó el gate:\n- /, "").split("\n- ");
+      expect(respuestas).toHaveLength(1);
+      expect(respuestas[0]?.startsWith(respuestaValidar(problemas))).toBe(true);
+    });
+
+    // Si regresiona, validar_plan mira la rama con todas las candidatas y le marca al planificador un
+    // llamador que el gate no va a ver, porque saca de la rama el código que no se conserva: el
+    // planificador deforma el plan (suma ese archivo a un alcance) para conformar a la herramienta.
+    test("un llamador que vive solo en el código de una candidata que se saca no aparece en la respuesta", async () => {
+      const unit = (prompt: string): SimScript =>
+        /# Sub-task ST-6\b/.test(prompt) && !prompt.includes("src/s6b/")
+          ? {
+              calls: [{ tool: "Write", input: { file_path: "src/s6/s6.js", content: "foo();\n" } }],
+            }
+          : unitScript(prompt);
+      const conFoo: Plan = {
+        ...PLAN_2,
+        cambia_lo_existente: [
+          {
+            que: "foo devuelve otra cosa",
+            donde: "src/s1/s1.js:1",
+            criterio: "AC-1",
+            simbolo: "foo",
+          },
+        ],
+      };
+      const { run, deps, worktree } = await implementado(
+        [SCRIPT_1, { ...SCRIPT_2, output: conFoo }],
+        undefined,
+        unit,
+      );
+      expect(readFileSync(join(worktree, "src/s6/s6.js"), "utf8")).toBe("foo();\n");
+      const respuestas: string[] = [];
+      const validando = { ...deps, query: validandoAlFinal(deps.query, respuestas) };
+      appendEvent(run.dir, { tipo: "rehacer", desde: "planificar" });
+      expect(await fase(run, validando, "planificar", planificar)).toEqual({ tipo: "ok" });
+      expect(respuestas).toHaveLength(1);
+      expect(respuestas[0]).not.toContain("foo cambia");
+      expect(respuestas[0]).toContain("ST-6");
     });
 
     // Si regresiona, un `rerun --desde planificar` después de que planificar se detuvo por el gate toma

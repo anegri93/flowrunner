@@ -28,13 +28,26 @@ export interface EstaticosInput {
   readonly esVerify: (comando: string) => boolean;
   /** En un replan con `conserva: true` (ADR 0024): sus problemas van al final. */
   readonly conserva?: ConservaInput;
+  /**
+   * `false` deja afuera lo que mira la rama: los llamadores y los tests. Para `validar_plan` cuando la
+   * rama que ve la sesión no es la que va a chequear el gate, que antes saca lo que no se conserva.
+   */
+  readonly rama?: boolean;
 }
 
 /** Los problemas del plan que se ven sin correr nada, en el orden del gate. */
 export async function chequeosEstaticos(input: EstaticosInput): Promise<string[]> {
-  const { plan, feature, worktree, base, desde, config, env, esVerify } = input;
+  const { plan, feature, worktree, config, esVerify } = input;
   const problems = checkPlanShape(plan, feature, worktree, config, esVerify);
-  problems.push(...(await callersOutOfScope(plan, worktree, env)));
+  if (input.rama !== false) problems.push(...(await chequeosDeRama(input)));
+  if (input.conserva !== undefined) problems.push(...checkConserva(input.conserva));
+  return problems;
+}
+
+/** Lo que depende del código de la rama: quién llama a lo que cambia y qué tests se escribieron. */
+async function chequeosDeRama(input: EstaticosInput): Promise<string[]> {
+  const { plan, worktree, base, desde, config, env } = input;
+  const problems = await callersOutOfScope(plan, worktree, env);
   const changes = await changesSince(worktree, desde, env);
   const written = changes.filter((c) => c.status !== "borrado").map((c) => c.path);
   if (written.length === 0) problems.push("planificar no escribió ningún test");
@@ -58,6 +71,5 @@ export async function chequeosEstaticos(input: EstaticosInput): Promise<string[]
   for (const declared of plan.tests.filter((t) => !written.includes(t))) {
     problems.push(`el plan declara el test ${declared}, pero no está escrito`);
   }
-  if (input.conserva !== undefined) problems.push(...checkConserva(input.conserva));
   return problems;
 }

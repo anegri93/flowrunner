@@ -17,7 +17,7 @@ import { loadBrain, type Brain } from "../brain/brain.ts";
 import { stateOf } from "../engine/engine.ts";
 import { isVerifyCommand, loadRepoConfig } from "../config/load.ts";
 import type { RepoConfig } from "../config/schemas.ts";
-import { checkConserva, conservadas, type ConservaInput } from "../gates/conserva.ts";
+import { checkConserva, conservadas } from "../gates/conserva.ts";
 import { chequeosEstaticos } from "../gates/estaticos.ts";
 import {
   checkCommandsFail,
@@ -46,11 +46,12 @@ import { graftIndex, prepared, runFeature, type Prepared } from "./inputs.ts";
 import {
   commitsDeLaRama,
   conLosTests,
+  conservaDelPlan,
   enAnterior,
-  llamadoresDelPlan,
   ramaAnterior,
   reaplicar,
   soltarAnterior,
+  type BaseConserva,
   type RamaAnterior,
   type Reaplicado,
 } from "./conservar.ts";
@@ -321,6 +322,7 @@ function servidores(
   ctx: PhaseContext,
   comun: Comun,
   inicioSesion: string,
+  conserva: BaseConserva,
 ): Record<string, McpServerConfig> {
   const { worktree, config, feature, esVerify } = comun;
   return {
@@ -333,7 +335,26 @@ function servidores(
       config,
       env: ctx.deps.env,
       esVerify,
+      candidatas: conserva.candidatas.map((c) => c.id),
+      conservaDe: (plan) => conservaDelPlan(plan, conserva),
     }),
+  };
+}
+
+/** Con qué arman el `conserva` de un plan el gate y `validar_plan` en este intento: lo mismo para los dos. */
+function baseConserva(
+  ctx: PhaseContext,
+  comun: Comun,
+  intento: Pick<Intento, "previous" | "armada" | "rama" | "sinIndice">,
+): BaseConserva {
+  return {
+    anteriores: intento.previous?.subtareas ?? [],
+    candidatas: intento.armada.candidatas,
+    pedidos: intento.rama.textos,
+    worktree: comun.worktree,
+    indexDir: graftIndex(ctx.run),
+    sinIndice: intento.sinIndice,
+    env: ctx.deps.env,
   };
 }
 
@@ -420,7 +441,12 @@ async function intentoNuevo(ctx: PhaseContext, comun: Comun, sessionId: string):
   const result = await runSession(
     {
       ...comun.spec,
-      mcpServers: servidores(ctx, comun, inicioSesion),
+      mcpServers: servidores(
+        ctx,
+        comun,
+        inicioSesion,
+        baseConserva(ctx, comun, { previous, armada, rama, sinIndice }),
+      ),
       nombre,
       sessionId,
       prompt: render("planificar", {
@@ -481,7 +507,12 @@ async function intentoRetomado(
   const result = await runSession(
     {
       ...comun.spec,
-      mcpServers: servidores(ctx, comun, inicioSesion),
+      mcpServers: servidores(
+        ctx,
+        comun,
+        inicioSesion,
+        baseConserva(ctx, comun, { previous, armada, rama, sinIndice: undefined }),
+      ),
       nombre: sessionName(run, "planificar"),
       resume: sesion.sessionId,
       prompt: mensajeRetomado(motivo),
@@ -561,15 +592,9 @@ async function gateYCierre(ctx: PhaseContext, comun: Comun, intento: Intento): P
   let invalid: string[] = [];
   let nuevos = armada.nuevos;
   let inicioTests = inicioSesion;
-  let conserva: ConservaInput | undefined;
-  if (plan.subtareas.some((t) => t.conserva === true)) {
-    conserva = {
-      plan,
-      anteriores: previous?.subtareas ?? [],
-      candidatas: armada.candidatas,
-      pedidos: rama.textos,
-      ...(await llamadoresDelPlan(plan, worktree, graftIndex(run), sinIndice, deps.env)),
-    };
+  // Sobre el worktree que vio la sesión, como `validar_plan`.
+  const conserva = await conservaDelPlan(plan, baseConserva(ctx, comun, intento));
+  if (conserva !== undefined) {
     // Antes del resto: decide qué queda en la rama. Sus problemas los suma `chequeosEstaticos`.
     invalid = checkConserva(conserva);
     if (invalid.length === 0) kept = conservadas(conserva);

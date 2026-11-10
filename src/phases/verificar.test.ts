@@ -224,6 +224,32 @@ describe("verificar", () => {
     expect(outcome).toMatchObject({ tipo: "vuelve", unidades: ["ST-2"] });
   });
 
+  // Regresión de VF-6: AC-12 («verify.sh en verde») era de ST-6, y el Prettier de un archivo de ST-3
+  // volvía a ST-6, que no lo podía tocar, hasta agotar las vueltas con el código terminado.
+  test("un criterio que es el verify del repo se atribuye por archivo, no a su sub-task", async () => {
+    const deps = testDeps();
+    const conVerify: Plan = {
+      ...plan,
+      criterios: [
+        ...plan.criterios,
+        { id: "AC-3", comando: "./.flowrunner/verify.sh", subtarea: "ST-1" },
+      ],
+    };
+    const { run, featureWt } = await plannedRun(conVerify, TESTS, deps, {
+      verify: [
+        "if [ -f src/permiso.js ]; then",
+        '  echo "[warn] src/permiso.js"',
+        '  echo "[warn] Code style issues found in the above file. Run Prettier with --write to fix."',
+        "  exit 1",
+        "fi",
+      ].join("\n"),
+    });
+    writeFiles(featureWt, { "src/csv.js": "x", "src/permiso.js": "403" });
+    await commitAll(featureWt, "feat: implementado", {}, deps.env);
+    const outcome = await verificar(contextFor(run, "verificar", deps));
+    expect(outcome).toMatchObject({ tipo: "vuelve", unidades: ["ST-2"] });
+  });
+
   // Regresión: en CUENTAS-1, dos seeds que llamaban a una función que cambió rompían el typecheck y no
   // estaban en ningún alcance. Devolver trabajo a implementar se iba a repetir hasta agotar intentos.
   test("verify rojo solo en archivos sin dueño: se detiene con el archivo y cómo replanificar", async () => {
@@ -260,6 +286,22 @@ describe("namedFiles", () => {
     expect((await namedFiles(output, repo, process.env)).sort()).toEqual([
       "apps/api/src/seeds/seed-nomina.ts",
       "apps/api/src/usuarios/usuarios.service.ts",
+    ]);
+  });
+
+  // Regresión de VF-6: Prettier escribe `[warn] archivo` sin línea, y el rojo volvía a todas.
+  test("reconoce un archivo solo en su línea, como lo muestran Prettier y ESLint", async () => {
+    const repo = repoWith({ "src/carpeta.ts": "x\n", "src/b.ts": "x\n", "README.md": "x\n" });
+    const output = [
+      "[warn] src/carpeta.ts",
+      "[warn] Code style issues found in the above file. Run Prettier with --write to fix.",
+      `${repo}/src/b.ts`,
+      "  3:1  error  falta punto y coma",
+      "README.md sin línea no cuenta",
+    ].join("\n");
+    expect((await namedFiles(output, repo, process.env)).sort()).toEqual([
+      "src/b.ts",
+      "src/carpeta.ts",
     ]);
   });
 });

@@ -1,14 +1,16 @@
 // El loop del run: lee el log, pide la siguiente acción al engine y la ejecuta con su fase.
 // Cada acción queda entre `accion_iniciada` y `accion_terminada`; una iniciada sin terminar se rehace.
 import { nextAction, stateOf, type RunState, type RunStatus } from "../engine/engine.ts";
+import { esFallaDeRed } from "../engine/motivos.ts";
 import { avisoDeEstado, cambiosDelPlan } from "../notify/estado.ts";
 import { outcomeSchema, type Outcome } from "../store/events.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
 import { TurnoAgotadoError } from "../store/turno.ts";
 import type { Deps, PhaseRegistry, RunPaths } from "./types.ts";
 
-/** Espera antes de reintentar una falla de infraestructura: 5 s, 20 s. */
-export function infraBackoffMs(retry: number): number {
+/** Espera antes de reintentar: una falla de red, 30 s, 2 min y 5 min; otra infraestructura, 5 s y 20 s. */
+export function infraBackoffMs(retry: number, red = false): number {
+  if (red) return [30_000, 120_000, 300_000][Math.min(Math.max(retry, 1), 3) - 1] ?? 300_000;
   return 5_000 * 4 ** Math.max(0, retry - 1);
 }
 
@@ -70,8 +72,14 @@ export async function runUntilStop(
       if (aviso !== undefined) deps.notify(aviso.title, aviso.body);
       return final;
     }
-    if (outcome.tipo === "falla" && outcome.clase === "infra") {
-      await deps.sleep(infraBackoffMs(state.infra + 1));
+    // Solo si el engine la reintenta: la falla que agotó los reintentos no espera para detenerse, y el
+    // run no retiene su lugar durante una espera que no lleva a nada.
+    if (
+      outcome.tipo === "falla" &&
+      outcome.clase === "infra" &&
+      nextAction(stateOf(readLog(run.dir).events), opts).tipo === "fase"
+    ) {
+      await deps.sleep(infraBackoffMs(state.infra + 1, esFallaDeRed(outcome.motivo)));
     }
   }
 }

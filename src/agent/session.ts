@@ -13,6 +13,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { ModelChoice } from "../config/schemas.ts";
+import { LOGIN_MISSING, TOKEN_REJECTED } from "../engine/motivos.ts";
 import type { Deps, RunPaths } from "../runner/types.ts";
 import type { NewEvent, Phase } from "../store/events.ts";
 import { AuthError, resolveAuth } from "./auth.ts";
@@ -107,11 +108,6 @@ function closeQuery(stream: AsyncIterable<SDKMessage>, messages: AsyncIterator<S
   }
   void messages.return?.().catch(() => undefined);
 }
-
-const TOKEN_REJECTED =
-  "Claude rechazó la credencial de la sesión: revisá el token del Keychain con `flowrunner doctor`";
-const LOGIN_MISSING =
-  "Claude Code no encontró tu sesión: corré `claude auth status` en la terminal y, si no hay sesión, abrí `claude` y corré `/login`";
 
 export async function runSession<T>(
   spec: SessionSpec<T>,

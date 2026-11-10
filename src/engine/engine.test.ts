@@ -9,6 +9,7 @@ import {
   type RunEvent,
 } from "../store/events.ts";
 import { MAX_ATTEMPTS, nextAction, stateOf, type RunState } from "./engine.ts";
+import { TOKEN_REJECTED } from "./motivos.ts";
 
 const AT = "2026-11-07T10:00:00.000Z";
 const created: RunEvent = {
@@ -247,6 +248,52 @@ describe("transiciones", () => {
     const base = [upTo("preparar", "planificar", "aprobar", "implementar", "verificar", "revisar")];
     expect(state(...base, infra, infra).status).toBe("en_curso");
     expect(state(...base, infra, infra, infra).status).toBe("detenido");
+  });
+
+  describe("reintentos de red y credenciales", () => {
+    const R = "R1";
+    const VF6 =
+      "git fetch --quiet origin falló: fatal: unable to access 'https://github.com/anegri93/videoFactory.git/': Could not resolve host: github.com";
+    const commands = (s: RunState) => s.halt?.opciones.map((o) => o.comando);
+
+    // Si regresiona, un corte de red de menos de 7 minutos vuelve a matar el run (primer VF-6).
+    test("un corte de red se reintenta tres veces y a la cuarta detiene, con resume", () => {
+      const cut = done("preparar", { tipo: "falla", clase: "infra", motivo: VF6 });
+      const three = state(cut, cut, cut);
+      expect(three.status).toBe("en_curso");
+      expect(three.infra).toBe(3);
+      const four = state(cut, cut, cut, cut);
+      expect(four.status).toBe("detenido");
+      expect(four.halt?.motivo).toContain("sin conexión después de 3 reintentos");
+      expect(four.halt?.opciones[0]?.comando).toBe(`flowrunner resume ${R}`);
+    });
+
+    // Si regresiona, cualquier falla de infraestructura espera 7,5 minutos antes de detenerse.
+    test("una falla de infraestructura que no es de red sigue deteniendo a la tercera", () => {
+      const motivo = "la sesión planificar-1 terminó sin resultado";
+      const fail = done("preparar", { tipo: "falla", clase: "infra", motivo });
+      expect(state(fail, fail)).toMatchObject({ status: "en_curso", infra: 2 });
+      const three = state(fail, fail, fail);
+      expect(three.status).toBe("detenido");
+      expect(three.halt?.motivo).toBe(`preparar: falla de infraestructura repetida: ${motivo}`);
+    });
+
+    // Si regresiona, el run detenido ofrece `resume`, que vuelve a fallar sin arreglar la credencial.
+    test("una credencial rechazada detiene enseguida, con flowrunner doctor primero", () => {
+      const s = state(
+        ok("preparar"),
+        done("planificar", { tipo: "falla", clase: "entorno", motivo: TOKEN_REJECTED }),
+      );
+      expect(s.status).toBe("detenido");
+      expect(s.infra).toBe(0);
+      expect(s.halt?.siguiente).toBe("flowrunner doctor");
+      expect(commands(s)).toEqual([
+        "flowrunner doctor",
+        `flowrunner resume ${R}`,
+        `flowrunner abort ${R}`,
+      ]);
+      expect(s.halt?.opciones[0]?.que).toBe("revisá la credencial; después retomá el run");
+    });
   });
 
   test("entregar deja el run entregado y solo tick corre aprender", () => {

@@ -446,8 +446,11 @@ export type PhaseName = (typeof STATIONS)[number];
 
 /** Una decisión que la persona toma desde el panel. El worker la traduce a un comando fijo. */
 export type Decision =
-  /** `aceptoCambios`: la persona vio lo que el plan cambia de lo existente y lo acepta. */
-  | { readonly accion: "aprobar"; readonly aceptoCambios?: true }
+  /**
+   * `plan`: la versión del plan que la persona abrió (`planVersion`); el worker no aprueba si cambió.
+   * `aceptoCambios`: la persona vio lo que el plan cambia de lo existente y lo acepta.
+   */
+  | { readonly accion: "aprobar"; readonly plan: string; readonly aceptoCambios?: true }
   | { readonly accion: "cambios"; readonly motivo: string }
   | { readonly accion: "reanudar" }
   | { readonly accion: "rehacer"; readonly desde: PhaseName }
@@ -509,6 +512,10 @@ export function decisionsFor(run: Run): Decision["accion"][] {
       return [];
   }
 }
+
+/** La versión del plan de un run: cambia cada vez que planificar vuelve a correr. */
+export const planVersion = (run: Run): string =>
+  `${run.id}#${String(run.fases.find((p) => p.fase === "planificar")?.sesiones.length ?? 0)}`;
 
 /**
  * La fase desde la que la detención ofrece rehacer: `rerun <id> --desde verificar`, en sus opciones o,

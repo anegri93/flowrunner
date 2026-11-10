@@ -63,8 +63,9 @@ Recién sigue cuando la persona elige una. Es el contrato C1 a C5 del plan de ra
    un `rerun` con cambios sin commitear se niegan: entregarían una rama sin el cambio que se
    verificó. Las rutas protegidas (`ALWAYS_PROTECTED`) no se chequean: protegen de los agentes, no de
    la persona, y arreglar a mano el `CLAUDE.md` de VF-6 es para lo que existe `fix --yo`.
-9. **`--origen terminal|claude|orca`** en `fix` y `accept`, por defecto `terminal`: la skill pasa
-   `claude` y el panel de Orca, `orca`. Queda en el evento.
+9. **`--origen terminal|claude|orca`** en `fix` y `accept`, y desde la PR 08 también en `approve` y
+   `changes`, por defecto `terminal`: la skill pasa `claude` y el panel de Orca, `orca`. Queda en el
+   evento.
 10. **`accept-untested` queda como comando propio:** sigue escribiendo `sin_probar_aceptado`, con el
     mismo efecto que `accept` sobre una detención por criterios sin probar.
 
@@ -143,6 +144,19 @@ reintentos de infraestructura esperaban 5 y 20 s.
 
 Detalle en `docs/plan-de-raiz/pr-07-reintentos-de-red.md`.
 
+### De dónde vino cada decisión
+
+En VF-6 hubo cuatro aprobaciones, entre 6 y 64 segundos después de que el plan quedó listo, y ninguna
+salió del chat de Claude Code; `aprobado` no decía de dónde venía. El origen de cada decisión queda en
+el evento y en el informe: `aprobado` y `cambios_pedidos` suman `origen`, opcional para que un log
+viejo se lea igual (C8), y el informe suma «Tus decisiones», con la hora, el origen y cuánto tardó
+cada una desde que el run esperó, solo con las que el engine aplicó. Un evento sin `origen` se muestra
+como «desde un origen desconocido». No va a la PR. En Orca, Aprobar se habilita recién después de
+abrir en el panel el plan de ese run, en su versión de ahora: un pedido de cambios vuelve a correr
+planificar, y el plan nuevo se abre otra vez (D3).
+
+Detalle en `docs/plan-de-raiz/pr-08-origen-y-boton-orca.md`.
+
 ## Alternativas descartadas
 
 - **Un estado nuevo, `pregunta`.** Todo lo que lee el estado (Orca, la skill, `tick`, el aviso, la
@@ -184,3 +198,7 @@ Detalle en `docs/plan-de-raiz/pr-07-reintentos-de-red.md`.
   gastar sus intentos, cuatro cortes detienen con `resume`, lo integrado no se rehace al reintentar ni
   al retomar, un límite le gana a un corte, un límite no gasta intentos, la entrada sigue a través de
   la cola, y un run viejo reintenta como antes.
+- `test/approval.int.test.ts`: `approve` y `changes` guardan su origen, y un origen inválido sale 1;
+  `src/report/report.test.ts`: «Tus decisiones», con su origen y su demora, solo con las aplicadas.
+- Orca, `panel.test.tsx`: Aprobar deshabilitado hasta abrir el plan, otra vez después de un replan,
+  y recordado al recargar el panel; `runs.test.ts`, la versión del plan.

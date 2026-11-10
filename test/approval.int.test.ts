@@ -1,6 +1,7 @@
 // T4.3: el run espera la aprobación sin proceso; plan, approve y changes desde el CLI real.
 import { describe, expect, test } from "vitest";
 import { planViewSchema } from "../src/cli/approval.ts";
+import { readLog } from "../src/store/run-log.ts";
 import { runCli } from "./helpers/cli.ts";
 import { lockPid, waitFor } from "./helpers/runs.ts";
 import { FEATURE, PLAN, WRITE_TEST } from "./helpers/plan-fixtures.ts";
@@ -114,6 +115,51 @@ describe("aprobar", () => {
       "sub-tasks que ya no están: ST-1 Serializador CSV",
     );
   });
+
+  // Si regresiona, no se puede saber si una aprobación vino de la terminal, de Claude o del botón de
+  // Orca: en VF-6 hubo cuatro, a segundos del plan listo, y ninguna dice de dónde salió.
+  test("approve y changes guardan su origen; sin --origen es terminal", async () => {
+    const w = simWorld({
+      real: ["preparar", "planificar", "aprobar"],
+      scripts: [
+        { calls: [WRITE_TEST], output: PLAN },
+        { calls: [], output: PLAN },
+      ],
+      feature: FEATURE,
+      project: { config: { setup: "true", tests_globs: ["tests/**"] } },
+    });
+    const id = w.launch();
+    const waiting = (n: number) =>
+      waitFor(
+        `esperando, vuelta ${String(n)}`,
+        () =>
+          w.state(id).status === "esperando_aprobacion" &&
+          w.prompts().split("Sos el planificador").length - 1 === n,
+        60_000,
+      );
+    await waiting(1);
+    expect(runCli(["changes", id, "x"], w.env).status).toBe(0);
+    await waiting(2);
+    expect(runCli(["approve", id, "--origen", "orca"], w.env).status).toBe(0);
+    const decided = readLog(w.dir(id)).events.filter(
+      (e) => e.tipo === "cambios_pedidos" || e.tipo === "aprobado",
+    );
+    expect(decided).toMatchObject([
+      { tipo: "cambios_pedidos", motivo: "x", origen: "terminal" },
+      { tipo: "aprobado", origen: "orca" },
+    ]);
+  });
+
+  test("un origen inválido sale 1 y dice cuáles valen", async () => {
+    const w = world();
+    const id = w.launch();
+    await waitFor("esperando", () => w.state(id).status === "esperando_aprobacion", 60_000);
+    const invalid = runCli(["approve", id, "--origen", "web"], w.env);
+    expect(invalid.status).toBe(1);
+    expect(invalid.stderr).toContain("--origen tiene que ser terminal, claude u orca");
+    expect(w.state(id).status).toBe("esperando_aprobacion");
+    expect(readLog(w.dir(id)).events.some((e) => e.tipo === "aprobado")).toBe(false);
+  });
 });
 
 describe("aprobar un plan que cambia lo existente", () => {
@@ -151,6 +197,16 @@ describe("aprobar un plan que cambia lo existente", () => {
     expect(plain.stderr).toContain("hoy el alta rechaza un correo de otro dominio");
     expect(plain.stderr).toContain("--acepto-cambios");
     expect(w.state(id).status).toBe("esperando_aprobacion");
+    // El comando que sugiere conserva el origen: si no, la aprobación de Claude queda como terminal.
+    const fromClaude = runCli(["approve", id, "--origen", "claude"], w.env);
+    expect(fromClaude.status).toBe(1);
+    expect(fromClaude.stderr).toContain(
+      `flowrunner approve ${id} --acepto-cambios --origen claude`,
+    );
+    // El de Orca, no: el panel lo muestra a la persona, que lo corre en la terminal.
+    const fromOrca = runCli(["approve", id, "--origen", "orca"], w.env);
+    expect(fromOrca.stderr).toContain(`flowrunner approve ${id} --acepto-cambios`);
+    expect(fromOrca.stderr).not.toContain("--origen orca");
 
     expect(runCli(["approve", id, "--acepto-cambios"], w.env).status).toBe(0);
   });

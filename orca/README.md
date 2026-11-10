@@ -21,6 +21,11 @@ como `flowrunner watch`, pensada para el ancho angosto de la barra:
   detenido o rehacerlo desde la fase que sugiere el motivo, y «Aprender ahora» en un run con la PR
   abierta, para no esperar el chequeo de cada 10 minutos después de mergear. Aprobar, reanudar y
   rehacer piden confirmación.
+- Aprobar se habilita después de abrir el plan (el botón Plan o el link de la etapa Aprobar). Un plan
+  corregido se vuelve a abrir. Abrirlo con `flowrunner plan` o desde Claude no cuenta, y el panel lo
+  recuerda aunque lo recargues. Si el plan cambió desde que lo abriste, el panel no lo aprueba y te
+  pide abrirlo de nuevo. Aprobar, pedir cambios, arreglar, arreglarlo a mano y seguir igual llegan a
+  flowrunner con `--origen orca`.
 - Si el plan cambia lo que ya existe, la tarjeta lo avisa y la pestaña del plan lo pone arriba de
   todo. Aprobar muestra cada cambio, con dónde está y qué criterio lo pide, y el botón pasa a ser
   «Acepto los cambios y apruebo», que aprueba con `--acepto-cambios`. Si alguno no va, pedí cambios.

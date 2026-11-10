@@ -11,6 +11,7 @@ import {
   parseWatch,
   PHASES,
   planMarkdown,
+  planVersion,
   SESSION_NAME,
   stepsMarkdown,
   type Decision,
@@ -103,17 +104,18 @@ function personText(value: unknown, falta: string, largo: string): string {
 /** La decisión como argumentos de un comando fijo de flowrunner; nada del panel llega sin validar. */
 export function decisionArgs(id: string, decision: Decision): string {
   switch (decision.accion) {
+    // Aprobar y pedir cambios también dicen que vinieron de Orca (ADR 0023).
     case "aprobar":
       return decision.aceptoCambios === true
-        ? `approve ${quote(id)} --acepto-cambios`
-        : `approve ${quote(id)}`;
+        ? `approve ${quote(id)} --acepto-cambios --origen orca`
+        : `approve ${quote(id)} --origen orca`;
     case "cambios": {
       const motivo = personText(
         decision.motivo,
         "falta el motivo de los cambios",
         "el motivo es demasiado largo",
       );
-      return `changes ${quote(id)} ${quote(motivo)}`;
+      return `changes ${quote(id)} ${quote(motivo)} --origen orca`;
     }
     case "reanudar":
       return `resume ${quote(id)}`;
@@ -375,10 +377,27 @@ export default function activate(orca: OrcaWorkerApi): void {
     }
   });
 
+  /**
+   * Aprobar solo si el plan sigue en la versión que la persona abrió: el panel puede tener una foto
+   * vieja, oculto o con una lectura que falla, mientras otro pide cambios y planificar termina (D3).
+   */
+  async function samePlan(id: string, plan: unknown): Promise<void> {
+    if (typeof plan !== "string") throw new Error("falta la versión del plan que abriste");
+    const run = (await watch()).find((r) => r.id === id);
+    if (run === undefined || run.status !== "esperando_aprobacion")
+      throw new Error(`el run ${id} ya no espera aprobación`);
+    if (planVersion(run) !== plan)
+      throw new Error(
+        `el plan de ${run.clave} cambió desde que lo abriste: abrilo de nuevo antes de aprobar`,
+      );
+  }
+
   orca.panels.handle("flowrunner.decidir", async ({ run: id, decision }) => {
     let args: string;
     try {
-      args = decisionArgs(runId(id), decision);
+      const checked = runId(id);
+      args = decisionArgs(checked, decision);
+      if (decision.accion === "aprobar") await samePlan(checked, decision.plan);
     } catch (error) {
       return { ok: false, mensaje: error instanceof Error ? error.message : String(error) };
     }

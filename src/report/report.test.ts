@@ -352,3 +352,92 @@ test("el informe y la PR listan lo que aceptaste, con su fase y su motivo", () =
   expect(pr).toContain(aviso);
   expect(buildReport([created], paths)).not.toContain("Lo que aceptaste al seguir");
 });
+
+/** Un evento a una hora fija del 9/11, en UTC: la demora se mide entre dos de estos. */
+const atHour = (e: NewEvent, hora: string): RunEvent => ({ ...e, at: `2026-11-09T${hora}.000Z` });
+/** Un run que llegó a esperar tu aprobación a las 01:07:36. */
+const waitingForYou = (): RunEvent[] => [
+  created,
+  ...step("preparar", { tipo: "ok" }),
+  ...step("planificar", { tipo: "ok" }),
+  atHour({ tipo: "accion_iniciada", fase: "aprobar" }, "01:07:35"),
+  atHour({ tipo: "accion_terminada", fase: "aprobar", resultado: { tipo: "espera" } }, "01:07:36"),
+];
+
+// Si regresiona, no se puede saber de dónde vino una aprobación ni cuánto se miró el plan antes: en
+// VF-6 hubo cuatro, entre 6 y 64 s después del plan listo, y ninguna decía si salió de Orca.
+test("el informe dice de dónde vino cada decisión y cuánto tardó", () => {
+  const fromOrca = [
+    ...waitingForYou(),
+    atHour({ tipo: "aprobado", cambios_aceptados: 7, origen: "orca" }, "01:07:51"),
+  ];
+  const report = buildReport(fromOrca, run);
+  expect(report).toContain("## Tus decisiones");
+  expect(report).toContain(
+    "aprobaste el plan desde orca, 15 s después de que te esperó (7 cambios aceptados)",
+  );
+  // Es para la persona: la PR no lo lleva.
+  expect(prBody(fromOrca, run)).not.toContain("Tus decisiones");
+  // Un log de antes de esta PR no tiene `origen`.
+  const old = [...waitingForYou(), atHour({ tipo: "aprobado" }, "01:07:51")];
+  expect(buildReport(old, run)).toContain("aprobaste el plan desde un origen desconocido");
+  expect(buildReport(waitingForYou(), run)).not.toContain("Tus decisiones");
+});
+
+// Si regresiona, el informe lista como tuya una respuesta que el run ignoró porque otra llegó antes, o
+// mide la demora de una respuesta a una pregunta desde una espera que no era la suya.
+test("Tus decisiones lista solo las que el run tomó, con la demora desde que te esperó", () => {
+  const events = [
+    { ...waitingForYou()[0], vueltas: 0 } as RunEvent,
+    ...waitingForYou().slice(1),
+    atHour(
+      { tipo: "cambios_pedidos", motivo: "separá la validación", origen: "claude" },
+      "01:07:37",
+    ),
+    // Llegó cuando el run ya planificaba de nuevo: el engine la ignoró.
+    atHour({ tipo: "aprobado", origen: "orca" }, "01:07:40"),
+    atHour({ tipo: "accion_iniciada", fase: "planificar" }, "01:08:00"),
+    atHour({ tipo: "accion_terminada", fase: "planificar", resultado: { tipo: "ok" } }, "01:10:00"),
+    atHour({ tipo: "accion_iniciada", fase: "aprobar" }, "01:10:01"),
+    atHour(
+      { tipo: "accion_terminada", fase: "aprobar", resultado: { tipo: "espera" } },
+      "01:10:02",
+    ),
+    atHour({ tipo: "aprobado", origen: "terminal" }, "01:11:06"),
+    atHour({ tipo: "accion_iniciada", fase: "implementar" }, "01:11:07"),
+    atHour(
+      { tipo: "accion_terminada", fase: "implementar", resultado: { tipo: "ok" } },
+      "01:20:00",
+    ),
+    atHour({ tipo: "accion_iniciada", fase: "verificar" }, "01:20:01"),
+    atHour(
+      {
+        tipo: "accion_terminada",
+        fase: "verificar",
+        resultado: { tipo: "vuelve", unidades: ["ST-1"], motivo: "AC-3 en rojo" },
+      },
+      "01:21:00",
+    ),
+    atHour(
+      { tipo: "aceptado", fase: "verificar", motivo: "AC-3 es flaky", origen: "orca" },
+      "01:21:03",
+    ),
+    // La segunda respuesta a la misma pregunta: el run ya estaba en revisar.
+    atHour(
+      { tipo: "aceptado", fase: "verificar", motivo: "la segunda", origen: "claude" },
+      "01:21:09",
+    ),
+  ];
+  const section = buildReport(events, run).split("## Tus decisiones")[1]?.split("\n## ")[0] ?? "";
+  const lines = section.trim().split("\n");
+  expect(lines).toHaveLength(3);
+  expect(lines[0]).toMatch(
+    /^- \d\d:\d\d:\d\d · pediste cambios desde claude, 1 s después de que te esperó: «separá la validación»$/,
+  );
+  expect(lines[1]).toMatch(
+    /· aprobaste el plan desde terminal, 1 min 4 s después de que te esperó$/,
+  );
+  expect(lines[2]).toMatch(
+    /· aceptaste seguir con verificar en rojo desde orca, 3 s después de que te esperó: «AC-3 es flaky»$/,
+  );
+});

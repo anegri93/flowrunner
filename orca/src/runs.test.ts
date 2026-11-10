@@ -12,6 +12,7 @@ import {
   offers,
   parseWatch,
   planMarkdown,
+  planVersion,
   stepsMarkdown,
   rerunPhase,
   runChip,
@@ -280,4 +281,21 @@ test("una salida que no es JSON da un error legible", () => {
   assert.throws(() => parseWatch("zsh: command not found: flowrunner"), /no devolvió JSON/);
   assert.equal(tokenCount(1_000_000), "1M");
   assert.equal(duration(3_725), "1h02m");
+});
+
+// Si regresiona, aprobar un plan corregido no pide abrirlo: el panel lo confunde con el que ya viste.
+test("la versión del plan cambia cuando planificar vuelve a correr", () => {
+  const piz3 = byKey("PIZ-3");
+  const planificar = piz3.fases.find((p) => p.fase === "planificar");
+  assert.ok(planificar !== undefined);
+  assert.equal(planificar.sesiones.length, 1);
+  const replanned: Run = {
+    ...piz3,
+    fases: piz3.fases.map((p) =>
+      p.fase === "planificar" ? { ...p, sesiones: [...p.sesiones, ...p.sesiones] } : p,
+    ),
+  };
+  assert.notEqual(planVersion(replanned), planVersion(piz3));
+  // Un snapshot sin sesiones de planificar, de un flowrunner viejo, también tiene versión.
+  assert.equal(planVersion({ ...piz3, fases: [] }), `${piz3.id}#0`);
 });

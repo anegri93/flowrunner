@@ -17,6 +17,7 @@ import { git } from "../git/git.ts";
 import { prepared } from "../phases/inputs.ts";
 import { planChanges, previousDir } from "../phases/plan-anterior.ts";
 import { readPlan, readPlanAt } from "../phases/planificar.ts";
+import type { Origen } from "../store/events.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
 import { listRunIds, loadState, runPaths } from "../store/runs.ts";
 import { summarize, runSummarySchema } from "./contracts.ts";
@@ -230,6 +231,7 @@ export function approveRun(
   id: string,
   env: NodeJS.ProcessEnv,
   aceptaCambios = false,
+  origen: Origen = "terminal",
 ) {
   waitingOrExplain(home, id);
   const run = runPaths(home, id);
@@ -237,10 +239,12 @@ export function approveRun(
   if (cambios.length > 0 && !aceptaCambios) {
     throw new UserError(
       `el plan de ${id} cambia lo que ya existe:\n${cambios.map((c) => `- ${c.que} (${c.donde}) ← ${c.criterio}`).join("\n")}\nSi esos cambios van, aprobá con --acepto-cambios; si no, pedí cambios`,
-      `flowrunner approve ${id} --acepto-cambios`,
+      // Si Claude sigue el comando tal cual, sigue siendo de Claude. El de Orca no lleva origen: el
+      // panel se lo muestra a la persona, que lo corre en la terminal.
+      `flowrunner approve ${id} --acepto-cambios${origen === "claude" ? " --origen claude" : ""}`,
     );
   }
-  appendEvent(run.dir, { tipo: "aprobado", cambios_aceptados: cambios.length });
+  appendEvent(run.dir, { tipo: "aprobado", cambios_aceptados: cambios.length, origen });
   return lanzamiento(
     id,
     "aprobado: implementar arrancó",
@@ -254,6 +258,7 @@ export function requestChanges(
   id: string,
   motivo: string | undefined,
   env: NodeJS.ProcessEnv,
+  origen: Origen = "terminal",
 ) {
   if (motivo === undefined || motivo.trim() === "") {
     throw new UserError(
@@ -263,7 +268,7 @@ export function requestChanges(
   }
   waitingOrExplain(home, id);
   const run = runPaths(home, id);
-  appendEvent(run.dir, { tipo: "cambios_pedidos", motivo: motivo.trim() });
+  appendEvent(run.dir, { tipo: "cambios_pedidos", motivo: motivo.trim(), origen });
   return lanzamiento(
     id,
     "cambios pedidos: planificar vuelve a correr",

@@ -114,10 +114,12 @@ export interface RunStats {
   readonly vueltas: number;
   readonly fallas: number;
   readonly derecho: boolean;
+  /** La sesión principal de planificar; lo del subagente explorador, aparte. */
   readonly graftPlanificar: {
     readonly llamadas: number;
     readonly reads: number;
     readonly turnos: number;
+    readonly subagente: { readonly reads: number; readonly llamadas: number };
   };
 }
 
@@ -135,12 +137,21 @@ export function runStats(dir: string, events: readonly RunEvent[]): RunStats {
   let rechazosEscritura = 0;
   let vueltas = 0;
   let fallas = 0;
+  let previousAt: number | undefined;
   for (const e of events) {
+    const at = Date.parse(e.at);
+    // Un proceso cortado deja la acción abierta, y el runner la retoma sin una `accion_iniciada`
+    // nueva: el tramo se cierra en lo último que se supo antes del corte y se reabre al retomar.
+    if ((e.tipo === "reanudado" || e.tipo === "abortado") && openedAt !== undefined) {
+      activeMs += (previousAt ?? openedAt) - openedAt;
+      openedAt = e.tipo === "reanudado" ? at : undefined;
+    }
+    previousAt = at;
     if (e.tipo === "accion_iniciada") {
-      openedAt = Date.parse(e.at);
+      openedAt = at;
       if (e.fase === "planificar") planes++;
     } else if (e.tipo === "accion_terminada") {
-      if (openedAt !== undefined) activeMs += Date.parse(e.at) - openedAt;
+      if (openedAt !== undefined) activeMs += at - openedAt;
       openedAt = undefined;
       if (e.resultado.tipo === "vuelve") vueltas++;
       if (e.resultado.tipo === "falla") fallas++;
@@ -152,7 +163,7 @@ export function runStats(dir: string, events: readonly RunEvent[]): RunStats {
       else if (WRITE_TOOLS.has(e.herramienta)) rechazosEscritura++;
     }
   }
-  // Un proceso cortado deja la acción sin terminar: cuenta hasta lo último que se sabe del run.
+  // Una acción que sigue sin terminar cuenta hasta lo último que se sabe del run.
   const last = events.at(-1);
   if (openedAt !== undefined && last !== undefined) activeMs += Date.parse(last.at) - openedAt;
   return {
@@ -175,6 +186,8 @@ export function runStats(dir: string, events: readonly RunEvent[]): RunStats {
 /** Una línea del stream de una sesión: solo lo que se cuenta. Lo que no se reconoce suma 0. */
 const assistantLineSchema = z.object({
   type: z.literal("assistant"),
+  /** Las líneas de un subagente, como el explorador, traen la llamada `Task` que lo lanzó. */
+  parent_tool_use_id: z.string().nullish().catch(undefined),
   message: z
     .object({ content: z.array(z.unknown()).catch([]) })
     .optional()
@@ -182,12 +195,14 @@ const assistantLineSchema = z.object({
 });
 const toolUseSchema = z.object({ type: z.literal("tool_use"), name: z.string() });
 
-/** Turnos, `Read` y llamadas a graft de las sesiones de planificar (`sesiones/planificar-*.jsonl`). */
+/**
+ * Turnos, `Read` y llamadas a graft de las sesiones de planificar (`sesiones/planificar-*.jsonl`),
+ * los del planificador separados de los de sus subagentes.
+ */
 function planningSessions(dir: string): RunStats["graftPlanificar"] {
-  let llamadas = 0;
-  let reads = 0;
-  let turnos = 0;
-  if (!existsSync(dir)) return { llamadas, reads, turnos };
+  const main = { llamadas: 0, reads: 0, turnos: 0 };
+  const subagente = { reads: 0, llamadas: 0 };
+  if (!existsSync(dir)) return { ...main, subagente };
   for (const file of readdirSync(dir)) {
     if (!file.startsWith("planificar-") || !file.endsWith(".jsonl")) continue;
     for (const line of readFileSync(join(dir, file), "utf8").split("\n")) {
@@ -199,16 +214,18 @@ function planningSessions(dir: string): RunStats["graftPlanificar"] {
       }
       const turn = assistantLineSchema.safeParse(parsed);
       if (!turn.success) continue;
-      turnos++;
+      const fromSubagent = typeof turn.data.parent_tool_use_id === "string";
+      const counts = fromSubagent ? subagente : main;
+      if (!fromSubagent) main.turnos++;
       for (const block of turn.data.message?.content ?? []) {
         const tool = toolUseSchema.safeParse(block);
         if (!tool.success) continue;
-        if (tool.data.name === "Read") reads++;
-        else if (tool.data.name.startsWith("mcp__graft__")) llamadas++;
+        if (tool.data.name === "Read") counts.reads++;
+        else if (tool.data.name.startsWith("mcp__graft__")) counts.llamadas++;
       }
     }
   }
-  return { llamadas, reads, turnos };
+  return { ...main, subagente };
 }
 
 /** El promedio de los dos del medio si son pares; 0 sin valores. */

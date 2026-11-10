@@ -181,6 +181,30 @@ describe("stats por run", () => {
     expect(statsPorRun(home).runs[0]?.activoMin).toBe(3);
   });
 
+  // Si regresiona, un proceso que se cortó de noche suma las horas muertas, y la mediana con la que
+  // se decide la fase 6 mide el sueño de la notebook. El runner retoma la acción sin una
+  // `accion_iniciada` nueva: el tramo se cierra en lo último antes del corte y se reabre al retomar.
+  test("una acción cortada y retomada no cuenta el tiempo del corte", () => {
+    const home = tempDir("stats-");
+    runAt(home, T0, [
+      [0, inicia("implementar")],
+      [5 * MIN, uso("implementar", 1)],
+      [8 * 60 * MIN, { tipo: "reanudado" }],
+      [5 * MIN, termina("implementar")],
+    ]);
+    expect(statsPorRun(home).runs[0]?.activoMin).toBe(10);
+  });
+
+  test("una acción cortada y después abortada no cuenta el tiempo hasta el abort", () => {
+    const home = tempDir("stats-");
+    runAt(home, T0, [
+      [0, inicia("implementar")],
+      [5 * MIN, uso("implementar", 1)],
+      [8 * 60 * MIN, { tipo: "abortado" }],
+    ]);
+    expect(statsPorRun(home).runs[0]?.activoMin).toBe(5);
+  });
+
   // Si regresiona, la cuenta de runs derechos, la que dice si el plan mejoró algo, miente.
   test("un run sin fallas ni vueltas es derecho; con una vuelta, no", () => {
     const home = tempDir("stats-");
@@ -252,7 +276,19 @@ describe("stats por run", () => {
         linea({ type: "user", message: { content: [{ type: "tool_result" }] } }),
         linea({
           type: "assistant",
+          parent_tool_use_id: null,
           message: { content: [toolUse("mcp__graft__graft_file_api")] },
+        }),
+        // El subagente explorador: sus lecturas se cuentan aparte de las del planificador.
+        linea({
+          type: "assistant",
+          parent_tool_use_id: "toolu_explorador",
+          message: { content: [toolUse("Read")] },
+        }),
+        linea({
+          type: "assistant",
+          parent_tool_use_id: "toolu_explorador",
+          message: { content: [toolUse("Read"), toolUse("mcp__graft__graft_find_code")] },
         }),
         '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Re',
       ].join("\n"),
@@ -266,6 +302,7 @@ describe("stats por run", () => {
       llamadas: 1,
       reads: 1,
       turnos: 2,
+      subagente: { reads: 2, llamadas: 1 },
     });
   });
 

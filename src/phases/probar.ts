@@ -87,13 +87,9 @@ export const probar: PhaseFn = async (ctx) => {
   const worktree = featureWorktree(run);
   const config = loadRepoConfig(worktree);
   if (config.probar === undefined) {
-    emit({
-      tipo: "aviso",
-      fase: "probar",
-      texto:
-        "probar se salteó: el repo no dice cómo levantar el entorno (`probar` en .flowrunner/config.yaml)",
-    });
-    return { tipo: "ok" };
+    const motivo = "el repo no dice cómo levantar el entorno (`probar` en .flowrunner/config.yaml)";
+    emit({ tipo: "aviso", fase: "probar", texto: `probar se salteó: ${motivo}` });
+    return { tipo: "ok", salteada: motivo };
   }
   const probarConfig = config.probar;
   // Con el turno del entorno de levantar a bajar: las URLs de probar son fijas (ADR 0019).

@@ -17,7 +17,11 @@ export const phaseSchema = z.enum(PHASES);
 
 /** Lo que devuelve una fase. El engine decide qué pasa después; la fase nunca elige la siguiente. */
 export const outcomeSchema = z.discriminatedUnion("tipo", [
-  z.strictObject({ tipo: z.literal("ok") }),
+  z.strictObject({
+    tipo: z.literal("ok"),
+    /** La fase no corrió y dice por qué, como probar sin `probar` en la config: no es un ✓. */
+    salteada: z.string().min(1).optional(),
+  }),
   z.strictObject({
     tipo: z.literal("falla"),
     /**

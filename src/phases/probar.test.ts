@@ -185,10 +185,13 @@ describe("probar", () => {
     }
   });
 
-  // Si regresiona, un repo sin entorno configurado queda trabado en probar.
-  test("sin `probar` en la config se saltea con un aviso y sin sesión", async () => {
+  // Si regresiona, un repo sin entorno configurado queda trabado en probar, o su salto se ve como un ✓.
+  test("sin `probar` en la config se saltea con un aviso, sin sesión y dice por qué", async () => {
     const { outcome, sim, run } = await testWith(undefined, false);
-    expect(outcome).toEqual({ tipo: "ok" });
+    expect(outcome).toEqual({
+      tipo: "ok",
+      salteada: "el repo no dice cómo levantar el entorno (`probar` en .flowrunner/config.yaml)",
+    });
     expect(sim.records).toHaveLength(0);
     expect(readFileSync(join(run.dir, "events.jsonl"), "utf8")).toContain("probar se salteó");
   });

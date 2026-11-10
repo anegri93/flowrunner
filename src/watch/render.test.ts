@@ -137,6 +137,26 @@ describe("renderBoard", () => {
     );
   });
 
+  // Si regresiona, una fase que no corrió se ve «listo», como si hubiera probado la feature.
+  test("una fase salteada dice salteada y por qué, no listo", () => {
+    const skipped: RunTree = {
+      ...tree,
+      status: "entregado",
+      fases: [
+        phase("probar", {
+          estado: "salteada",
+          detalle: "el repo no dice cómo levantar el entorno",
+        }),
+      ],
+    };
+    const row = strip(rowOf(renderBoard([skipped], { width: 200, color: false }).lines, "probar"));
+    expect(row).toContain("salteada");
+    expect(row).not.toContain("listo");
+    expect(renderBoard([skipped], { width: 200, color: false }).lines.join("\n")).toContain(
+      "el repo no dice cómo levantar el entorno",
+    );
+  });
+
   // Si regresiona, la vista no dice de un vistazo quién te espera, quién trabaja y qué costó cada etapa.
   test("cabecera con resumen y columnas, proyectos agrupados con lo urgente primero, y cada fila con sus números", () => {
     const { lines } = renderBoard([tree, waiting], { width: 160, color: false });

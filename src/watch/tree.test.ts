@@ -426,6 +426,28 @@ describe("runTree", () => {
     expect(merged).toMatchObject({ segundos: 300, prMergeada: true });
   });
 
+  // Si regresiona, una fase que no corrió se ve con ✓, como si hubiera probado la feature.
+  test("una fase salteada se ve salteada, con su motivo, y una que corrió se ve lista", () => {
+    const motivo = "el repo no dice cómo levantar el entorno";
+    const probar = (resultado: Extract<RunEvent, { tipo: "accion_terminada" }>["resultado"]) =>
+      runTree({
+        events: [
+          ...base,
+          { tipo: "accion_iniciada", at: at(200), fase: "probar" },
+          { tipo: "accion_terminada", at: at(201), fase: "probar", resultado },
+        ],
+        tasks,
+        titulo: "x",
+        sessions: new Map(),
+        now: T0 + 300_000,
+      }).fases.find((f) => f.fase === "probar");
+    expect(probar({ tipo: "ok", salteada: motivo })).toMatchObject({
+      estado: "salteada",
+      detalle: motivo,
+    });
+    expect(probar({ tipo: "ok" })).toMatchObject({ estado: "ok", detalle: undefined });
+  });
+
   // Si regresiona, watch muestra el modelo sin el esfuerzo con que corrió cada fase.
   test("cada sesión lleva el esfuerzo configurado para su fase", () => {
     const tree = runTree({

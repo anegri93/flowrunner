@@ -6,8 +6,10 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { git, tempDir } from "../../test/helpers/git.ts";
 import { contextFor, makeProject, newRun, testDeps } from "../../test/helpers/project.ts";
+import { validandoAlFinal } from "../../test/helpers/mcp.ts";
 import { simQuery, type SimScript } from "../../test/helpers/sim-sdk.ts";
 import type { Plan } from "../gates/plan.ts";
+import { respuestaValidar } from "../gates/validar-plan.ts";
 import type { RunEvent } from "../store/events.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
 import { prepared } from "./inputs.ts";
@@ -199,7 +201,21 @@ describe("planificar", () => {
     // El explorador solo lee: Read, Grep, Glob y las herramientas de graft, nada que escriba ni ejecute.
     const explorer = sim.records[0]?.options?.agents?.explorador?.tools ?? [];
     expect(explorer.filter((t) => !t.startsWith("mcp__graft__"))).toEqual(["Read", "Grep", "Glob"]);
-    expect(Object.keys(sim.records[0]?.options?.mcpServers ?? {})).toEqual(["graft"]);
+    expect(Object.keys(sim.records[0]?.options?.mcpServers ?? {})).toEqual(["graft", "gate"]);
+  });
+
+  // Si regresiona, el planificador no puede chequear su plan antes de devolverlo y cada rechazo del
+  // gate por algo que no corre nada es un intento más: en ML-1, VF-5 y VF-6, cinco de US$ 0,7 a 2,8.
+  test("la sesión del planificador recibe validar_plan, y el hook la permite", async () => {
+    const validar = { tool: "mcp__gate__validar_plan", input: goodPlan };
+    const { run, deps, sim } = await prepared_([{ calls: [writeTest, validar], output: goodPlan }]);
+    await planificar(contextFor(run, "planificar", deps));
+    expect(sim.records[0]?.decisions).toContainEqual({
+      tool: "mcp__gate__validar_plan",
+      decision: "allow",
+    });
+    expect(Object.keys(sim.records[0]?.options?.mcpServers ?? {})).toEqual(["graft", "gate"]);
+    expect(sim.records[0]?.prompt).toContain("pasalo por `validar_plan`");
   });
 
   describe("lo que ya existe", () => {
@@ -378,6 +394,24 @@ describe("planificar", () => {
       );
       return { motivo: first.motivo, second };
     }
+
+    // Si regresiona, validar_plan cuenta los tests desde otro punto que el gate, o con otro plan, y le
+    // dice «ok» al planificador sobre un plan que el gate de afuera rechaza (o al revés). También en la
+    // sesión retomada, que abre sobre el worktree que dejó el gate.
+    test("validar_plan, llamado en la sesión, da el mismo veredicto estático que el gate, también al retomar", async () => {
+      const preparado = await prepared_([
+        { calls: [writeTest], output: twoTests },
+        { calls: [writeAc2], output: twoTests },
+      ]);
+      const respuestas: string[] = [];
+      const deps = { ...preparado.deps, query: validandoAlFinal(preparado.deps.query, respuestas) };
+      const { motivo, second } = await rechazadoYReintento(preparado.run, deps);
+      const problemas = ["el plan declara el test tests/ac2.mjs, pero no está escrito"];
+      expect(motivo).toBe(`el plan no pasó el gate:\n- ${problemas.join("\n- ")}`);
+      expect(preparado.sim.records[1]?.options?.resume).toBeDefined();
+      expect(second).toEqual({ tipo: "ok" });
+      expect(respuestas).toEqual([respuestaValidar(problemas), respuestaValidar([])]);
+    });
 
     // Si regresiona, un rechazo por una sola declaración faltante vuelve a explorar todo el repo en una
     // sesión nueva: en ML-1 y VF-5 eso costó US$ 2 a 2,8 y 10 minutos por reintento.

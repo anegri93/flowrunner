@@ -5,8 +5,10 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { git, tempDir } from "../../test/helpers/git.ts";
 import { contextFor, makeProject, newRun, testDeps } from "../../test/helpers/project.ts";
+import { validandoAlFinal } from "../../test/helpers/mcp.ts";
 import { simQuery, type SimScript } from "../../test/helpers/sim-sdk.ts";
 import type { Plan, Subtask } from "../gates/plan.ts";
+import { respuestaValidar } from "../gates/validar-plan.ts";
 import type { Deps, PhaseFn, RunPaths } from "../runner/types.ts";
 import type { NewEvent, Outcome, Phase } from "../store/events.ts";
 import { commitAll, resetHard } from "../git/git.ts";
@@ -678,6 +680,40 @@ describe("un replan conserva el código", { timeout: 30_000 }, () => {
       appendEvent(run.dir, { tipo: "rehacer", desde: "planificar" });
       expect(await fase(run, deps, "planificar", planificar)).toEqual({ tipo: "ok" });
       expect(Object.keys(readPlan(run).conservadas)).toContain("ST-1");
+    });
+
+    // Si regresiona, validar_plan cuenta como escrito por el planificador el código conservado: un test
+    // existente que cambió una sub-task conservada le aparece como «sin declarar», y el planificador lo
+    // declara o deshace por nada, porque el gate de afuera cuenta desde donde abrió la sesión.
+    test("en un replan, validar_plan no cuenta como escrito lo que ya estaba al abrir la sesión", async () => {
+      const project = {
+        files: { "src/s1/s1.test.mjs": "process.exit(0);\n" },
+        config: { setup: "true", tests_globs: ["tests/**", "src/**/*.test.mjs"] },
+      };
+      const unit = (prompt: string): SimScript => {
+        const base = unitScript(prompt);
+        return /# Sub-task ST-1\b/.test(prompt)
+          ? {
+              calls: [
+                ...(base.calls ?? []),
+                {
+                  tool: "Write",
+                  input: { file_path: "src/s1/s1.test.mjs", content: "process.exit(0); // ST-1\n" },
+                },
+              ],
+            }
+          : base;
+      };
+      const { run, deps, worktree, base } = await implementado([SCRIPT_1, SCRIPT_2], project, unit);
+      expect(git(worktree, "diff", "--name-status", base, "HEAD", "--", "src/s1/")).toContain(
+        "M\tsrc/s1/s1.test.mjs",
+      );
+      const respuestas: string[] = [];
+      const validando = { ...deps, query: validandoAlFinal(deps.query, respuestas) };
+      appendEvent(run.dir, { tipo: "rehacer", desde: "planificar" });
+      expect(await fase(run, validando, "planificar", planificar)).toEqual({ tipo: "ok" });
+      expect(Object.keys(readPlan(run).conservadas)).toContain("ST-1");
+      expect(respuestas).toEqual([respuestaValidar([])]);
     });
 
     // Si regresiona, un `rerun --desde planificar` después de que planificar se detuvo por el gate toma

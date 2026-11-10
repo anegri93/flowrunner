@@ -31,9 +31,10 @@ Recién sigue cuando la persona elige una. Es el contrato C1 a C5 del plan de ra
    - cualquier otra (entorno, invariante, infraestructura agotada, presupuesto): el `siguiente` de
      siempre y `abort`.
 3. **Un comando de la persona vale solo si el halt actual lo ofrece.** `fix --unidad` (con cada
-   sub-task entera entre las del halt), `fix --yo` y `accept` lo comprueban en el CLI, con el turno de
-   la cola para que dos respuestas a la vez no se validen contra el mismo halt, y otra vez en el
-   reductor: un evento que no se ofreció no hace nada. `resume` y `rerun` siguen como antes, salvo
+   sub-task entera entre las del halt), `fix --yo` y `accept` lo comprueban en el CLI, con un turno
+   propio del run para que dos respuestas a la vez no se validen contra el mismo halt, y otra vez en el
+   reductor: un evento que no se ofreció no hace nada. Si el engine no tomó la respuesta, porque otro
+   comando escribió antes, el comando lo dice y no lanza nada, y el informe no la lista. `resume` y `rerun` siguen como antes, salvo
    durante un arreglo a mano (abajo).
 4. **Las vueltas automáticas son 0 por defecto (D4).** Cada repo puede pedir de 0 a 3 con `vueltas` en
    su config. El valor se congela en `run_creado`: un run sin el campo es de antes y vale 2, así que

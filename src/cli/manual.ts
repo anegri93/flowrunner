@@ -1,6 +1,6 @@
 // Lo que `resume` chequea antes de commitear un arreglo a mano (`fix --yo`, ADR 0023).
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { FileChange } from "../git/git.ts";
 import { checkSecrets } from "../tripwires/rules.ts";
@@ -27,13 +27,18 @@ export function manualChangeProblems(
       problems.push(`${change.path} es un repositorio git adentro del worktree: no se commitea`);
       continue;
     }
+    // Lo que no se pudo leer no se pudo chequear: no pasa.
+    const file = join(root, change.path);
+    if (change.status === "agregado" && !(existsSync(file) && statSync(file).isFile())) {
+      problems.push(`${change.path} no se pudo leer para chequearlo: no se commitea`);
+      continue;
+    }
     if (change.path.split("/").includes(".git")) {
       problems.push(`${change.path} es parte de .git: no se commitea`);
       continue;
     }
     const hash = locked[change.path];
     if (hash !== undefined) {
-      const file = join(root, change.path);
       const now = existsSync(file) ? sha256(readFileSync(file, "utf8")) : undefined;
       if (now !== hash) {
         problems.push(

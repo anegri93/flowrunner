@@ -3,7 +3,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { stateOf } from "../engine/engine.ts";
+import { initialState, reduce, stateOf } from "../engine/engine.ts";
 import { AVISO_TEST_EXISTENTE } from "../gates/existente.ts";
 import type { CambioExistente } from "../gates/plan.ts";
 import { lastTestDir, readTests } from "../phases/probar.ts";
@@ -204,9 +204,11 @@ function tested(events: readonly RunEvent[], run: RunPaths, paths: boolean): str
   if (dir === undefined) return [];
   // La última decisión manda: si el run se detuvo dos veces, vale el motivo de la que lo dejó seguir.
   // `accept` en probar dice lo mismo que `accept-untested` (ADR 0023).
+  const taken = new Set(applied(events));
   const aceptado = events
     .flatMap((e) =>
-      e.tipo === "sin_probar_aceptado" || (e.tipo === "aceptado" && e.fase === "probar")
+      e.tipo === "sin_probar_aceptado" ||
+      (e.tipo === "aceptado" && e.fase === "probar" && taken.has(e))
         ? [{ motivo: e.motivo }]
         : [],
     )
@@ -226,11 +228,26 @@ function tested(events: readonly RunEvent[], run: RunPaths, paths: boolean): str
 }
 
 /**
+ * Las respuestas de la persona que el run tomó: una que llegó cuando otra ya lo había hecho seguir
+ * queda en el log, pero el engine la ignoró, y no va a la PR.
+ */
+function applied(events: readonly RunEvent[]): RunEvent[] {
+  const out: RunEvent[] = [];
+  let state = initialState();
+  for (const e of events) {
+    const next = reduce(state, e);
+    if ((e.tipo === "aceptado" || e.tipo === "arreglo_manual") && next !== state) out.push(e);
+    state = next;
+  }
+  return out;
+}
+
+/**
  * Lo que la persona dejó pasar o arregló a mano al responder una pregunta del run (ADR 0023): va a la
  * PR para que quien la revisa no lo apruebe sin verlo.
  */
 function accepted(events: readonly RunEvent[]): string[] {
-  const lines = events.flatMap((e) =>
+  const lines = applied(events).flatMap((e) =>
     e.tipo === "aceptado"
       ? [`- en ${e.fase}: ${plain(e.motivo)}`]
       : e.tipo === "arreglo_manual" && e.sha !== null

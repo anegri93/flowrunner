@@ -125,6 +125,10 @@ function queHace(comando: string, runId: string, fase: Phase): string {
 /**
  * Las respuestas a un run detenido, en orden de preferencia. Solo el engine arma comandos: el CLI
  * acepta `fix` y `accept` solo si el halt actual los ofrece (ADR 0023). Nunca devuelve una lista vacía.
+ *
+ * Los comandos son parte del contrato del log: el reductor decide si `arreglo_pedido`,
+ * `arreglo_manual_iniciado` y `aceptado` valen comparando con ellos (`offers`), y se recalculan en
+ * cada replay. Cambiar su texto, o sacar uno de una fila, cambia cómo se reduce un log ya escrito.
  */
 export function opcionesDe(
   state: RunState,

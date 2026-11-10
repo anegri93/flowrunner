@@ -21,9 +21,14 @@ export async function git(
   args: readonly string[],
   env: NodeJS.ProcessEnv = process.env,
 ) {
+  return (await gitRaw(cwd, args, env)).trim();
+}
+
+/** La salida de git tal cual, sin recortar: con `-z`, un espacio al principio es parte de una ruta. */
+async function gitRaw(cwd: string, args: readonly string[], env: NodeJS.ProcessEnv = process.env) {
   const result = await runProc("git", args, { cwd, env });
   if (result.code !== 0) throw new GitError(args, result.stderr);
-  return result.stdout.trim();
+  return result.stdout;
 }
 
 /**
@@ -207,7 +212,7 @@ export async function changesSince(
   // caracteres de control, y esas no se podían leer ni chequear.
   const fields = (out: string) => out.split("\0").filter((f) => f !== "");
   const tracked = fields(
-    await git(worktree, ["diff", "--name-status", "--no-renames", "-z", base], env),
+    await gitRaw(worktree, ["diff", "--name-status", "--no-renames", "-z", base], env),
   );
   for (let i = 0; i + 1 < tracked.length; i += 2) {
     const code = tracked[i] ?? "";
@@ -224,7 +229,7 @@ export async function changesSince(
     changes.push({ path, status, added });
   }
   const untracked = fields(
-    await git(worktree, ["ls-files", "--others", "--exclude-standard", "-z"], env),
+    await gitRaw(worktree, ["ls-files", "--others", "--exclude-standard", "-z"], env),
   );
   for (const path of untracked) {
     let added: string[] = [];

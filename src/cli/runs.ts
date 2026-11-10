@@ -3,7 +3,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, openSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { offers, offersFix, stateOf, type RunState } from "../engine/engine.ts";
+import { offers, offersFix, reduce, stateOf, type RunState } from "../engine/engine.ts";
 import { changesSince, commitAll, headSha } from "../git/git.ts";
 import { avisoDeEstado, cambiosDelPlan } from "../notify/estado.ts";
 import { notifyMac } from "../notify/notify.ts";
@@ -13,7 +13,7 @@ import { runUntilStop } from "../runner/runner.ts";
 import type { RunPaths } from "../runner/types.ts";
 import { prepared } from "../phases/inputs.ts";
 import { readPlan } from "../phases/planificar.ts";
-import { PHASES, type Origen, type Phase } from "../store/events.ts";
+import { PHASES, type Origen, type Phase, type RunEvent } from "../store/events.ts";
 import { loadRepoConfig } from "../config/load.ts";
 import { ConfigError, MAX_RUNS_DEFAULT } from "../config/schemas.ts";
 import { conTurnoGitSync } from "../git/git.ts";
@@ -222,7 +222,7 @@ export async function resumeRun(home: string, id: string, env: NodeJS.ProcessEnv
   const state = loadOrExplain(home, id);
   if (isRunning(home, state))
     throw new UserError(`el run ${id} ya está corriendo`, `flowrunner status ${id}`);
-  if (state.status === "detenido" && state.aMano) return resumeByHand(home, id, state, env);
+  if (state.status === "detenido" && state.aMano) return resumeByHand(home, id, env);
   const resumable =
     state.status === "detenido" ||
     state.status === "pausado_por_limite" ||
@@ -247,11 +247,11 @@ export async function resumeRun(home: string, id: string, env: NodeJS.ProcessEnv
  * vuelve a verificar. Si el cambio toca `.git`, cambia un test bloqueado o agrega un secreto, no
  * commitea ni escribe nada (ADR 0023).
  */
-async function resumeByHand(home: string, id: string, state: RunState, env: NodeJS.ProcessEnv) {
+async function resumeByHand(home: string, id: string, env: NodeJS.ProcessEnv) {
   const run = runPaths(home, id);
   const { worktree } = prepared(readLog(run.dir).events);
-  // Con el turno de la cola: dos `resume` a la vez no commitean ni escriben dos veces.
-  const sha = await conTurno(answerTurno(home, state), id, async () => {
+  // Con el turno de las respuestas: dos `resume` a la vez no commitean ni escriben dos veces.
+  const answer = await conTurno(answerTurno(home, id), id, async () => {
     if (!loadState(home, id).aMano) {
       throw new UserError(`el run ${id} ya retomó tu arreglo a mano`, `flowrunner status ${id}`);
     }
@@ -268,12 +268,13 @@ async function resumeByHand(home: string, id: string, state: RunState, env: Node
         ? null
         : ((await commitAll(worktree, "fix: arreglo a mano", { "Flowrunner-Manual": id }, env)) ??
           null);
-    appendEvent(run.dir, { tipo: "arreglo_manual", sha: committed });
-    return committed;
+    return appendEvent(run.dir, { tipo: "arreglo_manual", sha: committed });
   });
+  const sha = answer.tipo === "arreglo_manual" ? answer.sha : null;
   return launchAnswer(
     home,
     id,
+    answer,
     sha === null
       ? "sin cambios que commitear: verificar arrancó"
       : "tu arreglo commiteado: verificar arrancó",
@@ -283,18 +284,23 @@ async function resumeByHand(home: string, id: string, state: RunState, env: Node
 }
 
 /**
- * Lanza el run después de la respuesta de la persona. Si otra respuesta llegó antes, el engine ignora
- * esta, y no hay nada que lanzar: se dice, en vez de contestar que arrancó.
+ * Lanza el run después de la respuesta de la persona. Si el engine no la tomó, porque otro comando
+ * (un `rerun`, un `abort`) escribió antes, no hay nada que lanzar: se dice, en vez de contestar que
+ * arrancó.
  */
 function launchAnswer(
   home: string,
   id: string,
+  answer: RunEvent,
   arranco: string,
   encolado: string,
   env: NodeJS.ProcessEnv,
 ) {
-  const after = loadState(home, id);
-  if (after.status !== "en_curso") {
+  const { events } = readLog(runPaths(home, id).dir);
+  const at = events.findIndex((e) => JSON.stringify(e) === JSON.stringify(answer));
+  const before = stateOf(events.slice(0, Math.max(at, 0)));
+  const after = stateOf(events);
+  if (at < 0 || reduce(before, answer) === before || after.status !== "en_curso") {
     throw new UserError(
       `el run ${id} no tomó tu respuesta: otra llegó antes, y está ${after.status} en ${after.fase}`,
       `flowrunner status ${id}`,
@@ -304,10 +310,11 @@ function launchAnswer(
 }
 
 /**
- * El turno en que una respuesta de la persona se valida y se escribe: el de la cola del proyecto.
- * Así dos respuestas a la vez no se validan contra el mismo halt (ADR 0023).
+ * El turno en que una respuesta de la persona se valida y se escribe: uno propio del run, así dos
+ * respuestas a la vez no se validan contra el mismo halt (ADR 0023). No es el de la cola: `resume`
+ * lo tiene mientras commitea, y la cola del proyecto no espera a git.
  */
-const answerTurno = (home: string, state: RunState) => turnoFile(home, state.proyecto, "cola");
+const answerTurno = (home: string, id: string) => join(runPaths(home, id).dir, "respuesta.turno");
 
 function requireOffered(state: RunState, id: string, offered: boolean): void {
   if (offered) return;
@@ -333,12 +340,12 @@ export function fixRun(
   },
   env: NodeJS.ProcessEnv,
 ) {
-  const first = loadOrExplain(home, id);
+  loadOrExplain(home, id);
   const run = runPaths(home, id);
   if (opts.yo && opts.unidades.length > 0)
     throw new UserError("--yo y --unidad no van juntos: elegí una", `flowrunner status ${id}`);
   if (opts.yo) {
-    const worktree = conTurnoSync(answerTurno(home, first), id, () => {
+    const worktree = conTurnoSync(answerTurno(home, id), id, () => {
       const state = loadState(home, id);
       requireOffered(state, id, offers(state, `flowrunner fix ${id} --yo`));
       const events = readLog(run.dir).events;
@@ -361,7 +368,7 @@ export function fixRun(
     );
   }
   const instruccion = opts.instruccion?.trim() ?? "";
-  conTurnoSync(answerTurno(home, first), id, () => {
+  const answer = conTurnoSync(answerTurno(home, id), id, () => {
     const state = loadState(home, id);
     requireOffered(state, id, offersFix(state, unidades));
     if (instruccion === "") {
@@ -372,9 +379,14 @@ export function fixRun(
     }
     if (isRunning(home, state))
       throw new UserError(`el run ${id} ya está corriendo`, `flowrunner status ${id}`);
-    appendEvent(run.dir, { tipo: "arreglo_pedido", unidades, instruccion, origen: opts.origen });
+    return appendEvent(run.dir, {
+      tipo: "arreglo_pedido",
+      unidades,
+      instruccion,
+      origen: opts.origen,
+    });
   });
-  return launchAnswer(home, id, `arreglando ${unidades.join(", ")}`, "arreglo pedido", env);
+  return launchAnswer(home, id, answer, `arreglando ${unidades.join(", ")}`, "arreglo pedido", env);
 }
 
 /**
@@ -388,9 +400,9 @@ export function acceptRun(
   origen: Origen,
   env: NodeJS.ProcessEnv,
 ) {
-  const first = loadOrExplain(home, id);
+  loadOrExplain(home, id);
   const run = runPaths(home, id);
-  conTurnoSync(answerTurno(home, first), id, () => {
+  const answer = conTurnoSync(answerTurno(home, id), id, () => {
     const state = loadState(home, id);
     requireOffered(state, id, offers(state, `flowrunner accept ${id} `));
     if (motivo === undefined || motivo.trim() === "") {
@@ -401,10 +413,22 @@ export function acceptRun(
     }
     if (isRunning(home, state))
       throw new UserError(`el run ${id} ya está corriendo`, `flowrunner status ${id}`);
-    appendEvent(run.dir, { tipo: "aceptado", fase: state.fase, motivo: motivo.trim(), origen });
+    return appendEvent(run.dir, {
+      tipo: "aceptado",
+      fase: state.fase,
+      motivo: motivo.trim(),
+      origen,
+    });
   });
   const next = loadState(home, id).fase;
-  return launchAnswer(home, id, `aceptado: ${next} arrancó`, `aceptado: sigue en ${next}`, env);
+  return launchAnswer(
+    home,
+    id,
+    answer,
+    `aceptado: ${next} arrancó`,
+    `aceptado: sigue en ${next}`,
+    env,
+  );
 }
 
 /**
@@ -482,10 +506,17 @@ function hasUncommitted(home: string, id: string): boolean {
   if (!events.some((e) => e.tipo === "preparado")) return false;
   const { worktree } = prepared(events);
   if (!existsSync(worktree)) return false;
-  return (
-    execFileSync("git", ["-C", worktree, "status", "--porcelain"], { encoding: "utf8" }).trim() !==
-    ""
-  );
+  try {
+    return (
+      execFileSync("git", ["-C", worktree, "status", "--porcelain"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim() !== ""
+    );
+  } catch {
+    // Sin poder mirarlo, se trata como sucio: es lo que no pierde el arreglo.
+    return true;
+  }
 }
 
 /** Borra los worktrees del run; las ramas quedan. */

@@ -110,6 +110,23 @@ describe("manualChangeProblems", () => {
     ]);
   });
 
+  // Regresión: con -z, el trim de la salida de git le sacaba el espacio inicial a la primera ruta, el
+  // archivo no se leía y su secreto se commiteaba.
+  test("un secreto en un archivo cuyo nombre empieza con espacio tampoco se commitea", async () => {
+    const { work } = repoWithRemote({ "a.txt": "1\n" });
+    const wt = join(tempDir(), "w");
+    const base = await addWorktree(work, wt, "feat/w", "origin/main", ENV);
+    writeFileSync(join(wt, " a.ts"), `const k = "AKIA${"A".repeat(16)}";\n`);
+    const changes = await changesSince(wt, base, ENV);
+    expect(manualChangeProblems(wt, changes, {}, "R")).toEqual([
+      " a.ts agrega una access key de AWS; los secretos no se commitean",
+    ]);
+    // Un archivo agregado que no se puede leer no pasa sin chequear.
+    expect(manualChangeProblems(wt, [change("no-esta.ts", [], "agregado")], {}, "R")).toEqual([
+      "no-esta.ts no se pudo leer para chequearlo: no se commitea",
+    ]);
+  });
+
   // Regresión: un archivo con tildes en el nombre se commiteaba sin mirar si traía un secreto.
   test("un secreto en un archivo con tildes en el nombre tampoco se commitea", async () => {
     const { work } = repoWithRemote({ "a.txt": "1\n" });

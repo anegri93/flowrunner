@@ -56,13 +56,14 @@ function realish(path: string): string {
     missing.unshift(current.slice(parent.length + 1));
     current = parent;
   }
-  return resolve(realpathSync(current), ...missing);
+  // La versión nativa devuelve las mayúsculas del disco: en APFS, `.ENV.LOCAL` es `.env.local`.
+  return resolve(realpathSync.native(current), ...missing);
 }
 
 /** La ruta relativa al worktree, o undefined si queda afuera después de resolver links y `..`. */
 export function insideRoot(scope: Scope, path: string): string | undefined {
   const absolute = realish(isAbsolute(path) ? path : resolve(scope.root, path));
-  const rel = relative(scope.root, absolute);
+  const rel = relative(realish(scope.root), absolute);
   if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return rel === "" ? "" : undefined;
   return rel.split(sep).join("/");
 }

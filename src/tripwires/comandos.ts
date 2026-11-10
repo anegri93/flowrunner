@@ -208,7 +208,7 @@ export function parseCommand(command: string): Parsed {
             w.texto += d;
             j++;
           } else w.texto += c;
-        } else if (c === "`" || (c === "$" && d === "(")) {
+        } else if (c === "`" || (c === "$" && (d === "(" || d === "["))) {
           return { ok: false, motivo: MOTIVO.sustitucion };
         } else if (c === "$" && d !== "" && VARIABLE.test(d)) {
           return { ok: false, motivo: MOTIVO.variable };
@@ -216,13 +216,18 @@ export function parseCommand(command: string): Parsed {
       }
       if (j >= s.length) return { ok: false, motivo: MOTIVO.sintaxis };
       i = j;
-    } else if (ch === "`" || (ch === "$" && sig === "(")) {
+    } else if (ch === "`" || (ch === "$" && (sig === "(" || sig === "["))) {
+      // `$[…]` es la aritmética vieja de bash: también se reemplaza por su resultado.
       return { ok: false, motivo: MOTIVO.sustitucion };
     } else if (ch === "$" && sig !== "" && VARIABLE.test(sig)) {
       return { ok: false, motivo: MOTIVO.variable };
     } else if (ch === "$" && (sig === "'" || sig === '"')) {
       // `$'…'` y `$"…"` son comillas de bash con escapes propios: `$'\x2e'` es un punto.
       return { ok: false, motivo: MOTIVO.sintaxis };
+    } else if (ch === "#" && !w.enCurso) {
+      // Un comentario, hasta el fin de la línea: sh no lee comillas ni operadores ahí.
+      const nl = s.indexOf("\n", i);
+      i = (nl < 0 ? s.length : nl) - 1;
     } else if ("(){}".includes(ch)) {
       return { ok: false, motivo: MOTIVO.llaves };
     } else if (ch === "~" && !w.enCurso) {
@@ -407,6 +412,24 @@ function checkRedireccion(scope: Scope, r: Redireccion): Verdict {
 const esNumero = (t: string) => /^[+-]?\d+$/.test(t);
 const esOpcion = (t: string) => t.startsWith("-") && t !== "-";
 
+/** El nombre de una opción larga, sin `=valor`. */
+const nombreLargo = (t: string) => {
+  const igual = t.indexOf("=");
+  return igual < 0 ? t : t.slice(0, igual);
+};
+/**
+ * Si `t` es la opción larga `opcion`, entera o abreviada: getopt_long, git y el sort de macOS aceptan
+ * cualquier prefijo (`--recur`, `--outp`, `--no-ind`). Un prefijo ambiguo también cuenta: sobra.
+ */
+const esLarga = (t: string, opcion: string) => {
+  const nombre = nombreLargo(t);
+  return (
+    t.startsWith("--") && (nombre === opcion || (nombre.length > 3 && opcion.startsWith(nombre)))
+  );
+};
+/** Las letras de un grupo de opciones cortas (`-lO…` da `lO…`), o "" si no es uno. */
+const cortas = (t: string) => (esOpcion(t) && !t.startsWith("--") ? t.slice(1) : "");
+
 // --- Programas ---------------------------------------------------------------------------------------
 
 type Regla = (scope: Scope, args: readonly Palabra[], tramo: Tramo) => Verdict;
@@ -424,11 +447,11 @@ const GIT_MIRA = new Set([
   "describe",
   "cat-file",
 ]);
-const GIT_ARG_PROHIBIDO = [
+/** Las opciones largas de git que escriben, ejecutan o leen fuera de lo versionado. */
+const GIT_LARGAS_PROHIBIDAS = [
   "--output",
   "--ext-diff",
   "--no-index",
-  "-O",
   "--open-files-in-pager",
   "--exec",
   // Lee un archivo cualquiera, versionado o no, como si fuera el contenido del blame.
@@ -436,15 +459,7 @@ const GIT_ARG_PROHIBIDO = [
 ];
 /** `git grep` que busca también en lo que no está versionado, como los .env que copia flowrunner. */
 const GIT_GREP_SIN_VERSIONAR = ["--untracked", "--no-exclude-standard"];
-const GIT_BRANCH_ESCRIBE = [
-  "-d",
-  "-D",
-  "-m",
-  "-M",
-  "-c",
-  "-C",
-  "-f",
-  "-u",
+const GIT_BRANCH_LARGAS = [
   "--delete",
   "--move",
   "--copy",
@@ -467,7 +482,8 @@ const git: Regla = (_scope, args) => {
     const escribe = resto.find(
       (t) =>
         !t.startsWith("-") ||
-        GIT_BRANCH_ESCRIBE.some((o) => t === o || (o.startsWith("--") && t.startsWith(`${o}=`))),
+        /[dDmMcCfu]/.test(cortas(t)) ||
+        GIT_BRANCH_LARGAS.some((o) => esLarga(t, o)),
     );
     return escribe === undefined ? OK : no(MOTIVO.git(`branch ${escribe}`));
   }
@@ -476,32 +492,37 @@ const git: Regla = (_scope, args) => {
     return arg === undefined ? OK : no(MOTIVO.git(`remote ${arg}`));
   }
   if (!GIT_MIRA.has(sub)) return no(MOTIVO.git(sub));
+  // `-O` también dentro de un grupo (`-lO<pager>`): `git grep` corre el pager con el shell.
   const prohibido = resto.find(
     (t) =>
-      GIT_ARG_PROHIBIDO.some((p) => t.startsWith(p)) ||
-      (sub === "grep" && GIT_GREP_SIN_VERSIONAR.includes(t)),
+      cortas(t).includes("O") ||
+      GIT_LARGAS_PROHIBIDAS.some((o) => esLarga(t, o)) ||
+      (sub === "grep" && GIT_GREP_SIN_VERSIONAR.some((o) => esLarga(t, o))),
   );
   return prohibido === undefined ? OK : no(MOTIVO.git(`${sub} ${prohibido}`));
 };
 
 /**
- * Opciones de ls, cat, head… que toman un valor pegado, como `-n5` o `-ffile`. El valor que va
- * separado se comprueba como cualquier argumento: para `cat`, `-n` no toma nada, y saltear lo que
- * seguía dejaba pasar `cat -n .env.local`.
+ * Las letras de ls, cat, head… que toman un valor: en un grupo, la primera se lleva lo que sigue
+ * pegado (`-n5`, `-bf.env`), y eso también es una ruta. El valor que va separado se comprueba como
+ * cualquier argumento: para `cat`, `-n` no toma nada, y saltear lo que seguía dejaba pasar
+ * `cat -n .env.local`.
  */
-const TOMA_VALOR = new Set(["-n", "-c", "-L", "-I", "-d", "-f"]);
+const TOMA_VALOR = "ncLIdf";
 
 /** Opciones que hacen que un programa de lectura escriba, ejecute o no termine. */
-const LECTURA_PROHIBIDA: Readonly<Record<string, (corta: string, larga: string) => boolean>> = {
-  tail: (corta, larga) => /[fF]/.test(corta) || larga.startsWith("--follow"),
-  tree: (corta) => corta.includes("o"),
-  file: (corta, larga) => corta.includes("C") || larga === "--compile",
+const LECTURA_PROHIBIDA: Readonly<Record<string, { cortas: string; largas: readonly string[] }>> = {
+  tail: { cortas: "fF", largas: ["--follow"] },
+  tree: { cortas: "o", largas: [] },
+  file: { cortas: "C", largas: ["--compile"] },
 };
 
 const lecturaSimple =
   (programa: string): Regla =>
   (scope, args) => {
-    let recursivo = false;
+    // diff recorre una carpeta aunque no lleve -r: `diff -N . src` imprime todo lo que hay en `.`.
+    const recursivo = programa === "diff";
+    const prohibida = LECTURA_PROHIBIDA[programa];
     const rutas: Palabra[] = [];
     let opciones = true;
     for (const palabra of args) {
@@ -514,15 +535,24 @@ const lecturaSimple =
         opciones = false;
         continue;
       }
-      const larga = t.startsWith("--") ? (t.split("=")[0] ?? t) : "";
-      const corta = larga === "" ? t.slice(1) : "";
-      if (LECTURA_PROHIBIDA[programa]?.(corta, larga) === true)
-        return no(MOTIVO.noPermitido(`${programa} ${t}`, scope.comandos));
-      if (programa === "diff" && (/[rR]/.test(corta) || larga === "--recursive")) recursivo = true;
-      // El valor de `--from-file=x` o de `-fx` también es una ruta.
       let valor = "";
-      if (larga !== "") valor = t.slice(larga.length + 1);
-      else if (TOMA_VALOR.has(t.slice(0, 2))) valor = t.slice(2);
+      if (t.startsWith("--")) {
+        if (prohibida?.largas.some((o) => esLarga(t, o)) === true)
+          return no(MOTIVO.noPermitido(`${programa} ${t}`, scope.comandos));
+        // El valor de `--from-file=x` también es una ruta.
+        valor = t.slice(nombreLargo(t).length + 1);
+      } else {
+        const letras = cortas(t);
+        for (let k = 0; k < letras.length; k++) {
+          const letra = letras.charAt(k);
+          if (prohibida?.cortas.includes(letra) === true)
+            return no(MOTIVO.noPermitido(`${programa} ${t}`, scope.comandos));
+          if (TOMA_VALOR.includes(letra)) {
+            valor = letras.slice(k + 1);
+            break;
+          }
+        }
+      }
       if (valor !== "" && !esNumero(valor)) rutas.push({ ...palabra, texto: valor });
     }
     for (const ruta of rutas) {
@@ -589,14 +619,22 @@ const buscar =
     const conValor = esRg ? VALOR_CORTO.rg : VALOR_CORTO.grep;
     // En un objeto: `opcion` los cambia, y TypeScript no sigue ese cambio en variables sueltas.
     const visto = { recursivo: esRg, patronAparte: false };
+    /**
+     * Las palabras que no son opciones. Una que sigue a una opción larga sin `=` puede ser su valor
+     * o no (`--context` de BSD tiene el valor opcional): se comprueba como ruta igual, y no cuenta
+     * para decidir si hay rutas (`dudosas`).
+     */
     const posicionales: Palabra[] = [];
+    let dudosas = 0;
     const archivos: Palabra[] = [];
     /** Lo que hace una opción con su valor. */
     const opcion = (nombre: string, valor: Palabra | undefined) => {
-      if (["-e", "--regexp", "-f", "--file"].includes(nombre)) visto.patronAparte = true;
-      if (!esRg && (nombre === "-d" || nombre === "--directories") && valor?.texto === "recurse")
-        visto.recursivo = true;
-      if (VALOR_ES_ARCHIVO.has(nombre) && valor !== undefined) archivos.push(valor);
+      if (["-e", "--regexp", "-f", "--file"].some((o) => nombre === o || esLarga(nombre, o)))
+        visto.patronAparte = true;
+      const directorios = nombre === "-d" || esLarga(nombre, "--directories");
+      if (!esRg && directorios && valor?.texto === "recurse") visto.recursivo = true;
+      if ([...VALOR_ES_ARCHIVO].some((o) => nombre === o || esLarga(nombre, o)) && valor)
+        archivos.push(valor);
     };
     let opciones = true;
     for (let i = 0; i < args.length; i++) {
@@ -612,14 +650,21 @@ const buscar =
         continue;
       }
       if (t.startsWith("--pre") || t.startsWith("--hostname-bin"))
-        return no(MOTIVO.script(`${programa} ${t.split("=")[0] ?? t}`));
+        return no(MOTIVO.script(`${programa} ${nombreLargo(t)}`));
       if (t.startsWith("--")) {
-        const igual = t.indexOf("=");
-        const nombre = igual < 0 ? t : t.slice(0, igual);
-        if (nombre === "--recursive" || nombre === "--dereference-recursive")
+        if (esLarga(t, "--recursive") || esLarga(t, "--dereference-recursive"))
           visto.recursivo = true;
-        if (igual >= 0) opcion(nombre, { ...palabra, texto: t.slice(igual + 1) });
-        else if (VALOR_LARGO.has(nombre)) opcion(nombre, args[++i]);
+        const nombre = nombreLargo(t);
+        if (nombre !== t) opcion(nombre, { ...palabra, texto: t.slice(nombre.length + 1) });
+        else if ([...VALOR_LARGO].some((o) => esLarga(t, o))) {
+          const siguiente = args[i + 1];
+          if (siguiente !== undefined && !esOpcion(siguiente.texto)) {
+            opcion(nombre, siguiente);
+            posicionales.push(siguiente);
+            dudosas++;
+            i++;
+          }
+        }
         continue;
       }
       // Un grupo de opciones cortas, como `-rnA3`: la primera que toma valor se lleva el resto.
@@ -636,10 +681,14 @@ const buscar =
       const verdict = leer(scope, archivo);
       if (!verdict.ok) return verdict;
     }
+    // La primera palabra nunca es un archivo: es el patrón, o el valor de una opción.
     const rutas = visto.patronAparte ? posicionales : posicionales.slice(1);
+    const seguras = posicionales.length - dudosas - (visto.patronAparte ? 0 : 1);
     // Sin rutas, grep -r busca en `.` aunque le llegue un pipe (el de BSD y el de GNU); rg lee el pipe.
-    if (visto.recursivo && rutas.length === 0 && !(esRg && tramo.desdePipe))
-      return checkSearchPath(scope, ".");
+    if (visto.recursivo && seguras <= 0 && !(esRg && tramo.desdePipe)) {
+      const raiz = checkSearchPath(scope, ".");
+      if (!raiz.ok) return raiz;
+    }
     for (const ruta of rutas) {
       const verdict = leer(scope, ruta, visto.recursivo);
       if (!verdict.ok) return verdict;
@@ -759,7 +808,8 @@ function sedPeligroso(script: string): boolean {
       while (i < script.length && c() !== ";" && c() !== "\n") i++;
     } else if (cmd === "a" || cmd === "i" || cmd === "c") {
       // El texto, hasta una línea que no termina en `\`.
-      while (i < script.length && hastaFinDeLinea().endsWith("\\"));
+      // Una línea con `\\` al final termina: la barra está escapada.
+      while (i < script.length && /(^|[^\\])(\\\\)*\\$/.test(hastaFinDeLinea()));
     } else if (cmd === "s" || cmd === "y") {
       const delim = c();
       i++;
@@ -854,7 +904,7 @@ const awk: Regla = (scope, args) => {
     if (palabra === undefined) continue;
     const t = palabra.texto;
     if (programa !== undefined) {
-      if (ASIGNACION.test(t)) continue;
+      if (ASIGNACION.test(t) || (t === "--" && rutas.length === 0)) continue;
       rutas.push(palabra);
     } else if (t === "-v" || t === "-F") i++;
     else if (!esOpcion(t)) programa = t;
@@ -863,7 +913,12 @@ const awk: Regla = (scope, args) => {
   }
   if (programa === undefined) return no(MOTIVO.sintaxis);
   const codigo = programa;
-  if (AWK_ESCRIBE.some((re) => re.test(codigo))) return no(MOTIVO.script("awk"));
+  // Las reglas se miran también sin las cadenas: un `}` o un `;` entre comillas cortaba la de `print >`.
+  const sinCadenas = codigo.replace(/"(?:[^"\\]|\\.)*"/g, '""');
+  if (AWK_ESCRIBE.some((re) => re.test(codigo) || re.test(sinCadenas)))
+    return no(MOTIVO.script("awk"));
+  // Fuera de las cadenas, un `>` es una redirección, salvo `>=` o una comparación con un número.
+  if (/>(?!=)(?!\s*\d)/.test(sinCadenas)) return no(MOTIVO.script("awk"));
   for (const ruta of rutas) {
     const verdict = leer(scope, ruta);
     if (!verdict.ok) return verdict;
@@ -873,22 +928,26 @@ const awk: Regla = (scope, args) => {
 
 const sort: Regla = (scope, args) => {
   const rutas: Palabra[] = [];
+  let opciones = true;
   for (let i = 0; i < args.length; i++) {
     const palabra = args[i];
     if (palabra === undefined) continue;
     const t = palabra.texto;
-    if (!esOpcion(t)) {
+    if (!opciones || !esOpcion(t)) {
       if (!esNumero(t)) rutas.push(palabra);
       continue;
     }
+    if (t === "--") {
+      opciones = false;
+      continue;
+    }
     if (t.startsWith("--")) {
-      const igual = t.indexOf("=");
-      const nombre = igual < 0 ? t : t.slice(0, igual);
-      if (nombre.startsWith("--output") || nombre === "--temporary-directory")
-        return no(MOTIVO.archivos(`sort ${nombre}`));
-      if (nombre === "--compress-program") return no(MOTIVO.script(`sort ${nombre}`));
+      if (esLarga(t, "--output") || esLarga(t, "--temporary-directory"))
+        return no(MOTIVO.archivos(`sort ${nombreLargo(t)}`));
+      if (esLarga(t, "--compress-program")) return no(MOTIVO.script(`sort ${nombreLargo(t)}`));
       // `--files0-from=x` y `--random-source=x` leen x.
-      if (igual >= 0) rutas.push({ ...palabra, texto: t.slice(igual + 1) });
+      const valor = t.slice(nombreLargo(t).length + 1);
+      if (valor !== "") rutas.push({ ...palabra, texto: valor });
       continue;
     }
     // Un grupo como `-nk2` o `-t:`: `-o` y `-T` escriben archivos; `-k`, `-t` y `-S` toman valor.
@@ -908,20 +967,31 @@ const sort: Regla = (scope, args) => {
   return OK;
 };
 
+/** Las palabras que no son opciones, con todo lo que sigue a `--`. */
+function operandos(args: readonly Palabra[]): Palabra[] {
+  const fin = args.findIndex((a) => a.texto === "--");
+  const antes = fin < 0 ? args : args.slice(0, fin);
+  return [...antes.filter((a) => !esOpcion(a.texto)), ...(fin < 0 ? [] : args.slice(fin + 1))];
+}
+/** Las opciones: lo que empieza con `-` antes de `--`. */
+function opcionesDe(args: readonly Palabra[]): Palabra[] {
+  const fin = args.findIndex((a) => a.texto === "--");
+  return (fin < 0 ? args : args.slice(0, fin)).filter((a) => esOpcion(a.texto));
+}
+
 const uniq: Regla = (scope, args) => {
-  const archivos = args.filter((a) => !esOpcion(a.texto));
+  const archivos = operandos(args);
   if (archivos.length > 1) return no(MOTIVO.archivos("uniq"));
   return archivos[0] === undefined ? OK : leer(scope, archivos[0]);
 };
 
 const jq: Regla = (scope, args) => {
   // `-f` lee el filtro de un archivo, y jq muestra pedazos de un filtro que no compila.
-  const desdeArchivo = args.find(
-    (a) => a.texto.startsWith("--from-file") || /^-[a-zA-Z]*f/.test(a.texto),
+  const desdeArchivo = opcionesDe(args).find(
+    (a) => esLarga(a.texto, "--from-file") || cortas(a.texto).includes("f"),
   );
   if (desdeArchivo !== undefined) return no(MOTIVO.script(`jq ${desdeArchivo.texto}`));
-  const posicionales = args.filter((a) => !esOpcion(a.texto));
-  for (const ruta of posicionales.slice(1)) {
+  for (const ruta of operandos(args).slice(1)) {
     const verdict = leer(scope, ruta);
     if (!verdict.ok) return verdict;
   }
@@ -929,22 +999,18 @@ const jq: Regla = (scope, args) => {
 };
 
 const mkdir: Regla = (scope, args) => {
-  for (const palabra of args) {
-    const t = palabra.texto;
-    if (esOpcion(t)) {
-      if (!/^-[pv]+$/.test(t)) return no(MOTIVO.noPermitido(`mkdir ${t}`, scope.comandos));
-      continue;
-    }
-    const verdict = escribir(scope, palabra);
+  const mala = opcionesDe(args).find((a) => !/^-[pv]+$/.test(a.texto));
+  if (mala !== undefined) return no(MOTIVO.noPermitido(`mkdir ${mala.texto}`, scope.comandos));
+  for (const carpeta of operandos(args)) {
+    const verdict = escribir(scope, carpeta);
     if (!verdict.ok) return verdict;
   }
   return OK;
 };
 
 const tee: Regla = (scope, args) => {
-  for (const palabra of args) {
-    if (esOpcion(palabra.texto)) continue;
-    const verdict = escribir(scope, palabra);
+  for (const archivo of operandos(args)) {
+    const verdict = escribir(scope, archivo);
     if (!verdict.ok) return verdict;
   }
   return OK;
@@ -1035,24 +1101,32 @@ function categoria(programa: string, comandos: Comandos): string {
   return MOTIVO.noPermitido(programa, comandos);
 }
 
+/**
+ * Una ruta que un fixer puede expandir por su cuenta: prettier y eslint leen sus argumentos como
+ * globs, con llaves y comodines aunque vayan citados (`'src/a/{x.ts,../../CLAUDE.md}'`). Los corchetes
+ * de Next (`[id]`) quedan: no cruzan una `/`, y la ruta literal ya pasa por el alcance.
+ */
+const fixerExpande = (ruta: string) => /[{}*?]/.test(ruta) || ruta.split("/").includes("..");
+
 function checkFixer(
   scope: Scope,
   fixer: Politica["fixers"][number],
   args: readonly Palabra[],
 ): Verdict {
-  const archivos: Palabra[] = [];
-  for (const palabra of args) {
+  for (const palabra of opcionesDe(args)) {
     const t = palabra.texto;
-    if (!esOpcion(t)) {
-      archivos.push(palabra);
-      continue;
-    }
-    const opcion = t.split("=")[0] ?? t;
     if (t.startsWith("-o") || /^--(output|out-file|plugin|config)/.test(t) || t === "-c")
-      return no(MOTIVO.opcionFixer(opcion, fixer.nombre));
+      return no(MOTIVO.opcionFixer(nombreLargo(t), fixer.nombre));
   }
+  // El valor de `--cache-location=x` y parecidos, si parece una ruta, se escribe.
+  const valores = opcionesDe(args)
+    .filter((a) => a.texto.startsWith("--") && a.texto.includes("="))
+    .map((a) => ({ ...a, texto: a.texto.slice(nombreLargo(a.texto).length + 1) }))
+    .filter((v) => /[/.]/.test(v.texto) && !esNumero(v.texto));
+  const archivos = operandos(args);
   if (archivos.length === 0) return no(MOTIVO.fixerSinArchivos(fixer.nombre));
-  for (const archivo of archivos) {
+  for (const archivo of [...archivos, ...valores]) {
+    if (fixerExpande(archivo.texto)) return no(MOTIVO.comodin);
     const verdict = escribir(scope, archivo);
     if (!verdict.ok) return verdict;
   }

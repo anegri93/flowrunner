@@ -73,6 +73,20 @@ El shell toma caminos que las reglas literales no veían. Se cierran así, cada 
 - **git que mira:** `blame --contents`, `grep --untracked` y `--no-exclude-standard`, y
   `branch --edit-description`.
 - **`$'…'` y `$"…"`** se rechazan: bash los lee con escapes propios.
+- **Un `#` al principio de palabra es un comentario hasta el fin de la línea,** como para `sh`: las
+  comillas que hay ahí no abren nada.
+- **Las opciones largas abreviadas cuentan como las enteras** (`--recur`, `--outp`, `--no-ind`,
+  `--conte`), y un grupo de opciones cortas se lee letra por letra (`git grep -lO<pager>`,
+  `file -bf<archivo>`).
+- **diff recorre siempre como una búsqueda:** `diff -N . src` imprime lo que hay en `.`.
+- **awk:** un `>` fuera de las cadenas es una redirección, salvo `>=` o una comparación con un número.
+- **Un fixer no recibe llaves, comodines ni `..`, aunque vayan citados:** prettier y eslint los
+  expanden por su cuenta. El valor de `--x=ruta` se comprueba como escritura.
+- **Después de `--`, todo es un archivo**, también para `tee`, `mkdir`, `uniq`, `jq`, `sort` y los
+  fixers.
+- **Las rutas se resuelven con las mayúsculas del disco** (`realpathSync.native`): en APFS,
+  `.ENV.LOCAL` es `.env.local`.
+- **`$[…]`**, la aritmética de bash, se rechaza como una sustitución.
 
 ## Alternativas descartadas
 

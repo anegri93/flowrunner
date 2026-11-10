@@ -121,6 +121,16 @@ describe("instalar dependencias", () => {
     const scope = unitScope(dir, repo, task, [], unitComandos(repo, task, [], false));
     const lint = "ls 'src/app/o/[publicId]/page.tsx' 'src/app/(comprador)/page.tsx'";
     expect(checkCommand(scope, lint)).toEqual({ ok: true });
+    // `ls` también es lectura: con un formateador, la política pasa por el fixer y por el alcance.
+    const conFormato = repoConfigSchema.parse({
+      setup: "true",
+      tests_globs: ["tests/**"],
+      format: "npx prettier --write",
+    });
+    const formato = unitScope(dir, conFormato, task, [], unitComandos(conFormato, task, [], false));
+    const citados = "'src/app/o/[publicId]/page.tsx' 'src/app/(comprador)/page.tsx'";
+    expect(checkCommand(formato, `npx prettier --write ${citados}`)).toEqual({ ok: true });
+    expect(checkCommand(formato, "npx prettier --write src/otro.ts").ok).toBe(false);
     for (const shell of ["sh", "zsh"]) {
       const listed = execFileSync(shell, ["-c", lint], { cwd: dir, encoding: "utf8" });
       expect(listed.trim().split("\n").sort()).toEqual([...files].sort());

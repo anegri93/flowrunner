@@ -48,6 +48,7 @@ export interface Halt {
 | Implementar: una sub-task trabada (outcome `pregunta`) | `fix --unidad` por cada una, `fix --yo`, `rerun --desde planificar` y `abort`. **Sin `accept`**: no se entrega una sub-task sin hacer |
 | Probar, con criterios sin probar (lo que hoy es `sinProbar`) | `flowrunner rerun <run> --desde probar`, `accept`, `fix --yo` y `abort` |
 | Cualquier otra detención: entorno, invariante, infra agotada, presupuesto | `flowrunner resume <run>` (o el `siguiente` que ya armaba `halt`) y `abort` |
+| Credencial rechazada (PR 07) | `flowrunner doctor`, `flowrunner resume <run>` y `abort` |
 
 - **`opciones` nunca está vacía**, y `siguiente === opciones[0].comando`.
 - **Los runs viejos** no tienen `opciones` en ningún evento, porque se calculan al reducir: el
@@ -107,11 +108,16 @@ Cada comando responde con `runStartedSchema` y respeta la cola (`lanzarOEncolar`
 |---|---|
 | `flowrunner fix <run> --unidad ST-n [--unidad ST-m] "<instrucción>" [--origen o]` | solo sobre un `detenido` con pregunta: escribe `arreglo_pedido` y lanza |
 | `flowrunner fix <run> --yo [--origen o]` | solo sobre un `detenido`: escribe `arreglo_manual_iniciado`, imprime la ruta del worktree de la feature y no lanza nada |
-| `flowrunner resume <run>` | con `aMano`, antes de lanzar: chequea el diff del worktree con las mismas reglas del bloqueo (rutas protegidas, tests bloqueados por hash, secretos), commitea con el trailer `Flowrunner-Manual: <run>` y escribe `arreglo_manual`. Si alguna regla falla, no commitea, sale con 1 y lista los problemas. Sin `aMano`, igual que hoy |
-| `flowrunner accept <run> "<por qué>" [--origen o]` | escribe `aceptado` con la fase del halt y lanza. `accept-untested` queda como alias |
+| `flowrunner resume <run>` | con `aMano`, antes de lanzar: chequea el diff del worktree, commitea con el trailer `Flowrunner-Manual: <run>` y escribe `arreglo_manual`. Si algún chequeo falla, no commitea, sale con 1 y lista los problemas. Sin `aMano`, igual que hoy |
+| `flowrunner accept <run> "<por qué>" [--origen o]` | escribe `aceptado` con la fase del halt y lanza. `accept-untested` queda como está, como comando propio que sigue escribiendo `sin_probar_aceptado` |
 | `--origen terminal\|claude\|orca` | en `approve`, `changes`, `fix` y `accept`. Por defecto `terminal`. La skill pasa `claude`; el worker de Orca, `orca` |
 | `flowrunner self-update` | PR 01 |
 | `flowrunner stats --runs [proyecto]` | PR 02 |
+
+**Qué chequea `resume` sobre un arreglo a mano.** Solo tres cosas: que no toque `.git`, que los
+tests bloqueados sigan con su hash, y que no agregue secretos. Las rutas protegidas
+(`ALWAYS_PROTECTED`) no se chequean: protegen de los agentes, no de la persona, y arreglar a mano un
+`CLAUDE.md`, como en VF-6, es para lo que existe `fix --yo`.
 
 ## C6 · Contexto de graft para un prompt
 
@@ -138,9 +144,10 @@ export function llamadoresDe(
 ): Promise<string[]>;
 ```
 
-- **Implementación:** con el CLI de graft, igual que `blastRadius` en `src/graft/graft.ts`:
-  `graft --dir <índice> skeleton <archivo> <repo>` para la API y
-  `graft --dir <índice> callers <símbolo> <repo>` para los llamadores, con `GRAFT_ENV`.
+- **Implementación:** con el CLI de graft, como `blastRadius` en `src/graft/graft.ts`, con
+  `GRAFT_ENV`, `--json` y `--no-refresh`. En modo texto, graft imprime en stdout una línea dirigida al
+  agente que no puede llegar a un prompt. El detalle, con salidas reales de graft 0.18, está en la
+  PR 04.
 - **Una carpeta en `archivos`** se expande a sus archivos versionados, hasta 30.
 - **Sobre `maxChars`:** el texto se corta en el último archivo que entra entero, y lo dice.
 

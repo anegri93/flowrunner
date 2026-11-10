@@ -228,9 +228,8 @@ que dejaría el runner: `accion_iniciada planificar`,
 
 ## Docs a actualizar
 
-- **ADR nuevo** (el siguiente número libre en `docs/adr/` al mergear):
-  `00NN-planificar-retoma-tras-el-gate.md`, con las decisiones 1, 2, 3, 6 y 9, y el residuo en modo
-  token.
+- **ADR nuevo:** `docs/adr/0025-planificar-retoma-tras-el-gate.md`, con las decisiones 1, 2, 3, 6 y
+  9, y el residuo en modo token.
 - **`docs/plan-de-raiz/`:** nada; la PR 02 mide el resultado.
 - **README y SKILL.md:** sin cambios. Es interno.
 

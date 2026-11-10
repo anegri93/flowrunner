@@ -166,7 +166,7 @@ export function opcionesDe(
 - `repoConfigSchema` suma, justo después de `max_runs`:
 
 ```ts
-/** Vueltas automáticas de verificar, revisar y probar antes de preguntar (ADR 0020). */
+/** Vueltas automáticas de verificar, revisar y probar antes de preguntar (ADR 0023). */
 vueltas: z.int().min(0).max(3).default(0),
 ```
 
@@ -445,7 +445,7 @@ corresponde: esos tests fijan el comportamiento de un repo que pide vueltas.
 
 ## Docs a actualizar
 
-- **`docs/adr/0020-detenerse-y-preguntar.md`** (nuevo): contexto (VF-6: vueltas, diagnóstico y
+- **`docs/adr/0023-detenerse-y-preguntar.md`** (nuevo): contexto (VF-6: vueltas, diagnóstico y
   replan); decisión (D1, D2, D4, D5, C1 a C5); alternativas descartadas (un estado nuevo; las vueltas
   por defecto en 2); verificación (los tests de arriba).
 - **`README.md`:**

@@ -153,7 +153,7 @@ con un remote bare propio. Nunca se toca el `.git` del repo real.
 ## Docs a actualizar
 
 - `README.md`, en la sección Instalación.
-- **ADR 0021**, «flowrunner corre desde un worktree fijo»: el contexto de ML-1, la decisión de esta
+- **ADR 0020**, «flowrunner corre desde un worktree fijo»: el contexto de ML-1, la decisión de esta
   spec y las alternativas descartadas (un paquete npm publicado, porque es pesado para un proyecto
   personal; un bloqueo en tiempo de ejecución, porque rompe los tests que corren el CLI desde el
   checkout).

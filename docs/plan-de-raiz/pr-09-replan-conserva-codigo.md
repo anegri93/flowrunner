@@ -177,9 +177,12 @@ restaurar los tests):
    `emit({ tipo: "aviso", fase: "planificar", texto: "${id} no se pudo reaplicar sobre la base: se va a reimplementar" })`,
    y se saca de candidatas, junto con lo que depende de ella según `previous.subtareas`.
 5. Se restauran los archivos de `restored` en el worktree, sin commitear, igual que hoy.
-6. **Si hubo candidatas,** se reconstruye el índice de graft sobre el worktree, para que
-   `llamadoresDe` vea el código conservado: `await buildIndex(worktree, graftIndex(run), deps.env)`
-   (ADR 0015: segundos).
+6. **Si hubo candidatas,** se reconstruye el índice de graft sobre el worktree **antes de abrir la
+   sesión del planificador**, igual que revisar lo reconstruye antes de revisar:
+   `await buildIndex(worktree, graftIndex(run), deps.env)` (ADR 0015: segundos).
+   - Lo usan `llamadoresDe` (paso 8) y el contexto de graft del planificador de la PR 12, que se arma
+     con ese índice. Sin esto, el planificador vería la API de la base y no la del código conservado.
+   - Si la PR 12 ya está mergeada, este paso va **antes** de que se arme su contexto.
 7. `instruccion = replanText(previous, replanOf(...), implementadas)`, con `implementadas` armado de
    las candidatas que quedaron más `previous.subtareas`.
 
@@ -290,8 +293,8 @@ candidatas cambió el comportamiento de hoy.
 
 ## Docs a actualizar
 
-- **ADR nuevo** (el siguiente número libre en `docs/adr/` al mergear):
-  `00NN-replan-conserva-codigo.md`, con las decisiones 1, 2, 5 y 9.
+- **ADR nuevo:** `docs/adr/0024-replan-conserva-codigo.md`, con las decisiones 1, 2, 5 y 9, y el paso
+  6 (el índice se reconstruye antes de la sesión).
 - **`README.md`**, en la sección del flujo: un párrafo. «Si un run se replanifica, el código de las
   sub-tasks que el plan nuevo no cambia se conserva».
 - **`skills/flowrunner/SKILL.md`**, en «ver el plan»: si una sub-task trae `conserva: true`, decile a

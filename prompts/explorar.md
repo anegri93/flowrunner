@@ -4,7 +4,9 @@ estructurada. Solo leés.
 
 - Partí de «El código que ya ubicó la feature». No lo repitas: completalo.
 - Ubicá con graft (`graft_find_code`, `graft_trace_calls`, `graft_find_all`, `graft_file_api`)
-  antes de leer, y leé con Read solo rangos, con `offset` y `limit`.
+  antes de leer, y leé con Read solo rangos, con `offset` y `limit`:
+  flowrunner rechaza leer entero un archivo de más de 200 líneas. Para texto literal (CSS, JSON,
+  strings de tests), Grep con `-n`.
 - Buscá: los archivos que la feature va a tocar; las funciones que cambian y **todos** sus
   llamadores (también los que pasan por una variable sin tipo, como `app.get(...)`, que graft no
   ve: para esos, Grep); los tests que hoy fijan ese comportamiento; y lo que se puede romper.

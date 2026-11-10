@@ -114,12 +114,20 @@ export interface RunStats {
   readonly vueltas: number;
   readonly fallas: number;
   readonly derecho: boolean;
-  /** La sesión principal de planificar; lo del subagente explorador, aparte. */
+  /**
+   * La sesión principal de planificar; lo del subagente explorador, aparte. `readsEnteros` son los
+   * Read sin `limit`, también los que el tripwire rechazó: cuántas veces intentó leer un archivo entero.
+   */
   readonly graftPlanificar: {
     readonly llamadas: number;
     readonly reads: number;
+    readonly readsEnteros: number;
     readonly turnos: number;
-    readonly subagente: { readonly reads: number; readonly llamadas: number };
+    readonly subagente: {
+      readonly reads: number;
+      readonly readsEnteros: number;
+      readonly llamadas: number;
+    };
   };
 }
 
@@ -196,15 +204,19 @@ const assistantLineSchema = z.object({
     .optional()
     .catch(undefined),
 });
-const toolUseSchema = z.object({ type: z.literal("tool_use"), name: z.string() });
+const toolUseSchema = z.object({
+  type: z.literal("tool_use"),
+  name: z.string(),
+  input: z.object({ limit: z.unknown() }).partial().catch({}).default({}),
+});
 
 /**
  * Turnos, `Read` y llamadas a graft de las sesiones de planificar (`sesiones/planificar-*.jsonl`),
  * los del planificador separados de los de sus subagentes.
  */
 function planningSessions(dir: string): RunStats["graftPlanificar"] {
-  const main = { llamadas: 0, reads: 0, turnos: 0 };
-  const subagente = { reads: 0, llamadas: 0 };
+  const main = { llamadas: 0, reads: 0, readsEnteros: 0, turnos: 0 };
+  const subagente = { reads: 0, readsEnteros: 0, llamadas: 0 };
   if (!existsSync(dir)) return { ...main, subagente };
   for (const file of readdirSync(dir)) {
     if (!file.startsWith("planificar-") || !file.endsWith(".jsonl")) continue;
@@ -230,8 +242,10 @@ function planningSessions(dir: string): RunStats["graftPlanificar"] {
       for (const block of turn.data.message?.content ?? []) {
         const tool = toolUseSchema.safeParse(block);
         if (!tool.success) continue;
-        if (tool.data.name === "Read") counts.reads++;
-        else if (tool.data.name.startsWith("mcp__graft__")) counts.llamadas++;
+        if (tool.data.name === "Read") {
+          counts.reads++;
+          if (tool.data.input.limit === undefined) counts.readsEnteros++;
+        } else if (tool.data.name.startsWith("mcp__graft__")) counts.llamadas++;
       }
     }
   }
@@ -279,13 +293,14 @@ export function statsPorRun(home: string, project?: string) {
 }
 
 export function describeStatsPorRun(s: ReturnType<typeof statsPorRun>): string {
-  const header = ["id", "activo", "US$", "planes", "rechazos", "vueltas", "derecho"];
+  const header = ["id", "activo", "US$", "planes", "rechazos", "graft", "vueltas", "derecho"];
   const rows = s.runs.map((r) => [
     r.id,
     `${r.activoMin.toFixed(0)} min`,
     r.costoUsd.toFixed(2),
     String(r.planes),
     `${String(r.rechazosBash)}/${String(r.rechazosEscritura)}`,
+    `${String(r.graftPlanificar.llamadas)}/${String(r.graftPlanificar.readsEnteros)}`,
     String(r.vueltas),
     r.derecho ? "sí" : "no",
   ]);
@@ -304,6 +319,7 @@ export function describeStatsPorRun(s: ReturnType<typeof statsPorRun>): string {
     `planificar: ${r.planificarPct.toFixed(0)}% del costo`,
     `planes por run: ${r.planesPorRun.toFixed(1)}`,
     `rechazos de Bash por run: ${r.rechazosBashPorRun.toFixed(1)} (la columna rechazos es Bash/escritura)`,
+    "la columna graft es, en planificar, llamadas a graft/intentos de leer un archivo entero",
     `derechos: ${String(r.derechos)} de ${String(r.runs)} runs`,
   ].join("\n");
 }

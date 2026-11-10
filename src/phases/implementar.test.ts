@@ -88,6 +88,23 @@ describe("instalar dependencias", () => {
     ]);
   });
 
+  // Regresión de VF-6: 12 rechazos de `prettier --write`, y ST-3 formateó a mano y rompió el typecheck.
+  test("una sub-task puede correr el formateador de su alcance y el typecheck del repo", () => {
+    const repo = repoConfigSchema.parse({
+      setup: "true",
+      tests_globs: ["tests/**"],
+      format: "npx prettier --write",
+      typecheck: "pnpm run typecheck",
+    });
+    expect(unitCommands(repo, st("ST-3", ["src/carpeta.ts"]), [], false)).toEqual([
+      "npx prettier --write 'src/carpeta.ts'",
+      "pnpm run typecheck",
+      "git status",
+      "git diff",
+      "git log --oneline -10",
+    ]);
+  });
+
   // Regresión: con el alcance de una ruta de Next sin comillas, el lint de la sub-task se rompía en el
   // shell: `[publicId]` es un patrón (zsh corta con «no matches found») y `(comprador)` es sintaxis.
   test("el lint de la sub-task llega al archivo aunque la ruta tenga corchetes o paréntesis", () => {
@@ -428,6 +445,19 @@ describe("implementar", () => {
         "package.json cambia dependencies sin dependencias declaradas: solo se pueden cambiar otras partes, como los scripts",
       );
     });
+  });
+
+  // Si regresiona, un formato a mano de una sub-task llega rojo a verify, y verify no sabe de quién es.
+  test("el formateador del repo pasa por lo que cambió la sub-task antes del commit", async () => {
+    const sim = simQuery(
+      byUnit({ "ST-1": [{ calls: [write("src/a/uno.js", "export  const  a = 1;\n")] }] }),
+    );
+    const deps = testDeps({ query: sim.query });
+    const { run, featureWt } = await plannedRun(planWith([st("ST-1", ["src/a/"])]), TESTS, deps, {
+      config: { setup: "true", tests_globs: ["tests/**"], format: "perl -pi -e 's/ +/ /g'" },
+    });
+    expect(await implementar(contextFor(run, "implementar", deps))).toEqual({ tipo: "ok" });
+    expect(readFileSync(join(featureWt, "src/a/uno.js"), "utf8")).toBe("export const a = 1;\n");
   });
 
   describe("un test que ya existía", () => {

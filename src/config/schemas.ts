@@ -46,6 +46,8 @@ export const repoConfigSchema = z
     lint_fix: z.string().min(1).optional(),
     /** El formateador, al que flowrunner le agrega las rutas: `npx prettier --write`. */
     format: z.string().min(1).optional(),
+    /** El typecheck del repo, tal cual, sin rutas: `pnpm run typecheck`. Lo pueden correr las sub-tasks. */
+    typecheck: z.string().min(1).optional(),
     /** Archivos fuera de git que los comandos de los criterios necesitan, como un `.env.local`: se
      * copian del repo al worktree solo mientras corren (gate, implementar, verificar) y nunca se leen. */
     env_files: z.array(relativePath).default([]),

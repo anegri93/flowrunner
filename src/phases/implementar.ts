@@ -28,6 +28,7 @@ import type { Scope } from "../tripwires/rules.ts";
 import { copyEnvFiles } from "./env-files.ts";
 import { featureWorktree, prepared, runFeature, unitWorktree } from "./inputs.ts";
 import { brainVars, readPlan, sessionName } from "./planificar.ts";
+import { runFixers } from "./fixers.ts";
 import { SETUP_TIMEOUT_MS } from "./preparar.ts";
 
 export const MAX_UNIT_ATTEMPTS = 3;
@@ -99,12 +100,16 @@ export function unitCommands(
   // worktree de una, antes de que las demás se integren, daba rojos que no eran suyos y costaba minutos.
   // Tampoco entra como comando de un criterio de «verify en verde»: ese criterio lo corre verificar.
   // Rutas citadas: `[id]` y `(grupo)` de Next son patrón y sintaxis para el shell.
-  const lint =
-    config.lint_fix === undefined
-      ? []
-      : [`${config.lint_fix} ${task.alcance.map(shellQuote).join(" ")}`];
+  // El lint y el formato van sobre su alcance; el typecheck, del repo entero, porque los tipos no se
+  // ven por archivo. Sin poder correrlos, en VF-6 una sub-task formateó a mano y rompió el typecheck.
+  const paths = task.alcance.map(shellQuote).join(" ");
+  const tools = [
+    ...(config.lint_fix === undefined ? [] : [`${config.lint_fix} ${paths}`]),
+    ...(config.format === undefined ? [] : [`${config.format} ${paths}`]),
+    ...(config.typecheck === undefined ? [] : [config.typecheck]),
+  ];
   return [
-    ...new Set([...acCommands.filter((c) => !isVerifyCommand(config, c)), ...lint]),
+    ...new Set([...acCommands.filter((c) => !isVerifyCommand(config, c)), ...tools]),
     "git status",
     "git diff",
     "git log --oneline -10",
@@ -336,6 +341,15 @@ export const implementar: PhaseFn = async (ctx) => {
           tipo: "aviso",
           fase: "implementar",
           texto: `${AVISO_TEST_EXISTENTE}${task.id} cambió ${path}, que ya existía y el plan aprobado no declaraba`,
+        });
+      // El lint y el formateador del repo sobre lo que cambió, antes del commit: un formato a mano
+      // no llega rojo a verify (VF-6: 12 rechazos de prettier y una coma que rompió el typecheck).
+      const fixable = changes.filter((c) => c.status !== "borrado").map((c) => c.path);
+      for (const f of await runFixers(wt, config, fixable, deps.env))
+        emit({
+          tipo: "aviso",
+          fase: "implementar",
+          texto: `${task.id}: ${f.falla}; verify lo va a mostrar. ${f.detalle}`,
         });
       const sha = await commitAll(
         wt,

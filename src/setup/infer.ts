@@ -15,6 +15,7 @@ export interface InferredConfig {
   readonly tests_globs: string[];
   readonly lint_fix?: string;
   readonly format?: string;
+  readonly typecheck?: string;
   readonly harness_files: string[];
   readonly lockfiles: string[];
   readonly manifests: string[];
@@ -237,6 +238,15 @@ export function inferRepo(facts: RepoFacts): Inferred {
     });
   }
 
+  const typecheck = parsed.data.scripts.typecheck === undefined ? undefined : `${run} typecheck`;
+  if (typecheck !== undefined) {
+    hallazgos.push({
+      que: "typecheck",
+      estado: "inferido",
+      detalle: `\`${typecheck}\`: las sub-tasks lo pueden correr para ver sus errores de tipos antes de commitear`,
+    });
+  }
+
   const harness_files = facts.files.filter((f) => HARNESS.test(f)).sort();
   if (harness_files.length > 0) {
     hallazgos.push({ que: "harness_files", estado: "inferido", detalle: harness_files.join(", ") });
@@ -249,6 +259,7 @@ export function inferRepo(facts: RepoFacts): Inferred {
       tests_globs,
       ...(lint_fix === undefined ? {} : { lint_fix }),
       ...(format === undefined ? {} : { format }),
+      ...(typecheck === undefined ? {} : { typecheck }),
       harness_files,
       lockfiles: manager === undefined ? [] : [manager.lockfile],
       manifests: ["package.json"],

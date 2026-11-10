@@ -62,6 +62,24 @@ describe("inferRepo", () => {
     expect(without.config).not.toHaveProperty("format");
   });
 
+  // Si regresiona, las sub-tasks no ven sus errores de tipos hasta verify (VF-6: una coma, TS1009).
+  test("con un script typecheck lo infiere con el gestor; sin el script, ninguno", () => {
+    expect(
+      inferRepo({
+        baseBranch: "main",
+        files: ["package.json", "pnpm-lock.yaml"],
+        packageJson: pkg({ test: "vitest", typecheck: "tsc --noEmit" }),
+      }).config?.typecheck,
+    ).toBe("pnpm typecheck");
+    expect(
+      inferRepo({
+        baseBranch: "main",
+        files: ["package.json"],
+        packageJson: pkg({ test: "vitest" }),
+      }).config,
+    ).not.toHaveProperty("typecheck");
+  });
+
   // Si regresiona, planificar bloquea tests que el lint del repo rechaza, como el `let` de VF-4.
   test("con eslint en las dependencias infiere el lint en modo arreglar; sin eslint, ninguno", () => {
     const withEslint = inferRepo({

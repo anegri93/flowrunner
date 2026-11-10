@@ -119,4 +119,44 @@ describe("retomar implementar", () => {
     const st1 = readLog(run.dir).events.filter((e) => e.tipo === "unidad" && e.unidad === "ST-1");
     expect(st1).toHaveLength(3);
   });
+
+  // Revisión: si regresiona, retomar un corte le paga otra sesión a ciegas a la sub-task que ya había
+  // preguntado, y la métrica de una sesión sin cambios por sub-task se rompe.
+  test("una sub-task que ya había fallado en la entrada cortada no vuelve a correr al retomar", async () => {
+    const sim = simQuery([
+      {
+        calls: [
+          {
+            tool: "Write",
+            input: { file_path: "src/m2/dos.js", content: "export const d = 2;\n" },
+          },
+        ],
+      },
+    ]);
+    const deps = testDeps({ query: sim.query });
+    const { run } = await plannedRun(
+      { ...plan, subtareas: plan.subtareas.slice(0, 2) },
+      { "tests/ac1.mjs": "process.exit(1);\n" },
+      deps,
+    );
+    appendEvent(run.dir, {
+      tipo: "unidad",
+      fase: "implementar",
+      unidad: "ST-1",
+      estado: "iniciada",
+    });
+    appendEvent(run.dir, {
+      tipo: "unidad",
+      fase: "implementar",
+      unidad: "ST-1",
+      estado: "fallida",
+      motivo: "ST-1 no cambió ningún archivo. Lo último que dijo: no sé",
+    });
+
+    const outcome = await implementar(contextFor(run, "implementar", deps));
+    expect(outcome).toMatchObject({ tipo: "pregunta", unidades: ["ST-1"] });
+    expect(outcome.tipo === "pregunta" && outcome.motivo).toContain("Lo último que dijo: no sé");
+    expect(sim.records).toHaveLength(1);
+    expect(sim.records[0]?.prompt).toContain("Sub-task ST-2");
+  });
 });

@@ -15,8 +15,8 @@ import { plannedRun } from "../../test/helpers/planned.ts";
 import { contextFor, testDeps } from "../../test/helpers/project.ts";
 import { simQuery, type SimScript } from "../../test/helpers/sim-sdk.ts";
 import type { Plan, Subtask } from "../gates/plan.ts";
-import type { RunEvent } from "../store/events.ts";
-import { readLog } from "../store/run-log.ts";
+import type { Outcome, RunEvent } from "../store/events.ts";
+import { appendEvent, readLog } from "../store/run-log.ts";
 import { repoConfigSchema } from "../config/schemas.ts";
 import { checkCommand } from "../tripwires/comandos.ts";
 import {
@@ -69,6 +69,13 @@ function byUnit(scripts: Record<string, SimScript[]>) {
 
 const unitEvents = (dir: string) =>
   readLog(dir).events.flatMap((e) => (e.tipo === "unidad" ? [`${e.unidad}:${e.estado}`] : []));
+
+/** Cierra la entrada a implementar que dejó `plannedRun` con estos eventos y abre otra. */
+function reenter(dir: string, events: Parameters<typeof appendEvent>[1][], resultado: Outcome) {
+  for (const e of events) appendEvent(dir, e);
+  appendEvent(dir, { tipo: "accion_terminada", fase: "implementar", resultado });
+  appendEvent(dir, { tipo: "accion_iniciada", fase: "implementar" });
+}
 
 describe("instalar dependencias", () => {
   const config = (lock: string) =>
@@ -424,12 +431,71 @@ describe("implementar", () => {
   test("una sub-task devuelta sin cambios y sin rechazos sigue cerrando sin cambios", async () => {
     const sim = simQuery(byUnit({ "ST-1": [{ text: "mi parte ya está bien" }] }));
     const deps = testDeps({ query: sim.query });
-    const { run } = await plannedRun(planWith([st("ST-1", ["src/a/"])]), TESTS, deps);
+    const { run, featureWt } = await plannedRun(planWith([st("ST-1", ["src/a/"])]), TESTS, deps);
+    // Integrada en la entrada anterior; verificar la devolvió.
+    const sha = git(featureWt, "rev-parse", "HEAD");
+    reenter(
+      run.dir,
+      [{ tipo: "unidad", fase: "implementar", unidad: "ST-1", estado: "integrada", sha }],
+      { tipo: "ok" },
+    );
     const outcome = await implementar(
       contextFor(run, "implementar", deps, { unidades: ["ST-1"], instruccion: "AC-1 rojo" }),
     );
     expect(outcome).toEqual({ tipo: "ok" });
-    expect(unitEvents(run.dir)).toEqual(["ST-1:iniciada", "ST-1:sin_cambios"]);
+    expect(unitEvents(run.dir)).toEqual(["ST-1:integrada", "ST-1:iniciada", "ST-1:sin_cambios"]);
+  });
+
+  describe("tras un fix desde una pregunta de implementar", () => {
+    const stuck = (dir: string) =>
+      reenter(
+        dir,
+        [
+          { tipo: "unidad", fase: "implementar", unidad: "ST-1", estado: "iniciada" },
+          {
+            tipo: "unidad",
+            fase: "implementar",
+            unidad: "ST-1",
+            estado: "fallida",
+            motivo: "ST-1 no cambió ningún archivo",
+          },
+        ],
+        { tipo: "pregunta", motivo: "una sub-task no pudo terminar", unidades: ["ST-1", "ST-2"] },
+      );
+    const chained = planWith([
+      st("ST-1", ["src/a/"]),
+      st("ST-2", ["src/b/"], { depende_de: ["ST-1"] }),
+    ]);
+    const fix = { unidades: ["ST-1", "ST-2"], instruccion: "Para ST-1: usá jsqr" };
+
+    // Revisión: si regresiona, la trabada cierra «sin cambios» como éxito sin haberse hecho nunca.
+    test("la trabada que sigue sin cambiar nada vuelve a preguntar, no cierra sin cambios", async () => {
+      const sim = simQuery(byUnit({ "ST-1": [{ text: "sigo sin poder" }] }));
+      const deps = testDeps({ query: sim.query });
+      const { run } = await plannedRun(chained, TESTS, deps);
+      stuck(run.dir);
+      const outcome = await implementar(contextFor(run, "implementar", deps, fix));
+      expect(outcome).toMatchObject({ tipo: "pregunta", unidades: ["ST-1", "ST-2"] });
+      expect(unitEvents(run.dir)).not.toContain("ST-1:sin_cambios");
+      expect(sim.records[0]?.prompt).toContain("Para ST-1: usá jsqr");
+    });
+
+    // Revisión: si regresiona, la que esperaba por la trabada arranca, no hace nada y pasa como hecha.
+    test("la que esperaba por ella y no cambia nada pregunta, aunque entre con el fix", async () => {
+      const sim = simQuery(
+        byUnit({
+          "ST-1": [{ calls: [write("src/a/uno.js", "export const a = 1;\n")] }],
+          "ST-2": [{ text: "no hay nada que hacer" }],
+        }),
+      );
+      const deps = testDeps({ query: sim.query });
+      const { run } = await plannedRun(chained, TESTS, deps);
+      stuck(run.dir);
+      const outcome = await implementar(contextFor(run, "implementar", deps, fix));
+      expect(outcome).toMatchObject({ tipo: "pregunta", unidades: ["ST-2"] });
+      expect(unitEvents(run.dir)).toContain("ST-1:integrada");
+      expect(unitEvents(run.dir)).not.toContain("ST-2:sin_cambios");
+    });
   });
 
   describe("package.json en el alcance sin dependencias", () => {

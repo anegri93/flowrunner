@@ -260,6 +260,12 @@ export const implementar: PhaseFn = async (ctx) => {
   const exact = existsSync(manifest) && prefersExact(readFileSync(manifest, "utf8"));
   const entry = currentEntry(ctx.events).filter((e): e is UnitEvent => e.tipo === "unidad");
   const lastOf = (id: string) => entry.findLast((e) => e.unidad === id);
+  // Las integradas de este plan: lo de antes de la última aprobación lo descarta un replan.
+  const integradas = new Set(
+    ctx.events
+      .slice(ctx.events.findLastIndex((e) => e.tipo === "aprobado") + 1)
+      .flatMap((e) => (e.tipo === "unidad" && e.estado === "integrada" ? [e.unidad] : [])),
+  );
   const todo = plan.subtareas.filter(
     (t) => action.unidades === undefined || action.unidades.includes(t.id),
   );
@@ -298,6 +304,9 @@ export const implementar: PhaseFn = async (ctx) => {
         return { ok: true };
       }
     }
+    // Retomado después de que ya falló en esta entrada: lo que falta lo decide la persona, no otra sesión.
+    if (previous?.estado === "fallida")
+      return { ok: false, motivo: previous.motivo ?? `${task.id} no pudo terminar` };
     let motivo = action.unidades?.includes(task.id) === true ? action.instruccion : undefined;
     const tried = entry.filter((e) => e.unidad === task.id && e.estado === "iniciada").length;
     for (let attempt = tried + 1; attempt <= MAX_UNIT_ATTEMPTS; attempt++) {
@@ -408,7 +417,13 @@ export const implementar: PhaseFn = async (ctx) => {
         // Devuelta y sin nada que cambiar: su código ya está integrado y la sub-task lo sostiene.
         // Reintentarla no arregla nada; verificar decide de qué lado está el problema.
         // Con escrituras rechazadas no: no es que no hubiera nada que hacer, es que no la dejaron.
-        if (action.unidades?.includes(task.id) === true && rejectedWrites.length === 0) {
+        // Y solo si se integró alguna vez: un `fix` desde una pregunta de implementar también la
+        // nombra, y sin código integrado «sin cambios» sería una sub-task sin hacer que pasa como hecha.
+        if (
+          action.unidades?.includes(task.id) === true &&
+          integradas.has(task.id) &&
+          rejectedWrites.length === 0
+        ) {
           emit({ tipo: "unidad", fase: "implementar", unidad: task.id, estado: "sin_cambios" });
           await removeWorktree(state.repo, wt, deps.env);
           return { ok: true };

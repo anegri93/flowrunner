@@ -10,6 +10,8 @@ Una lista de `hallazgos`, cada uno con:
 - `regla`: la convención o el criterio que rompe, citado; vacío si no hay uno.
 - `subtarea`: la sub-task responsable, una de: {{subtareas}}.
 
+Desconfiá de un test que solo busca un texto en la documentación o en un archivo de configuración: no prueba que lo documentado funcione. Si el diff documenta un comando, un script o una ruta, comprobá con Read que exista de verdad; si no existe, es `bloqueante`.
+
 Si no hay nada que objetar, devolvé `hallazgos` vacío. No inventes hallazgos para llenar la lista. Anotá en `decisiones` lo que decidiste dejar pasar y por qué.
 
 Además devolvé `como_probar`: el paso a paso para que una persona pruebe a mano lo que la PR implementa, un paso por elemento, en el orden en que se hacen. Sacá del repo (README, `package.json`, `docker-compose`, `.env.example`) cómo se levanta lo necesario. Si lo implementado es de API, nombrá el endpoint con un `curl` de ejemplo, el cuerpo y la respuesta esperada. Si es de la plataforma, la pantalla, qué se hace en ella y qué se tiene que ver. Cubrí cada criterio de la feature y el caso que tiene que fallar, si lo hay. Usá solo lo que existe en el repo: no inventes rutas, puertos ni usuarios. Para un valor que la persona tiene que completar usá MAYÚSCULAS, como `TOKEN`, no `<token>`.
@@ -33,6 +35,12 @@ Además devolvé `como_probar`: el paso a paso para que una persona pruebe a man
 # Radio de impacto según graft
 
 {{blast}}
+
+# Lo que el bloqueo no dejó escribir a las sub-tasks
+
+{{rechazos}}
+
+Si algo de esto hacía falta para cumplir un criterio, o para que sea cierto lo que el diff documenta, es `bloqueante` en el archivo que quedó sin el cambio.
 
 # El cerebro del repo
 

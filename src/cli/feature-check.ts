@@ -11,6 +11,33 @@ export interface CheckedFeature {
   readonly feature: Feature;
   readonly project: { readonly name: string; readonly path: string };
   readonly repoConfig: RepoConfig;
+  /** Lo que no frena la feature pero va a trabar el run, como un criterio sobre CLAUDE.md. */
+  readonly avisos: string[];
+}
+
+/** Archivos que ningún agente escribe, como los nombraría una feature. `.git` no: es una palabra común. */
+const PROTECTED_MENTIONS: readonly [RegExp, string][] = [
+  [/(^|[^\w.])CLAUDE\.md\b/, "CLAUDE.md"],
+  [/(^|[^\w.])AGENTS\.md\b/, "AGENTS.md"],
+  [/(^|[^\w])\.claude\//, ".claude/"],
+  [/(^|[^\w])\.flowrunner\//, ".flowrunner/"],
+];
+
+/**
+ * Un criterio que nombra un archivo protegido probablemente pida escribirlo, y ninguna sub-task
+ * puede: en VF-6 eso costó cuatro replans. Avisa; no frena, porque leerlo sí se puede.
+ */
+export function protectedMentions(feature: Feature): string[] {
+  const avisos: string[] = [];
+  for (const c of feature.criterios) {
+    for (const [pattern, name] of PROTECTED_MENTIONS) {
+      if (pattern.test(c.text))
+        avisos.push(
+          `${c.id} nombra ${name}, que ningún agente del run puede escribir. Si el criterio pide cambiarlo, sacalo de la feature y hacelo a mano`,
+        );
+    }
+  }
+  return avisos;
 }
 
 export function checkFeature(path: string, env: NodeJS.ProcessEnv): CheckedFeature {
@@ -25,7 +52,13 @@ export function checkFeature(path: string, env: NodeJS.ProcessEnv): CheckedFeatu
       `flowrunner project add <ruta del repo>`,
     );
   }
-  return { file, feature, project, repoConfig: loadRepoConfig(project.path) };
+  return {
+    file,
+    feature,
+    project,
+    repoConfig: loadRepoConfig(project.path),
+    avisos: protectedMentions(feature),
+  };
 }
 
 export function describeCheckedFeature(checked: CheckedFeature): string {
@@ -35,5 +68,6 @@ export function describeCheckedFeature(checked: CheckedFeature): string {
     `proyecto ${project.name} en ${project.path}`,
     `${feature.criterios.length} criterios, ${feature.aclaraciones.length} aclaraciones`,
     ...feature.criterios.map((c) => `  ${c.id}: ${c.text}`),
+    ...checked.avisos.map((a) => `⚠ ${a}`),
   ].join("\n");
 }

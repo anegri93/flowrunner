@@ -57,6 +57,23 @@ const repo = repoWith({ "src/a.ts": "x\n" });
 const shape = (p: Plan) => checkPlanShape(p, feature, repo, rules);
 
 describe("forma del plan", () => {
+  // Regresión de VF-6: CLAUDE.md estaba en el alcance de ST-6; el bloqueo lo rechazó 11 veces y el run
+  // replanificó cuatro, sin que nada lo frenara antes.
+  test("una ruta que ningún agente escribe no puede estar en un alcance", () => {
+    const p = plan([
+      task("ST-1", ["src/a.ts", "CLAUDE.md"]),
+      task("ST-2", [".claude/settings.json"]),
+    ]);
+    expect(shape(p)).toEqual([
+      'ST-1: "CLAUDE.md" es parte de CLAUDE.md, que ningún agente escribe: sacalo del alcance. Si la feature lo necesita, va fuera del run, a mano',
+      'ST-2: ".claude/settings.json" es parte de .claude, que ningún agente escribe: sacalo del alcance. Si la feature lo necesita, va fuera del run, a mano',
+    ]);
+    // Parecidos que no lo son: un CLAUDE.md en otra carpeta y .github.
+    expect(
+      shape(plan([task("ST-1", ["docs/CLAUDE.md"]), task("ST-2", [".github/ci.yml"])])),
+    ).toEqual([]);
+  });
+
   // Regresión: en CUENTAS-1 el planificador agregó «ST-5 Cierre: verify completo en verde», con la
   // unión de los alcances de las demás. Rehacía el trabajo de verificar desde una sub-task.
   test("una sub-task que abarca el alcance de otras dos es de cierre: rechazada", () => {

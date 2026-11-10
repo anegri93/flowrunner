@@ -3,7 +3,7 @@ import { realpathSync } from "node:fs";
 import { z } from "zod";
 import type { Feature } from "../feature/feature.ts";
 import { isUnrunnable, runShell, tail, type ProcResult } from "../proc/proc.ts";
-import { insideRoot, type Scope } from "../tripwires/rules.ts";
+import { ALWAYS_PROTECTED, insideRoot, type Scope } from "../tripwires/rules.ts";
 
 /** Un nombre de paquete, con scope y versión opcionales: `jsqr`, `@types/qrcode`, `jsqr@1.4.0`. */
 const PACKAGE = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*(@[0-9A-Za-z.^~*+-]+)?$/;
@@ -99,6 +99,12 @@ export function scopeOverlap(a: readonly string[], b: readonly string[]): string
   return [...new Set(a.map(normalize).filter((p) => theirs.some((q) => overlaps(p, q))))].sort();
 }
 
+/** La ruta protegida que contiene `path`, o que `path` contiene, como una carpeta que abarca `.claude/`. */
+export function protectedPathIn(path: string): string | undefined {
+  const p = normalize(path);
+  return ALWAYS_PROTECTED.find((prot) => overlaps(p, prot) && p !== "");
+}
+
 /** El alcance efectivo: lo que declaró, más lockfiles y manifiestos si agrega dependencias. */
 export function effectiveScope(task: Subtask, rules: PlanRepoRules): string[] {
   const own = task.alcance.map(normalize);
@@ -173,6 +179,15 @@ export function checkPlanShape(
         problems.push(`${task.id}: "${path}" es un glob; el alcance son rutas concretas`);
       else if (insideRoot(scope, path) === undefined)
         problems.push(`${task.id}: "${path}" queda fuera del repo`);
+      else {
+        // El bloqueo nunca deja escribirlas: una sub-task con eso en el alcance termina sin hacerlo
+        // y el run gira (VF-6: 11 rechazos de CLAUDE.md y cuatro replans).
+        const hit = protectedPathIn(path);
+        if (hit !== undefined)
+          problems.push(
+            `${task.id}: "${path}" es parte de ${hit}, que ningún agente escribe: sacalo del alcance. Si la feature lo necesita, va fuera del run, a mano`,
+          );
+      }
     }
   }
   if (cycle === undefined) {

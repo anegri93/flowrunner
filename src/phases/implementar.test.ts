@@ -344,6 +344,92 @@ describe("implementar", () => {
     expect(sim.records[0]?.prompt).toContain("AC-2 sigue rojo: esperaba 403");
   });
 
+  // Regresión de VF-6: devuelta por verificar, ST-6 intentó escribir CLAUDE.md, el bloqueo lo rechazó
+  // y la sub-task cerró «sin cambios» como éxito, cuatro veces, hasta agotar las vueltas.
+  test("una sub-task devuelta que no cambió nada porque el bloqueo la frenó falla y dice qué rechazó", async () => {
+    const sim = simQuery(byUnit({ "ST-1": [{ calls: [write("CLAUDE.md", "# nuevo\n")] }] }));
+    const deps = testDeps({ query: sim.query });
+    const { run } = await plannedRun(planWith([st("ST-1", ["src/a/"])]), TESTS, deps);
+    const outcome = await implementar(
+      contextFor(run, "implementar", deps, { unidades: ["ST-1"], instruccion: "AC-1 rojo" }),
+    );
+    expect(outcome).toMatchObject({ tipo: "falla", clase: "gate" });
+    const motivo = outcome.tipo === "falla" ? outcome.motivo : "";
+    expect(motivo).toContain(
+      "El bloqueo rechazó lo que intentó escribir: CLAUDE.md es parte de CLAUDE.md: ningún agente lo escribe",
+    );
+    expect(unitEvents(run.dir)).not.toContain("ST-1:sin_cambios");
+    expect(unitEvents(run.dir)).toContain("ST-1:fallida");
+    // El segundo intento lleva el motivo: el agente puede corregir un rechazo que fue error suyo.
+    expect(sim.records[1]?.prompt).toContain("El bloqueo rechazó lo que intentó escribir");
+  });
+
+  describe("package.json en el alcance sin dependencias", () => {
+    const PKG = `${JSON.stringify({ name: "x", scripts: { test: "true" }, dependencies: { zod: "4.0.0" } }, null, 2)}\n`;
+    const project = {
+      config: { setup: "true", tests_globs: ["tests/**"], manifests: ["package.json"] },
+      files: { "package.json": PKG },
+    };
+    const pkg = (extra: Record<string, unknown>) =>
+      `${JSON.stringify({ name: "x", scripts: { test: "true" }, dependencies: { zod: "4.0.0" }, ...extra }, null, 2)}\n`;
+
+    // Regresión de VF-6: el script `mac` se rechazó dos veces y quedó documentado sin existir.
+    test("puede agregar un script", async () => {
+      const sim = simQuery(
+        byUnit({
+          "ST-1": [
+            {
+              calls: [
+                write("package.json", pkg({ scripts: { test: "true", mac: "node mac.js" } })),
+              ],
+            },
+          ],
+        }),
+      );
+      const deps = testDeps({ query: sim.query });
+      const { run, featureWt } = await plannedRun(
+        planWith([st("ST-1", ["src/a/", "package.json"])]),
+        TESTS,
+        deps,
+        project,
+      );
+      expect(await implementar(contextFor(run, "implementar", deps))).toEqual({ tipo: "ok" });
+      expect(readFileSync(join(featureWt, "package.json"), "utf8")).toContain(
+        '"mac": "node mac.js"',
+      );
+    });
+
+    // Si regresiona, una sub-task sin dependencias declaradas instala lo que quiere vía package.json.
+    test("no puede cambiar sus dependencias", async () => {
+      const sim = simQuery(
+        byUnit({
+          "ST-1": [
+            {
+              calls: [
+                write("package.json", pkg({ dependencies: { zod: "4.0.0", lodash: "4.0.0" } })),
+              ],
+            },
+          ],
+        }),
+      );
+      const deps = testDeps({ query: sim.query });
+      const { run } = await plannedRun(
+        planWith([st("ST-1", ["src/a/", "package.json"])]),
+        TESTS,
+        deps,
+        project,
+      );
+      const outcome = await implementar(contextFor(run, "implementar", deps));
+      expect(outcome.tipo).toBe("falla");
+      const rechazos = readLog(run.dir).events.flatMap((e) =>
+        e.tipo === "rechazo" ? [e.motivo] : [],
+      );
+      expect(rechazos).toContain(
+        "package.json cambia dependencies sin dependencias declaradas: solo se pueden cambiar otras partes, como los scripts",
+      );
+    });
+  });
+
   describe("un test que ya existía", () => {
     const OLD = { files: { "tests/viejo.mjs": "process.exit(0);\n" } };
     const avisos = (dir: string) =>

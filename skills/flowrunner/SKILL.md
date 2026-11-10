@@ -52,7 +52,7 @@ Si el repo tiene `.flowrunner/`, o el arranque de la sesión avisa que usa flowr
    - <lo que no entra>
    ```
 
-5. Corré `flowrunner feature check <archivo> --json` hasta que salga `ok`, y ofrecé lanzar.
+5. Corré `flowrunner feature check <archivo> --json` hasta que salga `ok`. Si trae `avisos`, mostráselos a la persona antes de lanzar: un criterio sobre `CLAUDE.md` o `.claude/` lo tiene que hacer ella a mano, porque ningún agente del run puede escribirlos. Después ofrecé lanzar.
 
 ## Operar los runs
 

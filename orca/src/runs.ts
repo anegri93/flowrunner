@@ -166,10 +166,6 @@ export function parseWatch(stdout: string): Run[] {
 /** Cerrado del todo: no avanza más. Los muestra el panel aparte, colapsados. */
 export const isClosed = (run: Run) => run.status === "cerrado" || run.status === "abortado";
 
-/** Terminado para la persona: ya no hay nada que mirar mientras trabaja. */
-export const isFinished = (run: Run) =>
-  run.status === "entregado" || run.status === "cerrado" || run.status === "abortado";
-
 /** Un run que espera algo de la persona. */
 export const needsYou = (run: Run) =>
   run.status === "esperando_aprobacion" || run.status === "detenido";
@@ -177,9 +173,23 @@ export const needsYou = (run: Run) =>
 /** El momento en que arrancó, del id: `VF-3-20261109-004512`. */
 const startedAt = (run: Run) => /(\d{8}-\d{6})$/.exec(run.id)?.[1] ?? "";
 
-/** Los más recientes arriba. */
+/** De arriba hacia abajo: lo que te necesita, lo que trabaja, lo que está en cola, la PR abierta. */
+const GRUPO: Record<RunStatus, number> = {
+  esperando_aprobacion: 0,
+  detenido: 0,
+  en_curso: 1,
+  pausado_por_limite: 1,
+  en_cola: 2,
+  entregado: 3,
+  cerrado: 4,
+  abortado: 4,
+};
+
+/** Por grupo, y dentro de cada uno los más recientes arriba. */
 export const sortRuns = (runs: readonly Run[]): Run[] =>
-  [...runs].sort((a, b) => startedAt(b).localeCompare(startedAt(a)));
+  [...runs].sort(
+    (a, b) => GRUPO[a.status] - GRUPO[b.status] || startedAt(b).localeCompare(startedAt(a)),
+  );
 
 /** `12m30s`, `45s`, `1h02m`. */
 export function duration(seconds: number | undefined): string | undefined {
@@ -209,17 +219,22 @@ export function clock(seconds: number | undefined): string | undefined {
 }
 
 /** El estado del run en una etiqueta: con la PR mergeada, ya no está abierta. */
-export const runChip = (run: Run): { texto: string; tone: Tone } =>
-  run.status === "entregado" && run.prMergeada === true
-    ? { texto: "PR MERGEADA", tone: "success" }
-    : RUN_CHIP[run.status];
+export function runChip(run: Run): { texto: string; tone: Tone } {
+  if (run.status === "entregado" && run.prMergeada === true)
+    return { texto: "PR MERGEADA", tone: "success" };
+  // Mientras trabaja, la etiqueta dice en qué etapa.
+  const phase = run.status === "en_curso" ? activePhase(run) : undefined;
+  return phase === undefined
+    ? RUN_CHIP[run.status]
+    : { texto: phase.fase.toUpperCase(), tone: "accent" };
+}
 
 /** El estado del run en una etiqueta, con las palabras de `flowrunner watch`. */
 export const RUN_CHIP: Record<RunStatus, { texto: string; tone: Tone }> = {
   en_curso: { texto: "EN CURSO", tone: "accent" },
   en_cola: { texto: "EN COLA", tone: "neutral" },
   esperando_aprobacion: { texto: "TE ESPERA", tone: "warning" },
-  detenido: { texto: "DETENIDO", tone: "danger" },
+  detenido: { texto: "SE DETUVO", tone: "warning" },
   pausado_por_limite: { texto: "EN PAUSA", tone: "warning" },
   entregado: { texto: "PR ABIERTA", tone: "success" },
   cerrado: { texto: "CERRADO", tone: "neutral" },
@@ -311,20 +326,6 @@ export function stationsOf(run: Run): Station[] {
       estado: isClosed(run) && estado === "corriendo" ? "cortada" : estado,
     };
   });
-}
-
-/**
- * Un run cerrado en un renglón: cómo terminó, cuándo arrancó, cuánto tardó y cuánto costó, como
- * `abortado · 09/11 10:25 · 2:16:07 · $5.22`.
- */
-export function closedSummary(run: Run): string {
-  const at = /^\d{4}(\d{2})(\d{2})-(\d{2})(\d{2})/.exec(startedAt(run));
-  return join([
-    run.status,
-    at === null ? undefined : `${at[2] ?? ""}/${at[1] ?? ""} ${at[3] ?? ""}:${at[4] ?? ""}`,
-    clock(run.segundos),
-    `$${run.costoUsd.toFixed(2)}`,
-  ]);
 }
 
 export interface StageRow {
@@ -652,6 +653,89 @@ export function nowOf(run: Run): Now {
     ...(detalle === undefined ? {} : { detalle }),
   };
 }
+
+// --- La tarjeta plegada ----------------------------------------------------------------------
+
+export interface Segmento {
+  readonly fase: string;
+  readonly clase: "ok" | "salteada" | "trabaja" | "espera" | "volvio" | "fallo" | "pendiente";
+  /** `Implementar: trabajando`, para el lector de pantalla y el tooltip. */
+  readonly label: string;
+}
+
+const CLASE: Record<string, Segmento["clase"]> = {
+  ok: "ok",
+  salteada: "salteada",
+  corriendo: "trabaja",
+  espera: "espera",
+  pausa: "espera",
+  vuelve: "volvio",
+  falla: "fallo",
+};
+
+/** La barra de la tarjeta: un segmento por etapa, en el orden del flujo. */
+export const barraOf = (run: Run): Segmento[] =>
+  stationsOf(run).map((s) => ({
+    fase: s.fase,
+    clase: CLASE[s.estado] ?? "pendiente",
+    label: `${s.nombre}: ${phaseLabel(s.fase, s.estado, run.prMergeada === true).texto}`,
+  }));
+
+export interface Ahora {
+  readonly texto: string;
+  readonly tone: Tone;
+  /** Un motivo que puede ser largo: se muestra en dos líneas, con «más». */
+  readonly largo?: true;
+  /** La PR que espera tu merge. */
+  readonly pr?: string;
+}
+
+/** La línea de la tarjeta plegada que dice qué pasa ahora; un run cerrado no tiene. */
+export function ahoraOf(run: Run): Ahora | undefined {
+  switch (run.status) {
+    case "en_curso": {
+      const a = nowOf(run).actividad.find((x) => x.ahora !== undefined);
+      return { texto: a?.ahora ?? headlineOf(run).texto, tone: "accent" };
+    }
+    case "pausado_por_limite":
+      return { texto: "En pausa por el límite de la suscripción", tone: "warning" };
+    case "en_cola":
+      return { texto: "Espera un lugar en el repo", tone: "neutral" };
+    case "detenido":
+      return run.motivo === undefined
+        ? { texto: headlineOf(run).texto, tone: "warning" }
+        : { texto: tail(run.motivo, 600), tone: "danger", largo: true };
+    case "esperando_aprobacion": {
+      const subtasks = run.fases.find((p) => p.fase === "implementar")?.unidades.length ?? 0;
+      const existing = existingChanges(run).length;
+      return {
+        texto: join([
+          "Aprobar el plan",
+          subtasks > 0 ? `${String(subtasks)} sub-tasks` : undefined,
+          existing > 0
+            ? `cambia ${String(existing)} ${existing === 1 ? "cosa que ya existe" : "cosas que ya existen"}`
+            : undefined,
+        ]),
+        tone: "warning",
+      };
+    }
+    case "entregado":
+      return run.prMergeada === true
+        ? { texto: "Mergeada: aprende al próximo chequeo", tone: "success" }
+        : {
+            texto: "Espera tu merge",
+            tone: "warning",
+            ...(prUrl(run) === undefined ? {} : { pr: prUrl(run) }),
+          };
+    case "cerrado":
+    case "abortado":
+      return undefined;
+  }
+}
+
+/** La PR del run, si flowrunner la dio como lo siguiente a hacer. */
+export const prUrl = (run: Run): string | undefined =>
+  run.siguiente?.startsWith("https://") === true ? run.siguiente : undefined;
 
 // --- Las decisiones -------------------------------------------------------------------------
 

@@ -1,8 +1,10 @@
-// La pestaña de los runs como HTML, sin DOM ni Orca: cada run es una tarjeta con su estado, el
-// título, el tiempo y su recorrido: cada paso con su hora, las vueltas agrupadas, y todo lo que tiene
-// hijos se pliega como la tarjeta. Debajo del último paso, qué hace, sus sub-tasks y las decisiones
-// que espera. Los terminados muestran solo el último paso hasta que se abren. Con un flowrunner que no
-// manda el recorrido, las nueve etapas en lista. Debajo, los últimos cerrados, compactos y colapsados.
+// La pestaña de los runs como HTML, sin DOM ni Orca (docs/specs/2026-11-12-tarjeta-compacta.md).
+// Arriba lo que te necesita, después lo que trabaja, lo que está en cola y la PR abierta. Cada run es
+// una tarjeta compacta: la etiqueta, la clave, el reloj y el costo; el título; una barra con las nueve
+// etapas; qué pasa ahora; y las decisiones que espera. Abierta suma su recorrido: cada paso con su
+// hora, las vueltas agrupadas, y todo lo que tiene hijos se pliega como la tarjeta. Con un flowrunner
+// que no manda el recorrido, las nueve etapas en lista. El plan, el informe, la PR y abortar van en el
+// menú ⋯. Debajo, los cerrados, una línea cada uno, que se abren como tarjeta.
 //
 // Cada control es un <button> con su acción en `data-accion` (JSON): `frame.ts` la lee al tocarlo y
 // se la pasa al panel. Todo texto que viene de flowrunner pasa por `esc`.
@@ -10,20 +12,22 @@ import { indicador, indicadorDeEtapa, indicadorDeTarea, INDICADORES_CSS } from "
 import type { Openable, Snapshot } from "./protocol";
 import {
   activity,
+  ahoraOf,
+  barraOf,
   canAbort,
   clock,
-  closedSummary,
   decisionsFor,
   describeExisting,
   existingChanges,
   fixUnits,
-  isFinished,
+  isClosed,
   needsYou,
   nodosOf,
   nowOf,
   pasoSessions,
   pasoView,
   planVersion,
+  prUrl,
   rerunPhase,
   runChip,
   suggestedFixes,
@@ -60,7 +64,12 @@ export type Accion =
   | { readonly t: "enviarTexto"; readonly run: string }
   | { readonly t: "abortar"; readonly run: string }
   | { readonly t: "noAbortar" }
-  | { readonly t: "confirmarAbortar"; readonly run: string };
+  | { readonly t: "confirmarAbortar"; readonly run: string }
+  /** El menú ⋯ de un run: lo abre, o lo cierra si ya estaba abierto. */
+  | { readonly t: "menu"; readonly run: string }
+  | { readonly t: "cerrarMenu" }
+  /** El motivo largo de un run detenido, entero o en dos líneas. */
+  | { readonly t: "motivo"; readonly run: string };
 
 /** Todo lo que se ve. Lo arma y lo cambia `Panel` (estado.ts). */
 export interface Estado {
@@ -82,6 +91,10 @@ export interface Estado {
   readonly enviando: string | null;
   readonly abortando: string | null;
   readonly avisoAbortar: { readonly run: string; readonly mensaje: string } | null;
+  /** El run con su menú ⋯ abierto: uno a la vez, y no se guarda. */
+  readonly menu: string | null;
+  /** Los runs con el motivo entero a la vista; no se guarda. */
+  readonly motivos: Readonly<Record<string, boolean>>;
   /** Para la fase de las animaciones: `Date.now()` al dibujar. */
   readonly ahora: number;
 }
@@ -99,6 +112,8 @@ export const ESTADO_INICIAL: Estado = {
   enviando: null,
   abortando: null,
   avisoAbortar: null,
+  menu: null,
+  motivos: {},
   ahora: 0,
 };
 
@@ -116,8 +131,8 @@ export const esc = (text: string): string =>
 export const planSeen = (e: Estado, run: Run): boolean =>
   e.planesVistos[run.id] === planVersion(run);
 
-export const isOpen = (e: Estado, run: Run): boolean =>
-  e.abiertos[run.id] ?? (needsYou(run) || !isFinished(run));
+/** Una tarjeta arranca plegada: lo que importa ya está en sus cuatro líneas. */
+export const isOpen = (e: Estado, run: Run): boolean => e.abiertos[run.id] ?? false;
 
 // --- Piezas --------------------------------------------------------------------------------
 
@@ -125,10 +140,12 @@ interface BotonOpts {
   readonly clase?: string;
   readonly label?: string;
   readonly disabled?: boolean;
+  /** Atributos ARIA de más, ya escapados: el menú. */
+  readonly aria?: string;
 }
 
 function boton(accion: Accion, contenido: string, o: BotonOpts = {}): string {
-  return `<button type="button" class="${o.clase ?? "btn"}" data-accion="${esc(JSON.stringify(accion))}"${o.label === undefined ? "" : ` aria-label="${esc(o.label)}" title="${esc(o.label)}"`}${o.disabled === true ? " disabled" : ""}>${contenido}</button>`;
+  return `<button type="button" class="${o.clase ?? "btn"}" data-accion="${esc(JSON.stringify(accion))}"${o.label === undefined ? "" : ` aria-label="${esc(o.label)}" title="${esc(o.label)}"`}${o.aria === undefined ? "" : ` ${o.aria}`}${o.disabled === true ? " disabled" : ""}>${contenido}</button>`;
 }
 
 const texto = (t: string, clase = "", tone?: Tone) =>
@@ -193,7 +210,8 @@ function decisiones(e: Estado, run: Run): string {
     e.dicho?.run === run.id
       ? texto(e.dicho.mensaje, "nota", e.dicho.ok ? "success" : "danger")
       : "";
-  if (e.enviando === run.id) return enviando("Enviando tu decisión", e.ahora);
+  if (e.enviando === run.id && e.abortando !== run.id)
+    return enviando("Enviando tu decisión", e.ahora);
   if (offered.length === 0) return note;
   const cancelar = boton({ t: "cancelar" }, "Cancelar", { clase: "btn ghost" });
   const asked = textFor(mine);
@@ -277,24 +295,28 @@ function decisiones(e: Estado, run: Run): string {
   }</div>`;
 }
 
-/** Abortar el run entero, al pie de su tarjeta: no es una decisión de la etapa actual. */
+/**
+ * Abortar el run entero, pedido desde el menú: su confirmación, mientras se manda y lo que salió mal,
+ * al pie de la tarjeta.
+ */
 function abortar(e: Estado, run: Run): string {
   if (!canAbort(run)) return "";
-  if (e.enviando === run.id) return enviando(`Abortando el run ${run.clave}`, e.ahora);
+  if (e.enviando === run.id && e.abortando === run.id)
+    return enviando(`Abortando el run ${run.clave}`, e.ahora);
   if (e.abortando === run.id) {
     return `<div class="sep"></div><div class="pila">${texto(`¿Abortar el run ${run.clave}?`, "fuerte")}${texto("Corta lo que esté corriendo, en cualquier etapa, y borra sus worktrees. La rama y la PR quedan.", "chico apagado")}<div class="botones fin">${boton({ t: "confirmarAbortar", run: run.id }, "Sí, abortar el run", { clase: "btn solid danger" })}${boton({ t: "noAbortar" }, "Cancelar", { clase: "btn ghost" })}</div></div>`;
   }
-  const note =
-    e.avisoAbortar?.run === run.id ? texto(e.avisoAbortar.mensaje, "chico", "danger") : "";
-  return `<div class="sep"></div>${note}<div class="botones fin">${boton({ t: "abortar", run: run.id }, "Abortar el run", { clase: "btn ghost danger" })}</div>`;
+  return e.avisoAbortar?.run === run.id ? texto(e.avisoAbortar.mensaje, "chico", "danger") : "";
 }
 
 // --- Etapas --------------------------------------------------------------------------------
 
-/** Lo que pasa en la etapa actual: el motivo, las sub-tasks, qué hace la sesión y las decisiones. */
+/**
+ * Lo que pasa en la etapa actual: lo que dijo la que volvió, las sub-tasks y las sesiones. El motivo,
+ * qué hace ahora y las decisiones van arriba en la tarjeta.
+ */
 function actual(e: Estado, run: Run): string {
   const now = nowOf(run);
-  const motivo = run.motivo === undefined ? "" : texto(tail(run.motivo, 600), "chico", "danger");
   const detalle =
     now.detalle === undefined || run.motivo !== undefined
       ? ""
@@ -312,11 +334,11 @@ function actual(e: Estado, run: Run): string {
   const actividad = now.actividad
     .map(
       (a) =>
-        `<div class="fila entre">${texto(a.ahora ?? a.texto, `chico corta${a.ahora === undefined ? " apagado" : ""}`, a.ahora === undefined ? undefined : "accent")}${boton({ t: "abrir", run: run.id, que: { tipo: "pasos", sesion: a.sesion } }, ICONO_DOC, { clase: "icono", label: `Pasos de ${a.sesion}` })}</div>`,
+        `<div class="fila entre">${texto(a.texto, "chico corta apagado")}${boton({ t: "abrir", run: run.id, que: { tipo: "pasos", sesion: a.sesion } }, ICONO_DOC, { clase: "icono", label: `Pasos de ${a.sesion}` })}</div>`,
     )
     .join("");
-  const aviso = e.aviso?.run === run.id ? texto(e.aviso.texto, "chico", "danger") : "";
-  return `<div class="actual">${motivo}${detalle}${tareas}${actividad}${decisionsFor(run).length > 0 ? decisiones(e, run) : ""}${aviso}</div>`;
+  const html = `${detalle}${tareas}${actividad}`;
+  return html === "" ? "" : `<div class="actual">${html}</div>`;
 }
 
 /** El run ya tiene plan: planificar terminó, aunque después se haya aprobado o corregido. */
@@ -436,8 +458,8 @@ function pasoBloque(e: Estado, run: Run, p: Paso, ultima: boolean): string {
 /** Cerrado o abortado: no avanza más, así que no hay ahora ni decisiones. */
 const sigue = (run: Run) => run.status !== "cerrado" && run.status !== "abortado";
 
-/** El recorrido de un run. Plegado, solo lo último: el paso o la vuelta en la que está. */
-function recorrido(e: Estado, run: Run, plegado: boolean): string {
+/** El recorrido de un run, sin lo que falta: eso lo dice la barra. */
+function recorrido(e: Estado, run: Run): string {
   const nodos = nodosOf(run);
   const vivo = sigue(run);
   const ultima = vivo
@@ -449,10 +471,9 @@ function recorrido(e: Estado, run: Run, plegado: boolean): string {
     return actual(e, run);
   };
   const paso = (p: Paso) => pasoBloque(e, run, p, p === ultima) + (p === ultima ? ahora() : "");
-  const shown = plegado
-    ? nodos.filter((n) => !("paso" in n && n.paso.tipo === "pendiente")).slice(-1)
-    : nodos;
-  const html = shown
+  // Lo que falta ya lo dice la barra de la tarjeta.
+  const hechos = nodos.filter((n) => !("paso" in n && n.paso.tipo === "pendiente"));
+  const html = hechos
     .map((n) => {
       if ("paso" in n) return paso(n.paso);
       const v = n.vuelta;
@@ -479,31 +500,132 @@ function recorrido(e: Estado, run: Run, plegado: boolean): string {
   return `<div class="recorrido">${html}${vivo && !conAhora ? actual(e, run) : ""}</div>`;
 }
 
-function tarjeta(e: Estado, run: Run): string {
-  const open = isOpen(e, run);
-  const chip = runChip(run);
-  const rows = stageRows(run);
-  const shown = open ? rows : rows.filter((r) => r.actual);
-  const etapas =
-    run.recorrido === undefined
-      ? shown.map((row) => etapa(e, run, row)).join("")
-      : recorrido(e, run, !open);
-  const pr = run.siguiente?.startsWith("https://") === true ? run.siguiente : undefined;
-  return `<article class="tarjeta"><div class="fila entre"><span class="chip t-${chip.tone}">${esc(chip.texto)}</span>${boton({ t: "alternar", run: run.id }, flecha(open), { clase: "icono", label: open ? `Ocultar las etapas de ${run.clave}` : `Ver las etapas de ${run.clave}` })}</div><div><div class="titulo">${esc(run.titulo)}</div>${texto(`${run.clave} · ${run.id}`, "chico apagado")}</div><div><div class="rotulo">TIEMPO</div><div class="tiempo num">${esc(clock(run.segundos) ?? "–")}</div></div><div class="sep"></div>${etapas}<div class="fila entre">${pr === undefined ? "<span></span>" : boton({ t: "externo", url: pr }, "Abrir la PR", { clase: "lnk acento" })}${texto(nowOf(run).meta, "chico apagado num")}</div>${abortar(e, run)}</article>`;
+const ICONO_MAS = `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/></svg>`;
+
+/** El menú ⋯: lo que se abre de un run, y abortar al final, separado. */
+function menu(e: Estado, run: Run): string {
+  const abierto = e.menu === run.id;
+  const toggle = boton({ t: "menu", run: run.id }, ICONO_MAS, {
+    clase: "icono",
+    label: `Más de ${run.clave}`,
+    aria: `aria-haspopup="menu" aria-expanded="${String(abierto)}"`,
+  });
+  if (!abierto) return toggle;
+  const item = (accion: Accion, etiqueta: string, clase = "") =>
+    boton(accion, esc(etiqueta), { clase: `item${clase}`, aria: `role="menuitem"` });
+  const pr = prUrl(run);
+  const items = [
+    hasPlan(run) ? item({ t: "abrir", run: run.id, que: { tipo: "plan" } }, "Ver el plan") : "",
+    item({ t: "abrir", run: run.id, que: { tipo: "informe" } }, "Ver el informe"),
+    pr === undefined ? "" : item({ t: "externo", url: pr }, "Abrir la PR"),
+    canAbort(run)
+      ? `<div class="sep"></div>${item({ t: "abortar", run: run.id }, "Abortar el run…", " t-danger")}`
+      : "",
+  ].join("");
+  return `<div class="menu-ancla">${toggle}<div class="menu" role="menu" aria-label="${esc(`Más de ${run.clave}`)}">${items}</div></div>`;
 }
 
-/** Un run cerrado, compacto: cómo terminó, `CLAVE · título` que abre su informe, y su resumen. */
+/** Las nueve etapas en una barra, un segmento por etapa con el color de su estado. */
+function barra(run: Run): string {
+  const segmentos = barraOf(run);
+  return `<div class="barra" role="img" aria-label="${esc(segmentos.map((s) => s.label).join(" · "))}">${segmentos.map((s) => `<i class="seg ${s.clase}" title="${esc(s.label)}"></i>`).join("")}</div>`;
+}
+
+/** El número de la PR, de su URL: `…/pull/85`. */
+const prNumero = (url: string) => /\/pull\/(\d+)/.exec(url)?.[1];
+
+/** Qué pasa ahora, en una línea; un motivo largo, en dos, con «más». */
+function lineaAhora(e: Estado, run: Run): string {
+  const a = ahoraOf(run);
+  if (a === undefined) return "";
+  if (a.pr !== undefined) {
+    const n = prNumero(a.pr);
+    return `<div class="fila">${texto(a.texto, "chico", a.tone)}${boton({ t: "externo", url: a.pr }, esc(n === undefined ? "Abrir la PR" : `PR #${n}`), { clase: "lnk acento" })}</div>`;
+  }
+  if (a.largo === true) {
+    const entero = e.motivos[run.id] === true;
+    const mas =
+      a.texto.length > 140 || a.texto.includes("\n")
+        ? boton({ t: "motivo", run: run.id }, entero ? "menos" : "más", {
+            clase: "lnk acento",
+            label: entero ? "Ver el motivo en dos líneas" : "Ver el motivo entero",
+          })
+        : "";
+    return `<div class="pila corta-ahora">${texto(a.texto, `chico motivo${entero ? " entero" : ""}`, a.tone)}${mas}</div>`;
+  }
+  return texto(a.texto, "chico corta", a.tone);
+}
+
+/** El recorrido de un run detenido arranca plegado en una línea: arriba van las decisiones. */
+function recorridoDe(e: Estado, run: Run): string {
+  const pasos = (run.recorrido ?? []).filter((p) => p.tipo !== "pendiente").length;
+  const vueltas = run.vueltas?.length ?? 0;
+  const abierto = abiertoDe(e, run, "recorrido", run.status !== "detenido");
+  const linea = `<div class="fila entre">${texto(
+    [
+      "Recorrido",
+      `${String(pasos)} ${pasos === 1 ? "paso" : "pasos"}`,
+      vueltas === 0 ? "" : `${String(vueltas)} ${vueltas === 1 ? "vuelta" : "vueltas"}`,
+    ]
+      .filter((x) => x !== "")
+      .join(" · "),
+    "chico apagado",
+  )}${plegar(run, "recorrido", abierto, "el recorrido", ["Abrir", "Plegar"])}</div>`;
+  return run.status === "detenido"
+    ? `${linea}${abierto ? recorrido(e, run) : ""}`
+    : recorrido(e, run);
+}
+
+/**
+ * Un run como tarjeta: plegada, la etiqueta, la clave, el reloj y el costo; el título; la barra; qué
+ * pasa ahora; y las decisiones que espera. Abierta, su recorrido. Un cerrado abierto usa la misma.
+ */
+function tarjeta(e: Estado, run: Run): string {
+  const cerrado = isClosed(run);
+  const open = cerrado ? e.cerradoAbierto[run.id] === true : isOpen(e, run);
+  const chip = runChip(run);
+  const toggle: Accion = cerrado
+    ? { t: "alternarCerrado", run: run.id }
+    : { t: "alternar", run: run.id };
+  const meta = [
+    run.clave,
+    clock(run.segundos),
+    cerrado ? `$${run.costoUsd.toFixed(2)}` : nowOf(run).meta,
+  ]
+    .filter((x) => x !== undefined && x !== "")
+    .join(" · ");
+  const cabecera = `<div class="fila entre"><div class="fila">${`<span class="chip t-${chip.tone}">${esc(chip.texto)}</span>`}${texto(meta, "chico apagado num corta")}</div><div class="fila">${menu(e, run)}${boton(toggle, flecha(open), { clase: "icono", label: open ? `Ocultar el recorrido de ${run.clave}` : `Ver el recorrido de ${run.clave}` })}</div></div>`;
+  const aviso = e.aviso?.run === run.id ? texto(e.aviso.texto, "chico", "danger") : "";
+  const decide =
+    !cerrado && (decisionsFor(run).length > 0 || e.dicho?.run === run.id || e.enviando === run.id)
+      ? decisiones(e, run)
+      : "";
+  const detalle = !open
+    ? ""
+    : run.recorrido === undefined
+      ? `<div class="pila">${stageRows(run)
+          .filter((r) => !cerrado || r.estado !== "pendiente")
+          .map((row) => etapa(e, run, row))
+          .join("")}</div>`
+      : recorridoDe(e, run);
+  return `<article class="tarjeta${needsYou(run) ? " te-necesita" : ""}${cerrado ? " cerrada" : ""}">${cabecera}<div class="titulo" title="${esc(run.titulo)}">${esc(run.titulo)}</div>${barra(run)}${lineaAhora(e, run)}${aviso}${decide}${open ? `<div class="sep"></div>${detalle}` : ""}${abortar(e, run)}</article>`;
+}
+
+/** Un run cerrado en una línea: cómo terminó, `CLAVE · título`, su reloj y su costo. Abierto, su tarjeta. */
 function cerrado(e: Estado, run: Run): string {
-  const expanded = e.cerradoAbierto[run.id] === true;
+  if (e.cerradoAbierto[run.id] === true) return tarjeta(e, run);
   const aborted = run.status === "abortado";
-  const ran = stageRows(run).filter((r) => r.estado !== "pendiente");
-  return `<div class="cerrado${expanded ? " abierto" : ""}"><div class="fila entre"><div class="fila">${indicador(aborted ? "cortada" : "ok", aborted ? "neutral" : "success", e.ahora)}<div class="pila corta">${boton({ t: "abrir", run: run.id, que: { tipo: "informe" } }, esc(`${run.clave} · ${run.titulo}`), { clase: "lnk corta" })}${texto(closedSummary(run), "chico apagado corta")}</div></div>${boton({ t: "alternarCerrado", run: run.id }, flecha(expanded), { clase: "icono", label: expanded ? `Ocultar las etapas de ${run.clave}` : `Ver las etapas de ${run.clave}` })}</div>${expanded ? (run.recorrido === undefined ? `<div class="pila">${ran.map((row) => etapa(e, run, row)).join("")}</div>` : recorrido(e, run, false)) : ""}</div>`;
+  return `<div class="cerrado">${boton(
+    { t: "alternarCerrado", run: run.id },
+    `${indicador(aborted ? "cortada" : "ok", aborted ? "neutral" : "success", e.ahora, run.status)}${texto(`${run.clave} · ${run.titulo}`, `corta${aborted ? " apagado" : ""}`)}${texto([clock(run.segundos), `$${run.costoUsd.toFixed(2)}`].filter((x) => x !== undefined).join(" · "), "chico apagado num")}`,
+    { clase: "fila-cerrado" },
+  )}</div>`;
 }
 
 function cerrados(e: Estado, runs: readonly Run[]): string {
   if (runs.length === 0) return "";
   const open = e.cerradosAbiertos;
-  return `<div class="sep"></div><div class="fila entre">${texto(`CERRADOS · ${String(runs.length)}`, "rotulo")}${boton({ t: "cerrados" }, flecha(open), { clase: "icono", label: open ? "Ocultar los runs cerrados" : "Ver los runs cerrados" })}</div>${open ? runs.map((r) => cerrado(e, r)).join("") : ""}`;
+  return `<div class="sep"></div><div class="fila entre">${texto(`CERRADOS · ${String(runs.length)}`, "rotulo")}${boton({ t: "cerrados" }, flecha(open), { clase: "icono", label: open ? "Ocultar los runs cerrados" : "Ver los runs cerrados" })}</div>${open ? `<div class="pila">${runs.map((r) => cerrado(e, r)).join("")}</div>` : ""}`;
 }
 
 /** La pestaña entera. Antes de la primera lectura, la nave en camino. */
@@ -539,7 +661,30 @@ html.dark { --fr-success: #4ade80; --fr-warning: #fbbf24; --fr-accent: #60a5fa; 
 body { margin: 0; padding: 10px; font: 13px/1.45 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; color: var(--orca-foreground); background: var(--orca-background); }
 .panel, .pila, .tarjeta, .actual { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .panel { gap: 12px; }
-.tarjeta { gap: 10px; padding: 12px; border: 1px solid var(--orca-border); border-radius: var(--orca-radius, 8px); background: var(--orca-card, transparent); }
+.tarjeta { gap: 7px; padding: 10px 12px; border: 1px solid var(--orca-border); border-radius: var(--orca-radius, 8px); background: var(--orca-card, transparent); }
+/* Lo que te necesita: borde amarillo, con una franja a la izquierda. */
+.tarjeta.te-necesita { border-color: var(--fr-warning); box-shadow: inset 3px 0 0 var(--fr-warning); }
+.tarjeta .titulo { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.barra { display: flex; gap: 2px; }
+.seg { flex: 1; height: 5px; border-radius: 2px; background: color-mix(in srgb, var(--fr-muted) 28%, transparent); }
+.seg.ok { background: var(--fr-success); }
+.seg.trabaja { background: var(--fr-accent); animation: fr-late 1.4s ease-in-out infinite; }
+.seg.espera { background: var(--fr-accent); }
+.seg.volvio { background: var(--fr-warning); }
+.seg.fallo { background: var(--fr-danger); }
+.seg.salteada { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--fr-muted) 55%, transparent) 0 2px, transparent 2px 4px); }
+@keyframes fr-late { 50% { opacity: .45; } }
+.motivo { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }
+.motivo.entero { display: block; }
+.corta-ahora { gap: 2px; align-items: flex-start; }
+.menu-ancla { position: relative; }
+.menu { position: absolute; right: 0; top: 26px; z-index: 5; min-width: 170px; display: flex; flex-direction: column; padding: 4px; border: 1px solid var(--orca-border); border-radius: 8px; background: var(--orca-popover, var(--orca-card, var(--orca-background))); box-shadow: 0 8px 24px rgb(0 0 0 / .35); }
+.menu .sep { margin: 4px 0; }
+.item { background: none; border: 0; text-align: left; padding: 5px 8px; border-radius: 5px; font-size: 12.5px; }
+.item:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
+.fila-cerrado { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 6px 2px; background: none; border: 0; border-top: 1px solid var(--orca-border); text-align: left; }
+.fila-cerrado > .corta { flex: 1; }
+.fila-cerrado:hover > .corta { text-decoration: underline; text-underline-offset: 2px; }
 .fila { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .fila.entre { justify-content: space-between; }
 .etapa { display: flex; flex-direction: column; gap: 6px; }
@@ -580,9 +725,6 @@ html.dark .btn.solid { color: #0b0b0b; }
 .btn.danger:not(.solid) { color: var(--fr-danger); }
 .campo { width: 100%; font: inherit; font-size: 12.5px; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--orca-input, var(--orca-border)); background: transparent; color: inherit; }
 .cerrado { display: flex; flex-direction: column; gap: 6px; }
-/* Un cerrado abierto es una tarjeta, y su recorrido cuelga debajo de su título: no se mezcla con los otros runs. */
-.cerrado.abierto { gap: 10px; padding: 10px 12px 12px; margin: 2px -4px; border: 1px solid var(--orca-border); border-radius: var(--orca-radius, 8px); background: var(--orca-card, transparent); }
-.cerrado.abierto > .recorrido { margin-left: 24px; }
 .recorrido, .paso, .vuelta, .dentro, .hijos { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 /* La línea de tiempo: une el punto de cada paso con el del siguiente, por debajo de lo que cuelga. */
 .recorrido > *, .dentro > * { position: relative; }
@@ -598,5 +740,5 @@ html.dark .btn.solid { color: #0b0b0b; }
 .nota-paso { padding-left: 24px; overflow-wrap: anywhere; }
 .vacio { display: flex; flex-direction: column; gap: 4px; align-items: center; text-align: center; padding: 24px 8px; }
 .leyendo { display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: 32px; }
-@media (prefers-reduced-motion: reduce) { .flecha { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .flecha { transition: none; } .seg.trabaja { animation: none; } }
 ${INDICADORES_CSS}`;

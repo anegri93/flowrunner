@@ -382,16 +382,17 @@ una sesión, muestra sus pasos, y con `q` salís. Con `--once` la dibuja una vez
 ### En Orca
 
 Si usás [Orca](https://www.onorca.dev), el plugin de [`orca/`](orca/README.md) suma una pestaña en la
-barra derecha, con el ícono del cohete. Cada run es una tarjeta con su estado, su tiempo y su recorrido,
-el mismo que en `watch`, con las vueltas plegables y un indicador por paso: la que trabaja tiene una
-animación propia de su etapa, y debajo dice qué está haciendo. Desde
+barra derecha, con el ícono del cohete. Cada run es una tarjeta compacta: su estado, su tiempo y su
+costo, el título, una barra con las nueve etapas y qué pasa ahora; arriba va lo que te necesita. Al
+abrirla suma su recorrido, el mismo que en `watch`, con las vueltas plegables y un indicador por paso:
+la que trabaja tiene una animación propia de su etapa. Desde
 ahí decidís lo que el run espera: aprobar o pedir cambios al plan, reanudar o rehacer un run detenido,
 o responder su pregunta: un arreglo ya escrito, que se manda con un toque, «Arreglar ST-n» con lo que
 tiene que corregir, «Autofix» o «Seguir igual» con tu motivo. Arreglarlo a mano queda en la terminal
 (`fix --yo`).
 Aprobar se habilita después de abrir el plan (el botón Plan o el link de la etapa Aprobar). Un plan
 corregido se vuelve a abrir.
-Al pie de cada run vivo, «Abortar el run» lo corta en cualquier etapa.
+Su menú ⋯ abre el plan, el informe y la PR, y al final «Abortar el run…» lo corta en cualquier etapa.
 El botón de pasos de una sesión y «Plan» abren el archivo como pestaña de Orca. Tocar una etapa que ya
 arrancó abre su detalle: los intentos, lo propio de la etapa, las decisiones, los rechazos y las
 sesiones. Tocar una sub-task abre lo que tenía que hacer, lo que dice que hizo y su diff. Los dos salen

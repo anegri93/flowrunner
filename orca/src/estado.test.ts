@@ -900,6 +900,35 @@ test("un run cerrado se despliega en su recorrido, sin pendientes ni ahora", asy
   assert.equal(find(panel, "Abortar el run…"), undefined);
 });
 
+// Si regresiona, los pasos de un cerrado abierto quedan a la altura de los otros runs y se mezclan.
+test("un cerrado abierto es una tarjeta, con su recorrido adentro", async () => {
+  const closed = (clave: string, id: string) =>
+    ({
+      ...entregado,
+      id,
+      clave,
+      status: "cerrado",
+      recorrido: entregado.recorrido?.filter((p) => p.tipo !== "pendiente"),
+    }) as Run;
+  const panel = await abrirPanel(
+    fakeApi({
+      runs: () => ({ runs: [], cerrados: [closed("PIZ-9", "a"), closed("PIZ-8", "b")], at: 0 }),
+    }),
+  );
+  await press(panel, { label: "Ver los runs cerrados" });
+  const fila = filaCerrada(panel, "PIZ-9");
+  if (fila === undefined) throw new Error("sin la fila de PIZ-9");
+  await press(panel, fila);
+  const html = panel.html();
+  const card = html.indexOf('<article class="tarjeta cerrada"');
+  assert.ok(card !== -1);
+  // El recorrido de PIZ-9 va adentro de su tarjeta, y PIZ-8, plegado, afuera en su línea.
+  assert.ok(html.indexOf('class="recorrido"') > card);
+  assert.ok(html.indexOf('class="recorrido"') < html.indexOf("</article>"));
+  assert.equal(cards(panel), 1);
+  assert.ok(filaCerrada(panel, "PIZ-8"));
+});
+
 // Si regresiona, Orca con un flowrunner anterior, que no manda el recorrido, deja la tarjeta vacía.
 test("sin recorrido, la tarjeta muestra las nueve etapas en lista", async () => {
   const panel = await abrirPanel(fakeApi({}));

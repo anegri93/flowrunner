@@ -1,13 +1,15 @@
 // La pestaña de los runs como HTML, sin DOM ni Orca: cada run es una tarjeta con su estado, el
-// título, el tiempo y las nueve etapas en lista, cada una con su indicador; debajo de la actual, qué
-// hace, sus sub-tasks y las decisiones que espera. Los terminados muestran solo la etapa actual hasta
-// que se abren. Debajo, los últimos cerrados, compactos y colapsados.
+// título, el tiempo y su recorrido: cada paso con su hora, las vueltas agrupadas, y todo lo que tiene
+// hijos se pliega como la tarjeta. Debajo del último paso, qué hace, sus sub-tasks y las decisiones
+// que espera. Los terminados muestran solo el último paso hasta que se abren. Con un flowrunner que no
+// manda el recorrido, las nueve etapas en lista. Debajo, los últimos cerrados, compactos y colapsados.
 //
 // Cada control es un <button> con su acción en `data-accion` (JSON): `frame.ts` la lee al tocarlo y
 // se la pasa al panel. Todo texto que viene de flowrunner pasa por `esc`.
 import { indicador, indicadorDeEtapa, indicadorDeTarea, INDICADORES_CSS } from "./indicadores";
 import type { Openable, Snapshot } from "./protocol";
 import {
+  activity,
   canAbort,
   clock,
   closedSummary,
@@ -17,7 +19,10 @@ import {
   fixUnits,
   isFinished,
   needsYou,
+  nodosOf,
   nowOf,
+  pasoSessions,
+  pasoView,
   planVersion,
   rerunPhase,
   runChip,
@@ -25,15 +30,26 @@ import {
   sortRuns,
   stageRows,
   tail,
+  TASK,
+  vueltaTitulo,
   type Decision,
+  type Paso,
+  type PasoEtapa,
   type Run,
+  type Session,
   type StageRow,
   type Tone,
 } from "./runs";
 
 /** Lo que la persona toca. `frame.ts` la manda al panel tal cual. */
 export type Accion =
-  | { readonly t: "alternar"; readonly run: string }
+  /** La tarjeta, o con `nodo` un paso o una vuelta de su recorrido; `abierto`, cómo está ahora. */
+  | {
+      readonly t: "alternar";
+      readonly run: string;
+      readonly nodo?: string;
+      readonly abierto?: boolean;
+    }
   | { readonly t: "cerrados" }
   | { readonly t: "alternarCerrado"; readonly run: string }
   | { readonly t: "abrir"; readonly run: string; readonly que: Openable }
@@ -326,13 +342,154 @@ function etapa(e: Estado, run: Run, row: StageRow): string {
   return `<div class="etapa${row.actual ? " es-actual" : ""}"><div class="fila entre"><div class="fila">${ind}${nombre}${row.estado === "ok" || pending ? "" : texto(row.texto, "chico", row.tone)}</div>${texto(row.meta, "chico apagado num")}</div>${row.actual ? actual(e, run) : ""}</div>`;
 }
 
+// --- El recorrido -------------------------------------------------------------------------------
+
+/** Abierto o plegado: lo que la persona tocó, o lo que dice flowrunner. */
+const abiertoDe = (e: Estado, run: Run, clave: string, porDefecto: boolean) =>
+  e.abiertos[`${run.id}:${clave}`] ?? porDefecto;
+
+/** La flecha que pliega o abre un nodo del recorrido, como la de la tarjeta. */
+const plegar = (
+  run: Run,
+  clave: string,
+  abierto: boolean,
+  que: string,
+  verbos = ["Ver", "Ocultar"],
+) =>
+  boton({ t: "alternar", run: run.id, nodo: clave, abierto }, flecha(abierto), {
+    clase: "icono",
+    label: `${abierto ? verbos[1] : verbos[0]} ${que}`,
+  });
+
+/** Una sesión: qué hace o sus números, y el link a sus pasos. */
+const sesionFila = (run: Run, s: Session) => {
+  const a = activity(s);
+  return `<div class="fila entre">${texto(a.ahora ?? a.texto, `chico corta${a.ahora === undefined ? " apagado" : ""}`, a.ahora === undefined ? undefined : "accent")}${boton({ t: "abrir", run: run.id, que: { tipo: "pasos", sesion: a.sesion } }, ICONO_DOC, { clase: "icono", label: `Pasos de ${a.sesion}` })}</div>`;
+};
+
+/** Lo que cuelga de una corrida: sus sub-tasks, cada una plegable en sus sesiones, o sus sesiones. */
+function hijos(e: Estado, run: Run, p: PasoEtapa): string {
+  if (p.fase !== "implementar") return p.sesiones.map((s) => sesionFila(run, s)).join("");
+  return p.subtareas
+    .map((u) => {
+      const clave = `${p.clave}/${u.id}`;
+      const abierto = u.sesiones.length > 0 && abiertoDe(e, run, clave, u.estado === "corriendo");
+      const look = TASK[u.estado] ?? { tone: "neutral" as const };
+      const fold =
+        u.sesiones.length === 0 ? "" : plegar(run, clave, abierto, `las sesiones de ${u.id}`);
+      const sesiones = abierto
+        ? `<div class="hijos">${u.sesiones.map((s) => sesionFila(run, s)).join("")}</div>`
+        : "";
+      return `<div class="fila entre"><div class="fila tarea">${indicador(indicadorDeTarea(u.estado), look.tone, e.ahora)}${boton({ t: "abrir", run: run.id, que: { tipo: "unidad", unidad: u.id } }, esc(`${u.id} ${u.titulo}`), { clase: `lnk corta${look.tone === "neutral" ? " apagado" : ""}` })}</div>${fold}</div>${sesiones}`;
+    })
+    .join("");
+}
+
+/**
+ * Un paso del recorrido. La última corrida de un run vivo no se pliega: debajo va `actual`, que ya
+ * dice qué hace, sus sub-tasks y las decisiones.
+ */
+function pasoBloque(e: Estado, run: Run, p: Paso, ultima: boolean): string {
+  const v = pasoView(p, run);
+  const clave =
+    p.tipo === "tuyo" || p.tipo === "auto"
+      ? p.tipo
+      : indicadorDeEtapa(
+          p.tipo === "etapa" ? p.fase : "aprender",
+          v.estado,
+          run.prMergeada === true,
+        );
+  const ind = indicador(clave, v.tone, e.ahora, `${v.titulo}: ${v.texto ?? "listo"}`);
+  const nombre =
+    p.tipo === "etapa"
+      ? boton({ t: "abrir", run: run.id, que: { tipo: "etapa", fase: p.fase } }, esc(v.titulo), {
+          clase: `lnk${ultima ? " fuerte" : ""}`,
+        })
+      : texto(v.titulo, p.tipo === "pendiente" || p.tipo === "auto" ? "apagado" : "");
+  const kids =
+    p.tipo !== "etapa" || ultima
+      ? 0
+      : p.fase === "implementar"
+        ? p.subtareas.length
+        : p.sesiones.length;
+  const abierto = kids > 0 && p.tipo === "etapa" && abiertoDe(e, run, p.clave, p.abierto);
+  const fold =
+    kids > 0 && p.tipo === "etapa"
+      ? plegar(
+          run,
+          p.clave,
+          abierto,
+          p.fase === "implementar"
+            ? `las sub-tasks de ${v.titulo.split(" ")[0] ?? ""}`
+            : `las sesiones de ${v.titulo}`,
+        )
+      : "";
+  const nota =
+    v.nota === undefined
+      ? ""
+      : texto(v.nota.length > 200 ? `${v.nota.slice(0, 200)}…` : v.nota, "chico apagado nota-paso");
+  const dentro =
+    abierto && p.tipo === "etapa" ? `<div class="hijos">${hijos(e, run, p)}</div>` : "";
+  return `<div class="paso"><div class="fila entre"><div class="fila">${ind}${nombre}${v.texto === undefined ? "" : texto(v.texto, "chico", v.tone)}</div><div class="fila">${texto(v.meta, "chico apagado num")}${fold}</div></div>${nota}${dentro}</div>`;
+}
+
+/** Cerrado o abortado: no avanza más, así que no hay ahora ni decisiones. */
+const sigue = (run: Run) => run.status !== "cerrado" && run.status !== "abortado";
+
+/** El recorrido de un run. Plegado, solo lo último: el paso o la vuelta en la que está. */
+function recorrido(e: Estado, run: Run, plegado: boolean): string {
+  const nodos = nodosOf(run);
+  const vivo = sigue(run);
+  const ultima = vivo
+    ? (run.recorrido ?? []).findLast((p): p is PasoEtapa => p.tipo === "etapa")
+    : undefined;
+  let conAhora = false;
+  const ahora = () => {
+    conAhora = true;
+    return actual(e, run);
+  };
+  const paso = (p: Paso) => pasoBloque(e, run, p, p === ultima) + (p === ultima ? ahora() : "");
+  const shown = plegado
+    ? nodos.filter((n) => !("paso" in n && n.paso.tipo === "pendiente")).slice(-1)
+    : nodos;
+  const html = shown
+    .map((n) => {
+      if ("paso" in n) return paso(n.paso);
+      const v = n.vuelta;
+      const clave = `v${String(v.numero)}`;
+      const abierto = abiertoDe(e, run, clave, v.abierto);
+      const ss = n.pasos.flatMap((p) => (p.tipo === "etapa" ? pasoSessions(p) : []));
+      const live = ss.some((s) => s.corriendo);
+      const meta = [
+        clock(v.segundos),
+        v.costoUsd > 0 ? `${live ? "≥ " : ""}$${v.costoUsd.toFixed(2)}` : undefined,
+      ]
+        .filter((x) => x !== undefined)
+        .join(" · ");
+      const header = `<div class="fila entre"><div class="fila">${indicador(v.abierta ? "vuelve" : "vuelta", v.abierta ? "warning" : "neutral", e.ahora)}${texto(vueltaTitulo(v), v.abierta ? "fuerte" : "")}</div><div class="fila">${texto(meta, "chico apagado num")}${plegar(run, clave, abierto, `la vuelta de ${v.fase.charAt(0).toUpperCase()}${v.fase.slice(1)}`, ["Abrir", "Plegar"])}</div></div>`;
+      // Plegada, la vuelta del paso que corre sigue mostrando ahora: ahí están las decisiones.
+      const body = abierto
+        ? `<div class="dentro">${n.pasos.map(paso).join("")}</div>`
+        : ultima !== undefined && n.pasos.includes(ultima)
+          ? ahora()
+          : "";
+      return `<div class="vuelta${abierto ? " abierta" : ""}${v.abierta ? " viva" : ""}">${header}${body}</div>`;
+    })
+    .join("");
+  return `<div class="recorrido">${html}${vivo && !conAhora ? actual(e, run) : ""}</div>`;
+}
+
 function tarjeta(e: Estado, run: Run): string {
   const open = isOpen(e, run);
   const chip = runChip(run);
   const rows = stageRows(run);
   const shown = open ? rows : rows.filter((r) => r.actual);
+  const etapas =
+    run.recorrido === undefined
+      ? shown.map((row) => etapa(e, run, row)).join("")
+      : recorrido(e, run, !open);
   const pr = run.siguiente?.startsWith("https://") === true ? run.siguiente : undefined;
-  return `<article class="tarjeta"><div class="fila entre"><span class="chip t-${chip.tone}">${esc(chip.texto)}</span>${boton({ t: "alternar", run: run.id }, flecha(open), { clase: "icono", label: open ? `Ocultar las etapas de ${run.clave}` : `Ver las etapas de ${run.clave}` })}</div><div><div class="titulo">${esc(run.titulo)}</div>${texto(`${run.clave} · ${run.id}`, "chico apagado")}</div><div><div class="rotulo">TIEMPO</div><div class="tiempo num">${esc(clock(run.segundos) ?? "–")}</div></div><div class="sep"></div>${shown.map((row) => etapa(e, run, row)).join("")}<div class="fila entre">${pr === undefined ? "<span></span>" : boton({ t: "externo", url: pr }, "Abrir la PR", { clase: "lnk acento" })}${texto(nowOf(run).meta, "chico apagado num")}</div>${abortar(e, run)}</article>`;
+  return `<article class="tarjeta"><div class="fila entre"><span class="chip t-${chip.tone}">${esc(chip.texto)}</span>${boton({ t: "alternar", run: run.id }, flecha(open), { clase: "icono", label: open ? `Ocultar las etapas de ${run.clave}` : `Ver las etapas de ${run.clave}` })}</div><div><div class="titulo">${esc(run.titulo)}</div>${texto(`${run.clave} · ${run.id}`, "chico apagado")}</div><div><div class="rotulo">TIEMPO</div><div class="tiempo num">${esc(clock(run.segundos) ?? "–")}</div></div><div class="sep"></div>${etapas}<div class="fila entre">${pr === undefined ? "<span></span>" : boton({ t: "externo", url: pr }, "Abrir la PR", { clase: "lnk acento" })}${texto(nowOf(run).meta, "chico apagado num")}</div>${abortar(e, run)}</article>`;
 }
 
 /** Un run cerrado, compacto: cómo terminó, `CLAVE · título` que abre su informe, y su resumen. */
@@ -340,7 +497,7 @@ function cerrado(e: Estado, run: Run): string {
   const expanded = e.cerradoAbierto[run.id] === true;
   const aborted = run.status === "abortado";
   const ran = stageRows(run).filter((r) => r.estado !== "pendiente");
-  return `<div class="cerrado"><div class="fila entre"><div class="fila">${indicador(aborted ? "cortada" : "ok", aborted ? "neutral" : "success", e.ahora)}<div class="pila corta">${boton({ t: "abrir", run: run.id, que: { tipo: "informe" } }, esc(`${run.clave} · ${run.titulo}`), { clase: "lnk corta" })}${texto(closedSummary(run), "chico apagado corta")}</div></div>${boton({ t: "alternarCerrado", run: run.id }, flecha(expanded), { clase: "icono", label: expanded ? `Ocultar las etapas de ${run.clave}` : `Ver las etapas de ${run.clave}` })}</div>${expanded ? `<div class="pila">${ran.map((row) => etapa(e, run, row)).join("")}</div>` : ""}</div>`;
+  return `<div class="cerrado"><div class="fila entre"><div class="fila">${indicador(aborted ? "cortada" : "ok", aborted ? "neutral" : "success", e.ahora)}<div class="pila corta">${boton({ t: "abrir", run: run.id, que: { tipo: "informe" } }, esc(`${run.clave} · ${run.titulo}`), { clase: "lnk corta" })}${texto(closedSummary(run), "chico apagado corta")}</div></div>${boton({ t: "alternarCerrado", run: run.id }, flecha(expanded), { clase: "icono", label: expanded ? `Ocultar las etapas de ${run.clave}` : `Ver las etapas de ${run.clave}` })}</div>${expanded ? (run.recorrido === undefined ? `<div class="pila">${ran.map((row) => etapa(e, run, row)).join("")}</div>` : recorrido(e, run, false)) : ""}</div>`;
 }
 
 function cerrados(e: Estado, runs: readonly Run[]): string {
@@ -423,6 +580,11 @@ html.dark .btn.solid { color: #0b0b0b; }
 .btn.danger:not(.solid) { color: var(--fr-danger); }
 .campo { width: 100%; font: inherit; font-size: 12.5px; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--orca-input, var(--orca-border)); background: transparent; color: inherit; }
 .cerrado { display: flex; flex-direction: column; gap: 6px; }
+.recorrido, .paso, .vuelta, .dentro, .hijos { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.vuelta .dentro { border-left: 2px solid color-mix(in srgb, var(--fr-muted) 45%, transparent); padding-left: 10px; margin-left: 7px; }
+.vuelta.viva .dentro { border-left-color: var(--fr-warning); }
+.hijos { padding-left: 24px; }
+.nota-paso { padding-left: 24px; overflow-wrap: anywhere; }
 .vacio { display: flex; flex-direction: column; gap: 4px; align-items: center; text-align: center; padding: 24px 8px; }
 .leyendo { display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: 32px; }
 @media (prefers-reduced-motion: reduce) { .flecha { transition: none; } }

@@ -6,6 +6,7 @@ import type { Step } from "../report/transcript.ts";
 import { contextWindow, estimateCost, promptTokens, type Usage } from "./pricing.ts";
 import { PHASES, type Phase, type RunEvent } from "../store/events.ts";
 import type { CambioExistente } from "../gates/plan.ts";
+import { recorridoOf, type Paso, type Vuelta } from "./recorrido.ts";
 
 export interface SessionFile {
   readonly jsonl: string;
@@ -97,6 +98,9 @@ export interface RunTree {
   /** Lo que hoy existe y el plan cambia: aprobarlo pide aceptarlo. Vacío sin plan o sin cambios. */
   readonly cambiaLoExistente: readonly CambioExistente[];
   readonly fases: PhaseNode[];
+  /** Lo que pasó, en orden, con las vueltas agrupadas: la línea de tiempo de watch y de Orca. */
+  readonly recorrido: Paso[];
+  readonly vueltas: Vuelta[];
 }
 
 export interface TreeInput {
@@ -446,5 +450,6 @@ export function runTree(input: TreeInput): RunTree {
     unidades: state.status === "detenido" ? state.halt?.unidades : undefined,
     cambiaLoExistente: input.cambiaLoExistente ?? [],
     fases,
+    ...recorridoOf({ events, sessions, tasks: input.tasks, status: state.status, now: clock }),
   };
 }

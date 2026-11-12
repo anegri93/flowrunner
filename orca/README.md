@@ -4,7 +4,10 @@ Una pestaña en la barra derecha de [Orca](https://www.onorca.dev) con el progre
 como `flowrunner watch`, pensada para el ancho angosto de la barra:
 
 - Cada run es una tarjeta, al estilo de flowindex: el estado como etiqueta («EN CURSO», «TE
-  ESPERA»), el título, el tiempo, y las nueve etapas del flujo en lista con sus intentos y su tiempo.
+  ESPERA»), el título, el tiempo, y su recorrido: lo que pasó en orden, con la hora, el tiempo y el
+  costo de cada paso, tus decisiones, el autofix y las vueltas agrupadas. Una vuelta, implementar con
+  sus sub-tasks, cada sub-task y cada paso con sesiones se pliegan y se despliegan. Con un flowrunner
+  anterior, que no manda el recorrido, se ven las nueve etapas en lista.
   Cada etapa tiene un indicador según su estado, y la que trabaja, uno animado propio: un arco al
   preparar, puntos que laten al planificar, barras en paralelo al implementar, un check que se dibuja
   al verificar, una lupa al revisar, una onda al probar, una flecha que sube al entregar. Lo que te

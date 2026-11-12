@@ -28,7 +28,10 @@ export type Indicador =
   | "tarea-pendiente"
   | "tarea-corriendo"
   | "tarea-lista"
-  | "tarea-falla";
+  | "tarea-falla"
+  | "tuyo"
+  | "auto"
+  | "vuelta";
 
 /** El ciclo de cada indicador animado, en ms; los que no están quedan quietos. */
 export const PERIODO: Partial<Record<Indicador, number>> = {
@@ -129,6 +132,9 @@ const DIBUJO: Record<Indicador, string> = {
   // ↺, como el carácter que mostraba antes: apunta hacia atrás y gira para ese lado (fr-vuelta).
   vuelve: `<g class="g"><path d="M3.5 8a4.5 4.5 0 1 0 1.32-3.18"/><path d="M4.4 2.4v2.8h2.8"/></g>`,
   falla: `<path d="M5 5l6 6M11 5l-6 6"/>`,
+  tuyo: `<path d="M8 3.2l4.8 4.8L8 12.8 3.2 8z"/>`,
+  auto: `<circle cx="8" cy="8" r="1.6"/>`,
+  vuelta: `<path d="M3.5 8a4.5 4.5 0 1 0 1.32-3.18"/><path d="M4.4 2.4v2.8h2.8"/>`,
   cortada: `<path d="M5 8h6" opacity=".55"/>`,
   "tarea-pendiente": `<circle cx="8" cy="8" r="3.2" opacity=".55"/>`,
   "tarea-corriendo": `<circle cx="8" cy="8" r="4" opacity=".2"/><path class="g" d="M8 4a4 4 0 0 1 4 4"/>`,

@@ -371,17 +371,19 @@ Aprende de dos fuentes, y en las dos decidís vos:
 
 ## Ver un run en vivo
 
-`flowrunner watch` muestra, al estilo de [agents-tree](https://github.com/anegri93/agents-tree), cada run
-con sus fases y sub-tasks: el modelo, los tokens nuevos, los USD aproximados, el tiempo y el estado. Lo
-que corre muestra en gris la herramienta que está usando y cuánto contexto arrastra. Se refresca cada 2
-segundos; con las flechas elegís una fila, con Enter ves sus pasos y con `q` salís. Con `--once` la
-dibuja una vez.
+`flowrunner watch` muestra, al estilo de [agents-tree](https://github.com/anegri93/agents-tree), el
+recorrido de cada run: cada paso con su hora, en orden, con sus sub-tasks y sesiones, el modelo, los
+tokens nuevos, los USD aproximados, el tiempo y el estado. Tus decisiones van con `◆`, y las vueltas
+(verificar que devolvió trabajo, el autofix, tu arreglo) se agrupan con una barra `┃`. Lo que corre
+muestra en gris la herramienta que está usando y cuánto contexto arrastra. Se refresca cada 2 segundos;
+con las flechas elegís una fila, `→` la abre, `←` la pliega o sube a la de arriba, Enter alterna o, en
+una sesión, muestra sus pasos, y con `q` salís. Con `--once` la dibuja una vez.
 
 ### En Orca
 
 Si usás [Orca](https://www.onorca.dev), el plugin de [`orca/`](orca/README.md) suma una pestaña en la
-barra derecha, con el ícono del cohete. Cada run es una tarjeta con su estado, su tiempo y las nueve
-etapas del flujo, cada una con su tiempo y un indicador de su estado: la que trabaja tiene una
+barra derecha, con el ícono del cohete. Cada run es una tarjeta con su estado, su tiempo y su recorrido,
+el mismo que en `watch`, con las vueltas plegables y un indicador por paso: la que trabaja tiene una
 animación propia de su etapa, y debajo dice qué está haciendo. Desde
 ahí decidís lo que el run espera: aprobar o pedir cambios al plan, reanudar o rehacer un run detenido,
 o responder su pregunta: un arreglo ya escrito, que se manda con un toque, «Arreglar ST-n» con lo que

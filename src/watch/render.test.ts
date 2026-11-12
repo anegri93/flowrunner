@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { duration, modelTag, renderBoard, renderDetail, tokenCount } from "./render.ts";
 import type { PhaseNode, RunTree, SessionNode } from "./tree.ts";
+import { build, piz9 } from "./piz9.fixture.ts";
 
 const session = (nombre: string, extra: Partial<SessionNode> = {}): SessionNode => ({
   nombre,
@@ -45,6 +46,9 @@ const tree: RunTree = {
   opciones: undefined,
   unidades: undefined,
   cambiaLoExistente: [],
+  // Sin recorrido: watch dibuja las fases como antes.
+  recorrido: [],
+  vueltas: [],
   fases: [
     phase("planificar", {
       estado: "ok",
@@ -374,4 +378,99 @@ test("un run entregado con la PR mergeada dice que aprende al próximo chequeo, 
   expect(text(delivered(true))).toContain("aprende al próximo chequeo");
   expect(text(delivered(true))).toContain("PR mergeada");
   expect(text(delivered(true))).not.toContain("espera merge");
+});
+
+describe("el recorrido en watch", () => {
+  const piz9Tree: RunTree = {
+    ...tree,
+    id: "PIZ-9-x",
+    clave: "PIZ-9",
+    titulo: "Generar con el Claude Code del usuario",
+    status: "entregado",
+    ...build(piz9, "entregado"),
+  };
+  const board = (abiertos: [string, boolean][] = []) =>
+    renderBoard([piz9Tree], { width: 160, color: false, abiertos: new Map(abiertos) });
+
+  // Si regresiona, watch vuelve a mostrar una foto de nueve etapas y se pierden las vueltas.
+  test("cada paso con su hora, tus decisiones, la vuelta plegada en una línea y lo pendiente al final", () => {
+    const { lines } = board([["PIZ-9-x", true]]);
+    expect(rowOf(lines, "preparar")).toMatch(/[├└]─ ✓ \d\d:\d\d preparar .* listo$/);
+    expect(rowOf(lines, "aprobaste")).toMatch(/◆ \d\d:\d\d aprobaste/);
+    expect(rowOf(lines, "volvió 2 veces")).toMatch(/↺ verificar volvió 2 veces → ST-1 · 5 pasos/);
+    expect(rowOf(lines, "revisar volvió")).toMatch(/revisar volvió → ST-3 · 3 pasos/);
+    expect(rowOf(lines, "entregar")).toMatch(/PR #12$/);
+    expect(lines.at(-1)).toMatch(/└─ ○ aprender .* espera merge$/);
+    // Las vueltas resueltas arrancan plegadas: ninguna fila lleva la barra.
+    expect(lines.some((l) => l.includes("┃"))).toBe(false);
+  });
+
+  // Si regresiona, al abrir una vuelta no se ve qué pasó adentro, o se ve sin la barra que la marca.
+  test("una vuelta abierta muestra sus pasos con la barra ┃ y el motivo debajo", () => {
+    const { lines } = board([
+      ["PIZ-9-x", true],
+      ["PIZ-9-x:v1", true],
+    ]);
+    const inside = lines.filter((l) => l.includes("┃"));
+    expect(
+      inside.map((l) => /(verificar|autofix|implementar|arreglaste a mano|→ ST-1)/.exec(l)?.[1]),
+    ).toEqual([
+      "verificar",
+      "→ ST-1",
+      "autofix",
+      "verificar",
+      "→ ST-1",
+      "implementar",
+      "→ ST-1",
+      "arreglaste a mano",
+    ]);
+  });
+
+  // Si regresiona, abrir implementar no muestra sus sub-tasks, o una sub-task no muestra sus intentos.
+  test("implementar se abre en sus sub-tasks y cada sub-task en sus sesiones", () => {
+    const { lines } = board([
+      ["PIZ-9-x", true],
+      ["PIZ-9-x:p9", true],
+      ["PIZ-9-x:p9/ST-1", true],
+    ]);
+    const from = lines.findIndex((l) => l.includes("implementar 3/3 ▾"));
+    expect(lines.slice(from + 1, from + 6).map((l) => l.split(/ {4,}/)[0])).toEqual([
+      "   │  ├─ ✓ ST-1 Generador con el claude instalado ×2 ▾",
+      "   │  │  ├─ ✓ implementar-ST-1-1",
+      "   │  │  └─ ✓ implementar-ST-1-2",
+      "   │  ├─ ✓ ST-2 Conexiones en el frontend ▸",
+      "   │  └─ ✓ ST-3 Estado de la conexión ▸",
+    ]);
+  });
+
+  // Si regresiona, un run plegado sigue ocupando media pantalla, o no dice dónde quedó.
+  test("plegado, el run muestra solo su último paso", () => {
+    const { lines } = board();
+    expect(lines.slice(2).map((l) => /(Generar|entregar|preparar)/.exec(l)?.[1])).toEqual([
+      "Generar",
+      "entregar",
+    ]);
+  });
+
+  // Si regresiona, las flechas no llegan a lo que se pliega o no saben a qué padre subir.
+  test("se eligen el run, las vueltas y los pasos con hijos, cada uno con su estado y su padre", () => {
+    const { selectable } = board([
+      ["PIZ-9-x", true],
+      ["PIZ-9-x:v2", true],
+    ]);
+    const brief = selectable.map((s) => [
+      s.key.replace("PIZ-9-x", "R"),
+      s.abierto,
+      s.parent?.replace("PIZ-9-x", "R"),
+    ]);
+    expect(brief.slice(0, 3)).toEqual([
+      ["R", true, undefined],
+      ["R:p3", false, "R"],
+      [expect.stringMatching(/^R:p\d+$/), false, "R"],
+    ]);
+    expect(brief).toContainEqual(["R:v1", false, "R"]);
+    expect(brief).toContainEqual(["R:v2", true, "R"]);
+    // Un paso de revisar dentro de la vuelta: su padre es la vuelta.
+    expect(brief).toContainEqual([expect.stringMatching(/^R:p\d+$/), false, "R:v2"]);
+  });
 });

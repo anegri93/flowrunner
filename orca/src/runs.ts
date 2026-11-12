@@ -282,7 +282,10 @@ export interface StageRow {
   readonly texto: string;
   /** Los intentos, si hubo más de uno, y el tiempo: `4 intentos · 13:01`. */
   readonly meta: string;
-  /** La etapa en la que está el run: la que trabaja, espera, falló o volvió. */
+  /**
+   * La etapa en la que está el run: la primera que trabaja, espera, falló o volvió. Una sola: si
+   * implementar rehace lo que verificar devolvió, verificar sigue en «volvió» pero no es la actual.
+   */
   readonly actual: boolean;
 }
 
@@ -291,7 +294,9 @@ const RESUELTA: readonly string[] = ["ok", "salteada", "pendiente"];
 
 /** Las nueve etapas como filas de una lista, con su tiempo y sus intentos. */
 export function stageRows(run: Run): StageRow[] {
-  return stationsOf(run).map((station) => {
+  const stations = stationsOf(run);
+  const current = stations.findIndex((s) => !RESUELTA.includes(s.estado));
+  return stations.map((station, index) => {
     const p = run.fases.find((x) => x.fase === station.fase);
     const label = phaseLabel(station.fase, station.estado, run.prMergeada === true);
     const tries =
@@ -307,7 +312,7 @@ export function stageRows(run: Run): StageRow[] {
       tone: label.tone,
       texto: label.texto,
       meta: join([tries, time]),
-      actual: !RESUELTA.includes(station.estado),
+      actual: index === current,
     };
   });
 }

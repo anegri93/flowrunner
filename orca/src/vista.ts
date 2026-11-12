@@ -306,7 +306,7 @@ function actual(e: Estado, run: Run): string {
 /** El run ya tiene plan: planificar terminó, aunque después se haya aprobado o corregido. */
 const hasPlan = (run: Run) => run.fases.some((p) => p.fase === "planificar" && p.estado === "ok");
 
-/** Una etapa: su indicador, su nombre, su estado si es la actual, sus intentos y su tiempo. */
+/** Una etapa: su indicador, su nombre, su estado si no está lista ni pendiente, sus intentos y su tiempo. */
 function etapa(e: Estado, run: Run, row: StageRow): string {
   const pending = row.estado === "pendiente";
   const clave = indicadorDeEtapa(row.fase, row.estado, run.prMergeada === true);
@@ -323,7 +323,7 @@ function etapa(e: Estado, run: Run, row: StageRow): string {
               clase: `lnk${row.actual ? " fuerte" : ""}`,
             },
           );
-  return `<div class="etapa${row.actual ? " es-actual" : ""}"><div class="fila entre"><div class="fila">${ind}${nombre}${row.actual || row.estado === "salteada" ? texto(row.texto, "chico", row.tone) : ""}</div>${texto(row.meta, "chico apagado num")}</div>${row.actual ? actual(e, run) : ""}</div>`;
+  return `<div class="etapa${row.actual ? " es-actual" : ""}"><div class="fila entre"><div class="fila">${ind}${nombre}${row.estado === "ok" || pending ? "" : texto(row.texto, "chico", row.tone)}</div>${texto(row.meta, "chico apagado num")}</div>${row.actual ? actual(e, run) : ""}</div>`;
 }
 
 function tarjeta(e: Estado, run: Run): string {

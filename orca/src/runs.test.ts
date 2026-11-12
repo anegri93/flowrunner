@@ -140,6 +140,23 @@ test("cada etapa como fila: su estado, sus intentos si hubo más de uno, su tiem
   assert.equal(clock(3_725), "1:02:05");
 });
 
+// Regresión (PIZ-9): verificar devolvió ST-1 e implementar la rehace. Las dos eran la actual, y la
+// tarjeta repetía el motivo, las sub-tasks y la sesión debajo de cada una.
+test("con implementar rehaciendo lo que verificar devolvió, la actual es solo implementar", () => {
+  const back: Run = {
+    ...byKey("VF-2"),
+    fases: byKey("VF-2").fases.map((p) =>
+      p.fase === "verificar" ? { ...p, estado: "vuelve", detalle: "AC-9 sigue en rojo" } : p,
+    ),
+  };
+  const rows = stageRows(back);
+  assert.deepEqual(
+    rows.filter((r) => r.actual).map((r) => r.fase),
+    ["implementar"],
+  );
+  assert.equal(rows.find((r) => r.fase === "verificar")?.texto, "volvió");
+});
+
 // Regresión: con la PR de VF-2 ya mergeada, el panel seguía diciendo «PR ABIERTA» y «espera merge».
 test("un run entregado con la PR mergeada no dice que espera tu merge", () => {
   const merged: Run = { ...byKey("VF-1"), prMergeada: true };

@@ -497,7 +497,7 @@ function cerrado(e: Estado, run: Run): string {
   const expanded = e.cerradoAbierto[run.id] === true;
   const aborted = run.status === "abortado";
   const ran = stageRows(run).filter((r) => r.estado !== "pendiente");
-  return `<div class="cerrado"><div class="fila entre"><div class="fila">${indicador(aborted ? "cortada" : "ok", aborted ? "neutral" : "success", e.ahora)}<div class="pila corta">${boton({ t: "abrir", run: run.id, que: { tipo: "informe" } }, esc(`${run.clave} · ${run.titulo}`), { clase: "lnk corta" })}${texto(closedSummary(run), "chico apagado corta")}</div></div>${boton({ t: "alternarCerrado", run: run.id }, flecha(expanded), { clase: "icono", label: expanded ? `Ocultar las etapas de ${run.clave}` : `Ver las etapas de ${run.clave}` })}</div>${expanded ? (run.recorrido === undefined ? `<div class="pila">${ran.map((row) => etapa(e, run, row)).join("")}</div>` : recorrido(e, run, false)) : ""}</div>`;
+  return `<div class="cerrado${expanded ? " abierto" : ""}"><div class="fila entre"><div class="fila">${indicador(aborted ? "cortada" : "ok", aborted ? "neutral" : "success", e.ahora)}<div class="pila corta">${boton({ t: "abrir", run: run.id, que: { tipo: "informe" } }, esc(`${run.clave} · ${run.titulo}`), { clase: "lnk corta" })}${texto(closedSummary(run), "chico apagado corta")}</div></div>${boton({ t: "alternarCerrado", run: run.id }, flecha(expanded), { clase: "icono", label: expanded ? `Ocultar las etapas de ${run.clave}` : `Ver las etapas de ${run.clave}` })}</div>${expanded ? (run.recorrido === undefined ? `<div class="pila">${ran.map((row) => etapa(e, run, row)).join("")}</div>` : recorrido(e, run, false)) : ""}</div>`;
 }
 
 function cerrados(e: Estado, runs: readonly Run[]): string {
@@ -580,11 +580,16 @@ html.dark .btn.solid { color: #0b0b0b; }
 .btn.danger:not(.solid) { color: var(--fr-danger); }
 .campo { width: 100%; font: inherit; font-size: 12.5px; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--orca-input, var(--orca-border)); background: transparent; color: inherit; }
 .cerrado { display: flex; flex-direction: column; gap: 6px; }
+/* Un cerrado abierto es una tarjeta, y su recorrido cuelga debajo de su título: no se mezcla con los otros runs. */
+.cerrado.abierto { gap: 10px; padding: 10px 12px 12px; margin: 2px -4px; border: 1px solid var(--orca-border); border-radius: var(--orca-radius, 8px); background: var(--orca-card, transparent); }
+.cerrado.abierto > .recorrido { margin-left: 24px; }
 .recorrido, .paso, .vuelta, .dentro, .hijos { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 /* La línea de tiempo: une el punto de cada paso con el del siguiente, por debajo de lo que cuelga. */
 .recorrido > *, .dentro > * { position: relative; }
-.recorrido > :not(:last-child)::before, .dentro > :not(:last-child)::before { content: ""; position: absolute; left: 7.5px; top: 21px; bottom: -4px; border-left: 1px solid color-mix(in srgb, var(--fr-muted) 45%, transparent); }
+.recorrido > :not(:last-child)::before, .dentro > :not(:last-child)::before { content: ""; position: absolute; left: 7.25px; top: 21px; bottom: -9px; border-left: 1.5px solid color-mix(in srgb, var(--fr-muted) 70%, transparent); }
 .recorrido > .actual::before, .dentro > .actual::before { top: -2px; }
+/* Todas las filas del recorrido miden lo mismo, con o sin flecha: así la línea llega justo a cada punto. */
+.paso > .fila.entre, .vuelta > .fila.entre { min-height: 24px; }
 /* Lo que cuelga de un nodo, con una guía bajo su nombre: los pasos de una vuelta, las sub-tasks, las sesiones. */
 .hijos, .vuelta .dentro { margin-left: 24px; padding-left: 10px; border-left: 1px solid color-mix(in srgb, var(--fr-muted) 45%, transparent); }
 .hijos .hijos { margin-left: 20px; }

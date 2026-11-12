@@ -54,9 +54,17 @@ const accionDe = (json: string | undefined): Accion | undefined =>
 root.addEventListener("click", (event) => {
   const target =
     event.target instanceof Element ? event.target.closest("button[data-accion]") : null;
-  if (!(target instanceof HTMLButtonElement) || target.disabled) return;
+  if (!(target instanceof HTMLButtonElement) || target.disabled) {
+    // Tocar afuera cierra el menú ⋯.
+    if (panel.estado.menu !== null) void panel.tocar({ t: "cerrarMenu" });
+    return;
+  }
   const accion = accionDe(target.dataset.accion);
   if (accion !== undefined) void panel.tocar(accion);
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && panel.estado.menu !== null) void panel.tocar({ t: "cerrarMenu" });
 });
 
 root.addEventListener("input", (event) => {

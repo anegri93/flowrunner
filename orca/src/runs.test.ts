@@ -7,8 +7,9 @@ import {
   duration,
   fixUnits,
   headlineOf,
-  isFinished,
   nowOf,
+  ahoraOf,
+  barraOf,
   offers,
   pasoView,
   type PasoEtapa,
@@ -34,16 +35,6 @@ const byKey = (clave: string): Run => {
   return run;
 };
 const states = (run: Run) => stationsOf(run).map((s) => `${s.nombre}:${s.estado}`);
-
-// Si regresiona, un run viejo y entregado queda arriba y tapa al que está trabajando.
-test("los runs más recientes van arriba, y un run con la PR abierta cuenta como terminado", () => {
-  assert.deepEqual(
-    sortRuns(runs).map((r) => r.clave),
-    ["PIZ-3", "VF-2", "VF-1"],
-  );
-  assert.equal(isFinished(byKey("VF-1")), true);
-  assert.equal(isFinished(byKey("VF-2")), false);
-});
 
 // Si regresiona, el panel inventa pasos que no son los del flujo.
 test("las nueve etapas del flujo, con su nombre y el estado de su fase en flowrunner", () => {
@@ -423,4 +414,120 @@ test("un paso que junta varios chequeos dice cuántos fueron en su nombre", () =
   };
   assert.equal(pasoView(aprender, run).titulo, "Aprender · 9 chequeos");
   assert.equal(pasoView({ ...aprender, chequeos: 1 }, run).titulo, "Aprender");
+});
+
+// Si regresiona, lo que te necesita queda abajo de lo que trabaja y no se ve sin buscarlo.
+test("arriba lo que te necesita, después lo que trabaja, lo que está en cola y la PR abierta", () => {
+  const at = (clave: string, status: Run["status"], hhmmss: string): Run => ({
+    ...byKey("VF-2"),
+    id: `${clave}-20261112-${hhmmss}`,
+    clave,
+    status,
+  });
+  const panel = [
+    at("PR-viejo", "entregado", "090000"),
+    at("cola", "en_cola", "100000"),
+    at("trabaja-viejo", "en_curso", "080000"),
+    at("pausa", "pausado_por_limite", "083000"),
+    at("aprobar", "esperando_aprobacion", "070000"),
+    at("trabaja-nuevo", "en_curso", "120000"),
+    at("detenido", "detenido", "110000"),
+  ];
+  assert.deepEqual(
+    sortRuns(panel).map((r) => r.clave),
+    ["detenido", "aprobar", "trabaja-nuevo", "pausa", "trabaja-viejo", "cola", "PR-viejo"],
+  );
+});
+
+// Si regresiona, la barra no dice qué etapa trabaja, cuál volvió o cuál te espera.
+test("la barra tiene un segmento por etapa, con la clase y el nombre de su estado", () => {
+  const run: Run = {
+    ...byKey("VF-2"),
+    fases: [
+      { ...byKey("VF-2").fases[0]!, fase: "preparar", estado: "ok" },
+      { ...byKey("VF-2").fases[0]!, fase: "planificar", estado: "ok" },
+      { ...byKey("VF-2").fases[0]!, fase: "aprobar", estado: "ok" },
+      { ...byKey("VF-2").fases[0]!, fase: "implementar", estado: "corriendo" },
+      { ...byKey("VF-2").fases[0]!, fase: "verificar", estado: "vuelve" },
+      { ...byKey("VF-2").fases[0]!, fase: "revisar", estado: "falla" },
+      { ...byKey("VF-2").fases[0]!, fase: "probar", estado: "salteada" },
+      { ...byKey("VF-2").fases[0]!, fase: "entregar", estado: "espera" },
+    ],
+  };
+  assert.deepEqual(
+    barraOf(run).map((s) => `${s.clase} ${s.label}`),
+    [
+      "ok Preparar: listo",
+      "ok Planificar: listo",
+      "ok Aprobar: aprobado",
+      "trabaja Implementar: trabajando",
+      "volvio Verificar: volvió",
+      "fallo Revisar: falló",
+      "salteada Probar: salteada",
+      "espera Entregar: espera merge",
+      "pendiente Aprender: pendiente",
+    ],
+  );
+});
+
+// Si regresiona, la etiqueta de un run que trabaja no dice en qué etapa está, o un detenido no se
+// distingue de lo que te espera.
+test("la etiqueta dice la etapa mientras trabaja, y lo que te necesita va en amarillo", () => {
+  assert.deepEqual(runChip(byKey("VF-2")), { texto: "IMPLEMENTAR", tone: "accent" });
+  assert.deepEqual(runChip({ ...byKey("VF-2"), status: "detenido" }), {
+    texto: "SE DETUVO",
+    tone: "warning",
+  });
+  assert.deepEqual(runChip(byKey("PIZ-3")), { texto: "TE ESPERA", tone: "warning" });
+});
+
+// Si regresiona, la tarjeta plegada no dice qué pasa, o dice lo mismo en todos los estados.
+test("la línea de ahora cambia con el estado del run", () => {
+  const vf2 = byKey("VF-2");
+  assert.equal(ahoraOf(vf2)?.tone, "accent");
+  assert.match(ahoraOf(vf2)?.texto ?? "", /^▸ /);
+  assert.deepEqual(ahoraOf({ ...vf2, status: "en_cola" }), {
+    texto: "Espera un lugar en el repo",
+    tone: "neutral",
+  });
+  assert.deepEqual(ahoraOf({ ...vf2, status: "pausado_por_limite" }), {
+    texto: "En pausa por el límite de la suscripción",
+    tone: "warning",
+  });
+  assert.deepEqual(ahoraOf({ ...vf2, status: "detenido", motivo: "AC-9 sigue en rojo" }), {
+    texto: "AC-9 sigue en rojo",
+    tone: "danger",
+    largo: true,
+  });
+  const units = vf2.fases.find((p) => p.fase === "implementar")?.unidades ?? [];
+  assert.ok(units.length > 0);
+  const subtasks = units.length;
+  const piz3: Run = {
+    ...byKey("PIZ-3"),
+    fases: byKey("PIZ-3").fases.map((p) =>
+      p.fase === "implementar" ? { ...p, unidades: units } : p,
+    ),
+  };
+  assert.equal(ahoraOf(byKey("PIZ-3"))?.texto, "Aprobar el plan");
+  assert.equal(ahoraOf(piz3)?.texto, `Aprobar el plan · ${String(subtasks)} sub-tasks`);
+  assert.equal(
+    ahoraOf({
+      ...piz3,
+      cambiaLoExistente: [
+        { que: "a", donde: "b", criterio: "c" },
+        { que: "d", donde: "e", criterio: "f" },
+      ],
+    })?.texto,
+    `Aprobar el plan · ${String(subtasks)} sub-tasks · cambia 2 cosas que ya existen`,
+  );
+  assert.deepEqual(ahoraOf(byKey("VF-1")), {
+    texto: "Espera tu merge",
+    tone: "warning",
+    pr: "https://github.com/o/videoFactory/pull/2",
+  });
+  assert.deepEqual(ahoraOf({ ...byKey("VF-1"), prMergeada: true }), {
+    texto: "Mergeada: aprende al próximo chequeo",
+    tone: "success",
+  });
+  assert.equal(ahoraOf({ ...byKey("VF-1"), status: "cerrado" }), undefined);
 });

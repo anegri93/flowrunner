@@ -68,7 +68,8 @@ sin perder lo último
   - trabajando: lo que hace la sesión que corre (`nowOf(run).actividad`, la primera);
   - esperando aprobación: «Aprobar el plan · N sub-tasks», y si cambia lo que existe, «· cambia N
     cosas que ya existen» en amarillo;
-  - detenido: el motivo, dos líneas como máximo, con «más» para verlo entero (qué motivos están
+  - detenido: el motivo, dos líneas como máximo, con «más» si pasa de 140 caracteres o tiene saltos de
+    línea, para verlo entero (qué motivos están
     abiertos vive en `Estado`, como el menú: no se guarda);
   - en cola: «Espera un lugar en el repo»;
   - PR abierta: «Espera tu merge · PR #85» con el link, o «Mergeada: aprende al próximo chequeo».
@@ -79,8 +80,10 @@ sin perder lo último
 
 ## La tarjeta abierta
 
-Lo mismo que la plegada, y debajo, separado por una línea, el recorrido que ya existe
-(`recorrido(e, run, false)`), sin el paso `pendiente`: lo que falta ya lo dice la barra. El bloque
+Toda tarjeta arranca plegada, también la de un run vivo: lo que importa ya está en sus cuatro líneas,
+y las decisiones se ven igual. Lo que la persona abre se guarda en `abiertos`, como hoy.
+
+Abierta es lo mismo que la plegada, y debajo, separado por una línea, el recorrido que ya existe, sin el paso `pendiente`: lo que falta ya lo dice la barra. El bloque
 «ahora» de hoy sigue bajo el paso actual, sin repetir la línea «ahora» de arriba.
 
 En un run detenido, el recorrido arranca plegado en una línea: «Recorrido · 11 pasos · 1 vuelta».

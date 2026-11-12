@@ -136,7 +136,13 @@ async function type(panel: Panel, label: string, text: string): Promise<void> {
 const approveButton = (panel: Panel) => find(panel, { texto: "Aprobar", link: false });
 const disabled = (panel: Panel) => approveButton(panel)?.disabled === true;
 const sees = (panel: Panel, text: string) => visible(panel.html()).includes(text);
-const cards = (panel: Panel) => (panel.html().match(/<article class="tarjeta"/g) ?? []).length;
+const cards = (panel: Panel) => (panel.html().match(/<article class="tarjeta[ "]/g) ?? []).length;
+/** Abre la tarjeta de un run con su flecha. */
+const abrirTarjeta = (panel: Panel, clave: string) =>
+  press(panel, { label: `Ver el recorrido de ${clave}` });
+/** La fila de un cerrado plegado: se lee `CLAVE · título reloj · costo`. */
+const filaCerrada = (panel: Panel, clave: string) =>
+  controles(panel.html()).find((c) => c.texto.startsWith(`${clave} · `));
 
 /** Los runs del fixture, con PIZ-3 replanificado: una sesión más de planificar. */
 const replanned = runs.map((r): Run =>
@@ -152,45 +158,50 @@ const replanned = runs.map((r): Run =>
 
 // --- Las tarjetas y las etapas ----------------------------------------------------------------
 
-// Si regresiona, el panel deja de leerse de un vistazo: el estado, el tiempo y las etapas en lista.
-test("cada run: su estado, el título, el tiempo y las etapas en lista; la que trabaja se mueve", async () => {
+// Si regresiona, la tarjeta vuelve a ocupar media pantalla, o deja de decir qué pasa de un vistazo.
+test("plegada, cada run dice su etiqueta, su clave con el reloj y el costo, el título, la barra y qué pasa", async () => {
   const panel = await abrirPanel(fakeApi({}));
   const html = panel.html();
+  // Lo que te espera arriba; mientras trabaja, la etiqueta dice la etapa.
   assert.deepEqual(
     [...html.matchAll(/<span class="chip [^"]*">([^<]*)<\/span>/g)].map((m) => m[1]),
-    ["TE ESPERA", "EN CURSO", "PR ABIERTA"],
+    ["TE ESPERA", "IMPLEMENTAR", "PR ABIERTA"],
   );
   assert.ok(sees(panel, "Modo oscuro"));
-  assert.ok(sees(panel, "PIZ-3 · PIZ-3-20261109-010000"));
-  assert.ok(sees(panel, "20:00"));
-  assert.ok(sees(panel, "Verificar"));
-  assert.ok(sees(panel, "te espera"));
-  // La que trabaja lleva el indicador animado de su etapa, con su estado para lectores de pantalla.
+  assert.ok(sees(panel, "VF-2 · 20:00 · ≥ $"));
+  assert.ok(sees(panel, "▸ Edit src/precio.ts · ctx 52k"));
+  assert.ok(sees(panel, "Espera tu merge"));
+  // Una barra de nueve segmentos por run, que dice cada etapa a un lector de pantalla.
+  assert.equal((html.match(/<i class="seg /g) ?? []).length, 9 * runs.length);
+  assert.match(html, /<div class="barra" role="img" aria-label="[^"]*Implementar: trabajando/);
+  // Lo que se fue: el id largo, el rótulo del tiempo y la lista de etapas.
+  assert.equal(sees(panel, "PIZ-3-20261109-010000"), false);
+  assert.equal(sees(panel, "TIEMPO"), false);
+  assert.equal(sees(panel, "Preparar"), false);
+});
+
+// Si regresiona, no se llega a las etapas de un run, o la que trabaja deja de moverse.
+test("abierta, la tarjeta suma sus etapas; la que trabaja se mueve y la que espera lo dice", async () => {
+  const panel = await abrirPanel(fakeApi({}));
+  await abrirTarjeta(panel, "VF-2");
+  await abrirTarjeta(panel, "PIZ-3");
+  const html = panel.html();
+  assert.ok(sees(panel, "Preparar"));
   assert.match(
     html,
     /<svg class="fr-i fr-implementar t-accent" style="--fr-t:-\d+ms" role="img" aria-label="Implementar: trabajando"/,
   );
   assert.match(html, /class="fr-i fr-te-espera t-warning"[^>]*aria-label="Aprobar: te espera"/);
-});
-
-// Si regresiona, un run terminado vuelve a ocupar el panel con todas sus etapas.
-test("un run terminado muestra solo su etapa actual hasta que se abre", async () => {
-  const panel = await abrirPanel(fakeApi({}));
-  assert.ok(sees(panel, "espera merge"));
-  const count = () => (visible(panel.html()).match(/Preparar/g) ?? []).length;
-  const before = count();
-  await press(panel, { label: "Ver las etapas de VF-1" });
-  assert.equal(count(), before + 1);
-  assert.ok(find(panel, "Abrir la PR"));
+  assert.ok(find(panel, { label: "Ocultar el recorrido de VF-2" }));
 });
 
 test("abrir o cerrar una tarjeta se guarda y vale después de recargar", async () => {
   const api = fakeApi({});
   const panel = await abrirPanel(api);
-  await press(panel, { label: "Ver las etapas de VF-1" });
+  await abrirTarjeta(panel, "VF-1");
   assert.deepEqual(api.storage[ABIERTOS], { "VF-1-20261108-211454": true });
   const again = await abrirPanel(api);
-  assert.ok(find(again, { label: "Ocultar las etapas de VF-1" }));
+  assert.ok(find(again, { label: "Ocultar el recorrido de VF-1" }));
 });
 
 // Si regresiona, no se ve qué hace la sesión que corre, o sus pasos no se abren en una pestaña.
@@ -204,6 +215,7 @@ test("las sub-tasks con su estado; Pasos y Plan piden abrir su archivo en una pe
       },
     }),
   );
+  await abrirTarjeta(panel, "VF-2");
   assert.ok(find(panel, "ST-1 Tabla de precios · integrada"));
   assert.match(panel.html(), /class="fr-i fr-tarea-lista t-success"/);
   assert.ok(sees(panel, "▸ Edit src/precio.ts · ctx 52k"));
@@ -227,6 +239,8 @@ test("tocar Aprobar abre el plan, también el de un run que ya lo aprobó", asyn
     }),
   );
   // PIZ-3 espera aprobación; VF-2 ya pasó de planificar. Los dos tienen plan para ver.
+  await abrirTarjeta(panel, "PIZ-3");
+  await abrirTarjeta(panel, "VF-2");
   const links = findAll(panel, { texto: "Aprobar", link: true });
   assert.equal(links.length, 2);
   for (const link of links) await press(panel, link);
@@ -248,6 +262,7 @@ test("tocar una etapa que arrancó abre su detalle; una pendiente no es un link"
       },
     }),
   );
+  await abrirTarjeta(panel, "VF-2");
   await press(panel, { texto: "Implementar", link: true });
   assert.deepEqual(opened, [{ run: VF2, que: { tipo: "etapa", fase: "implementar" } }]);
   // Ningún run en vista llegó a verificar: la etapa es texto, no un link.
@@ -260,6 +275,7 @@ test("si no se puede abrir, lo dice en el run", async () => {
   const panel = await abrirPanel(
     fakeApi({ abrir: () => ({ ok: false, mensaje: "Orca no abrió el archivo" }) }),
   );
+  await abrirTarjeta(panel, "VF-2");
   await press(panel, { label: "Pasos de implementar-ST-2-1" });
   assert.ok(sees(panel, "Orca no abrió el archivo"));
 });
@@ -399,7 +415,7 @@ test("un arreglo escrito se manda con un toque, con su texto, y Arreglar ST-n si
 });
 
 // Si regresiona, un run vivo no se puede abortar desde el panel, o se aborta sin confirmar.
-test("cada run vivo tiene «Abortar el run» al pie, que pide confirmación antes de mandarlo", async () => {
+test("«Abortar el run…» está en el menú ⋯ de cada run vivo, y pide confirmación antes de mandarlo", async () => {
   const sent: { run: string; decision: Decision }[] = [];
   const panel = await abrirPanel(
     fakeApi({
@@ -409,21 +425,48 @@ test("cada run vivo tiene «Abortar el run» al pie, que pide confirmación ante
       },
     }),
   );
-  const buttons = findAll(panel, "Abortar el run");
-  assert.equal(buttons.length, runs.length);
-  // Al pie de la tarjeta, después de las etapas, no entre ellas.
-  const drawn = visible(panel.html());
-  assert.ok(drawn.lastIndexOf("Abortar el run") > drawn.lastIndexOf("Aprender"));
-  const first = buttons[0];
-  if (first === undefined) throw new Error("sin botón Abortar");
-  await press(panel, first);
+  // No está a la vista: es la acción más rara y la más peligrosa.
+  assert.equal(find(panel, "Abortar el run…"), undefined);
+  assert.equal(findAll(panel, { label: "Más de VF-2" }).length, 1);
+  await press(panel, { label: "Más de VF-2" });
+  assert.equal(findAll(panel, "Abortar el run…").length, 1);
+  await press(panel, "Abortar el run…");
+  // Elegir cierra el menú; la confirmación queda en la tarjeta.
+  assert.equal(find(panel, "Abortar el run…"), undefined);
   assert.deepEqual(sent, []);
-  const clave = /¿Abortar el run ([A-Z]+-\d+)\?/.exec(visible(panel.html()))?.[1];
+  assert.ok(sees(panel, "¿Abortar el run VF-2?"));
   assert.ok(sees(panel, "borra sus worktrees. La rama y la PR quedan."));
   await press(panel, "Sí, abortar el run");
-  assert.deepEqual(sent, [
-    { run: runs.find((r) => r.clave === clave)?.id, decision: { accion: "abortar" } },
+  assert.deepEqual(sent, [{ run: VF2, decision: { accion: "abortar" } }]);
+});
+
+// Si regresiona, el plan, el informe o la PR ya no se abren desde la tarjeta, o el menú queda abierto.
+test("el menú ⋯ abre el plan, el informe y la PR; uno a la vez, y se cierra al tocar afuera", async () => {
+  const opened: unknown[] = [];
+  const panel = await abrirPanel(
+    fakeApi({
+      abrir: (input) => {
+        opened.push(input);
+        return { ok: true, mensaje: "abierto" };
+      },
+    }),
+  );
+  await press(panel, { label: "Más de VF-1" });
+  assert.ok(find(panel, "Abrir la PR"));
+  assert.ok(find(panel, "Ver el plan"));
+  // Abrir otro cierra el primero.
+  await press(panel, { label: "Más de PIZ-3" });
+  assert.equal(find(panel, "Abrir la PR"), undefined);
+  await press(panel, "Ver el informe");
+  await press(panel, { label: "Más de PIZ-3" });
+  await press(panel, "Ver el plan");
+  assert.deepEqual(opened, [
+    { run: PIZ3, que: { tipo: "informe" } },
+    { run: PIZ3, que: { tipo: "plan" } },
   ]);
+  await press(panel, { label: "Más de VF-2" });
+  await panel.tocar({ t: "cerrarMenu" });
+  assert.equal(find(panel, "Ver el informe"), undefined);
 });
 
 // Si regresiona, el panel aprueba un plan que cambia lo que ya existe sin mostrarlo, o flowrunner
@@ -497,6 +540,7 @@ test("un plan nuevo después de pedir cambios hay que abrirlo de nuevo", async (
     }),
   );
   // El link de la etapa Aprobar también abre el plan, y también cuenta.
+  await abrirTarjeta(panel, "PIZ-3");
   const link = findAll(panel, { texto: "Aprobar", link: true })[0];
   if (link === undefined) throw new Error("sin el link de la etapa Aprobar");
   await press(panel, link);
@@ -684,7 +728,7 @@ test("al cambiar de proyecto, los runs del anterior se dejan de ver sin abrir su
 
 // Si regresiona, los runs cerrados desaparecen del panel, lo llenan con tarjetas enteras, o uno
 // abortado aparece trabajando.
-test("los cerrados van aparte y compactos; el título abre el informe y la flecha sus etapas", async () => {
+test("los cerrados van aparte, en una línea cada uno, y se abren como tarjeta", async () => {
   const base = runs[2] as Run;
   const closed = {
     ...base,
@@ -707,21 +751,30 @@ test("los cerrados van aparte y compactos; el título abre el informe y la flech
     }),
   );
   assert.ok(sees(panel, "CERRADOS · 1"));
-  assert.equal(find(panel, `VF-0 · ${closed.titulo}`), undefined);
+  assert.equal(filaCerrada(panel, "VF-0"), undefined);
   await press(panel, { label: "Ver los runs cerrados" });
-  assert.ok(find(panel, `VF-0 · ${closed.titulo}`));
-  assert.ok(sees(panel, "abortado · 01/11 10:25 · 8:47 · $5.22"));
+  // Una línea: cómo terminó, la clave y el título, el reloj y el costo.
+  assert.equal(filaCerrada(panel, "VF-0")?.texto, `VF-0 · ${closed.titulo} 8:47 · $5.22`);
+  assert.match(panel.html(), /aria-label="abortado"/);
   assert.equal(cards(panel), 0);
-  await press(panel, `VF-0 · ${closed.titulo}`);
-  assert.deepEqual(opened, [{ run: closed.id, que: { tipo: "informe" } }]);
-  // Desplegado: solo las etapas que corrieron, ninguna trabajando, y sin abortar.
-  await press(panel, { label: "Ver las etapas de VF-0" });
+  // Tocarla la abre como tarjeta: solo las etapas que corrieron, ninguna trabajando.
+  const fila = filaCerrada(panel, "VF-0");
+  if (fila === undefined) throw new Error("sin la fila de VF-0");
+  await press(panel, fila);
+  assert.equal(cards(panel), 1);
+  assert.ok(sees(panel, "ABORTADO"));
   assert.ok(sees(panel, "Preparar"));
   assert.equal(sees(panel, "Implementar"), false);
   assert.equal(sees(panel, "trabajando"), false);
   assert.equal(panel.html().includes('aria-label="Aprobar: trabajando"'), false);
   assert.ok(sees(panel, "cortada"));
-  assert.equal(find(panel, "Abortar el run"), undefined);
+  // Su menú abre el informe, y no ofrece abortar.
+  await press(panel, { label: "Más de VF-0" });
+  assert.equal(find(panel, "Abortar el run…"), undefined);
+  await press(panel, "Ver el informe");
+  assert.deepEqual(opened, [{ run: closed.id, que: { tipo: "informe" } }]);
+  await press(panel, { label: "Ocultar el recorrido de VF-0" });
+  assert.equal(cards(panel), 0);
 });
 
 // Si regresiona, un flowrunner roto o sin runs deja el panel vacío sin decir por qué.
@@ -773,15 +826,17 @@ test("el texto de un run se muestra escapado, también dentro de una acción", a
 // Si regresiona, la tarjeta vuelve a ser una foto de nueve etapas, o el detalle de ahora se repite.
 test("el recorrido: cada paso con su hora, la vuelta con lo que pasó adentro, y ahora una sola vez", async () => {
   const panel = await abrirPanel(fakeApi({ runs: () => ({ runs: [enCurso], at: 0 }) }));
+  await abrirTarjeta(panel, "PIZ-9");
   const html = panel.html();
   for (const text of [
     "Aprobaste el plan",
     "Verificar volvió 2 veces → ST-1",
     "Autofix",
     "→ ST-1 · AC-9 sigue en rojo",
-    "Verificar · Revisar · Probar · Entregar · Aprender",
   ])
     assert.ok(sees(panel, text), text);
+  // Lo que falta lo dice la barra, no una fila.
+  assert.equal(sees(panel, "Verificar · Revisar · Probar"), false);
   assert.match(visible(html), /Preparar \d\d:\d\d · 0:41/);
   assert.equal(html.includes('class="etapa'), false);
   assert.equal((html.match(/class="actual"/g) ?? []).length, 1);
@@ -794,8 +849,9 @@ test("el recorrido: cada paso con su hora, la vuelta con lo que pasó adentro, y
 test("plegar una vuelta la deja en una línea, y se guarda", async () => {
   const api = fakeApi({ runs: () => ({ runs: [enCurso], at: 0 }) });
   const panel = await abrirPanel(api);
+  await abrirTarjeta(panel, "PIZ-9");
   await press(panel, { label: "Plegar la vuelta de Verificar" });
-  assert.deepEqual(api.storage[ABIERTOS], { [`${enCurso.id}:v1`]: false });
+  assert.deepEqual(api.storage[ABIERTOS], { [enCurso.id]: true, [`${enCurso.id}:v1`]: false });
   assert.equal(sees(panel, "Autofix"), false);
   assert.ok(sees(panel, "Verificar volvió 2 veces → ST-1 · 4 pasos"));
   const again = await abrirPanel(api);
@@ -807,7 +863,7 @@ test("plegar una vuelta la deja en una línea, y se guarda", async () => {
 // Si regresiona, no se llega a las sub-tasks ni a las sesiones de una corrida terminada.
 test("implementar se abre en sus sub-tasks, y cada sub-task en sus sesiones", async () => {
   const panel = await abrirPanel(fakeApi({ runs: () => ({ runs: [entregado], at: 0 }) }));
-  await press(panel, { label: "Ver las etapas de PIZ-9" });
+  await abrirTarjeta(panel, "PIZ-9");
   const [first] = findAll(panel, { label: "Ver las sub-tasks de Implementar" });
   assert.ok(first);
   await press(panel, first);
@@ -829,7 +885,9 @@ test("un run cerrado se despliega en su recorrido, sin pendientes ni ahora", asy
     fakeApi({ runs: () => ({ runs: [], cerrados: [closed], at: 0 }) }),
   );
   await press(panel, { label: "Ver los runs cerrados" });
-  await press(panel, { label: "Ver las etapas de PIZ-9" });
+  const fila = filaCerrada(panel, "PIZ-9");
+  if (fila === undefined) throw new Error("sin la fila de PIZ-9");
+  await press(panel, fila);
   assert.ok(sees(panel, "Aprobaste el plan"));
   assert.ok(sees(panel, "PR #12"));
   // Las vueltas de un run que terminó arrancan plegadas: se ve la línea, no lo de adentro.
@@ -838,7 +896,8 @@ test("un run cerrado se despliega en su recorrido, sin pendientes ni ahora", asy
   await press(panel, { label: "Abrir la vuelta de Probar" });
   assert.ok(sees(panel, "Aceptaste seguir"));
   assert.equal(panel.html().includes('class="actual"'), false);
-  assert.equal(find(panel, "Abortar el run"), undefined);
+  await press(panel, { label: "Más de PIZ-9" });
+  assert.equal(find(panel, "Abortar el run…"), undefined);
 });
 
 // Si regresiona, Orca con un flowrunner anterior, que no manda el recorrido, deja la tarjeta vacía.
@@ -848,6 +907,50 @@ test("sin recorrido, la tarjeta muestra las nueve etapas en lista", async () => 
     runs.every((r) => r.recorrido === undefined),
     true,
   );
+  await abrirTarjeta(panel, "VF-2");
   assert.ok(panel.html().includes('class="etapa'));
   assert.equal(panel.html().includes('class="recorrido"'), false);
+});
+
+// --- La tarjeta compacta -------------------------------------------------------------------------
+
+// Si regresiona, lo que te necesita se pierde entre los demás o hay que abrirlo para decidir.
+test("lo que te necesita va arriba, marcado, con sus decisiones a la vista aunque esté plegado", async () => {
+  const panel = await abrirPanel(fakeApi({}));
+  const html = panel.html();
+  assert.ok(html.indexOf('<article class="tarjeta te-necesita"') < html.indexOf("Implementar"));
+  assert.equal((html.match(/class="tarjeta te-necesita"/g) ?? []).length, 1);
+  assert.equal(find(panel, { label: "Ocultar el recorrido de PIZ-3" }), undefined);
+  assert.ok(find(panel, { texto: "Aprobar", link: false }));
+  assert.ok(find(panel, "Cambios"));
+});
+
+// Si regresiona, un run detenido entierra sus decisiones bajo todo su recorrido.
+test("abierto, un run detenido muestra su recorrido plegado en una línea, que se abre", async () => {
+  const stopped = {
+    ...enCurso,
+    status: "detenido",
+    motivo: "verificar: AC-9 sigue en rojo",
+  } as Run;
+  const panel = await abrirPanel(fakeApi({ runs: () => ({ runs: [stopped], at: 0 }) }));
+  await abrirTarjeta(panel, "PIZ-9");
+  const pasos = (stopped.recorrido ?? []).filter((p) => p.tipo !== "pendiente").length;
+  assert.ok(sees(panel, `Recorrido · ${String(pasos)} pasos · 1 vuelta`));
+  assert.equal(sees(panel, "Aprobaste el plan"), false);
+  await press(panel, { label: "Abrir el recorrido" });
+  assert.ok(sees(panel, "Aprobaste el plan"));
+});
+
+// Si regresiona, un motivo largo ocupa la tarjeta entera, o no hay forma de leerlo completo.
+test("el motivo largo de un detenido va en dos líneas, y «más» lo muestra entero", async () => {
+  const largo = `revisar: ${"la migración borra el archivo viejo antes de copiar el nuevo. ".repeat(4)}`;
+  const stopped = runs.map((r): Run =>
+    r.id === VF2 ? { ...r, status: "detenido", motivo: largo } : r,
+  );
+  const panel = await abrirPanel(fakeApi({ runs: () => ({ runs: stopped, at: 0 }) }));
+  assert.match(panel.html(), /class="chico motivo t-danger"/);
+  await press(panel, { label: "Ver el motivo entero" });
+  assert.match(panel.html(), /class="chico motivo entero t-danger"/);
+  await press(panel, { label: "Ver el motivo en dos líneas" });
+  assert.match(panel.html(), /class="chico motivo t-danger"/);
 });

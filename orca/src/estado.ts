@@ -221,14 +221,15 @@ export class Panel {
   }
 
   async #abort(run: string): Promise<void> {
-    this.#set({ abortando: null, avisoAbortar: null, enviando: run });
+    // `abortando` sigue mientras se manda: así la tarjeta dice «Abortando», no «Enviando tu decisión».
+    this.#set({ avisoAbortar: null, enviando: run });
     try {
       const answer = await this.#api.decidir(run, { accion: "abortar" });
       if (!answer.ok) this.#set({ avisoAbortar: { run, mensaje: answer.mensaje } });
     } catch (error) {
       this.#set({ avisoAbortar: { run, mensaje: message(error) } });
     } finally {
-      this.#set({ enviando: null });
+      this.#set({ enviando: null, abortando: null });
     }
     await this.refresh();
   }
@@ -240,7 +241,19 @@ export class Panel {
 
   /** Lo que pasa al tocar un control. */
   async tocar(accion: Accion): Promise<void> {
+    // Elegir algo cierra el menú ⋯, sea o no del menú.
+    if (accion.t !== "menu" && this.#e.menu !== null) this.#set({ menu: null });
     switch (accion.t) {
+      case "menu":
+        this.#set({ menu: this.#e.menu === accion.run ? null : accion.run });
+        return;
+      case "cerrarMenu":
+        return;
+      case "motivo":
+        this.#set({
+          motivos: { ...this.#e.motivos, [accion.run]: this.#e.motivos[accion.run] !== true },
+        });
+        return;
       case "alternar": {
         const run = this.#run(accion.run);
         if (run === undefined) return;

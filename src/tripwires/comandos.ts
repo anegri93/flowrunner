@@ -322,6 +322,25 @@ function programaDe(fixer: string): Palabra[] {
 }
 const nombreDe = (palabras: readonly Palabra[]) => palabras.map((p) => p.texto).join(" ");
 
+/** Las opciones que filtran tests por nombre: `-t` de vitest y jest, `-g` y `--grep` de playwright y mocha. */
+const FILTROS_DE_NOMBRE = ["-t", "--testNamePattern", "-g", "--grep"];
+
+/**
+ * Un criterio sin el filtro de nombre del final: `npx vitest run a.test.ts` de
+ * `npx vitest run a.test.ts -t "AC-1"`. Corre el mismo archivo de test entero, y detrás del criterio
+ * ya pasa cualquier opción. Sin esto, la sub-task que quería
+ * ver su archivo entero gastaba un turno en el rechazo (PIZ-2 a PIZ-14).
+ */
+function sinFiltroDeNombre(palabras: readonly Palabra[]): Palabra[] | undefined {
+  const n = palabras.length;
+  const ultima = palabras[n - 1]?.texto ?? "";
+  if (FILTROS_DE_NOMBRE.some((f) => f.startsWith("--") && ultima.startsWith(`${f}=`)))
+    return palabras.slice(0, n - 1);
+  if (n >= 3 && FILTROS_DE_NOMBRE.includes(palabras[n - 2]?.texto ?? ""))
+    return palabras.slice(0, n - 2);
+  return undefined;
+}
+
 interface Politica {
   readonly comandos: Comandos;
   readonly exactos: readonly Palabra[][];
@@ -335,7 +354,11 @@ function politicaDe(comandos: Comandos): Politica {
   return {
     comandos,
     exactos: tramos(comandos.exactos),
-    ampliables: tramos(comandos.ampliables),
+    // El criterio entero se queda: el prefijo más largo gana, y lo de detrás del filtro sigue igual.
+    ampliables: tramos(comandos.ampliables).flatMap((p) => {
+      const sin = sinFiltroDeNombre(p);
+      return sin === undefined ? [p] : [p, sin];
+    }),
     fixers: comandos.fixers
       .map(programaDe)
       .filter((p) => p.length > 0)
@@ -1254,6 +1277,14 @@ export function describeComandos(c: Comandos): string {
   if (c.ampliables.length > 0)
     partes.push(
       `Podés correr ${c.ampliables.map(codigo).join(", ")} con lo que quieras agregar detrás, como \`-t "nombre"\` o \`2>&1 | tail -30\`.`,
+    );
+  const conFiltro = c.ampliables.some((a) => {
+    const palabras = unTramo(a);
+    return palabras !== undefined && sinFiltroDeNombre(palabras) !== undefined;
+  });
+  if (conFiltro)
+    partes.push(
+      'Sin el filtro de nombre del final (`-t "…"`, `--grep`) corren el archivo de test entero.',
     );
   const programas = [...new Set(c.fixers.map((f) => nombreDe(programaDe(f))))].filter(
     (p) => p !== "",

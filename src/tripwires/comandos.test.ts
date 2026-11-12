@@ -157,6 +157,43 @@ describe("checkCommand", () => {
     noPasa(s, "npm install zod lodash");
   });
 
+  // Si regresiona, la sub-task que quiere correr su archivo de test entero vuelve a gastar un turno en
+  // el rechazo: pasó en PIZ-2, PIZ-3 y PIZ-10 a PIZ-14, con criterios que terminan en `-t "…"`.
+  test("un criterio con filtro de nombre al final también corre sin el filtro, y nada más", () => {
+    const s = base({
+      comandos: comandos({
+        ampliables: [
+          'npx vitest run compartido/ordenar.test.ts -t "Ordenar PIZ-12 AC-1"',
+          "npx playwright test e2e/a.spec.ts --grep=AC-2",
+        ],
+      }),
+    });
+    pasa(
+      s,
+      "npx vitest run compartido/ordenar.test.ts 2>&1 | tail -40",
+      'npx vitest run compartido/ordenar.test.ts -t "Ordenar PIZ-12" 2>&1 | tail -30',
+      'npx vitest run compartido/ordenar.test.ts -t "Ordenar PIZ-12 AC-1"',
+      "npx playwright test e2e/a.spec.ts",
+    );
+    noPasa(
+      s,
+      "npx vitest run servidor/api.test.ts",
+      "npx vitest run",
+      "npx playwright test",
+      "npx vitest run compartido/ordenar.test.ts --root ..",
+    );
+  });
+
+  test("describeComandos avisa que un criterio con filtro de nombre corre también sin él", () => {
+    const con = describeComandos(comandos({ ampliables: ['npx vitest run a.test.ts -t "AC-1"'] }));
+    expect(con).toContain(
+      'Sin el filtro de nombre del final (`-t "…"`, `--grep`) corren el archivo de test entero.',
+    );
+    expect(describeComandos(comandos({ ampliables: ["pnpm run typecheck"] }))).not.toContain(
+      "filtro de nombre",
+    );
+  });
+
   test("el formateador y el lint, por su programa y sobre archivos del alcance", () => {
     const s = base({
       writable: ["src/a/"],

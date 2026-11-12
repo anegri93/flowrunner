@@ -49,7 +49,9 @@ La lista exacta se reemplaza por una política que evalúa cada tramo del comand
     comandos «tal cual».
 
 Un criterio tal cual pasa siempre, aunque encadene pasos con `&&`: es lo que ya permitía la lista
-exacta. Detalle en `docs/plan-de-raiz/pr-03-politica-de-comandos.md`.
+exacta. Un criterio que termina en un filtro de nombre (`-t "AC-1"`, `--testNamePattern`, `-g`,
+`--grep`) también pasa sin el filtro, para correr su archivo de test entero: en PIZ-2 a PIZ-14 fue
+el rechazo de `npx` más común (2026-11-12). Detalle en `docs/plan-de-raiz/pr-03-politica-de-comandos.md`.
 
 ### Lo que la spec no nombraba
 

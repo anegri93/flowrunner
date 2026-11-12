@@ -244,7 +244,11 @@ export class Panel {
       case "alternar": {
         const run = this.#run(accion.run);
         if (run === undefined) return;
-        const abiertos = { ...this.#e.abiertos, [run.id]: !isOpen(this.#e, run) };
+        // Un nodo del recorrido se guarda como `<run>:<clave>`; su estado actual viene en la acción.
+        const abiertos =
+          accion.nodo === undefined
+            ? { ...this.#e.abiertos, [run.id]: !isOpen(this.#e, run) }
+            : { ...this.#e.abiertos, [`${run.id}:${accion.nodo}`]: accion.abierto !== true };
         this.#set({ abiertos });
         await this.#save(ABIERTOS, abiertos);
         return;

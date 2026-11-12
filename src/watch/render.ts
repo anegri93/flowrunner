@@ -2,6 +2,7 @@
 // columnas, los proyectos como grupos, y por run sus fases y sub-tasks como árbol, con modelo, tokens,
 // USD aproximados, tiempo y estado. Ninguna línea pasa el ancho de la terminal.
 import type { Step } from "../report/transcript.ts";
+import type { Paso, PasoEtapa, Vuelta } from "./recorrido.ts";
 import type { PhaseNode, RunTree, SessionNode, UnitNode } from "./tree.ts";
 
 const MAX_LABEL = 70;
@@ -13,7 +14,17 @@ const TOKENS_W = BAR + 6;
 const SELECTED = "30;46";
 
 /** La clase de cada fila, con el ícono y el color de agents-tree. */
-type Kind = "blocked" | "running" | "waiting" | "done" | "failed" | "back" | "pending" | "inactive";
+type Kind =
+  | "blocked"
+  | "running"
+  | "waiting"
+  | "done"
+  | "failed"
+  | "back"
+  | "pending"
+  | "inactive"
+  | "you"
+  | "auto";
 const KIND: Record<Kind, { icon: string; code: string }> = {
   blocked: { icon: "▲", code: "1;35" },
   running: { icon: "●", code: "1;33" },
@@ -23,6 +34,8 @@ const KIND: Record<Kind, { icon: string; code: string }> = {
   back: { icon: "↺", code: "33" },
   pending: { icon: "·", code: "90" },
   inactive: { icon: "–", code: "90" },
+  you: { icon: "◆", code: "1;34" },
+  auto: { icon: "·", code: "90" },
 };
 
 /** Texto en una línea y sin caracteres de control: lo que escribe un modelo no maneja la terminal. */
@@ -100,6 +113,10 @@ interface Row {
   readonly time: string;
   readonly status: string;
   readonly note: string | undefined;
+  /** Tiene hijos: si están a la vista. */
+  readonly abierto?: boolean | undefined;
+  /** La fila de la que cuelga, para que `←` suba a ella. */
+  readonly parent?: string | undefined;
 }
 
 /** Lo que se elige con las flechas: una fila con sesiones, y los nombres de esas sesiones. */
@@ -107,12 +124,19 @@ export interface Selectable {
   readonly key: string;
   readonly run: string;
   readonly sessions: readonly string[];
+  /** Lo que dice la fila, para el título del detalle. */
+  readonly titulo: string;
+  /** Tiene hijos y se pliega: si están a la vista. Sin valor, es una sesión: Enter ve sus pasos. */
+  readonly abierto?: boolean | undefined;
+  readonly parent?: string | undefined;
 }
 
 export interface BoardOptions {
   readonly width: number;
   readonly color: boolean;
   readonly selected?: string | undefined;
+  /** Lo que la persona abrió o plegó, por clave; lo demás sigue lo que dice el recorrido. */
+  readonly abiertos?: ReadonlyMap<string, boolean>;
 }
 
 const sum = (xs: readonly number[]) => xs.reduce((a, b) => a + b, 0);
@@ -202,34 +226,42 @@ function unitRow(
   }
 }
 
-function runRows(tree: RunTree): Row[] {
+/** La fila del run: su título, sus tokens y su costo, cuánto lleva y en qué está. */
+function runHeader(tree: RunTree, all: readonly SessionNode[]): Row {
+  const run = RUN[tree.status];
+  return {
+    key: undefined,
+    run: tree.id,
+    sessions: [],
+    prefix: " ",
+    stem: " ",
+    kind: run.kind,
+    label: tree.titulo === "" ? tree.clave : tree.titulo,
+    id: tree.clave,
+    model: "",
+    tokens: sum(all.map((s) => s.tokens)),
+    share: undefined,
+    usd: tree.costoUsd + runningCost(all),
+    partial: all.some((s) => s.corriendo),
+    time:
+      tree.haceSegundos === undefined
+        ? duration(tree.segundos)
+        : `hace ${duration(tree.haceSegundos)}`,
+    status: tree.status === "entregado" && tree.prMergeada ? "PR mergeada" : run.text,
+    note: runNote(tree),
+  };
+}
+
+/** Las filas de un run: su recorrido, o sus fases si el árbol no trae recorrido. */
+function runRows(tree: RunTree, abiertos: ReadonlyMap<string, boolean>): Row[] {
+  return tree.recorrido.length === 0 ? phaseRows(tree) : timelineRows(tree, abiertos);
+}
+
+function phaseRows(tree: RunTree): Row[] {
   const all = tree.fases.flatMap((p) => [...p.sesiones, ...p.unidades.flatMap((u) => u.sesiones)]);
   const total = sum(all.map((s) => s.tokens));
   const share = (n: number) => (total === 0 ? 0 : n / total);
-  const run = RUN[tree.status];
-  const rows: Row[] = [
-    {
-      key: undefined,
-      run: tree.id,
-      sessions: [],
-      prefix: " ",
-      stem: " ",
-      kind: run.kind,
-      label: tree.titulo === "" ? tree.clave : tree.titulo,
-      id: tree.clave,
-      model: "",
-      tokens: total,
-      share: undefined,
-      usd: tree.costoUsd + runningCost(all),
-      partial: all.some((s) => s.corriendo),
-      time:
-        tree.haceSegundos === undefined
-          ? duration(tree.segundos)
-          : `hace ${duration(tree.haceSegundos)}`,
-      status: tree.status === "entregado" && tree.prMergeada ? "PR mergeada" : run.text,
-      note: runNote(tree),
-    },
-  ];
+  const rows: Row[] = [runHeader(tree, all)];
   tree.fases.forEach((p, i) => {
     const last = i === tree.fases.length - 1;
     const own = [...p.sesiones, ...p.unidades.flatMap((u) => u.sesiones)];
@@ -279,6 +311,278 @@ function runRows(tree: RunTree): Row[] {
         time: u.sesiones.length === 0 ? "" : duration(sum(u.sesiones.map((s) => s.segundos))),
       });
     });
+  });
+  return rows;
+}
+
+/** `11:12`: la hora local en que pasó algo. */
+export function hhmm(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/** Las sesiones de una corrida, con las de sus sub-tasks. */
+const sessionsOf = (p: PasoEtapa) => [...p.sesiones, ...p.subtareas.flatMap((u) => u.sesiones)];
+
+/** Un run plegado, entregado o cerrado no te necesita: arranca plegado, como su tarjeta en Orca. */
+const runOpenByDefault = (tree: RunTree) =>
+  !["entregado", "cerrado", "abortado"].includes(tree.status);
+
+/** A quién devolvió y por qué, para la nota de una corrida en rojo. */
+const redNote = (p: PasoEtapa) =>
+  [p.unidades.length > 0 ? `→ ${p.unidades.join(", ")}` : undefined, p.motivo]
+    .filter((x) => x !== undefined)
+    .join(" · ");
+
+function etapaRow(
+  p: PasoEtapa,
+  prMergeada: boolean,
+): { kind: Kind; status: string; note: string | undefined } {
+  switch (p.resultado) {
+    case "ok": {
+      const status =
+        p.fase === "aprobar"
+          ? "aprobado"
+          : p.fase === "entregar"
+            ? p.pr === undefined
+              ? "PR creada"
+              : `PR #${String(p.pr)}`
+            : "listo";
+      return { kind: "done", status, note: undefined };
+    }
+    case "salteada":
+      return { kind: "inactive", status: "salteada", note: p.motivo };
+    case "vuelve":
+      return { kind: "back", status: "volvió", note: redNote(p) };
+    case "falla":
+      return { kind: "failed", status: "falló", note: redNote(p) };
+    case "pregunta":
+      return { kind: "failed", status: "se detuvo", note: redNote(p) };
+    case "pausa":
+      return { kind: "waiting", status: "en pausa", note: "límite de la suscripción" };
+    case "espera":
+      return p.fase === "aprobar"
+        ? { kind: "blocked", status: "te espera", note: undefined }
+        : prMergeada
+          ? { kind: "waiting", status: "aprende al próximo chequeo", note: undefined }
+          : { kind: "waiting", status: "espera merge", note: undefined };
+    case "corriendo":
+      return { kind: "running", status: "trabajando", note: toolNote(sessionsOf(p)) };
+    case "cortada":
+      return { kind: "inactive", status: "cortada", note: undefined };
+  }
+}
+
+const VERBO: Record<Vuelta["resultado"], string> = {
+  vuelve: "volvió",
+  falla: "falló",
+  pregunta: "se detuvo",
+};
+
+/** Una vuelta en una línea: `verificar volvió 2 veces → ST-1 · 5 pasos`. */
+export const vueltaLabel = (v: Vuelta) =>
+  `${v.fase} ${VERBO[v.resultado]}${v.veces > 1 ? ` ${String(v.veces)} veces` : ""}${v.unidades.length > 0 ? ` → ${v.unidades.join(", ")}` : ""} · ${String(v.pasos)} pasos`;
+
+/** Lo de primer nivel del recorrido: un paso, o una vuelta con los pasos que caen adentro. */
+type Nodo = { readonly paso: Paso } | { readonly vuelta: Vuelta; readonly pasos: Paso[] };
+
+function nodosOf(tree: RunTree): Nodo[] {
+  const nodos: Nodo[] = [];
+  for (const p of tree.recorrido) {
+    const n = p.tipo === "pendiente" ? undefined : p.vuelta;
+    const prev = nodos.at(-1);
+    const vuelta = tree.vueltas.find((v) => v.numero === n);
+    if (vuelta === undefined) nodos.push({ paso: p });
+    else if (prev !== undefined && "vuelta" in prev && prev.vuelta.numero === n) prev.pasos.push(p);
+    else nodos.push({ vuelta, pasos: [p] });
+  }
+  return nodos;
+}
+
+/** Plegado, un nodo con hijos dice `▸`; abierto, `▾`. */
+const mark = (abierto: boolean | undefined) => (abierto === undefined ? "" : abierto ? " ▾" : " ▸");
+
+/** El recorrido de un run como árbol: cada paso con su hora, y las vueltas marcadas con `┃`. */
+function timelineRows(tree: RunTree, abiertos: ReadonlyMap<string, boolean>): Row[] {
+  const all = tree.recorrido.flatMap((p) => (p.tipo === "etapa" ? sessionsOf(p) : []));
+  const total = sum(all.map((s) => s.tokens));
+  const share = (n: number) => (total === 0 ? 0 : n / total);
+  const open = (key: string, byDefault: boolean) => abiertos.get(key) ?? byDefault;
+  const base = { run: tree.id, id: "", model: "", sessions: [] as string[] };
+  const rows: Row[] = [];
+
+  const header = runHeader(tree, all);
+  const runOpen = open(tree.id, runOpenByDefault(tree));
+  rows.push({ ...header, key: tree.id, abierto: runOpen, label: header.label + mark(runOpen) });
+
+  const branch = (stem: string, last: boolean) => `${stem}${last ? "└─ " : "├─ "}`;
+  const trunk = (stem: string, last: boolean) => `${stem}${last ? "   " : "│  "}`;
+  /** Una sesión: una hoja, que con Enter muestra sus pasos. */
+  const sessionRow = (s: SessionNode, stem: string, last: boolean, parent: string): Row => ({
+    ...base,
+    key: `${tree.id}:s/${s.nombre}`,
+    parent,
+    sessions: [s.nombre],
+    prefix: branch(stem, last),
+    stem: trunk(stem, last),
+    kind: s.corriendo ? "running" : "done",
+    label: s.nombre,
+    model: modelTag(s.modelo, s.esfuerzo),
+    tokens: s.tokens,
+    share: share(s.tokens),
+    usd: s.costoUsd ?? (s.corriendo ? (s.costoEstimado ?? 0) : undefined),
+    partial: s.corriendo,
+    time: duration(s.segundos),
+    status: s.corriendo ? "trabajando" : "listo",
+    note: toolNote([s]),
+  });
+
+  const emit = (p: Paso, prefix: string, stem: string, parent: string) => {
+    if (p.tipo === "pendiente") {
+      const status =
+        tree.status === "entregado"
+          ? tree.prMergeada
+            ? "aprende al próximo chequeo"
+            : "espera merge"
+          : "pendiente";
+      rows.push({
+        ...base,
+        key: undefined,
+        prefix,
+        stem,
+        // Entregado, aprender no está pendiente: espera tu merge.
+        kind: tree.status === "entregado" ? "waiting" : "pending",
+        label: p.fases.join(" · "),
+        tokens: 0,
+        share: undefined,
+        usd: undefined,
+        partial: false,
+        time: "",
+        status,
+        note: undefined,
+      });
+      return;
+    }
+    if (p.tipo !== "etapa") {
+      // Un sha va en la línea; un motivo o una instrucción, debajo.
+      const detalle = p.tipo === "tuyo" ? p.detalle : undefined;
+      const inline = p.tipo === "tuyo" && p.que === "arreglaste a mano" && detalle !== undefined;
+      rows.push({
+        ...base,
+        key: undefined,
+        prefix,
+        stem,
+        kind: p.tipo === "tuyo" ? "you" : "auto",
+        label: `${hhmm(p.at)} ${p.que}${inline ? ` (${detalle})` : ""}`,
+        tokens: 0,
+        share: undefined,
+        usd: undefined,
+        partial: false,
+        time: "",
+        status: "",
+        note: inline ? undefined : detalle,
+      });
+      return;
+    }
+    const ss = sessionsOf(p);
+    const tokens = sum(ss.map((s) => s.tokens));
+    const key = `${tree.id}:${p.clave}`;
+    const kids = p.fase === "implementar" ? p.subtareas : p.sesiones;
+    const abierto = kids.length === 0 ? undefined : open(key, p.abierto);
+    const progress =
+      p.subtareas.length > 0
+        ? ` ${String(p.subtareas.filter((u) => u.estado === "integrada").length)}/${String(p.subtareas.length)}`
+        : "";
+    rows.push({
+      ...base,
+      key: abierto === undefined ? undefined : key,
+      parent,
+      abierto,
+      prefix,
+      stem,
+      ...etapaRow(p, tree.prMergeada),
+      label: `${hhmm(p.inicio)} ${p.fase}${progress}${mark(abierto)}`,
+      model: tags(ss),
+      tokens,
+      share: share(tokens),
+      usd: p.costoUsd + runningCost(ss),
+      partial: ss.some((s) => s.corriendo),
+      time: p.segundos === undefined ? "" : duration(p.segundos),
+    });
+    if (abierto !== true) return;
+    if (p.fase !== "implementar") {
+      p.sesiones.forEach((s, j) =>
+        rows.push(sessionRow(s, stem, j === p.sesiones.length - 1, key)),
+      );
+      return;
+    }
+    p.subtareas.forEach((u, j) => {
+      const last = j === p.subtareas.length - 1;
+      const uKey = `${key}/${u.id}`;
+      const uOpen = u.sesiones.length === 0 ? undefined : open(uKey, u.estado === "corriendo");
+      const uTokens = sum(u.sesiones.map((s) => s.tokens));
+      const done = u.sesiones.filter((s) => s.costoUsd !== undefined);
+      rows.push({
+        ...base,
+        key: uOpen === undefined ? undefined : uKey,
+        parent: key,
+        abierto: uOpen,
+        prefix: branch(stem, last),
+        stem: trunk(stem, last),
+        ...unitRow(u, p.subtareas),
+        label: `${u.id} ${u.titulo}${times(u.sesiones)}${mark(uOpen)}`,
+        model: tags(u.sesiones),
+        tokens: uTokens,
+        share: share(uTokens),
+        usd: sum(done.map((s) => s.costoUsd ?? 0)) + runningCost(u.sesiones),
+        partial: u.sesiones.some((s) => s.corriendo),
+        time: u.sesiones.length === 0 ? "" : duration(sum(u.sesiones.map((s) => s.segundos))),
+      });
+      if (uOpen === true) {
+        u.sesiones.forEach((s, k) =>
+          rows.push(sessionRow(s, trunk(stem, last), k === u.sesiones.length - 1, uKey)),
+        );
+      }
+    });
+  };
+
+  const nodos = nodosOf(tree);
+  // Plegado, el run muestra dónde quedó: su último paso, o la vuelta en la que está.
+  const shown = runOpen
+    ? nodos
+    : nodos.filter((n) => !("paso" in n && n.paso.tipo === "pendiente")).slice(-1);
+  shown.forEach((n, i) => {
+    const last = i === shown.length - 1;
+    const prefix = branch("   ", last);
+    const stem = trunk("   ", last);
+    if ("paso" in n) {
+      emit(n.paso, prefix, stem, tree.id);
+      return;
+    }
+    const v = n.vuelta;
+    const key = `${tree.id}:v${String(v.numero)}`;
+    const abierto = open(key, v.abierto);
+    const ss = n.pasos.flatMap((p) => (p.tipo === "etapa" ? sessionsOf(p) : []));
+    const tokens = sum(ss.map((s) => s.tokens));
+    rows.push({
+      ...base,
+      key,
+      parent: tree.id,
+      abierto,
+      prefix,
+      stem,
+      kind: "back",
+      label: `${vueltaLabel(v)}${mark(abierto)}`,
+      model: tags(ss),
+      tokens,
+      share: share(tokens),
+      usd: v.costoUsd + runningCost(ss),
+      partial: ss.some((s) => s.corriendo),
+      time: duration(v.segundos),
+      status: v.abierta ? "abierta" : "resuelta",
+      note: undefined,
+    });
+    if (abierto) for (const p of n.pasos) emit(p, `${stem}┃  `, `${stem}┃  `, key);
   });
   return rows;
 }
@@ -336,7 +640,9 @@ export function renderBoard(
   const projects = [...new Set(ordered.map((t) => t.proyecto))];
   const groups = projects.map((p) => ({
     project: p,
-    rows: ordered.filter((t) => t.proyecto === p).flatMap(runRows),
+    rows: ordered
+      .filter((t) => t.proyecto === p)
+      .flatMap((t) => runRows(t, opts.abiertos ?? new Map())),
   }));
   const rows = groups.flatMap((g) => g.rows);
 
@@ -367,13 +673,15 @@ export function renderBoard(
     const room = Math.max(labelW - len(r.prefix) - 2, 4);
     const label = cut(r.label, room);
     const bold = r.kind === "blocked" || r.kind === "running" ? style(colored, "1", label) : label;
-    const dim = r.kind === "pending" ? style(colored, "90", label) : bold;
+    const dim = r.kind === "pending" || r.kind === "auto" ? style(colored, "90", label) : bold;
     const cells = [
-      `${r.prefix}${style(colored, k.code, k.icon)} ${dim}${" ".repeat(room - len(label))}`,
+      `${r.prefix.replaceAll("┃", style(colored, "33", "┃"))}${style(colored, k.code, k.icon)} ${dim}${" ".repeat(room - len(label))}`,
       style(colored, "90", padEnd(r.id, idW)),
       ...(showModel ? [padEnd(cut(r.model, modelW), modelW)] : []),
-      tokensCell(r, colored),
-      padStart(usd(r.usd, r.partial), usdW),
+      // Tus pasos y el autofix no gastan: sin números, no un «–» que parezca un costo.
+      ...(r.kind === "you" || r.kind === "auto"
+        ? [" ".repeat(TOKENS_W), " ".repeat(usdW)]
+        : [tokensCell(r, colored), padStart(usd(r.usd, r.partial), usdW)]),
       padStart(r.time, timeW),
       style(colored, k.code, padEnd(r.status, statusW)),
     ];
@@ -398,7 +706,16 @@ export function renderBoard(
   for (const g of groups) {
     out.push(style(color, "1;34", cut(g.project, width)));
     for (const r of g.rows) {
-      if (r.key !== undefined) selectable.push({ key: r.key, run: r.run, sessions: r.sessions });
+      if (r.key !== undefined) {
+        selectable.push({
+          key: r.key,
+          run: r.run,
+          sessions: r.sessions,
+          titulo: r.label,
+          abierto: r.abierto,
+          parent: r.parent,
+        });
+      }
       if (r.key !== undefined && r.key === opts.selected) {
         out.push(style(color, SELECTED, padEnd(cut(line(r, false), width), width)));
       } else {

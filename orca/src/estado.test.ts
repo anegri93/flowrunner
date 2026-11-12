@@ -10,6 +10,10 @@ import { parseWatch } from "./runs";
 import type { Accion } from "./vista";
 
 const runs = parseWatch(readFileSync(new URL("../test/watch.json", import.meta.url), "utf8"));
+// PIZ-9 con su recorrido: en curso, con implementar rehaciendo ST-1, y entregado.
+const [enCurso, entregado] = parseWatch(
+  readFileSync(new URL("../test/recorrido.json", import.meta.url), "utf8"),
+) as [Run, Run];
 const PIZ3 = "PIZ-3-20261109-010000";
 const VF2 = "VF-2-20261109-001527";
 
@@ -762,4 +766,88 @@ test("el texto de un run se muestra escapado, también dentro de una acción", a
   assert.equal(html.includes("<img src=x"), false);
   assert.equal(html.includes('"><b>'), false);
   assert.ok(sees(panel, `<img src=x onerror="alert(1)">`));
+});
+
+// --- El recorrido -------------------------------------------------------------------------------
+
+// Si regresiona, la tarjeta vuelve a ser una foto de nueve etapas, o el detalle de ahora se repite.
+test("el recorrido: cada paso con su hora, la vuelta con lo que pasó adentro, y ahora una sola vez", async () => {
+  const panel = await abrirPanel(fakeApi({ runs: () => ({ runs: [enCurso], at: 0 }) }));
+  const html = panel.html();
+  for (const text of [
+    "Aprobaste el plan",
+    "Verificar volvió 2 veces → ST-1",
+    "Autofix",
+    "→ ST-1 · AC-9 sigue en rojo",
+    "Verificar · Revisar · Probar · Entregar · Aprender",
+  ])
+    assert.ok(sees(panel, text), text);
+  assert.match(visible(html), /Preparar \d\d:\d\d · 0:41/);
+  assert.equal(html.includes('class="etapa'), false);
+  assert.equal((html.match(/class="actual"/g) ?? []).length, 1);
+  // Ahora va bajo el último paso: implementar, que rehace ST-1.
+  assert.ok(html.indexOf('class="actual"') > html.lastIndexOf("Implementar"));
+  assert.match(html, /class="vuelta abierta viva"/);
+});
+
+// Si regresiona, lo que plegaste se vuelve a abrir en el refresco o al recargar el panel.
+test("plegar una vuelta la deja en una línea, y se guarda", async () => {
+  const api = fakeApi({ runs: () => ({ runs: [enCurso], at: 0 }) });
+  const panel = await abrirPanel(api);
+  await press(panel, { label: "Plegar la vuelta de Verificar" });
+  assert.deepEqual(api.storage[ABIERTOS], { [`${enCurso.id}:v1`]: false });
+  assert.equal(sees(panel, "Autofix"), false);
+  assert.ok(sees(panel, "Verificar volvió 2 veces → ST-1 · 4 pasos"));
+  const again = await abrirPanel(api);
+  assert.ok(find(again, { label: "Abrir la vuelta de Verificar" }));
+  // Plegada la vuelta del paso que corre, ahora sigue a la vista: ahí están las decisiones.
+  assert.equal((again.html().match(/class="actual"/g) ?? []).length, 1);
+});
+
+// Si regresiona, no se llega a las sub-tasks ni a las sesiones de una corrida terminada.
+test("implementar se abre en sus sub-tasks, y cada sub-task en sus sesiones", async () => {
+  const panel = await abrirPanel(fakeApi({ runs: () => ({ runs: [entregado], at: 0 }) }));
+  await press(panel, { label: "Ver las etapas de PIZ-9" });
+  const [first] = findAll(panel, { label: "Ver las sub-tasks de Implementar" });
+  assert.ok(first);
+  await press(panel, first);
+  assert.ok(sees(panel, "ST-2 Conexiones en el frontend"));
+  await press(panel, { label: "Ver las sesiones de ST-1" });
+  assert.ok(find(panel, { label: "Pasos de implementar-ST-1-1" }));
+  assert.ok(find(panel, { label: "Pasos de implementar-ST-1-2" }));
+  assert.equal(find(panel, { label: "Pasos de implementar-ST-1-3" }), undefined);
+});
+
+// Si regresiona, un run cerrado se despliega en la lista de antes o con «Abortar el run».
+test("un run cerrado se despliega en su recorrido, sin pendientes ni ahora", async () => {
+  const closed = {
+    ...entregado,
+    status: "cerrado",
+    recorrido: entregado.recorrido?.filter((p) => p.tipo !== "pendiente"),
+  } as Run;
+  const panel = await abrirPanel(
+    fakeApi({ runs: () => ({ runs: [], cerrados: [closed], at: 0 }) }),
+  );
+  await press(panel, { label: "Ver los runs cerrados" });
+  await press(panel, { label: "Ver las etapas de PIZ-9" });
+  assert.ok(sees(panel, "Aprobaste el plan"));
+  assert.ok(sees(panel, "PR #12"));
+  // Las vueltas de un run que terminó arrancan plegadas: se ve la línea, no lo de adentro.
+  assert.ok(sees(panel, "Probar falló · 2 pasos"));
+  assert.equal(sees(panel, "Aceptaste seguir"), false);
+  await press(panel, { label: "Abrir la vuelta de Probar" });
+  assert.ok(sees(panel, "Aceptaste seguir"));
+  assert.equal(panel.html().includes('class="actual"'), false);
+  assert.equal(find(panel, "Abortar el run"), undefined);
+});
+
+// Si regresiona, Orca con un flowrunner anterior, que no manda el recorrido, deja la tarjeta vacía.
+test("sin recorrido, la tarjeta muestra las nueve etapas en lista", async () => {
+  const panel = await abrirPanel(fakeApi({}));
+  assert.equal(
+    runs.every((r) => r.recorrido === undefined),
+    true,
+  );
+  assert.ok(panel.html().includes('class="etapa'));
+  assert.equal(panel.html().includes('class="recorrido"'), false);
 });

@@ -64,6 +64,60 @@ export interface Run {
   /** Lo que hoy existe y el plan cambia. Con algo acá, aprobar pide aceptarlo. */
   readonly cambiaLoExistente?: readonly ExistingChange[];
   readonly fases: readonly Phase[];
+  /** Lo que pasó, en orden, con las vueltas agrupadas; un flowrunner anterior no lo manda. */
+  readonly recorrido?: readonly Paso[];
+  readonly vueltas?: readonly Vuelta[];
+}
+
+/** Una corrida de una etapa, como la arma flowrunner (src/watch/recorrido.ts). */
+export interface PasoEtapa {
+  readonly tipo: "etapa";
+  readonly clave: string;
+  readonly fase: string;
+  readonly inicio: string;
+  readonly segundos?: number;
+  readonly costoUsd: number;
+  /** ok, salteada, vuelve, falla, pregunta, pausa, espera, corriendo o cortada. */
+  readonly resultado: string;
+  readonly motivo?: string;
+  readonly unidades: readonly string[];
+  readonly pr?: number;
+  readonly sesiones: readonly Session[];
+  readonly subtareas: readonly Unit[];
+  readonly vuelta?: number;
+  readonly abierto: boolean;
+}
+
+export type Paso =
+  | PasoEtapa
+  | {
+      readonly tipo: "tuyo";
+      readonly clave: string;
+      readonly at: string;
+      readonly que: string;
+      readonly detalle?: string;
+      readonly vuelta?: number;
+    }
+  | {
+      readonly tipo: "auto";
+      readonly clave: string;
+      readonly at: string;
+      readonly que: string;
+      readonly vuelta?: number;
+    }
+  | { readonly tipo: "pendiente"; readonly clave: string; readonly fases: readonly string[] };
+
+export interface Vuelta {
+  readonly numero: number;
+  readonly fase: string;
+  readonly resultado: string;
+  readonly veces: number;
+  readonly unidades: readonly string[];
+  readonly pasos: number;
+  readonly segundos: number;
+  readonly costoUsd: number;
+  readonly abierta: boolean;
+  readonly abierto: boolean;
 }
 
 /** Una respuesta a un run detenido, como la arma flowrunner: el comando y qué hace (ADR 0023). */
@@ -319,6 +373,138 @@ export function stageRows(run: Run): StageRow[] {
 
 const capitalize = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 
+// --- El recorrido -------------------------------------------------------------------------------
+
+/** Lo de primer nivel del recorrido: un paso, o una vuelta con los pasos que caen adentro. */
+export type Nodo = { readonly paso: Paso } | { readonly vuelta: Vuelta; readonly pasos: Paso[] };
+
+export function nodosOf(run: Run): Nodo[] {
+  const nodos: Nodo[] = [];
+  for (const p of run.recorrido ?? []) {
+    const n = p.tipo === "pendiente" ? undefined : p.vuelta;
+    const prev = nodos.at(-1);
+    const vuelta = run.vueltas?.find((v) => v.numero === n);
+    if (vuelta === undefined) nodos.push({ paso: p });
+    else if (prev !== undefined && "vuelta" in prev && prev.vuelta.numero === n) prev.pasos.push(p);
+    else nodos.push({ vuelta, pasos: [p] });
+  }
+  return nodos;
+}
+
+/** `11:12`: la hora local en que pasó algo. */
+export function hhmm(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/** Las sesiones de una corrida, con las de sus sub-tasks. */
+export const pasoSessions = (p: PasoEtapa): Session[] => [
+  ...p.sesiones,
+  ...p.subtareas.flatMap((u) => u.sesiones),
+];
+
+/** El estado de fase que corresponde al resultado de una corrida, para su indicador y su texto. */
+const ESTADO_DE: Record<string, string> = { pregunta: "falla" };
+
+export interface PasoView {
+  /** El estado de fase que dibuja su indicador: ok, vuelve, falla, corriendo, espera… */
+  readonly estado: string;
+  readonly titulo: string;
+  /** Su estado en palabras, salvo cuando está lista: `volvió`, `trabajando`, `PR #12`. */
+  readonly texto: string | undefined;
+  readonly tone: Tone;
+  /** A quién devolvió y por qué, o lo que dijiste. */
+  readonly nota: string | undefined;
+  /** La hora, la duración y el costo: `11:12 · 0:12 · $0.40`. */
+  readonly meta: string;
+}
+
+const TUYO: Record<string, string> = {
+  aprobaste: "Aprobaste el plan",
+  "pediste cambios": "Pediste cambios al plan",
+  "arreglaste a mano": "Arreglaste a mano",
+  "pediste un arreglo": "Pediste un arreglo",
+  aceptaste: "Aceptaste seguir",
+  "aceptaste sin probar": "Aceptaste sin probar",
+  rehiciste: "Rehiciste el run",
+  reanudaste: "Reanudaste el run",
+  abortaste: "Abortaste el run",
+};
+
+/** Un paso del recorrido como se lee en la tarjeta. */
+export function pasoView(p: Paso, run: Run): PasoView {
+  switch (p.tipo) {
+    case "tuyo":
+      return {
+        estado: "tuyo",
+        titulo: TUYO[p.que] ?? capitalize(p.que),
+        texto: undefined,
+        tone: "accent",
+        nota: p.detalle,
+        meta: hhmm(p.at),
+      };
+    case "auto":
+      return {
+        estado: "auto",
+        titulo: "Autofix",
+        texto: "formateador y lint",
+        tone: "neutral",
+        nota: undefined,
+        meta: hhmm(p.at),
+      };
+    case "pendiente": {
+      const label = phaseLabel("aprender", "espera", run.prMergeada === true);
+      return run.status === "entregado"
+        ? {
+            estado: "espera",
+            titulo: p.fases.map(capitalize).join(" · "),
+            texto: label.texto,
+            tone: label.tone,
+            nota: undefined,
+            meta: "",
+          }
+        : {
+            estado: "pendiente",
+            titulo: p.fases.map(capitalize).join(" · "),
+            texto: undefined,
+            tone: "neutral",
+            nota: undefined,
+            meta: "",
+          };
+    }
+    case "etapa": {
+      const estado = ESTADO_DE[p.resultado] ?? p.resultado;
+      const label = phaseLabel(p.fase, estado, run.prMergeada === true);
+      const red = estado === "vuelve" || estado === "falla";
+      const integradas = p.subtareas.filter((u) => u.estado === "integrada").length;
+      return {
+        estado,
+        titulo: `${capitalize(p.fase)}${p.subtareas.length > 0 ? ` ${String(integradas)}/${String(p.subtareas.length)}` : ""}`,
+        texto:
+          p.resultado === "pregunta"
+            ? "se detuvo"
+            : p.fase === "entregar" && p.pr !== undefined && estado === "ok"
+              ? `PR #${String(p.pr)}`
+              : estado === "ok"
+                ? undefined
+                : label.texto,
+        tone: label.tone,
+        nota:
+          red || estado === "salteada"
+            ? join([p.unidades.length > 0 ? `→ ${p.unidades.join(", ")}` : undefined, p.motivo])
+            : undefined,
+        meta: join([hhmm(p.inicio), clock(p.segundos), cost(pasoSessions(p), p.costoUsd)]),
+      };
+    }
+  }
+}
+
+const VERBO: Record<string, string> = { vuelve: "volvió", falla: "falló", pregunta: "se detuvo" };
+
+/** Una vuelta en una línea: `Verificar volvió 2 veces → ST-1 · 5 pasos`. */
+export const vueltaTitulo = (v: Vuelta): string =>
+  `${capitalize(v.fase)} ${VERBO[v.resultado] ?? v.resultado}${v.veces > 1 ? ` ${String(v.veces)} veces` : ""}${v.unidades.length > 0 ? ` → ${v.unidades.join(", ")}` : ""} · ${String(v.pasos)} pasos`;
+
 // --- La frase del estado --------------------------------------------------------------------
 
 export interface Headline {
@@ -394,7 +580,7 @@ export interface Now {
 }
 
 /** Cómo se muestra cada estado de una sub-task: el mismo texto que `flowrunner watch`. */
-const TASK: Record<string, { mark: string; tone: Tone; texto: string }> = {
+export const TASK: Record<string, { mark: string; tone: Tone; texto: string }> = {
   pendiente: { mark: "○", tone: "neutral", texto: "pendiente" },
   corriendo: { mark: "●", tone: "accent", texto: "trabajando" },
   cortada: { mark: "–", tone: "neutral", texto: "cortada" },
@@ -404,7 +590,7 @@ const TASK: Record<string, { mark: string; tone: Tone; texto: string }> = {
   sin_cambios: { mark: "✓", tone: "success", texto: "sin cambios" },
 };
 
-function activity(s: Session): Activity {
+export function activity(s: Session): Activity {
   const ahora = s.corriendo
     ? join([
         s.ultimo === undefined ? undefined : `▸ ${s.ultimo}`,

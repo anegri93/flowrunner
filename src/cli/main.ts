@@ -220,16 +220,21 @@ export async function main(
           return 0;
         }
         const tty = process.stdout.isTTY && process.stdin.isTTY;
+        // El run que pediste por nombre se ve entero, aunque ya esté entregado.
+        const abiertos = new Map<string, boolean>(
+          first === undefined ? [] : targets().map((id) => [id, true]),
+        );
         if (values.once === true || !tty) {
           const { lines } = renderRuns(home, targets(), {
             width: process.stdout.columns > 0 ? process.stdout.columns : 120,
             color: process.stdout.isTTY,
+            abiertos,
             now: Date.now(),
           });
           io.out(lines.join("\n"));
           return 0;
         }
-        await watchLive(home, targets);
+        await watchLive(home, targets, abiertos);
         return 0;
       }
       case "hook": {

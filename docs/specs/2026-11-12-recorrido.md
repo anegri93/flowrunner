@@ -83,7 +83,9 @@ interface Vuelta { numero: number; fase: Phase; veces: number; abierta: boolean;
 7. **Las vueltas.** Un paso de etapa que termina en `vuelve`, `falla` o `pregunta` abre una vuelta si
    no hay una abierta. Todos los pasos siguientes llevan ese número hasta que la fase que la abrió
    vuelve a terminar en `ok`; ese paso ya no lleva número y cierra la vuelta. Si dentro de la vuelta
-   vuelve otra etapa, sigue la misma vuelta: no se anida. Un `rehacer` cierra la vuelta abierta.
+   vuelve otra etapa, sigue la misma vuelta: no se anida. También la cierran un `rehacer` y el
+   arranque de una fase posterior a la que la abrió: así probar en rojo, aceptado, no deja la entrega
+   adentro de su vuelta.
 8. **Lo pendiente.** Si el run no terminó, va un solo paso `pendiente` con las fases posteriores a la
    del último paso de etapa, en el orden de `PHASES`. Si ya terminó, no va ninguno.
 9. **Lo que no entra.** Los rechazos de tripwires, los avisos, las decisiones internas, `encolado` y
@@ -106,7 +108,8 @@ Lo calcula flowrunner, así Orca y `watch` nunca discrepan:
   gris auto, punteado pendiente. Cada fila lleva la hora, la duración y el costo.
 - **La tarjeta plegada** muestra solo el último paso.
 - **El bloque «ahora»** (motivo, sub-tasks, actividad, decisiones y aviso) va solo bajo el último paso
-  de etapa. Hay una sola etapa actual.
+  de etapa, que por eso no se pliega. Si su vuelta está plegada, va debajo de la línea de la vuelta:
+  las decisiones nunca quedan escondidas. Un run cerrado o abortado no lo lleva.
 - **Una vuelta** se marca con un borde amarillo a la izquierda de sus pasos. Plegada es una línea:
   `↺ Verificar volvió 2 veces → ST-1 · 4 pasos · 6:10 · $0.40`.
 - **Se pliegan** la vuelta, el paso de implementar (sus sub-tasks), la sub-task (sus sesiones) y el
@@ -162,7 +165,9 @@ Cada test nuevo se ve fallar antes de existir el código que lo pone en verde.
   - Sin `recorrido`, la tarjeta cae a la lista de etapas.
 - `orca/src/estado.test.ts`: `alternar` con `nodo` guarda `<run>:<clave>` en `abiertos`, y el valor
   sobrevive a un refresco.
-- `orca/test/watch.json` se regenera con los campos nuevos.
+- `orca/test/recorrido.json`, un fixture nuevo con PIZ-9 en curso y entregado, armado con `runTree`
+  sobre los eventos de `src/watch/piz9.fixture.ts`. `orca/test/watch.json` queda sin `recorrido`: es
+  el caso de un flowrunner anterior.
 
 ## Fuera de alcance
 

@@ -82,6 +82,9 @@ const TODOS: Indicador[] = [
   "tarea-corriendo",
   "tarea-lista",
   "tarea-falla",
+  "tuyo",
+  "auto",
+  "vuelta",
 ];
 
 test("no hay dos indicadores con el mismo dibujo", () => {

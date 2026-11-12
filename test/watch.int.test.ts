@@ -20,9 +20,9 @@ describe("watch --once", () => {
     expect(lines[0]).toMatch(/^○ 1 PR abierta {2}.*ID {2}.*TOKENS.*ESTADO$/);
     expect(lines).toContain("acme-api");
     expect(lines).toContainEqual(
-      expect.stringMatching(/^ ○ Exportar pedidos a CSV +SHOP-214 .* PR abierta$/),
+      expect.stringMatching(/^ ○ Exportar pedidos a CSV ▾ +SHOP-214 .* PR abierta$/),
     );
-    expect(lines).toContainEqual(expect.stringMatching(/├─ ✓ revisar .* listo$/));
+    expect(lines).toContainEqual(expect.stringMatching(/├─ ✓ \d\d:\d\d revisar .* listo$/));
     expect(lines).toContainEqual(expect.stringMatching(/└─ ○ aprender .* espera merge$/));
     expect(runCli(["watch", "--once"], w.env).stdout).toContain("Exportar pedidos a CSV");
   }, 120_000);

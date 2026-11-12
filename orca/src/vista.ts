@@ -686,6 +686,8 @@ html.dark { --fr-success: #4ade80; --fr-warning: #fbbf24; --fr-accent: #60a5fa; 
 body { margin: 0; padding: 10px; font: 13px/1.45 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; color: var(--orca-foreground); background: var(--orca-background); }
 .panel, .pila, .tarjeta, .actual { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .panel { gap: 12px; }
+/* El botón de Orca arriba a la derecha tapaba la flecha de la primera tarjeta: el panel baja. */
+.panel { padding-top: 28px; }
 .tarjeta { gap: 7px; padding: 10px 12px; border: 1px solid var(--orca-border); border-radius: var(--orca-radius, 8px); background: var(--orca-card, transparent); }
 /* Lo que te necesita: borde amarillo, con una franja a la izquierda. */
 .tarjeta.te-necesita { border-color: var(--fr-warning); box-shadow: inset 3px 0 0 var(--fr-warning); }
@@ -693,12 +695,11 @@ body { margin: 0; padding: 10px; font: 13px/1.45 -apple-system, BlinkMacSystemFo
 .barra { display: flex; gap: 2px; }
 .seg { flex: 1; height: 5px; border-radius: 2px; background: color-mix(in srgb, var(--fr-muted) 28%, transparent); }
 .seg.ok { background: var(--fr-success); }
-.seg.trabaja { background: var(--fr-accent); animation: fr-late 1.4s ease-in-out infinite; }
+.seg.trabaja { background: var(--fr-accent); }
 .seg.espera { background: var(--fr-accent); }
 .seg.volvio { background: var(--fr-warning); }
 .seg.fallo { background: var(--fr-danger); }
 .seg.salteada { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--fr-muted) 55%, transparent) 0 2px, transparent 2px 4px); }
-@keyframes fr-late { 50% { opacity: .45; } }
 .motivo { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }
 .motivo.entero { display: block; }
 .corta-ahora { gap: 2px; align-items: flex-start; }
@@ -765,5 +766,5 @@ html.dark .btn.solid { color: #0b0b0b; }
 .nota-paso { padding-left: 24px; overflow-wrap: anywhere; }
 .vacio { display: flex; flex-direction: column; gap: 4px; align-items: center; text-align: center; padding: 24px 8px; }
 .leyendo { display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: 32px; }
-@media (prefers-reduced-motion: reduce) { .flecha { transition: none; } .seg.trabaja { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .flecha { transition: none; } }
 ${INDICADORES_CSS}`;

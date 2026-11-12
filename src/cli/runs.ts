@@ -239,6 +239,7 @@ export async function resumeRun(home: string, id: string, env: NodeJS.ProcessEnv
   const resumable =
     state.status === "detenido" ||
     state.status === "pausado_por_limite" ||
+    state.status === "pausado" ||
     state.status === "en_curso";
   if (!resumable) {
     throw new UserError(
@@ -698,6 +699,65 @@ export function removeWorktrees(run: RunPaths, repo: string): void {
     if (!existsSync(repo)) remove();
     else throw error;
   }
+}
+
+/**
+ * Pausar: un run que trabaja termina lo que está haciendo y para, sin proceso ni lugar; uno en cola
+ * sale de la cola en el acto. Con `para`, ese run de la cola es el próximo en entrar. No vuelve solo:
+ * sigue con `resume` (docs/specs/2026-11-12-pausar.md).
+ */
+export function pauseRun(home: string, id: string, para: string | undefined, origen: Origen) {
+  const state = loadOrExplain(home, id);
+  if (state.status !== "en_curso" && state.status !== "en_cola") {
+    throw new UserError(
+      `el run ${id} está ${state.status}: no ocupa lugar, no hace falta pausarlo`,
+      `flowrunner status ${id}`,
+    );
+  }
+  if (state.status === "en_curso" && state.pausaPedida)
+    throw new UserError(`el run ${id} ya se pausa al terminar lo que está haciendo`);
+  // Un run en curso sin proceso se cortó en el medio: no hay nada que esperar para pausarlo.
+  if (state.status === "en_curso" && !isRunning(home, state)) {
+    throw new UserError(
+      `el run ${id} no está corriendo: se cortó en el medio`,
+      `flowrunner resume ${id}`,
+    );
+  }
+  if (para !== undefined) requireQueued(home, para, state.proyecto);
+  appendEvent(runPaths(home, id).dir, {
+    tipo: "pausa_pedida",
+    ...(para === undefined ? {} : { para }),
+    origen,
+  });
+  if (para !== undefined) appendEvent(runPaths(home, para).dir, { tipo: "priorizado", origen });
+  const accion =
+    state.status === "en_cola"
+      ? "pausado"
+      : `se pausa al terminar lo que está haciendo${para === undefined ? "" : `; después entra ${para}`}`;
+  return runStartedSchema.parse({ ok: true, id, accion });
+}
+
+/** Priorizar: el run, que espera en la cola, sale antes que los demás, una vez. */
+export function prioritizeRun(home: string, id: string, origen: Origen) {
+  const state = requireQueued(home, id, undefined);
+  appendEvent(runPaths(home, id).dir, { tipo: "priorizado", origen });
+  return runStartedSchema.parse({
+    ok: true,
+    id,
+    accion: `priorizado: sale primero de la cola de ${state.proyecto}`,
+  });
+}
+
+/** El run espera en la cola, y si se pide, en la de ese proyecto. */
+function requireQueued(home: string, id: string, proyecto: string | undefined): RunState {
+  const state = loadOrExplain(home, id);
+  if (state.status !== "en_cola" || (proyecto !== undefined && state.proyecto !== proyecto)) {
+    throw new UserError(
+      `el run ${id} no está en cola${proyecto === undefined ? "" : ` en ${proyecto}`}: está ${state.status}`,
+      "flowrunner status",
+    );
+  }
+  return state;
 }
 
 export function abortRun(home: string, id: string, env: NodeJS.ProcessEnv) {

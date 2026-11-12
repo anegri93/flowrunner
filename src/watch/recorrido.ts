@@ -25,6 +25,8 @@ export type TuyoQue =
   | "aceptaste sin probar"
   | "rehiciste"
   | "reanudaste"
+  | "pausaste"
+  | "priorizaste"
   | "abortaste";
 
 /** Una corrida de una etapa. `clave` es estable: sale del índice de su `accion_iniciada`. */
@@ -291,6 +293,17 @@ export function recorridoOf(input: RecorridoInput): {
         return;
       case "abortado":
         mine(clave, e.at, "abortaste");
+        return;
+      case "pausa_pedida":
+        mine(
+          clave,
+          e.at,
+          "pausaste",
+          e.para === undefined ? undefined : `le deja el lugar a ${e.para}`,
+        );
+        return;
+      case "priorizado":
+        mine(clave, e.at, "priorizaste");
         return;
       default:
         return;

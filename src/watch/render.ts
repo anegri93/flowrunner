@@ -87,6 +87,7 @@ const RUN: Record<RunTree["status"], { kind: Kind; text: string; urgency: number
   en_curso: { kind: "running", text: "en curso", urgency: 2 },
   en_cola: { kind: "waiting", text: "en cola", urgency: 3 },
   pausado_por_limite: { kind: "waiting", text: "en pausa", urgency: 3 },
+  pausado: { kind: "waiting", text: "pausado", urgency: 3 },
   entregado: { kind: "waiting", text: "PR abierta", urgency: 4 },
   cerrado: { kind: "done", text: "cerrado", urgency: 5 },
   abortado: { kind: "inactive", text: "abortado", urgency: 6 },
@@ -247,7 +248,12 @@ function runHeader(tree: RunTree, all: readonly SessionNode[]): Row {
       tree.haceSegundos === undefined
         ? duration(tree.segundos)
         : `hace ${duration(tree.haceSegundos)}`,
-    status: tree.status === "entregado" && tree.prMergeada ? "PR mergeada" : run.text,
+    status:
+      tree.status === "entregado" && tree.prMergeada
+        ? "PR mergeada"
+        : tree.status === "en_curso" && tree.pausaPedida
+          ? "se pausa al terminar"
+          : run.text,
     note: runNote(tree),
   };
 }

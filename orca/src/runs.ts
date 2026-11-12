@@ -9,6 +9,8 @@ export type RunStatus =
   | "cerrado"
   | "detenido"
   | "pausado_por_limite"
+  /** La persona lo pausó: sin proceso ni lugar, sigue cuando lo reanuda. */
+  | "pausado"
   | "abortado";
 
 export interface Session {
@@ -53,6 +55,8 @@ export interface Run {
   readonly status: RunStatus;
   /** La PR ya se mergeó: un run entregado espera aprender, no tu merge. */
   readonly prMergeada?: boolean;
+  /** La persona pidió pausar: termina lo que está haciendo y para. Falta con un flowrunner anterior. */
+  readonly pausaPedida?: boolean;
   readonly costoUsd: number;
   readonly segundos: number;
   readonly motivo?: string;
@@ -180,6 +184,7 @@ const GRUPO: Record<RunStatus, number> = {
   en_curso: 1,
   pausado_por_limite: 1,
   en_cola: 2,
+  pausado: 2,
   entregado: 3,
   cerrado: 4,
   abortado: 4,
@@ -236,6 +241,7 @@ export const RUN_CHIP: Record<RunStatus, { texto: string; tone: Tone }> = {
   esperando_aprobacion: { texto: "TE ESPERA", tone: "warning" },
   detenido: { texto: "SE DETUVO", tone: "warning" },
   pausado_por_limite: { texto: "EN PAUSA", tone: "warning" },
+  pausado: { texto: "PAUSADO", tone: "neutral" },
   entregado: { texto: "PR ABIERTA", tone: "success" },
   cerrado: { texto: "CERRADO", tone: "neutral" },
   abortado: { texto: "ABORTADO", tone: "neutral" },
@@ -694,6 +700,8 @@ export interface Ahora {
 export function ahoraOf(run: Run): Ahora | undefined {
   switch (run.status) {
     case "en_curso": {
+      if (run.pausaPedida === true)
+        return { texto: "Se pausa al terminar lo que está haciendo", tone: "warning" };
       const a = nowOf(run).actividad.find((x) => x.ahora !== undefined);
       return { texto: a?.ahora ?? headlineOf(run).texto, tone: "accent" };
     }
@@ -701,6 +709,8 @@ export function ahoraOf(run: Run): Ahora | undefined {
       return { texto: "En pausa por el límite de la suscripción", tone: "warning" };
     case "en_cola":
       return { texto: "Espera un lugar en el repo", tone: "neutral" };
+    case "pausado":
+      return { texto: "Pausado por vos", tone: "neutral" };
     case "detenido":
       return run.motivo === undefined
         ? { texto: headlineOf(run).texto, tone: "warning" }
@@ -762,7 +772,19 @@ export type Decision =
    */
   | { readonly accion: "autofix" }
   /** Seguir a la fase siguiente igual; el motivo queda en la PR. */
-  | { readonly accion: "aceptar"; readonly motivo: string };
+  | { readonly accion: "aceptar"; readonly motivo: string }
+  /** Pausar al terminar lo que hace; `para`, el run en cola que entra en su lugar. */
+  | { readonly accion: "pausar"; readonly para?: string }
+  /** Que el run en cola salga primero. */
+  | { readonly accion: "priorizar" };
+
+/** Los otros runs de su proyecto que esperan en la cola: a quién le puede dejar su lugar. */
+export const enColaJunto = (run: Run, runs: readonly Run[]): Run[] =>
+  runs.filter((r) => r.status === "en_cola" && r.proyecto === run.proyecto && r.id !== run.id);
+
+/** Se puede pausar un run que trabaja, si todavía no lo pediste, o uno en cola. */
+export const canPause = (run: Run) =>
+  (run.status === "en_curso" && run.pausaPedida !== true) || run.status === "en_cola";
 
 /** Un run vivo se puede abortar, en cualquier etapa: todos menos los cerrados y los abortados. */
 export const canAbort = (run: Run) => run.status !== "cerrado" && run.status !== "abortado";
@@ -812,6 +834,7 @@ export function decisionsFor(run: Run): Decision["accion"][] {
     case "detenido":
       return stoppedDecisions(run);
     case "pausado_por_limite":
+    case "pausado":
       return ["reanudar"];
     // Aprender corre en el chequeo cada 10 minutos; con la PR recién mergeada, no hace falta esperarlo.
     case "entregado":

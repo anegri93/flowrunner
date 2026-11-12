@@ -531,3 +531,25 @@ test("la línea de ahora cambia con el estado del run", () => {
   });
   assert.equal(ahoraOf({ ...byKey("VF-1"), status: "cerrado" }), undefined);
 });
+
+// Si regresiona, un run pausado se ve trabajando o detenido, o no se puede reanudar desde el panel.
+test("un run pausado dice que lo pausaste y ofrece reanudarlo; uno que se va a pausar lo avisa", () => {
+  const vf2 = byKey("VF-2");
+  const paused: Run = { ...vf2, status: "pausado" };
+  assert.deepEqual(runChip(paused), { texto: "PAUSADO", tone: "neutral" });
+  assert.deepEqual(ahoraOf(paused), { texto: "Pausado por vos", tone: "neutral" });
+  assert.deepEqual(decisionsFor(paused), ["reanudar"]);
+  assert.deepEqual(ahoraOf({ ...vf2, pausaPedida: true }), {
+    texto: "Se pausa al terminar lo que está haciendo",
+    tone: "warning",
+  });
+  // En el panel va con los que están en cola.
+  assert.deepEqual(
+    sortRuns([
+      { ...vf2, id: "a-20261112-100000", clave: "cola", status: "en_cola" },
+      { ...paused, id: "b-20261112-110000", clave: "pausado" },
+      { ...vf2, id: "c-20261112-090000", clave: "PR", status: "entregado" },
+    ]).map((r) => r.clave),
+    ["pausado", "cola", "PR"],
+  );
+});

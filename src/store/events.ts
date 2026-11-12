@@ -52,6 +52,8 @@ export const outcomeSchema = z.discriminatedUnion("tipo", [
   z.strictObject({ tipo: z.literal("espera") }),
   /** El SDK informó el límite de la suscripción; `hasta` en milisegundos epoch. */
   z.strictObject({ tipo: z.literal("limite"), hasta: z.number() }),
+  /** La persona pidió pausar y la fase paró sin terminar, entre sub-tasks: sigue al reanudar. */
+  z.strictObject({ tipo: z.literal("pausa") }),
   /**
    * Reintentar solo no sirve: el run se detiene y le pregunta a la persona (ADR 0023). `unidades`,
    * las sub-tasks a las que se atribuye el problema, si hay.
@@ -170,6 +172,18 @@ export const eventSchema = z.discriminatedUnion("tipo", [
   z.strictObject({ tipo: z.literal("reanudado"), at }),
   /** No había lugar en el repo (`max_runs`): espera sin proceso hasta que se libere uno. */
   z.strictObject({ tipo: z.literal("encolado"), at }),
+  /**
+   * La persona pidió pausar: el run termina lo que está haciendo y para, sin proceso ni lugar, hasta
+   * que lo reanude. `para`, el run en cola al que le deja su lugar.
+   */
+  z.strictObject({
+    tipo: z.literal("pausa_pedida"),
+    at,
+    para: z.string().min(1).optional(),
+    origen: origenSchema.optional(),
+  }),
+  /** La persona le dio prioridad a este run en la cola: sale antes que los demás, una vez. */
+  z.strictObject({ tipo: z.literal("priorizado"), at, origen: origenSchema.optional() }),
   /** La persona decidió entregar aunque probar dejó criterios sin probar, y dijo por qué. */
   z.strictObject({ tipo: z.literal("sin_probar_aceptado"), at, motivo: z.string().min(1) }),
   /** La persona eligió una respuesta de la pregunta: que esas sub-tasks lo corrijan (ADR 0023). */

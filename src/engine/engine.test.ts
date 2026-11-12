@@ -344,6 +344,80 @@ describe("transiciones", () => {
     expect(back).toEqual(before);
   });
 
+  // Si regresiona, pausar libera el lugar con la etapa a medias, o tira lo que la etapa hizo.
+  test("pedir la pausa deja el run trabajando hasta que termina la etapa, y ahí lo pausa en la siguiente", () => {
+    const pedida = state(ok("preparar"), [
+      ev({ tipo: "accion_iniciada", fase: "planificar" }),
+      ev({ tipo: "pausa_pedida" }),
+    ]);
+    expect(pedida.status).toBe("en_curso");
+    expect(pedida.pausaPedida).toBe(true);
+    const pausado = state(ok("preparar"), [
+      ev({ tipo: "accion_iniciada", fase: "planificar" }),
+      ev({ tipo: "pausa_pedida" }),
+      ev({ tipo: "accion_terminada", fase: "planificar", resultado: { tipo: "ok" } }),
+    ]);
+    expect(pausado).toMatchObject({ status: "pausado", fase: "aprobar", pausaPedida: false });
+    expect(nextAction(pausado)).toEqual({ tipo: "fin", status: "pausado" });
+  });
+
+  // Si regresiona, una pausa pedida tapa una detención o un plan que espera tu aprobación.
+  test("si la etapa termina en algo que te necesita, gana eso y la pausa se descarta", () => {
+    const esperando = state(upTo("preparar"), [
+      ev({ tipo: "accion_iniciada", fase: "planificar" }),
+      ev({ tipo: "pausa_pedida" }),
+      ev({ tipo: "accion_terminada", fase: "planificar", resultado: { tipo: "ok" } }),
+      ev({ tipo: "reanudado" }),
+      ev({ tipo: "accion_iniciada", fase: "aprobar" }),
+      ev({ tipo: "pausa_pedida" }),
+      ev({ tipo: "accion_terminada", fase: "aprobar", resultado: { tipo: "espera" } }),
+    ]);
+    expect(esperando).toMatchObject({ status: "esperando_aprobacion", pausaPedida: false });
+    const detenido = state(ok("preparar"), [
+      ev({ tipo: "pausa_pedida" }),
+      ...done("planificar", { tipo: "falla", clase: "entorno", motivo: "base roja" }),
+    ]);
+    expect(detenido).toMatchObject({ status: "detenido", pausaPedida: false });
+  });
+
+  // Si regresiona, pausar un run en cola no lo saca de la cola, o pausar uno que espera hace algo.
+  test("pedir la pausa en cola pausa en el acto; en otro estado no hace nada", () => {
+    const enCola = state(ok("preparar"), [ev({ tipo: "encolado" }), ev({ tipo: "pausa_pedida" })]);
+    expect(enCola.status).toBe("pausado");
+    // Pedida justo antes de que el proceso perdiera su lugar al arrancar: no vuelve a la cola.
+    const sinLugar = state(ok("preparar"), [
+      ev({ tipo: "pausa_pedida" }),
+      ev({ tipo: "encolado" }),
+    ]);
+    expect(sinLugar.status).toBe("pausado");
+    const waiting = state(upTo("preparar", "planificar"), done("aprobar", { tipo: "espera" }));
+    expect(
+      state(upTo("preparar", "planificar"), done("aprobar", { tipo: "espera" }), [
+        ev({ tipo: "pausa_pedida" }),
+      ]),
+    ).toEqual(waiting);
+  });
+
+  // Si regresiona, reanudar un run pausado le reinicia los intentos o la instrucción que traía.
+  test("reanudado desde pausado sigue en la misma etapa, como estaba", () => {
+    const before = state(ok("preparar"), gate("planificar", "falta un test"));
+    const back = state(ok("preparar"), gate("planificar", "falta un test"), [
+      ev({ tipo: "encolado" }),
+      ev({ tipo: "pausa_pedida" }),
+      ev({ tipo: "reanudado" }),
+    ]);
+    expect(back).toEqual(before);
+  });
+
+  // Si regresiona, implementar pausado entre sub-tasks queda trabajando sin proceso.
+  test("una etapa que devuelve pausa deja el run pausado en esa etapa", () => {
+    const s = state(
+      upTo("preparar", "planificar", "aprobar"),
+      done("implementar", { tipo: "pausa" }),
+    );
+    expect(s).toMatchObject({ status: "pausado", fase: "implementar" });
+  });
+
   test("encolado no cambia un run que no está en curso", () => {
     const waiting = state(upTo("preparar", "planificar"), done("aprobar", { tipo: "espera" }));
     expect(

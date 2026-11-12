@@ -426,7 +426,9 @@ equivalente de API: con la suscripción no se cobran, y lo que limita es su cupo
 | `flowrunner approve <run>`                     | aprobar el plan                               |
 | `flowrunner changes <run> "<motivo>"`          | pedir cambios al plan                         |
 | `flowrunner report <run>`                      | el informe del run, con tus decisiones        |
-| `flowrunner resume <run>`                      | retomar un run detenido                       |
+| `flowrunner resume <run>`                      | retomar un run detenido o pausado             |
+| `flowrunner pause <run> [--para <run>]`        | pausarlo al terminar; su lugar, para ese run  |
+| `flowrunner prioritize <run>`                  | que un run en cola salga primero              |
 | `flowrunner fix <run> --unidad ST-n "<qué>"`   | que una sub-task corrija lo que le pedís      |
 | `flowrunner fix <run> --yo`                    | arreglarlo vos; después `resume`              |
 | `flowrunner accept <run> "<por qué>"`          | seguir a la fase siguiente igual              |

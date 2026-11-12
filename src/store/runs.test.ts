@@ -72,6 +72,31 @@ describe("ocupaLugar y colaDe", () => {
   });
 });
 
+describe("priorizar en la cola", () => {
+  // Si regresiona, pausar un run para darle lugar a otro hace entrar al más viejo de la cola.
+  test("los priorizados salen primero, el priorizado más reciente antes; salir de la cola lo gasta", () => {
+    const home = mkdtempSync(join(tmpdir(), "fr-home-"));
+    const make = (clave: string, iso: string) =>
+      createRun(home, { clave, proyecto: "acme", repo: "/r", featureText: "x" }, new Date(iso)).id;
+    const viejo = make("A-1", "2026-11-09T08:00:00Z");
+    const medio = make("B-1", "2026-11-09T09:00:00Z");
+    const nuevo = make("C-1", "2026-11-09T10:00:00Z");
+    const write = (id: string, tipo: "encolado" | "priorizado" | "reanudado", iso: string) =>
+      appendEvent(runPaths(home, id).dir, { tipo }, () => new Date(iso));
+    for (const id of [viejo, medio, nuevo]) write(id, "encolado", "2026-11-09T11:00:00Z");
+    const order = () => colaDe(home, "acme").map((q) => q.id);
+    expect(order()).toEqual([viejo, medio, nuevo]);
+    write(nuevo, "priorizado", "2026-11-09T12:00:00Z");
+    expect(order()).toEqual([nuevo, viejo, medio]);
+    write(medio, "priorizado", "2026-11-09T12:05:00Z");
+    expect(order()).toEqual([medio, nuevo, viejo]);
+    // medio salió de la cola y volvió a entrar: su prioridad ya se usó.
+    write(medio, "reanudado", "2026-11-09T12:10:00Z");
+    write(medio, "encolado", "2026-11-09T12:10:01Z");
+    expect(order()).toEqual([nuevo, viejo, medio]);
+  });
+});
+
 describe("createRun", () => {
   test("dos runs de la misma clave en el mismo segundo tienen ids distintos", () => {
     const home = mkdtempSync(join(tmpdir(), "fr-home-"));

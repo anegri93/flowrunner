@@ -199,6 +199,24 @@ describe("recorridoOf", () => {
     expect(merged.at(-1)).toMatchObject({ inicio: at(2110), segundos: 5, chequeos: 3 });
   });
 
+  // Si regresiona, pausar o priorizar un run no queda en su historia.
+  test("pausar y priorizar son pasos tuyos", () => {
+    const upTo = piz9.slice(
+      0,
+      piz9.findIndex((e) => e.tipo === "autofix"),
+    );
+    const r = build(
+      [
+        ...upTo,
+        { tipo: "priorizado", at: at(1300) },
+        { tipo: "pausa_pedida", at: at(1301), para: "PIZ-10-x" },
+      ],
+      "en_curso",
+    ).recorrido;
+    expect(r.map(brief).slice(-3, -1)).toEqual(["tú: priorizaste v1", "tú: pausaste v1"]);
+    expect(r.at(-2)).toMatchObject({ detalle: "le deja el lugar a PIZ-10-x" });
+  });
+
   // Si regresiona, un nodo que abriste se cierra solo en el refresco siguiente.
   test("las claves no cambian cuando el run agrega eventos", () => {
     const short = piz9.slice(

@@ -71,13 +71,17 @@ export function avisoDeEstado(
       );
     case "en_cola":
       return aviso(`${clave}: en cola, esperando un lugar del repo`);
+    case "pausado":
+      return aviso(`${clave}: pausado en ${fase}; sigue cuando lo reanudes`);
     case "en_curso":
       return aviso(
         antes === "en_cola"
           ? `${clave}: salió de la cola y arrancó en ${fase}`
           : antes === "pausado_por_limite"
             ? `${clave}: retomado en ${fase} después del límite`
-            : `${clave}: sigue en ${fase}`,
+            : antes === "pausado"
+              ? `${clave}: reanudado en ${fase}`
+              : `${clave}: sigue en ${fase}`,
       );
     case "cerrado": {
       const merged = ctx.events.some((e) => e.tipo === "pr_cerrada" && e.mergeada);

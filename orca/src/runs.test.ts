@@ -10,6 +10,8 @@ import {
   isFinished,
   nowOf,
   offers,
+  pasoView,
+  type PasoEtapa,
   parseWatch,
   planMarkdown,
   planVersion,
@@ -400,4 +402,25 @@ test("una etapa salteada dice salteada, no listo, y no es la actual", () => {
     ["–", "salteada", "warning", false],
   );
   assert.equal(headlineOf(skipped).texto, "Aprender — espera merge");
+});
+
+// Si regresiona, la fila que junta los chequeos del merge no dice cuántos fueron.
+test("un paso que junta varios chequeos dice cuántos fueron en su nombre", () => {
+  const run = byKey("VF-1");
+  const aprender: PasoEtapa = {
+    tipo: "etapa",
+    clave: "p40",
+    fase: "aprender",
+    inicio: "2026-11-12T15:05:00Z",
+    segundos: 10,
+    costoUsd: 0,
+    resultado: "ok",
+    unidades: [],
+    sesiones: [],
+    subtareas: [],
+    abierto: false,
+    chequeos: 9,
+  };
+  assert.equal(pasoView(aprender, run).titulo, "Aprender · 9 chequeos");
+  assert.equal(pasoView({ ...aprender, chequeos: 1 }, run).titulo, "Aprender");
 });

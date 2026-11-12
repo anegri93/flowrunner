@@ -86,6 +86,8 @@ export interface PasoEtapa {
   readonly subtareas: readonly Unit[];
   readonly vuelta?: number;
   readonly abierto: boolean;
+  /** Cuántas corridas junta (los chequeos del merge); falta con un flowrunner anterior. */
+  readonly chequeos?: number;
 }
 
 export type Paso =
@@ -479,7 +481,7 @@ export function pasoView(p: Paso, run: Run): PasoView {
       const integradas = p.subtareas.filter((u) => u.estado === "integrada").length;
       return {
         estado,
-        titulo: `${capitalize(p.fase)}${p.subtareas.length > 0 ? ` ${String(integradas)}/${String(p.subtareas.length)}` : ""}`,
+        titulo: `${capitalize(p.fase)}${p.subtareas.length > 0 ? ` ${String(integradas)}/${String(p.subtareas.length)}` : ""}${(p.chequeos ?? 1) > 1 ? ` · ${String(p.chequeos)} chequeos` : ""}`,
         texto:
           p.resultado === "pregunta"
             ? "se detuvo"

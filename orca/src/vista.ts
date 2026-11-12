@@ -581,9 +581,15 @@ html.dark .btn.solid { color: #0b0b0b; }
 .campo { width: 100%; font: inherit; font-size: 12.5px; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--orca-input, var(--orca-border)); background: transparent; color: inherit; }
 .cerrado { display: flex; flex-direction: column; gap: 6px; }
 .recorrido, .paso, .vuelta, .dentro, .hijos { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.vuelta .dentro { border-left: 2px solid color-mix(in srgb, var(--fr-muted) 45%, transparent); padding-left: 10px; margin-left: 7px; }
+/* La línea de tiempo: une el punto de cada paso con el del siguiente, por debajo de lo que cuelga. */
+.recorrido > *, .dentro > * { position: relative; }
+.recorrido > :not(:last-child)::before, .dentro > :not(:last-child)::before { content: ""; position: absolute; left: 7.5px; top: 21px; bottom: -4px; border-left: 1px solid color-mix(in srgb, var(--fr-muted) 45%, transparent); }
+.recorrido > .actual::before, .dentro > .actual::before { top: -2px; }
+/* Lo que cuelga de un nodo, con una guía bajo su nombre: los pasos de una vuelta, las sub-tasks, las sesiones. */
+.hijos, .vuelta .dentro { margin-left: 24px; padding-left: 10px; border-left: 1px solid color-mix(in srgb, var(--fr-muted) 45%, transparent); }
+.hijos .hijos { margin-left: 20px; }
+.vuelta .dentro { border-left-width: 2px; }
 .vuelta.viva .dentro { border-left-color: var(--fr-warning); }
-.hijos { padding-left: 24px; }
 .nota-paso { padding-left: 24px; overflow-wrap: anywhere; }
 .vacio { display: flex; flex-direction: column; gap: 4px; align-items: center; text-align: center; padding: 24px 8px; }
 .leyendo { display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: 32px; }

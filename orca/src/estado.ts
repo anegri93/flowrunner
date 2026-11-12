@@ -17,7 +17,8 @@ import {
 
 /** Lo que el panel necesita de afuera: el worker, el storage del plugin, el navegador y la hora. */
 export interface Api {
-  runs(): Promise<Snapshot>;
+  /** Los runs; con `reciente`, el worker puede reusar lo que leyó hace poco (ver protocol.ts). */
+  runs(reciente?: boolean): Promise<Snapshot>;
   abrir(run: string, que: Openable): Promise<Outcome>;
   decidir(run: string, decision: Decision): Promise<Outcome>;
   leer(key: string): Promise<unknown>;
@@ -78,6 +79,8 @@ export class Panel {
   #reading = false;
   /** Sube con cada cambio de workspace: una lectura pedida antes ya no es de lo que se ve. */
   #generation = 0;
+  /** La próxima lectura es por un cambio de proyecto: alcanza con la lectura reciente del worker. */
+  #reciente = false;
   #workspace: string | undefined;
   readonly #api: Api;
   readonly #changed: () => void;
@@ -133,8 +136,10 @@ export class Panel {
     if (this.#reading) return;
     this.#reading = true;
     const asked = this.#generation;
+    const reciente = this.#reciente;
+    this.#reciente = false;
     try {
-      const next = await this.#api.runs();
+      const next = await this.#api.runs(reciente);
       if (asked !== this.#generation) return;
       const prev = this.#e.snapshot;
       if (next.error === undefined)
@@ -180,6 +185,7 @@ export class Panel {
     this.#workspace = key;
     if (!changed) return;
     this.#generation += 1;
+    this.#reciente = true;
     this.#set({ snapshot: null });
     await this.refresh();
   }

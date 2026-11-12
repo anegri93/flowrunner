@@ -234,6 +234,7 @@ async function focusedPath(orca: OrcaWorkerApi): Promise<string | undefined> {
  */
 async function activeProject(
   orca: OrcaWorkerApi,
+  proyectoDe: (path: string) => Promise<string | undefined>,
 ): Promise<{ commonDir: string; nombre: string } | undefined> {
   let path: string | undefined;
   try {
@@ -242,7 +243,7 @@ async function activeProject(
     return undefined;
   }
   if (path === undefined) return undefined;
-  const commonDir = await gitCommonDir(path);
+  const commonDir = await proyectoDe(path);
   if (commonDir === undefined) return undefined;
   // `.../mango-portal-colaborador/.git` se llama como su repo.
   const nombre =
@@ -281,17 +282,57 @@ async function viewDir(repo: string, id: string): Promise<string> {
   return join(repo, inside, "flowrunner", id);
 }
 
+/** Cuánto vale la última lectura de flowrunner para un cambio de proyecto. */
+const RECIENTE_MS = 30_000;
+/** Una lectura que tarda más que esto deja en el log cuánto tardó cada parte. */
+const LENTA_MS = 1_500;
+
 export default function activate(orca: OrcaWorkerApi): void {
   const watch = async () => parseWatch(await ok(`${await command(orca)} watch --json --cerrados`));
+  let ultima: { all: ReturnType<typeof parseWatch>; at: number } | undefined;
+  // El proyecto de un repo no cambia: se pregunta a git una vez por repo, no en cada lectura. Si git
+  // no contesta, se vuelve a preguntar la próxima vez.
+  // ponytail: dura lo que el worker; un repo que se mudó se ve bien al reiniciar Orca.
+  const proyectos = new Map<string, Promise<string | undefined>>();
+  const proyectoDe = (repo: string) => {
+    let dir = proyectos.get(repo);
+    if (dir === undefined) {
+      dir = gitCommonDir(repo).then((d) => {
+        if (d === undefined) proyectos.delete(repo);
+        return d;
+      });
+      proyectos.set(repo, dir);
+    }
+    return dir;
+  };
+  const medir = async <T>(f: () => Promise<T>): Promise<[T, number]> => {
+    const t = Date.now();
+    return [await f(), Date.now() - t];
+  };
 
-  orca.panels.handle("flowrunner.runs", async (): Promise<Snapshot> => {
+  orca.panels.handle("flowrunner.runs", async (input): Promise<Snapshot> => {
     const at = Date.now();
     try {
-      const all = await watch();
-      const active = await activeProject(orca);
-      const mine: typeof all = [];
-      if (active === undefined) mine.push(...all);
-      else for (const r of all) if ((await gitCommonDir(r.repo)) === active.commonDir) mine.push(r);
+      const reuse =
+        input?.reciente === true && ultima !== undefined && at - ultima.at < RECIENTE_MS;
+      const [[all, watchMs], [active, proyectoMs]] = await Promise.all([
+        medir(async () => {
+          if (reuse && ultima !== undefined) return ultima.all;
+          const read = await watch();
+          ultima = { all: read, at: Date.now() };
+          return read;
+        }),
+        medir(() => activeProject(orca, proyectoDe)),
+      ]);
+      const dirs =
+        active === undefined ? [] : await Promise.all(all.map((r) => proyectoDe(r.repo)));
+      const mine = active === undefined ? all : all.filter((_, i) => dirs[i] === active.commonDir);
+      const total = Date.now() - at;
+      if (total > LENTA_MS) {
+        console.warn(
+          `leer los runs tardó ${String(total)} ms: flowrunner watch ${reuse ? "reusado" : `${String(watchMs)} ms`}, el proyecto enfocado ${String(proyectoMs)} ms`,
+        );
+      }
       const runs = mine.filter((r) => !isClosed(r));
       const cerrados = mine.filter(isClosed);
       if (active === undefined) return { runs, cerrados, at };

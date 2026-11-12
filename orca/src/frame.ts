@@ -15,7 +15,7 @@ style.textContent = PANEL_CSS;
 document.head.append(style);
 
 const api: Api = {
-  runs: () => orca.plugin.request("flowrunner.runs"),
+  runs: (reciente) => orca.plugin.request("flowrunner.runs", { reciente: reciente === true }),
   abrir: (run, que) => orca.plugin.request("flowrunner.abrir", { run, que }),
   decidir: (run, decision) => orca.plugin.request("flowrunner.decidir", { run, decision }),
   leer: (key) => orca.storage.get(key),

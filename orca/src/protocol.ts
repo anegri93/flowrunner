@@ -35,8 +35,12 @@ export type Openable =
 
 declare module "orca" {
   interface PluginRequests {
-    /** Los runs activos y los últimos cerrados, leídos ahora. */
-    "flowrunner.runs": { output: Snapshot };
+    /**
+     * Los runs activos y los últimos cerrados, leídos ahora. Con `reciente`, al cambiar de proyecto,
+     * el worker reusa su última lectura de flowrunner si tiene menos de 30 segundos: solo cambia qué
+     * runs son del proyecto.
+     */
+    "flowrunner.runs": { input: { reciente?: boolean } | undefined; output: Snapshot };
     /** Abre los pasos de una sesión o el plan en una pestaña de Orca, en el proyecto del run. */
     "flowrunner.abrir": { input: { run: string; que: Openable }; output: Outcome };
     /**

@@ -26,15 +26,22 @@ interface Fake {
   storage?: Record<string, unknown>;
 }
 
-function fakeApi(f: Fake): Api & { storage: Record<string, unknown>; pedidos: () => number } {
+function fakeApi(f: Fake): Api & {
+  storage: Record<string, unknown>;
+  pedidos: () => number;
+  recientes: () => number;
+} {
   const storage = f.storage ?? {};
   let pedidos = 0;
+  let recientes = 0;
   const unknown = (name: string) => () => Promise.reject(new Error(`unknown_method: ${name}`));
   return {
     storage,
     pedidos: () => pedidos,
-    runs: () => {
+    recientes: () => recientes,
+    runs: (reciente) => {
       pedidos += 1;
+      if (reciente === true) recientes += 1;
       return Promise.resolve(f.runs?.() ?? { runs, at: 0 });
     },
     abrir:
@@ -803,6 +810,10 @@ test("al cambiar de workspace lee enseguida; un cambio de sus terminales no cuen
   proyecto = "dos";
   await panel.workspace({ displayName: "dos", branch: "main" });
   assert.equal(api.pedidos(), antes + 1);
+  // Los runs se leyeron recién: alcanza con filtrarlos por el proyecto nuevo.
+  assert.equal(api.recientes(), 1);
+  await panel.refresh();
+  assert.equal(api.recientes(), 1);
   assert.equal(cards(panel), 0);
   assert.ok(sees(panel, "No hay runs activos en dos"));
 });

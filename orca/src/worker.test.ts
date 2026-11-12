@@ -61,6 +61,22 @@ test("lee los runs con el comando de la config, también los cerrados", async ()
   }
 });
 
+// Si regresiona, cambiar de proyecto en Orca vuelve a esperar a flowrunner, aunque los runs se leyeron
+// recién: solo cambia cuáles se muestran.
+test("al cambiar de proyecto reusa la lectura reciente; un refresco lee de nuevo", async () => {
+  const { worker, calls } = await fakeWorker();
+  try {
+    await worker.request("flowrunner.runs");
+    const snap = await worker.request("flowrunner.runs", { reciente: true });
+    assert.equal(snap.runs.length, 3);
+    assert.equal(calls().filter((c) => c.startsWith("watch ")).length, 1);
+    await worker.request("flowrunner.runs");
+    assert.equal(calls().filter((c) => c.startsWith("watch ")).length, 2);
+  } finally {
+    await worker.deactivate();
+  }
+});
+
 // Si regresiona, el panel muestra los runs de todos los proyectos, en lugar de seguir al proyecto que
 // tiene enfocado Orca como el explorador o los agentes.
 test("lee solo los runs del proyecto enfocado en Orca y cuenta los demás; sin permiso, todos", async () => {

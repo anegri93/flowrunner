@@ -1,7 +1,8 @@
 import { describe, expect, test } from "vitest";
 import { duration, modelTag, renderBoard, renderDetail, tokenCount } from "./render.ts";
+import type { RunEvent } from "../store/events.ts";
 import type { PhaseNode, RunTree, SessionNode } from "./tree.ts";
-import { build, piz9 } from "./piz9.fixture.ts";
+import { at, build, piz9, start } from "./piz9.fixture.ts";
 
 const session = (nombre: string, extra: Partial<SessionNode> = {}): SessionNode => ({
   nombre,
@@ -403,6 +404,20 @@ describe("el recorrido en watch", () => {
     expect(lines.at(-1)).toMatch(/└─ ○ aprender .* espera merge$/);
     // Las vueltas resueltas arrancan plegadas: ninguna fila lleva la barra.
     expect(lines.some((l) => l.includes("┃"))).toBe(false);
+  });
+
+  // Si regresiona, los chequeos del merge vuelven a ser una fila cada uno, o la fila no dice cuántos.
+  test("los chequeos de aprender van en una fila que dice cuántos fueron", () => {
+    const check = (s: number): RunEvent[] => [
+      start(s, "aprender"),
+      { tipo: "accion_terminada", at: at(s + 1), fase: "aprender", resultado: { tipo: "espera" } },
+    ];
+    const { lines } = renderBoard(
+      [{ ...piz9Tree, ...build([...piz9, ...check(2110), ...check(2710)], "entregado") }],
+      { width: 160, color: false, abiertos: new Map([["PIZ-9-x", true]]) },
+    );
+    expect(lines.filter((l) => / aprender/.test(l))).toHaveLength(1);
+    expect(rowOf(lines, " aprender")).toMatch(/aprender · 2 chequeos .* espera merge$/);
   });
 
   // Si regresiona, al abrir una vuelta no se ve qué pasó adentro, o se ve sin la barra que la marca.

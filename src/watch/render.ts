@@ -501,7 +501,7 @@ function timelineRows(tree: RunTree, abiertos: ReadonlyMap<string, boolean>): Ro
       prefix,
       stem,
       ...etapaRow(p, tree.prMergeada),
-      label: `${hhmm(p.inicio)} ${p.fase}${progress}${mark(abierto)}`,
+      label: `${hhmm(p.inicio)} ${p.fase}${progress}${p.chequeos > 1 ? ` · ${String(p.chequeos)} chequeos` : ""}${mark(abierto)}`,
       model: tags(ss),
       tokens,
       share: share(tokens),

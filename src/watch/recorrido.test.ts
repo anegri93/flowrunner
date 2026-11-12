@@ -168,6 +168,37 @@ describe("recorridoOf", () => {
     ]);
   });
 
+  // Si regresiona, cada chequeo del merge cada 10 minutos vuelve a ser una fila propia.
+  test("los chequeos seguidos que esperan son un solo paso, con cuántos fueron", () => {
+    const espera = (s: number): RunEvent => ({
+      tipo: "accion_terminada",
+      at: at(s),
+      fase: "aprender",
+      resultado: { tipo: "espera" },
+    });
+    const checks: RunEvent[] = [
+      ...piz9,
+      start(2110, "aprender"),
+      espera(2111),
+      start(2710, "aprender"),
+      espera(2712),
+    ];
+    const waiting = build(checks, "entregado").recorrido;
+    expect(waiting.map(brief).slice(-2)).toEqual(["entregar ok", "aprender espera"]);
+    expect(waiting.at(-1)).toMatchObject({ inicio: at(2110), segundos: 3, chequeos: 2 });
+
+    const merged = build(
+      [
+        ...checks,
+        start(3310, "aprender"),
+        { tipo: "accion_terminada", at: at(3312), fase: "aprender", resultado: { tipo: "ok" } },
+      ],
+      "cerrado",
+    ).recorrido;
+    expect(merged.map(brief).slice(-2)).toEqual(["entregar ok", "aprender ok"]);
+    expect(merged.at(-1)).toMatchObject({ inicio: at(2110), segundos: 5, chequeos: 3 });
+  });
+
   // Si regresiona, un nodo que abriste se cierra solo en el refresco siguiente.
   test("las claves no cambian cuando el run agrega eventos", () => {
     const short = piz9.slice(

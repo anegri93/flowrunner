@@ -45,6 +45,8 @@ export interface PasoEtapa {
   readonly subtareas: UnitNode[];
   readonly vuelta: number | undefined;
   readonly abierto: boolean;
+  /** Cuántas corridas junta: los chequeos seguidos que esperan (el merge, cada 10 minutos) son uno. */
+  readonly chequeos: number;
 }
 
 export type Paso =
@@ -107,6 +109,10 @@ const UNIT: Record<Extract<RunEvent, { tipo: "unidad" }>["estado"], UnitState> =
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
 interface OpenEtapa extends Mutable<Omit<PasoEtapa, "sesiones" | "subtareas" | "abierto">> {
+  /** El arranque de la corrida abierta; `inicio` es el de la primera que junta. */
+  desde: string;
+  /** Los segundos de las corridas anteriores que junta. */
+  previos: number;
   readonly nombres: Set<string>;
   readonly unidadesCorridas: Map<string, UnitState>;
 }
@@ -143,6 +149,16 @@ export function recorridoOf(input: RecorridoInput): {
         // La etapa abierta de una vuelta quedó atrás: el run siguió a una fase posterior.
         if (current !== undefined && PHASES.indexOf(e.fase) > PHASES.indexOf(current.fase))
           closeVuelta();
+        // Otro chequeo de lo que se esperaba (el merge): sigue el mismo paso, no una fila por chequeo.
+        const prev = pasos.at(-1);
+        if (prev?.tipo === "etapa" && prev.fase === e.fase && prev.resultado === "espera") {
+          prev.chequeos += 1;
+          prev.previos = prev.segundos ?? 0;
+          prev.desde = e.at;
+          prev.resultado = terminal ? "cortada" : "corriendo";
+          open.set(e.fase, prev);
+          return;
+        }
         const paso: OpenEtapa = {
           tipo: "etapa",
           clave,
@@ -155,6 +171,9 @@ export function recorridoOf(input: RecorridoInput): {
           unidades: [],
           pr: undefined,
           vuelta: current?.numero,
+          chequeos: 1,
+          desde: e.at,
+          previos: 0,
           nombres: new Set(),
           unidadesCorridas: new Map(),
         };
@@ -167,7 +186,8 @@ export function recorridoOf(input: RecorridoInput): {
         if (paso === undefined) return;
         open.delete(e.fase);
         const r = e.resultado;
-        paso.segundos = Math.round((Date.parse(e.at) - Date.parse(paso.inicio)) / 1000);
+        paso.segundos =
+          paso.previos + Math.round((Date.parse(e.at) - Date.parse(paso.desde)) / 1000);
         paso.resultado =
           r.tipo === "ok"
             ? r.salteada === undefined
@@ -295,7 +315,7 @@ export function recorridoOf(input: RecorridoInput): {
   const lastEtapa = etapas.at(-1);
   const recorrido: Paso[] = pasos.map((p): Paso => {
     if (p.tipo !== "etapa") return p;
-    const { nombres: _n, unidadesCorridas, ...rest } = p;
+    const { nombres: _n, unidadesCorridas, desde, previos, ...rest } = p;
     const own = sesionesDe.get(p) ?? [];
     const subtareas =
       p.fase === "implementar"
@@ -321,7 +341,7 @@ export function recorridoOf(input: RecorridoInput): {
       ...rest,
       segundos:
         p.resultado === "corriendo"
-          ? Math.max(0, Math.round((input.now - Date.parse(p.inicio)) / 1000))
+          ? previos + Math.max(0, Math.round((input.now - Date.parse(desde)) / 1000))
           : p.segundos,
       sesiones: p.fase === "implementar" ? [] : own.map((s) => s.node),
       subtareas,

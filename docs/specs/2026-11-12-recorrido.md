@@ -49,6 +49,7 @@ type Paso =
       subtareas: UnitNode[];    // solo implementar: las que corrieron en esta corrida
       vuelta: number | undefined;
       abierto: boolean;
+      chequeos: number;         // cuántas corridas junta (regla 9)
     }
   | { tipo: "tuyo"; clave: string; at: string; que: TuyoQue; detalle: string | undefined; vuelta: number | undefined }
   | { tipo: "auto"; clave: string; at: string; que: "autofix"; vuelta: number | undefined }
@@ -88,7 +89,11 @@ interface Vuelta { numero: number; fase: Phase; veces: number; abierta: boolean;
    adentro de su vuelta.
 8. **Lo pendiente.** Si el run no terminó, va un solo paso `pendiente` con las fases posteriores a la
    del último paso de etapa, en el orden de `PHASES`. Si ya terminó, no va ninguno.
-9. **Lo que no entra.** Los rechazos de tripwires, los avisos, las decisiones internas, `encolado` y
+9. **Los chequeos que esperan son un paso.** Una corrida que arranca justo después de otra de su
+   misma fase que terminó en `espera` sigue ese paso: suma `chequeos`, sus segundos y su costo, y se
+   queda con el resultado del último. Aprender chequea el merge cada 10 minutos; sin esto, cada
+   chequeo era una fila. `watch` y Orca lo muestran como «Aprender · 9 chequeos».
+10. **Lo que no entra.** Los rechazos de tripwires, los avisos, las decisiones internas, `encolado` y
    `lecciones*`. Siguen en el detalle de la etapa (`report --fase`).
 
 ### Abierto por defecto
@@ -110,6 +115,8 @@ Lo calcula flowrunner, así Orca y `watch` nunca discrepan:
 - **El bloque «ahora»** (motivo, sub-tasks, actividad, decisiones y aviso) va solo bajo el último paso
   de etapa, que por eso no se pliega. Si su vuelta está plegada, va debajo de la línea de la vuelta:
   las decisiones nunca quedan escondidas. Un run cerrado o abortado no lo lleva.
+- **La jerarquía se ve:** una línea une el punto de cada paso con el del siguiente, y lo que cuelga de
+  un nodo (los pasos de una vuelta, las sub-tasks, las sesiones) va con una guía bajo su nombre.
 - **Una vuelta** se marca con un borde amarillo a la izquierda de sus pasos. Plegada es una línea:
   `↺ Verificar volvió 2 veces → ST-1 · 4 pasos · 6:10 · $0.40`.
 - **Se pliegan** la vuelta, el paso de implementar (sus sub-tasks), la sub-task (sus sesiones) y el

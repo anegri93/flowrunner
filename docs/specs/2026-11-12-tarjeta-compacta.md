@@ -59,11 +59,12 @@ sin perder lo último
 - **La barra:** un segmento por cada una de las nueve etapas, en el orden de `PHASES`. El color sale
   del estado de la etapa (`stationsOf`):
   - verde, lista; gris con rayas, salteada;
-  - azul, la que trabaja, latiendo; azul quieto, la que espera (aprobar, el merge);
+  - azul, la que trabaja y la que espera (aprobar, el merge), quietas: el indicador animado de cada
+    etapa ya está en el recorrido;
   - amarillo, volvió; rojo, falló o se detuvo;
   - gris oscuro, pendiente.
 
-  Cada segmento lleva `aria-label` con la etapa y su estado. Con movimiento reducido, no late.
+  Cada segmento lleva `aria-label` con la etapa y su estado.
 - **La línea «ahora»**, según el estado:
   - trabajando: lo que hace la sesión que corre (`nowOf(run).actividad`, la primera);
   - esperando aprobación: «Aprobar el plan · N sub-tasks», y si cambia lo que existe, «· cambia N

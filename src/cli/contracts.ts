@@ -17,6 +17,7 @@ export const runSummarySchema = z.strictObject({
     "cerrado",
     "detenido",
     "pausado_por_limite",
+    "pausado",
     "abortado",
   ]),
   fase: phaseSchema,

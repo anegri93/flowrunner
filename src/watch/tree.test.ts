@@ -382,6 +382,18 @@ describe("runTree", () => {
   });
 
   // Si regresiona, un run cerrado hace horas sigue sumando minutos en watch.
+  // Si regresiona, la tarjeta de un run que ya se va a pausar no lo dice, y Orca lo ofrece de nuevo.
+  test("un run con la pausa pedida lo dice hasta que para", () => {
+    const tree = (events: RunEvent[]) =>
+      runTree({ events, tasks, titulo: "x", sessions: new Map(), now: T0 + 600_000 });
+    expect(tree(base).pausaPedida).toBe(false);
+    // `base` termina con aprobar empezado: la pausa espera a que termine.
+    expect(tree([...base, { tipo: "pausa_pedida", at: at(170) }])).toMatchObject({
+      status: "en_curso",
+      pausaPedida: true,
+    });
+  });
+
   test("un run cerrado cuenta su tiempo hasta el último evento", () => {
     const tree = runTree({
       events: [...base, { tipo: "abortado", at: at(600) }],

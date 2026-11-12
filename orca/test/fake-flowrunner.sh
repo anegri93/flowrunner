@@ -18,6 +18,8 @@ case "$1" in
   changes) printf '{"ok":true,"id":"%s","accion":"cambios pedidos: planificar vuelve a correr"}\n' "$2" ;;
   fix) printf '{"ok":true,"id":"%s","accion":"arreglando"}\n' "$2" ;;
   accept) printf '{"ok":true,"id":"%s","accion":"aceptado: revisar arrancó"}\n' "$2" ;;
+  pause) printf '{"ok":true,"id":"%s","accion":"se pausa al terminar lo que está haciendo"}\n' "$2" ;;
+  prioritize) printf '{"ok":true,"id":"%s","accion":"priorizado"}\n' "$2" ;;
   abort) printf '{"ok":true,"id":"%s","accion":"abortado; las ramas quedan"}\n' "$2" ;;
   learn) printf '{"ok":true,"id":"%s","resultado":"la PR sigue abierta"}\n' "$2" ;;
   resume) printf '{"ok":false,"error":{"message":"el run %s está en_curso, no detenido","next":"flowrunner status %s"}}\n' "$2" "$2"; exit 1 ;;

@@ -38,6 +38,8 @@ import {
   startRun,
   statusAll,
   statusOne,
+  pauseRun,
+  prioritizeRun,
 } from "./runs.ts";
 
 /** Cuántos runs cerrados devuelve `watch --json --cerrados`. */
@@ -51,7 +53,7 @@ const USAGE = `uso: flowrunner <comando> [--json]
   status [run]                   lista los runs, o un run fase por fase
   watch [run] [--once|--json]    el árbol de un run, o de los activos, en vivo; run puede ser la clave
                                  --json --cerrados suma los últimos cerrados y abortados
-  resume <run>                   retoma un run detenido o interrumpido; después de fix --yo,
+  resume <run>                   retoma un run detenido, pausado o interrumpido; después de fix --yo,
                                  commitea tu arreglo y vuelve a verificar
   fix <run> --unidad ST-n "<qué>"
                                  que esa sub-task lo corrija sobre el código que ya está
@@ -65,6 +67,10 @@ const USAGE = `uso: flowrunner <comando> [--json]
   accept-untested <run> "<por qué>"
                                  entrega aunque probar dejó criterios sin probar; el motivo
                                  queda en el informe y en la PR
+  pause <run> [--para <run>]     pausa un run: termina lo que está haciendo y suelta su lugar;
+                                 con --para, ese run de la cola entra antes; sigue con resume
+  prioritize <run>               un run en cola sale primero
+                                 pause y prioritize con [--origen terminal|claude|orca]
   abort <run>                    cancela un run y borra sus worktrees; las ramas quedan
   plan <run>                     muestra el plan que espera aprobación
   approve <run> [--acepto-cambios] [--origen terminal|claude|orca]
@@ -178,6 +184,7 @@ export async function main(
     options: {
       json: { type: "boolean", default: false },
       desde: { type: "string" },
+      para: { type: "string" },
       nombre: { type: "string" },
       sesion: { type: "string" },
       unidad: { type: "string", multiple: true },
@@ -332,6 +339,17 @@ export async function main(
         const desde = typeof values.desde === "string" ? values.desde : undefined;
         const rerun = rerunRun(home, runArg(home, first), desde, env);
         print(rerun, `run ${rerun.id} ${rerun.accion}`);
+        return 0;
+      }
+      case "pause": {
+        const para = typeof values.para === "string" ? runArg(home, values.para) : undefined;
+        const paused = pauseRun(home, runArg(home, first), para, parseOrigen(values.origen));
+        print(paused, `run ${paused.id} ${paused.accion}`);
+        return 0;
+      }
+      case "prioritize": {
+        const prioritized = prioritizeRun(home, runArg(home, first), parseOrigen(values.origen));
+        print(prioritized, `run ${prioritized.id} ${prioritized.accion}`);
         return 0;
       }
       case "abort": {

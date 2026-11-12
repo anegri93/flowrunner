@@ -12,6 +12,8 @@ export type RunStatus =
   | "cerrado"
   | "detenido"
   | "pausado_por_limite"
+  /** La persona lo pausó: sin proceso ni lugar, y no vuelve solo. */
+  | "pausado"
   | "abortado";
 
 /** Estados en los que el run ya no avanza. */
@@ -109,6 +111,8 @@ export interface RunState {
   readonly pausaHasta: number | undefined;
   /** Hay una acción iniciada sin terminar: el proceso se cortó en el medio. */
   readonly interrumpida: boolean;
+  /** La persona pidió pausar: el run termina la etapa (o las sub-tasks que corren) y para. */
+  readonly pausaPedida: boolean;
   /**
    * Detenido porque probar dejó criterios sin probar: la persona puede aceptarlo y seguir a
    * entregar. Fuera de esa detención un `sin_probar_aceptado` no hace nada.
@@ -267,6 +271,7 @@ function halt(
     status: "detenido",
     halt: { ...base, siguiente: first.comando, opciones },
     autofix: false,
+    pausaPedida: false,
   };
 }
 
@@ -295,6 +300,7 @@ function enter(state: RunState, fase: Phase, extra: Partial<RunState> = {}): Run
     pausaHasta: undefined,
     sinProbar: false,
     aMano: false,
+    pausaPedida: false,
     ...extra,
   };
 }
@@ -313,6 +319,8 @@ function onOutcome(state: RunState, fase: Phase, outcome: Outcome): RunState {
         : { ...state, status: "entregado" };
     case "limite":
       return { ...state, status: "pausado_por_limite", pausaHasta: outcome.hasta };
+    case "pausa":
+      return { ...state, status: "pausado" };
     case "vuelve": {
       if (!isRoundPhase(fase)) {
         return halt(
@@ -423,6 +431,7 @@ export function initialState(): RunState {
     halt: undefined,
     pausaHasta: undefined,
     interrumpida: false,
+    pausaPedida: false,
     sinProbar: false,
     aMano: false,
     autofix: false,
@@ -472,7 +481,16 @@ export function reduce(state: RunState, event: RunEvent): RunState {
       const applies =
         settled.status === "en_curso" ||
         (settled.status === "entregado" && event.fase === "aprender");
-      return applies ? onOutcome(settled, event.fase, event.resultado) : settled;
+      if (!applies) return settled;
+      const next = onOutcome(settled, event.fase, event.resultado);
+      // La pausa pedida espera a que termine la etapa. Si quedó algo que te necesita, gana eso: esos
+      // estados ya sueltan el lugar.
+      if (!settled.pausaPedida) return next;
+      return {
+        ...next,
+        pausaPedida: false,
+        status: next.status === "en_curso" ? "pausado" : next.status,
+      };
     }
     case "uso": {
       const costoUsd = state.costoUsd + event.costo_usd;
@@ -496,10 +514,20 @@ export function reduce(state: RunState, event: RunEvent): RunState {
         ? enter(state, "planificar", { instruccion: event.motivo })
         : state;
     case "encolado":
-      return state.status === "en_curso" ? { ...state, status: "en_cola" } : state;
+      if (state.status !== "en_curso") return state;
+      return state.pausaPedida
+        ? { ...state, status: "pausado", pausaPedida: false }
+        : { ...state, status: "en_cola" };
+    case "pausa_pedida":
+      // En curso, termina lo que hace y para (`accion_terminada`); en cola no hay nada que esperar.
+      if (state.status === "en_curso") return { ...state, pausaPedida: true };
+      return state.status === "en_cola" ? { ...state, status: "pausado" } : state;
+    case "priorizado":
+      return state;
     case "reanudado":
-      // Sale de la cola tal como entró: misma fase, intentos e instrucción.
-      if (state.status === "en_cola") return { ...state, status: "en_curso" };
+      // Sale de la cola o de la pausa tal como entró: misma fase, intentos e instrucción.
+      if (state.status === "en_cola" || state.status === "pausado")
+        return { ...state, status: "en_curso", pausaPedida: false };
       if (state.status === "detenido" || state.status === "pausado_por_limite") {
         return {
           ...enter(state, state.fase),

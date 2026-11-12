@@ -4,7 +4,7 @@
 // El refresco no borra nada: si una lectura falla, quedan los runs anteriores con el error arriba.
 // Nunca dos lecturas a la vez, y una que quedó vieja por un cambio de workspace se descarta.
 import type { Openable, Outcome, Snapshot } from "./protocol";
-import { planVersion, type Decision, type Run } from "./runs";
+import { enColaJunto, planVersion, type Decision, type Run } from "./runs";
 import {
   ESTADO_INICIAL,
   isOpen,
@@ -308,6 +308,24 @@ export class Panel {
       case "abortar":
         this.#set({ abortando: accion.run });
         return;
+      case "pausar": {
+        const run = this.#run(accion.run);
+        if (run === undefined) return;
+        // Un run en cola no tiene lugar que dejar. Uno que trabaja se lo deja al que elijas, o al
+        // único que espera.
+        const cola =
+          run.status === "en_curso" ? enColaJunto(run, this.#e.snapshot?.runs ?? []) : [];
+        const [solo] = cola;
+        if (cola.length > 1) {
+          this.#set({ pendiente: { run: run.id, decision: { accion: "pausar" } } });
+          return;
+        }
+        await this.#decide(
+          run.id,
+          solo === undefined ? { accion: "pausar" } : { accion: "pausar", para: solo.id },
+        );
+        return;
+      }
       case "noAbortar":
         this.#set({ abortando: null });
         return;

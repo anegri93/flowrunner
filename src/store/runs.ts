@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { MAX_NETWORK_RETRIES, stateOf, type RunState } from "../engine/engine.ts";
 import type { RunPaths } from "../runner/types.ts";
+import type { RunEvent } from "./events.ts";
 import { appendEvent, readLog } from "./run-log.ts";
 
 export function runPaths(home: string, id: string): RunPaths {
@@ -79,16 +80,33 @@ export interface EnCola {
   readonly state: RunState;
 }
 
-/** Los runs del proyecto en cola, el más viejo primero: el que antes se creó, antes sale. */
+/**
+ * Cuándo se priorizó el run en esta pasada por la cola: un `priorizado` después de su último
+ * `reanudado`. Salir de la cola lo gasta.
+ */
+export function priorizadoEn(events: readonly RunEvent[]): string | undefined {
+  const salio = events.findLastIndex((e) => e.tipo === "reanudado");
+  return events.slice(salio + 1).findLast((e) => e.tipo === "priorizado")?.at;
+}
+
+/**
+ * Los runs del proyecto en cola: primero los priorizados, el priorizado más reciente antes; después el
+ * resto, el más viejo primero: el que antes se creó, antes sale.
+ */
 export function colaDe(home: string, proyecto: string): EnCola[] {
-  const out: (EnCola & { readonly creado: string })[] = [];
+  const out: (EnCola & { readonly creado: string; readonly priorizado: string })[] = [];
   for (const id of listRunIds(home)) {
     const { events } = readLog(runPaths(home, id).dir);
     const state = stateOf(events);
     if (state.proyecto !== proyecto || state.status !== "en_cola") continue;
-    out.push({ id, state, creado: events[0]?.at ?? "" });
+    out.push({ id, state, creado: events[0]?.at ?? "", priorizado: priorizadoEn(events) ?? "" });
   }
   return out
-    .sort((a, b) => a.creado.localeCompare(b.creado) || a.id.localeCompare(b.id))
+    .sort(
+      (a, b) =>
+        b.priorizado.localeCompare(a.priorizado) ||
+        a.creado.localeCompare(b.creado) ||
+        a.id.localeCompare(b.id),
+    )
     .map(({ id, state }) => ({ id, state }));
 }

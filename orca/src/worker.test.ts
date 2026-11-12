@@ -283,6 +283,36 @@ test("abrir una etapa pide su detalle a flowrunner y lo abre como pestaña en el
   }
 });
 
+// Si regresiona, pausar o priorizar desde el panel no llega a flowrunner, o un --para cualquiera
+// llega al shell.
+test("pausar y priorizar corren pause y prioritize con --origen orca; un --para inválido se rechaza", async () => {
+  const { worker, calls } = await fakeWorker();
+  const id = "VF-2-20261109-001527";
+  try {
+    await worker.request("flowrunner.decidir", { run: id, decision: { accion: "pausar" } });
+    await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "pausar", para: "VF-7-20261112-000000" },
+    });
+    await worker.request("flowrunner.decidir", {
+      run: "VF-7-20261112-000000",
+      decision: { accion: "priorizar" },
+    });
+    const bad = await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "pausar", para: "x; rm -rf ~" },
+    });
+    assert.equal(bad.ok, false);
+    assert.deepEqual(decided(calls()), [
+      `pause ${id} --origen orca --json`,
+      `pause ${id} --para VF-7-20261112-000000 --origen orca --json`,
+      "prioritize VF-7-20261112-000000 --origen orca --json",
+    ]);
+  } finally {
+    await worker.deactivate();
+  }
+});
+
 // Si regresiona, aprobar o pedir cambios desde el panel no llega a flowrunner, o llega distinto.
 test("cada decisión corre su comando fijo, con el motivo tal cual, y devuelve lo que dijo flowrunner", async () => {
   const { worker, calls } = await fakeWorker();

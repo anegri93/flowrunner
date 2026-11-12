@@ -994,3 +994,88 @@ test("el motivo largo de un detenido va en dos líneas, y «más» lo muestra en
   await press(panel, { label: "Ver el motivo en dos líneas" });
   assert.match(panel.html(), /class="chico motivo t-danger"/);
 });
+
+// --- Pausar ---------------------------------------------------------------------------------------
+
+/** VF-2 trabajando y, en su mismo proyecto, estos runs en cola. */
+const conCola = (...claves: string[]) => [
+  ...runs,
+  ...claves.map((clave, i): Run => ({
+    ...(runs.find((r) => r.id === VF2) as Run),
+    id: `${clave}-20261112-0${String(i)}0000`,
+    clave,
+    titulo: `feature ${clave}`,
+    status: "en_cola",
+  })),
+];
+
+// Si regresiona, pausar un run para darle lugar a otro manda el lugar al más viejo de la cola, o no
+// deja elegir.
+test("Pausar con varios en cola pregunta para quién es el lugar y lo manda con --para", async () => {
+  const sent: { run: string; decision: Decision }[] = [];
+  const panel = await abrirPanel(
+    fakeApi({
+      runs: () => ({ runs: conCola("VF-7", "VF-8"), at: 0 }),
+      decidir: (input) => {
+        sent.push(input);
+        return { ok: true, mensaje: "se pausa al terminar" };
+      },
+    }),
+  );
+  await press(panel, { label: "Más de VF-2" });
+  await press(panel, "Pausar");
+  assert.deepEqual(sent, []);
+  assert.ok(sees(panel, "¿Para quién es el lugar de VF-2?"));
+  await press(panel, "VF-8 · feature VF-8");
+  assert.deepEqual(sent, [
+    { run: VF2, decision: { accion: "pausar", para: "VF-8-20261112-010000" } },
+  ]);
+});
+
+// Si regresiona, con un solo run esperando hay que elegirlo igual, o sin cola pausar no anda.
+test("Pausar con uno en cola se lo da a ese sin preguntar; sin cola, solo pausa", async () => {
+  const sent: { run: string; decision: Decision }[] = [];
+  let lista = conCola("VF-7");
+  const panel = await abrirPanel(
+    fakeApi({
+      runs: () => ({ runs: lista, at: 0 }),
+      decidir: (input) => {
+        sent.push(input);
+        return { ok: true, mensaje: "hecho" };
+      },
+    }),
+  );
+  await press(panel, { label: "Más de VF-2" });
+  await press(panel, "Pausar");
+  lista = runs;
+  await panel.refresh();
+  await press(panel, { label: "Más de VF-2" });
+  await press(panel, "Pausar");
+  assert.deepEqual(sent, [
+    { run: VF2, decision: { accion: "pausar", para: "VF-7-20261112-000000" } },
+    { run: VF2, decision: { accion: "pausar" } },
+  ]);
+});
+
+// Si regresiona, un run en cola no se puede adelantar ni sacar de la cola desde el panel, o uno que
+// ya se va a pausar ofrece pausarse otra vez.
+test("en cola, el menú ofrece Priorizar y Pausar; con la pausa pedida, Pausar ya no está", async () => {
+  const sent: { run: string; decision: Decision }[] = [];
+  const lista = conCola("VF-7").map((r): Run => (r.id === VF2 ? { ...r, pausaPedida: true } : r));
+  const panel = await abrirPanel(
+    fakeApi({
+      runs: () => ({ runs: lista, at: 0 }),
+      decidir: (input) => {
+        sent.push(input);
+        return { ok: true, mensaje: "hecho" };
+      },
+    }),
+  );
+  assert.ok(sees(panel, "Se pausa al terminar lo que está haciendo"));
+  await press(panel, { label: "Más de VF-2" });
+  assert.equal(find(panel, "Pausar"), undefined);
+  await press(panel, { label: "Más de VF-7" });
+  assert.ok(find(panel, "Pausar"));
+  await press(panel, "Priorizar");
+  assert.deepEqual(sent, [{ run: "VF-7-20261112-000000", decision: { accion: "priorizar" } }]);
+});

@@ -803,6 +803,36 @@ describe("cortes de red en implementar", () => {
     expect(of(run.dir, "ST-1").at(-1)).toBe("integrada");
   });
 
+  // Si regresiona, pausar implementar corta una sub-task a medias, arranca otra igual, o al reanudar
+  // rehace lo que ya estaba integrado.
+  test("con la pausa pedida no arranca sub-tasks nuevas; al reanudar sigue sin rehacer lo integrado", async () => {
+    let dir = "";
+    const sim = simQuery((prompt) => {
+      if (prompt.includes("Sub-task ST-1")) {
+        // La persona pide pausar mientras ST-1 trabaja.
+        appendEvent(dir, { tipo: "pausa_pedida" });
+        return done("src/a/uno.js");
+      }
+      return done("src/b/dos.js");
+    });
+    const deps = testDeps({ query: sim.query });
+    const { run } = await plannedRun(
+      planWith([st("ST-1", ["src/a/"]), st("ST-2", ["src/b/"], { depende_de: ["ST-1"] })]),
+      TESTS,
+      deps,
+    );
+    dir = run.dir;
+    const paused = await runAll(run, deps);
+    expect(paused.final).toMatchObject({ status: "pausado", fase: "implementar" });
+    expect(of(run.dir, "ST-1")).toEqual(["iniciada", "commiteada", "integrada"]);
+    expect(of(run.dir, "ST-2")).toEqual([]);
+    appendEvent(run.dir, { tipo: "reanudado" });
+    const { final } = await runAll(run, deps);
+    expect(final.status).toBe("entregado");
+    expect(sessionsOf(sim.records, "ST-1")).toBe(1);
+    expect(of(run.dir, "ST-2")).toEqual(["iniciada", "commiteada", "integrada"]);
+  });
+
   // Si regresiona, una espera en la cola rehace lo integrado, o un fix o un rerun después de un corte
   // siguen contando los intentos de antes; y un run viejo cambia lo que ve implementar.
   test("la entrada sigue a través de la cola y se abre de nuevo con un fix o un rerun", () => {

@@ -82,6 +82,8 @@ export interface RunTree {
   /** La ruta del repo, para que una vista lo cruce con la carpeta que tiene abierta. */
   readonly repo: string;
   readonly status: RunStatus;
+  /** La persona pidió pausar: termina lo que está haciendo y para. */
+  readonly pausaPedida: boolean;
   /** La PR ya se mergeó: un run entregado espera aprender, no tu merge. */
   readonly prMergeada: boolean;
   readonly costoUsd: number;
@@ -440,6 +442,7 @@ export function runTree(input: TreeInput): RunTree {
     proyecto: state.proyecto,
     repo: state.repo,
     status: state.status,
+    pausaPedida: state.pausaPedida,
     prMergeada: events.some((e) => e.tipo === "pr_cerrada" && e.mergeada),
     costoUsd: state.costoUsd,
     segundos: created === undefined ? 0 : Math.round((end - Date.parse(created.at)) / 1000),

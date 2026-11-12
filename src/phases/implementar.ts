@@ -7,7 +7,7 @@ import { runSession } from "../agent/session.ts";
 import { loadBrain } from "../brain/brain.ts";
 import { isVerifyCommand, loadRepoConfig } from "../config/load.ts";
 import type { RepoConfig } from "../config/schemas.ts";
-import { esEsperaDeRed, initialState, reduce } from "../engine/engine.ts";
+import { esEsperaDeRed, initialState, reduce, stateOf } from "../engine/engine.ts";
 import { blockedByFailure, readyToStart } from "../engine/scheduler.ts";
 import { AVISO_TEST_EXISTENTE, existedAt, testsTouched, undeclared } from "../gates/existente.ts";
 import { allDependencies, type Plan, type Subtask } from "../gates/plan.ts";
@@ -82,11 +82,13 @@ export function currentEntry(events: readonly RunEvent[]): RunEvent[] {
       if (!sigue) start = i;
       resumed = false;
     } else if (e.tipo === "reanudado") {
+      // Pausado por la persona sigue la misma entrada siempre: paró entre sub-tasks, no por un error.
       resumed ||=
         state.fase === "implementar" &&
-        state.infra > 0 &&
-        (state.status === "detenido" || state.status === "pausado_por_limite");
-    } else if (e.tipo !== "encolado") {
+        (state.status === "pausado" ||
+          (state.infra > 0 &&
+            (state.status === "detenido" || state.status === "pausado_por_limite")));
+    } else if (e.tipo !== "encolado" && e.tipo !== "priorizado" && e.tipo !== "pausa_pedida") {
       resumed = false;
     }
     state = reduce(state, e);
@@ -604,6 +606,12 @@ export const implementar: PhaseFn = async (ctx) => {
   const failed = new Map<string, UnitResult>();
   const running = new Map<string, Promise<void>>();
   for (;;) {
+    // La persona pidió pausar: no arranca ninguna más, espera las que corren y para. Al reanudar,
+    // la misma entrada sigue con lo que falta.
+    if (stateOf(readLog(run.dir).events).pausaPedida) {
+      await Promise.all(running.values());
+      return { tipo: "pausa" };
+    }
     const units = {
       todo,
       integrated,

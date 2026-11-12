@@ -15,6 +15,8 @@ import {
   ahoraOf,
   barraOf,
   canAbort,
+  canPause,
+  enColaJunto,
   clock,
   decisionsFor,
   describeExisting,
@@ -65,6 +67,8 @@ export type Accion =
   | { readonly t: "abortar"; readonly run: string }
   | { readonly t: "noAbortar" }
   | { readonly t: "confirmarAbortar"; readonly run: string }
+  /** Pausar desde el menú: con varios runs en cola, primero pregunta para quién es el lugar. */
+  | { readonly t: "pausar"; readonly run: string }
   /** El menú ⋯ de un run: lo abre, o lo cierra si ya estaba abierto. */
   | { readonly t: "menu"; readonly run: string }
   | { readonly t: "cerrarMenu" }
@@ -212,8 +216,21 @@ function decisiones(e: Estado, run: Run): string {
       : "";
   if (e.enviando === run.id && e.abortando !== run.id)
     return enviando("Enviando tu decisión", e.ahora);
-  if (offered.length === 0) return note;
   const cancelar = boton({ t: "cancelar" }, "Cancelar", { clase: "btn ghost" });
+  if (mine?.accion === "pausar") {
+    // Elegir a quién le deja el lugar es la decisión: se manda con un toque, sin confirmar.
+    const cola = enColaJunto(run, e.snapshot?.runs ?? []);
+    return `<div class="pila">${texto(`¿Para quién es el lugar de ${run.clave}?`, "fuerte")}${texto("Termina lo que está haciendo y entra el que elijas.", "chico apagado")}<div class="pila">${cola
+      .map((q) =>
+        boton(
+          { t: "decidir", run: run.id, decision: { accion: "pausar", para: q.id } },
+          esc(`${q.clave} · ${q.titulo}`),
+          { clase: "btn arreglo" },
+        ),
+      )
+      .join("")}</div><div class="botones">${cancelar}</div></div>`;
+  }
+  if (offered.length === 0) return note;
   const asked = textFor(mine);
   if (asked !== undefined) {
     return `<div class="pila"><input id="${CAMPO}" class="campo" aria-label="${esc(asked.label)}" placeholder="${esc(asked.placeholder)}" value="${esc(e.borrador)}" data-enviar="${esc(JSON.stringify({ t: "enviarTexto", run: run.id }))}"><div class="botones">${boton({ t: "enviarTexto", run: run.id }, "Enviar", { clase: "btn solid accent", disabled: e.borrador.trim() === "" })}${cancelar}</div></div>`;
@@ -518,6 +535,10 @@ function menu(e: Estado, run: Run): string {
     hasPlan(run) ? item({ t: "abrir", run: run.id, que: { tipo: "plan" } }, "Ver el plan") : "",
     item({ t: "abrir", run: run.id, que: { tipo: "informe" } }, "Ver el informe"),
     pr === undefined ? "" : item({ t: "externo", url: pr }, "Abrir la PR"),
+    run.status === "en_cola"
+      ? item({ t: "decidir", run: run.id, decision: { accion: "priorizar" } }, "Priorizar")
+      : "",
+    canPause(run) ? item({ t: "pausar", run: run.id }, "Pausar") : "",
     canAbort(run)
       ? `<div class="sep"></div>${item({ t: "abortar", run: run.id }, "Abortar el run…", " t-danger")}`
       : "",
@@ -597,7 +618,11 @@ function tarjeta(e: Estado, run: Run): string {
   const cabecera = `<div class="fila entre"><div class="fila">${`<span class="chip t-${chip.tone}">${esc(chip.texto)}</span>`}${texto(meta, "chico apagado num corta")}</div><div class="fila">${menu(e, run)}${boton(toggle, flecha(open), { clase: "icono", label: open ? `Ocultar el recorrido de ${run.clave}` : `Ver el recorrido de ${run.clave}` })}</div></div>`;
   const aviso = e.aviso?.run === run.id ? texto(e.aviso.texto, "chico", "danger") : "";
   const decide =
-    !cerrado && (decisionsFor(run).length > 0 || e.dicho?.run === run.id || e.enviando === run.id)
+    !cerrado &&
+    (decisionsFor(run).length > 0 ||
+      e.dicho?.run === run.id ||
+      e.enviando === run.id ||
+      pendingFor(e, run) !== undefined)
       ? decisiones(e, run)
       : "";
   const detalle = !open

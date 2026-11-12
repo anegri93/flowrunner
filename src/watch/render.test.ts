@@ -38,6 +38,7 @@ const tree: RunTree = {
   proyecto: "pizarra-en-vivo",
   repo: "/r/pizarra-en-vivo",
   prMergeada: false,
+  pausaPedida: false,
   status: "en_curso",
   costoUsd: 1.24,
   segundos: 540,
@@ -366,6 +367,15 @@ test("duration, tokenCount y modelTag", () => {
 
 // Si regresiona, watch dice «espera merge» de un run cuya PR ya se mergeó, y la persona no sabe qué
 // está esperando.
+// Si regresiona, en la terminal no se distingue un run que ya se va a pausar de uno que sigue.
+test("un run con la pausa pedida dice que se pausa al terminar; uno pausado, pausado", () => {
+  const header = (t: RunTree) =>
+    renderBoard([t], { width: 140, color: false }).lines.find((l) => l.includes("PIZ-1")) ?? "";
+  expect(header({ ...tree, pausaPedida: true })).toMatch(/se pausa al terminar$/);
+  expect(header({ ...tree, status: "pausado" })).toMatch(/pausado$/);
+  expect(header(tree)).toMatch(/en curso$/);
+});
+
 test("un run entregado con la PR mergeada dice que aprende al próximo chequeo, no que espera merge", () => {
   const delivered = (prMergeada: boolean): RunTree => ({
     ...tree,

@@ -46,6 +46,10 @@ como `flowrunner watch`, pensada para el ancho angosto de la barra:
 - Si el plan cambia lo que ya existe, la tarjeta lo avisa y la pestaña del plan lo pone arriba de
   todo. Aprobar muestra cada cambio, con dónde está y qué criterio lo pide, y el botón pasa a ser
   «Acepto los cambios y apruebo», que aprueba con `--acepto-cambios`. Si alguno no va, pedí cambios.
+- «Pausar», en el menú ⋯ de un run que trabaja o está en cola: termina lo que está haciendo y suelta
+  su lugar, sin perder nada; sigue con «Reanudar». Si en la cola de su repo hay más de un run, la
+  tarjeta pregunta para quién es el lugar; con uno solo, se lo da a ese. «Priorizar», en un run en
+  cola, lo pone primero.
 - Al final del menú ⋯ de cada run vivo, separado y en rojo, «Abortar el run…»: corta lo que corre, en
   cualquier etapa, y borra sus worktrees; la rama y la PR quedan. Pide confirmación.
 

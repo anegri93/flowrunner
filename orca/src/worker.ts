@@ -127,6 +127,13 @@ export function decisionArgs(id: string, decision: Decision): string {
       return `learn ${quote(id)}`;
     case "abortar":
       return `abort ${quote(id)}`;
+    // Pausar y priorizar dicen que vinieron de Orca, como las demás decisiones de la persona.
+    case "pausar":
+      return decision.para === undefined
+        ? `pause ${quote(id)} --origen orca`
+        : `pause ${quote(id)} --para ${quote(runId(decision.para))} --origen orca`;
+    case "priorizar":
+      return `prioritize ${quote(id)} --origen orca`;
     // Las respuestas a un run detenido dicen que vinieron de Orca (ADR 0023).
     case "arreglar": {
       if (typeof decision.unidad !== "string" || !UNIT_ID.test(decision.unidad))

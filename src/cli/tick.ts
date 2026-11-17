@@ -14,11 +14,11 @@ import { avisarCambio, despacharCola, lanzarOEncolar, spawnRunProcess } from "./
 
 /**
  * Por qué un run entregado sigue esperando: tu merge, o, con la PR ya mergeada, que otro run del
- * proyecto termine de publicar sus lecciones (una PR de lecciones a la vez).
+ * proyecto mergee su PR de lecciones (una PR de lecciones abierta a la vez).
  */
 export function waitingReason(events: readonly RunEvent[]): string {
   return events.some((e) => e.tipo === "pr_cerrada" && e.mergeada)
-    ? "PR mergeada: aprende cuando otro run del proyecto termine de publicar sus lecciones"
+    ? "PR mergeada: aprende cuando se mergee la PR de lecciones de otro run del proyecto"
     : "la PR sigue abierta";
 }
 

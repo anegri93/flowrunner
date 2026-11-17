@@ -30,9 +30,11 @@ if (a === "api" && b === "user") {
 }
 if (a === "pr" && b === "list") {
   const head = flag("--head");
-  console.log(
-    JSON.stringify(s.prs.filter((p) => p.headRefName === head).map((p) => pick(p, flag("--json")))),
+  const state = (flag("--state") || "open").toUpperCase();
+  const prs = s.prs.filter(
+    (p) => (head === undefined || p.headRefName === head) && (state === "ALL" || p.state === state),
   );
+  console.log(JSON.stringify(prs.map((p) => pick(p, flag("--json")))));
   process.exit(0);
 }
 if (a === "pr" && b === "create") {

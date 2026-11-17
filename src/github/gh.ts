@@ -34,6 +34,19 @@ export async function findPr(
   return (JSON.parse(out === "" ? "[]" : out) as PullRequest[])[0];
 }
 
+/** Las ramas de las PRs abiertas del repo. Hasta 200: más que eso no es un repo de flowrunner. */
+export async function openPrBranches(cwd: string, env: NodeJS.ProcessEnv): Promise<string[]> {
+  const out = await gh(
+    cwd,
+    ["pr", "list", "--state", "open", "--limit", "200", "--json", "headRefName"],
+    env,
+  );
+  return z
+    .array(z.object({ headRefName: z.string() }))
+    .parse(JSON.parse(out === "" ? "[]" : out))
+    .map((p) => p.headRefName);
+}
+
 export async function createPr(
   cwd: string,
   pr: { branch: string; base: string; title: string; bodyFile: string },

@@ -19,6 +19,7 @@ import {
   enableAutoMerge,
   findPr,
   GhError,
+  openPrBranches,
   prDetail,
   type PrDetail,
 } from "../github/gh.ts";
@@ -39,6 +40,7 @@ export interface Correction {
 }
 
 const MAX_PATCH = 6_000;
+const LESSONS_BRANCH = "chore/lecciones-";
 
 /** Lo que corrigió la persona: sus commits posteriores al último de flowrunner y sus comentarios. */
 export async function corrections(
@@ -170,7 +172,20 @@ export const aprender: PhaseFn = async (ctx) => {
   if (intento.tipo === "ocupado") return { tipo: "espera" };
   try {
     const wt = join(run.worktrees, "lecciones");
-    const branch = `chore/lecciones-${feature.clave}`;
+    const branch = `${LESSONS_BRANCH}${feature.clave}`;
+    // El turno se suelta al abrir la PR, no al mergearla. Mientras la de otro run siga abierta, la base
+    // no tiene sus lecciones: esta tomaría los mismos números y las dos chocarían en lecciones.md.
+    let abiertas: string[];
+    try {
+      abiertas = await openPrBranches(state.repo, deps.env);
+    } catch (error) {
+      if (error instanceof GhError) return { tipo: "falla", clase: "infra", motivo: error.message };
+      throw error;
+    }
+    if (abiertas.some((b) => b.startsWith(LESSONS_BRANCH) && b !== branch))
+      return { tipo: "espera" };
+    // La de otro run pudo mergearse después del fetch de arriba: la base tiene que traer sus lecciones.
+    await fetchOrigin(state.repo, deps.env).catch(() => undefined);
     await addWorktree(state.repo, wt, branch, `origin/${config.base_branch}`, deps.env);
     const lessonsFile = join(wt, ".flowrunner", BRAIN_FILES.lecciones.file);
     const current = readFileSync(lessonsFile, "utf8");

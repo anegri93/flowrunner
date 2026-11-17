@@ -232,6 +232,10 @@ describe("implementar", () => {
     // Lo que dejó instalado preparar en la feature: `npm ci` en la sub-task lo borraría.
     mkdirSync(join(featureWt, "node_modules"), { recursive: true });
     writeFileSync(join(featureWt, "node_modules", "marca"), "");
+    writeFileSync(
+      join(featureWt, "node_modules", ".package-lock.json"),
+      '{"name":"x","lockfileVersion":3,"requires":true,"packages":{}}\n',
+    );
     await implementar(contextFor(run, "implementar", deps));
     expect(vistos).toEqual([true]);
   });

@@ -299,7 +299,6 @@ export function loQueDijo(texto: string): string {
 export const implementar: PhaseFn = async (ctx) => {
   const { run, deps, emit, action, state } = ctx;
   const featureWt = featureWorktree(run);
-  const base = prepared(ctx.events).base_sha;
   // La rama tiene los tests del plan y lo ya integrado, que el índice de preparar no tiene. Sin índice
   // no se detiene nada: cada sub-task recibe el texto de falla de `contextoGraft` y sigue como antes.
   try {
@@ -377,8 +376,10 @@ export const implementar: PhaseFn = async (ctx) => {
       await addWorktree(state.repo, wt, branch, start, deps.env);
       // Con un setup que solo instala, se clona el node_modules de la feature: npm ci tardaba 25 a 37 s
       // por sub-task (ADR 0035). Si no se puede, el setup de siempre.
-      const reusado = await reusarDependencias(featureWt, wt, config, base, start, deps.env);
-      if (!reusado) {
+      const reuso = await reusarDependencias(featureWt, wt, config, deps.env);
+      if (!reuso.reusado && reuso.aviso !== undefined)
+        emit({ tipo: "aviso", fase: "implementar", texto: `${task.id}: ${reuso.aviso}` });
+      if (!reuso.reusado) {
         const setup = await runShell(config.setup, {
           cwd: wt,
           env: deps.env,
@@ -560,7 +561,7 @@ export const implementar: PhaseFn = async (ctx) => {
       // Pero si el plan aprobado no lo declaraba, la persona tiene que verlo en la PR.
       const existing = await existedAt(
         wt,
-        base,
+        prepared(ctx.events).base_sha,
         testsTouched(changes, config.tests_globs),
         deps.env,
       );

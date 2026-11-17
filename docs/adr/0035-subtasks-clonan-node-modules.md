@@ -12,28 +12,37 @@ dependen de otra corren una detrás de la otra, así que el setup se suma entero
 ## Decisión
 
 1. **Antes del setup, `reusarDependencias` intenta clonar** cada `node_modules` del worktree de la
-   feature (también los de paquetes de un monorepo) en el de la sub-task: `cp -cR` (clonefile de APFS)
-   en macOS, `cp -R --reflink=auto` en Linux.
+   feature (también los de paquetes de un workspace) en el de la sub-task, en paralelo: `cp -cR`
+   (clonefile de APFS) en macOS, `cp -R --reflink=auto` en Linux.
 2. **Solo si es seguro:**
-   - el `setup` del repo únicamente instala paquetes de node (`npm ci`, `npm install`,
-     `pnpm install`, `yarn`, `bun install`, con sus opciones): un setup que hace más, como un
-     `prisma generate`, corre siempre;
-   - la rama no cambió manifiestos ni lockfiles desde la base, así que el `node_modules` de la feature
-     es el que instaló preparar con esos mismos archivos.
-3. **Si algo no se cumple o el clon falla**, se borra lo clonado y corre el setup de siempre.
+   - **el `setup` es solo la instalación de npm** (`npm ci`, `npm install`, con sus opciones). pnpm
+     no: su `.bin` lleva rutas absolutas al `node_modules` de donde se instaló;
+   - **lo instalado es exactamente lo que pide el lockfile de la sub-task.** El registro que deja
+     npm en `node_modules/.package-lock.json` tiene cada paquete del `package-lock.json` con su
+     versión, salvo los opcionales de otra plataforma, y nada más. Así no importa por qué camino
+     llegó lo instalado (preparar, un reinstalado de verificar, un replan que sacó commits);
+   - **ningún `package.json` del repo tiene scripts que npm corre al instalar** (`preinstall`,
+     `install`, `postinstall`, `prepare` y sus pre/post): pueden generar código fuera de
+     `node_modules`, como un `prisma generate`.
+3. **Si algo no se cumple, corre el setup de siempre.** Si el clon falla, además se borra lo clonado
+   y queda un aviso: la mejora no se pierde sin rastro.
 4. Una sub-task que agrega o saca paquetes los instala ella sobre su clon, como antes sobre lo que
    dejaba el setup.
 
 ## Alternativas descartadas
 
+- **Mirar si la rama cambió manifiestos o lockfiles desde la base.** Fue la primera versión:
+  `/code-review` mostró que no ve un reinstalado que después un replan dejó sin sus commits, ni
+  lockfiles fuera de la config, ni los scripts de instalación.
 - **Un link simbólico a `node_modules` de la feature.** Un `npm install` de una sub-task cambiaría el de
-  la feature y el de las otras sub-tasks.
-- **Clonar sin mirar el setup.** Un setup que genera código o compila dejaría la sub-task sin eso.
+  la feature y el de las otras.
 
 ## Verificación
 
-- `src/phases/reinstalar.test.ts`: solo un setup que únicamente instala; clona cada `node_modules`,
-  también los de los paquetes; no reusa si la rama cambió un manifiesto o el lockfile, ni con otro
-  setup.
-- `src/phases/implementar.test.ts`: con un setup que solo instala, la sub-task arranca con el
-  `node_modules` de la feature clonado (con `npm ci`, la marca que dejó preparar no estaría).
+- `src/phases/reinstalar.test.ts`: solo un setup que únicamente instala con npm; clona cada
+  `node_modules`, también los de los paquetes, si lo instalado es lo del lockfile (con un opcional de
+  otra plataforma sin instalar); no reusa si lo instalado no es lo del lockfile, si algún
+  `package.json` corre scripts al instalar, ni con otro setup; si el clon falla, no deja nada a medias
+  y lo avisa.
+- `src/phases/implementar.test.ts`: con `npm ci` como setup, la sub-task arranca con el `node_modules`
+  de la feature clonado (con `npm ci`, la marca que dejó preparar no estaría).

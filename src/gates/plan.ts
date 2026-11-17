@@ -25,6 +25,16 @@ export const subtaskSchema = z.object({
   dependencias: z.array(packageName),
   /** Paquetes de desarrollo y de tests que puede agregar. */
   dependencias_dev: z.array(packageName).optional(),
+  /**
+   * Paquetes que saca del repo, de ejecución o de desarrollo: flowrunner arma el comando de desinstalar
+   * (ADR 0034). Sin esto, el bloqueo no la deja tocar el manifiesto ni el lockfile.
+   */
+  quita_dependencias: z
+    .array(packageName)
+    .optional()
+    .describe(
+      "paquetes que la sub-task saca del repo, solo el nombre: `jsqr`. Solo si un criterio o la feature lo pide",
+    ),
   depende_de: z.array(z.string()),
   /** Solo en un replan: la sub-task ya está implementada y su código se conserva tal cual. */
   conserva: z.boolean().optional(),
@@ -36,6 +46,10 @@ export const allDependencies = (task: Subtask) => [
   ...task.dependencias,
   ...(task.dependencias_dev ?? []),
 ];
+
+/** Si la sub-task cambia dependencias, agregando o sacando: toca el manifiesto y el lockfile. */
+export const tocaDependencias = (task: Subtask) =>
+  allDependencies(task).length > 0 || (task.quita_dependencias ?? []).length > 0;
 
 export const decisionSchema = z.object({ que: z.string().min(1), por_que: z.string().min(1) });
 
@@ -174,7 +188,7 @@ export function protectedPathIn(path: string): string | undefined {
 /** El alcance efectivo: lo que declaró, más lockfiles y manifiestos si agrega dependencias. */
 export function effectiveScope(task: Subtask, rules: PlanRepoRules): string[] {
   const own = task.alcance.map(normalize);
-  return allDependencies(task).length > 0 ? [...own, ...rules.lockfiles, ...rules.manifests] : own;
+  return tocaDependencias(task) ? [...own, ...rules.lockfiles, ...rules.manifests] : own;
 }
 
 /** Las sub-tasks de las que depende `id`, directa o indirectamente. */

@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { git } from "../../test/helpers/git.ts";
+import { git, tempDir } from "../../test/helpers/git.ts";
 import { plannedRun } from "../../test/helpers/planned.ts";
 import { contextFor, testDeps } from "../../test/helpers/project.ts";
 import { simQuery, type SimScript } from "../../test/helpers/sim-sdk.ts";
@@ -97,6 +97,27 @@ describe("instalar dependencias", () => {
       "pnpm add uqr",
       "pnpm add -D jsqr",
     ]);
+  });
+
+  // Regresión de PIZ-9: AC-9 pedía sacar `@anthropic-ai/claude-agent-sdk`, el plan no tenía cómo
+  // declararlo, y ST-1 chocó 4 veces con el bloqueo hasta que la persona lo arregló a mano (ADR 0034).
+  test("una sub-task que saca paquetes tiene su comando de desinstalar y puede tocar el manifiesto", () => {
+    const quita = st("ST-1", ["servidor/"], {
+      quita_dependencias: ["@anthropic-ai/claude-agent-sdk"],
+    });
+    expect(unitComandos(config("package-lock.json"), quita, [], true).exactos).toEqual([
+      "npm uninstall @anthropic-ai/claude-agent-sdk",
+    ]);
+    expect(unitComandos(config("pnpm-lock.yaml"), quita, [], false).exactos).toEqual([
+      "pnpm remove @anthropic-ai/claude-agent-sdk",
+    ]);
+    expect(unitComandos(config("yarn.lock"), quita, [], false).exactos).toEqual([
+      "yarn remove @anthropic-ai/claude-agent-sdk",
+    ]);
+    const repo = config("package-lock.json");
+    expect(
+      unitScope(tempDir(), repo, quita, [], unitComandos(repo, quita, [], false)).depsDeclared,
+    ).toBe(true);
   });
 
   // Regresión: en CUENTAS-1, ST-2 corrió el verify completo del repo en su worktree, antes de que ST-3

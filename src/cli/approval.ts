@@ -169,7 +169,10 @@ export function describePlan(view: z.infer<typeof planViewSchema>): string {
       (t) =>
         `  ${t.id}  ${t.titulo}  ${t.alcance.join(", ")}` +
         (t.depende_de.length > 0 ? `  depende de ${t.depende_de.join(", ")}` : "") +
-        (allDependencies(t).length > 0 ? `  agrega ${allDependencies(t).join(", ")}` : ""),
+        (allDependencies(t).length > 0 ? `  agrega ${allDependencies(t).join(", ")}` : "") +
+        ((t.quita_dependencias ?? []).length > 0
+          ? `  saca ${(t.quita_dependencias ?? []).join(", ")}`
+          : ""),
     ),
     "",
     ...view.criterios.map(

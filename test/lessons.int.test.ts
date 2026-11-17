@@ -213,4 +213,33 @@ describe("lecciones", () => {
     });
     expect(d.ghLog().filter((a) => a[1] === "create")).toHaveLength(1);
   }, 240_000);
+  // Si regresiona, lo que se propuso en la PR de la feature no llega nunca a lecciones.md.
+  test("las propuestas de la PR mergeada pasan a lecciones.md con su número, sin correcciones", async () => {
+    const proposals =
+      "# Lecciones propuestas por SHOP-214\n\nAl mergear su PR...\n\n### Los CSV llevan encabezado\n\nRegla: Encabezado primero.\n\nAplica: src/export/\n\nOrigen: run SHOP-214-x · revisar, vuelta 1 · 2026-11-17\n";
+    const d = await delivered([], {
+      files: {
+        ".flowrunner/lecciones.md": "# Lecciones\n\n### L-4 · Vieja\n\nRegla: x.\n",
+        ".flowrunner/propuestas/SHOP-214.md": proposals,
+      },
+    });
+    d.setPr(412, (pr) => (pr.state = "MERGED"));
+    expect(runCli(["learn", d.id], d.env).stdout).toContain("quedó cerrado");
+    expect(lessonsOnBase(d)).toBe(
+      "# Lecciones\n\n### L-4 · Vieja\n\nRegla: x.\n\n### L-5 · Los CSV llevan encabezado\n\nRegla: Encabezado primero.\n\nAplica: src/export/\n\nOrigen: run SHOP-214-x · revisar, vuelta 1 · 2026-11-17",
+    );
+    expect(
+      git(
+        d.remote,
+        "ls-tree",
+        "--name-only",
+        "chore/lecciones-SHOP-214",
+        ".flowrunner/propuestas/",
+      ),
+    ).toBe("");
+    expect(d.prompts()).not.toContain("Sos el que aprende de flowrunner");
+    expect(d.ghLog().filter((a) => a[1] === "merge")).toEqual([
+      ["pr", "merge", "413", "--auto", "--merge"],
+    ]);
+  }, 240_000);
 });

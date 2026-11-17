@@ -38,7 +38,8 @@ describe("frictions", () => {
   });
 });
 
-test("formatLessons numera después de la última y cita el run y la fecha", () => {
+// Si regresiona, dos PRs de features que proponen lecciones vuelven a elegir el mismo número.
+test("formatLessons escribe las lecciones sin número, con dónde aplican, el run y la fecha", () => {
   const text = formatLessons(
     [
       {
@@ -48,12 +49,11 @@ test("formatLessons numera después de la última y cita el run y la fecha", () 
         origen: "revisar, vuelta 1",
       },
     ],
-    "# Lecciones\n\n### L-2 · Vieja\n",
     "PIZ-1-x",
     "2026-11-07",
   );
   expect(text).toBe(
-    "\n### L-3 · Grilla de la barra\n\nRegla: Sumar una columna al agregar un hijo.\n\nAplica: src/Barra.tsx\n\nOrigen: run PIZ-1-x · revisar, vuelta 1 · 2026-11-07\n",
+    "\n### Grilla de la barra\n\nRegla: Sumar una columna al agregar un hijo.\n\nAplica: src/Barra.tsx\n\nOrigen: run PIZ-1-x · revisar, vuelta 1 · 2026-11-07\n",
   );
 });
 

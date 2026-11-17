@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { git, repoWith } from "../../test/helpers/git.ts";
 import type { PrDetail } from "../github/gh.ts";
-import { autoMergeAllowed, corrections, detailOrphans } from "./aprender.ts";
+import { autoMergeAllowed, corrections, detailOrphans, numberProposals } from "./aprender.ts";
 
 const URL = "https://github.com/acme/acme-api/pull/412";
 
@@ -138,6 +138,32 @@ describe("autoMergeAllowed", () => {
     expect(autoMergeAllowed([".flowrunner/lecciones.md", "src/a.js"], false)).toBe(false);
     expect(autoMergeAllowed([".flowrunner/convenciones.md"], false)).toBe(false);
     expect(autoMergeAllowed([".flowrunner/lecciones.md"], true)).toBe(false);
+  });
+
+  // Si regresiona, pasar las propuestas ya revisadas a lecciones.md pide una revisión de más.
+  test("también si borra las propuestas que ya se revisaron en la PR de la feature", () => {
+    const prop = ".flowrunner/propuestas/PIZ-1.md";
+    expect(autoMergeAllowed([".flowrunner/lecciones.md", prop], false)).toBe(true);
+    expect(autoMergeAllowed([prop], false)).toBe(true);
+    expect(autoMergeAllowed([prop, "src/a.js"], false)).toBe(false);
+    expect(autoMergeAllowed([], false)).toBe(false);
+  });
+});
+
+describe("numberProposals", () => {
+  // Si regresiona, las lecciones propuestas en la PR de una feature no llegan a lecciones.md o
+  // repiten un número.
+  test("numera cada propuesta desde el primero libre y descarta el encabezado del archivo", () => {
+    const text =
+      "# Lecciones propuestas por PIZ-1\n\nAl mergear...\n\n### Una\n\nRegla: a.\n\n### Dos\n\nRegla: b.\n";
+    expect(numberProposals(text, 30)).toEqual({
+      added: "\n### L-30 · Una\n\nRegla: a.\n\n### L-31 · Dos\n\nRegla: b.\n",
+      count: 2,
+    });
+    expect(numberProposals("# Lecciones propuestas por PIZ-1\n", 30)).toEqual({
+      added: "",
+      count: 0,
+    });
   });
 });
 

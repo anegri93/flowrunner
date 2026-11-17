@@ -1,10 +1,10 @@
 // Aprender: después del merge, las correcciones de la persona se vuelven lecciones que llegan a la
 // base por una PR chica con auto-merge. Solo cuentan los commits y comentarios de `github_user`.
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { runSession } from "../agent/session.ts";
-import { BRAIN_FILES } from "../brain/brain.ts";
+import { BRAIN_FILES, proposalsFile } from "../brain/brain.ts";
 import { loadGlobalConfig, loadRepoConfig } from "../config/load.ts";
 import {
   addWorktree,
@@ -108,13 +108,32 @@ export function detailOrphans(lessons: string, detail: string): number[] {
   return lessonNumbers(detail).filter((n) => !kept.has(n));
 }
 
-/** El auto-merge solo entra si el diff toca únicamente lecciones.md y no hubo consolidación (spec, sección 4). */
+/**
+ * El auto-merge solo entra si el diff toca lecciones.md y, como mucho, borra las propuestas que ya
+ * revisó la persona en la PR de la feature; y si no hubo consolidación (spec, sección 4).
+ */
 export function autoMergeAllowed(touched: readonly string[], consolidated: boolean): boolean {
   return (
     !consolidated &&
-    touched.length === 1 &&
-    touched[0] === `.flowrunner/${BRAIN_FILES.lecciones.file}`
+    touched.length > 0 &&
+    touched.every(
+      (f) =>
+        f === `.flowrunner/${BRAIN_FILES.lecciones.file}` ||
+        f.startsWith(".flowrunner/propuestas/"),
+    )
   );
+}
+
+/** Las lecciones propuestas (`### título`), numeradas desde `first` como entradas de lecciones.md. */
+export function numberProposals(text: string, first: number): { added: string; count: number } {
+  const at = text.search(/^### /m);
+  if (at === -1) return { added: "", count: 0 };
+  let n = first;
+  const added = `\n${text.slice(at).trimEnd()}\n`.replace(
+    /^### /gm,
+    () => `### L-${String(n++)} · `,
+  );
+  return { added, count: n - first };
 }
 
 export const APRENDER_TIMEOUT_MS = 15 * 60_000;
@@ -179,10 +198,17 @@ export const aprender: PhaseFn = async (ctx) => {
   const githubUser = loadGlobalConfig(deps.env).github_user;
   await fetchOrigin(state.repo, deps.env).catch(() => undefined);
   const found = await corrections(pr, githubUser, state.repo, deps.env);
-  if (found.length === 0) return { tipo: "ok" };
-
   const config = loadRepoConfig(state.repo);
   const feature = runFeature(run);
+  const proposalsRel = proposalsFile(feature.clave);
+  const hasProposals = async () =>
+    (await git(
+      state.repo,
+      ["ls-tree", "--name-only", `origin/${config.base_branch}`, "--", proposalsRel],
+      deps.env,
+    ).catch(() => "")) !== "";
+  if (found.length === 0 && !(await hasProposals())) return { tipo: "ok" };
+
   // Dos PRs de lecciones a la vez se pisarían en lecciones.md. Ocupado no se espera: tick reintenta.
   const turno = turnoFile(run.home, state.proyecto, "lecciones");
   const intento = intentarTurno(turno, run.id);
@@ -206,45 +232,58 @@ export const aprender: PhaseFn = async (ctx) => {
     await addWorktree(state.repo, wt, branch, `origin/${config.base_branch}`, deps.env);
     const lessonsFile = join(wt, ".flowrunner", BRAIN_FILES.lecciones.file);
     const current = readFileSync(lessonsFile, "utf8");
-    const result = await runSession(
-      {
-        fase: "aprender",
-        nombre: sessionName(run, "aprender"),
-        prompt: render("aprender", {
-          correcciones: found.map((c) => `### ${c.tipo} · ${c.origen}\n\n${c.texto}`).join("\n\n"),
-          lecciones: current,
-          origenes: found.map((c) => c.origen).join("\n"),
-        }),
-        cwd: wt,
-        model: config.models.aprender,
-        tools: [],
-        hook: readOnlyHook(ctx, wt),
-        schema: lessonsSchema,
-        timeoutMs: APRENDER_TIMEOUT_MS,
-      },
-      { run, deps, emit },
-    );
-    if (result.tipo !== "ok")
-      return result.tipo === "limite"
-        ? result
-        : { tipo: "falla", clase: result.clase, motivo: result.motivo };
-    const origins = new Set(found.map((c) => c.origen));
-    const invented = result.output.lecciones.filter((l) => !origins.has(l.origen));
-    if (invented.length > 0) {
-      return {
-        tipo: "falla",
-        clase: "gate",
-        motivo: `una lección cita un origen que no es una corrección de ${githubUser}: ${invented[0]?.origen ?? ""}`,
-      };
+    // Las propuestas ya las revisó la persona en la PR de la feature: entran tal cual, con su número.
+    const proposalsAbs = join(wt, proposalsRel);
+    const proposals = existsSync(proposalsAbs) ? readFileSync(proposalsAbs, "utf8") : "";
+    if (existsSync(proposalsAbs)) rmSync(proposalsAbs);
+    const proposed = numberProposals(proposals, nextLessonNumber(current));
+    let fromCorrections = "";
+    let correctionCount = 0;
+    if (found.length > 0) {
+      const result = await runSession(
+        {
+          fase: "aprender",
+          nombre: sessionName(run, "aprender"),
+          prompt: render("aprender", {
+            correcciones: found
+              .map((c) => `### ${c.tipo} · ${c.origen}\n\n${c.texto}`)
+              .join("\n\n"),
+            lecciones: `${current.trimEnd()}\n${proposed.added}`,
+            origenes: found.map((c) => c.origen).join("\n"),
+          }),
+          cwd: wt,
+          model: config.models.aprender,
+          tools: [],
+          hook: readOnlyHook(ctx, wt),
+          schema: lessonsSchema,
+          timeoutMs: APRENDER_TIMEOUT_MS,
+        },
+        { run, deps, emit },
+      );
+      if (result.tipo !== "ok")
+        return result.tipo === "limite"
+          ? result
+          : { tipo: "falla", clase: result.clase, motivo: result.motivo };
+      const origins = new Set(found.map((c) => c.origen));
+      const invented = result.output.lecciones.filter((l) => !origins.has(l.origen));
+      if (invented.length > 0) {
+        return {
+          tipo: "falla",
+          clase: "gate",
+          motivo: `una lección cita un origen que no es una corrección de ${githubUser}: ${invented[0]?.origen ?? ""}`,
+        };
+      }
+      let n = nextLessonNumber(current) + proposed.count;
+      const today = deps.now().toISOString().slice(0, 10);
+      fromCorrections = result.output.lecciones
+        .map(
+          (l) =>
+            `\n### L-${n++} · ${l.titulo}\n\nRegla: ${l.regla}\n\nOrigen: ${l.origen} · ${today}\n`,
+        )
+        .join("");
+      correctionCount = result.output.lecciones.length;
     }
-    let n = nextLessonNumber(current);
-    const today = deps.now().toISOString().slice(0, 10);
-    const added = result.output.lecciones
-      .map(
-        (l) =>
-          `\n### L-${n++} · ${l.titulo}\n\nRegla: ${l.regla}\n\nOrigen: ${l.origen} · ${today}\n`,
-      )
-      .join("");
+    const added = `${proposed.added}${fromCorrections}`;
     let text = `${current.trimEnd()}\n${added}`;
     let consolidated = false;
     // Al consolidar se unen y sacan lecciones: el detalle tiene que seguirlas o queda con números viejos.
@@ -305,7 +344,7 @@ export const aprender: PhaseFn = async (ctx) => {
     const bodyFile = join(run.dir, "lecciones-pr.md");
     writeFileSync(
       bodyFile,
-      `Lecciones de ${feature.clave}, escritas a partir de las correcciones de ${githubUser}.\n\n${added}`,
+      `Lecciones de ${feature.clave}: las que se propusieron en su PR y las que salen de las correcciones de ${githubUser}.\n\n${added}`,
     );
     const lessonsPr =
       (await findPr(wt, branch, deps.env)) ??
@@ -331,7 +370,7 @@ export const aprender: PhaseFn = async (ctx) => {
       tipo: "lecciones",
       url: lessonsPr.url,
       numero: lessonsPr.number,
-      cantidad: result.output.lecciones.length,
+      cantidad: proposed.count + correctionCount,
       auto_merge: auto,
     });
     await removeWorktree(state.repo, wt, deps.env);

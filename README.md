@@ -379,9 +379,14 @@ comandos exactos para seguir.
 Aprende de dos fuentes, y en las dos decidís vos:
 
 - **Lo que al run le costó corregirse solo.** Si hubo vueltas o pediste cambios al plan, la PR de entrega
-  trae lecciones propuestas en un commit aparte. Si una no te convence, la borrás antes de mergear.
-- **Tus correcciones a la PR.** Después del merge, tus commits y comentarios se vuelven lecciones que
-  entran por una PR chica con auto-merge.
+  trae lecciones propuestas en un commit aparte, en `.flowrunner/propuestas/<clave>.md`, cada una con
+  dónde aplica. Si una no te convence, la borrás antes de mergear. Lo que se arregla en la configuración
+  del repo llega como sugerencia en la PR, no como lección.
+- **Tus correcciones a la PR.** Después del merge, tus commits (no los merges) y tus comentarios se vuelven
+  lecciones.
+
+Las dos llegan a `lecciones.md` por una PR chica con auto-merge, después del merge y de a una por vez:
+así dos features no eligen el mismo número de lección.
 
 ## Ver un run en vivo
 

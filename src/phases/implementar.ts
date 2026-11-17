@@ -38,6 +38,7 @@ import { featureWorktree, graftIndex, prepared, runFeature, unitWorktree } from 
 import { brainVars, readPlan, sessionName } from "./planificar.ts";
 import { runFixers } from "./fixers.ts";
 import { SETUP_TIMEOUT_MS } from "./preparar.ts";
+import { reusarDependencias } from "./reinstalar.ts";
 
 export const MAX_UNIT_ATTEMPTS = 3;
 export const UNIT_TIMEOUT_MS = 60 * 60_000;
@@ -377,14 +378,25 @@ export const implementar: PhaseFn = async (ctx) => {
     for (let attempt = tried + 1; attempt <= MAX_UNIT_ATTEMPTS; attempt++) {
       const start = await headSha(featureWt, deps.env);
       await addWorktree(state.repo, wt, branch, start, deps.env);
-      const setup = await runShell(config.setup, {
-        cwd: wt,
-        env: deps.env,
-        timeoutMs: SETUP_TIMEOUT_MS,
-      });
-      if (setup.code !== 0) {
-        const why = `el setup falló en el worktree de ${task.id}: ${tail(setup)}`;
-        return { ok: false, motivo: why, fatal: { tipo: "falla", clase: "entorno", motivo: why } };
+      // Con un setup que solo instala, se clona el node_modules de la feature: npm ci tardaba 25 a 37 s
+      // por sub-task (ADR 0035). Si no se puede, el setup de siempre.
+      const reuso = await reusarDependencias(featureWt, wt, config, deps.env);
+      if (!reuso.reusado && reuso.aviso !== undefined)
+        emit({ tipo: "aviso", fase: "implementar", texto: `${task.id}: ${reuso.aviso}` });
+      if (!reuso.reusado) {
+        const setup = await runShell(config.setup, {
+          cwd: wt,
+          env: deps.env,
+          timeoutMs: SETUP_TIMEOUT_MS,
+        });
+        if (setup.code !== 0) {
+          const why = `el setup falló en el worktree de ${task.id}: ${tail(setup)}`;
+          return {
+            ok: false,
+            motivo: why,
+            fatal: { tipo: "falla", clase: "entorno", motivo: why },
+          };
+        }
       }
       emit({
         tipo: "unidad",

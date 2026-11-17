@@ -76,17 +76,31 @@ function maxRuns(repo: string): number {
   }
 }
 
+/** Cuántos runs del repo entregan a la vez, aparte de `max_runs` (ADR 0031). */
+const MAX_ENTREGAS = 1;
+
+/** Si al run solo le falta entregar: push, PR y a veces una sesión corta de lecciones. */
+const soloEntrega = (state: RunState) => state.fase === "entregar";
+
+function entregaLugar(home: string, id: string): boolean {
+  try {
+    return soloEntrega(loadState(home, id));
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Las reglas de los lugares para este run. Un run al que solo le falta entregar no espera el tope:
- * push y PR duran segundos, y en cola esperaba a runs de media hora (PIZ-14, ADR 0031). Su lugar se
- * escribe igual, para que nadie lo lance dos veces, y se suelta al terminar.
+ * Las reglas de los lugares para este run. Entregar tiene su propio carril de `MAX_ENTREGAS`: no espera
+ * detrás de los runs que implementan (PIZ-14 esperó 12,7 minutos un entregar de segundos), y tampoco
+ * corren entregas sin tope. El lugar se escribe igual, para que nadie lo lance dos veces (ADR 0031).
  */
 function reglas(home: string, state: RunState): Reglas {
-  const soloEntrega =
-    state.fase === "entregar" && (state.status === "en_curso" || state.status === "en_cola");
+  const entrega = soloEntrega(state);
   return {
-    max: soloEntrega ? Number.POSITIVE_INFINITY : maxRuns(state.repo),
+    max: entrega ? MAX_ENTREGAS : maxRuns(state.repo),
     ocupa: (id) => ocupaLugar(home, id),
+    cuenta: (id) => entregaLugar(home, id) === entrega,
   };
 }
 
@@ -138,13 +152,13 @@ export function despacharCola(home: string, proyecto: string, env: NodeJS.Proces
       if (loadState(home, id).status !== "en_cola") continue;
       const r = reglas(home, state);
       // Sin lugar no se toca el log: tick pasa cada pocos minutos y el run seguiría igual en cola. Se
-      // sigue mirando: uno que solo tiene que entregar, más atrás, no espera el tope (ADR 0031).
+      // sigue mirando: uno del otro carril, más atrás, puede tener lugar (ADR 0031).
       if (ocupados(home, proyecto, r).length >= r.max) continue;
       const run = runPaths(home, id);
       appendEvent(run.dir, { tipo: "reanudado" });
       if (!tomarLugar(home, proyecto, id, process.pid, r).ok) {
         appendEvent(run.dir, { tipo: "encolado" });
-        break;
+        continue;
       }
       handOver(home, loadState(home, id), run, env);
       avisarCambio(home, id, "en_cola", env);

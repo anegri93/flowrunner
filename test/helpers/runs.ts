@@ -54,6 +54,15 @@ export function launch(w: World): string {
   return (JSON.parse(result.stdout) as { id: string }).id;
 }
 
+/** Lanza otra feature del mismo proyecto, con otra clave, y devuelve su id. */
+export function launchClave(w: World, clave: string, env: NodeJS.ProcessEnv = w.env): string {
+  const file = join(tempDir(), `${clave}.md`);
+  writeFileSync(file, FEATURE.replace("SHOP-214", clave));
+  const result = runCli(["run", file, "--json"], env);
+  if (result.status !== 0) throw new Error(`run falló: ${result.stdout}${result.stderr}`);
+  return (JSON.parse(result.stdout) as { id: string }).id;
+}
+
 export function runDir(w: Pick<World, "home">, id: string): string {
   return join(w.home, "runs", id);
 }

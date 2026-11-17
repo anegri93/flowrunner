@@ -160,8 +160,8 @@ la terminal, Claude u Orca, no avisa: ya te lo dice la respuesta.
 
 Hasta dos runs de un repo avanzan a la vez. Un run que espera tu aprobación o está en pausa no ocupa
 lugar. El que no entra queda en cola y arranca solo cuando se libera un lugar, el más viejo primero.
-Un run al que solo le falta entregar (después de que aceptaste lo que faltaba probar, por ejemplo) no
-espera: push y PR duran segundos.
+Entregar tiene su propio carril, de a un run: uno al que solo le falta entregar (después de que
+aceptaste lo que faltaba probar, por ejemplo) no espera detrás de los que implementan.
 Verify, los comandos de los criterios en verificar y probar usan tu entorno de desarrollo, así que
 esos pasos se turnan entre runs. Si el plan que vas a aprobar toca los mismos archivos que otro run
 con la PR sin cerrar, el plan te lo avisa. Para cambiar el tope:

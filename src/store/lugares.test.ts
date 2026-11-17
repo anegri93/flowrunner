@@ -88,3 +88,21 @@ describe("ocupados y soltarLugar", () => {
     expect(readdirSync(lugaresDir(home, "acme"))).toEqual(["RUN-B.json"]);
   });
 });
+
+// Si regresiona, un run que entrega le quita el lugar a uno que implementa, o al revés: entregar tiene
+// su propio carril (ADR 0031). Y un lugar del otro carril no se borra por no contar.
+test("cuenta separa los carriles: cada tope cuenta los suyos, y los del otro siguen valiendo", () => {
+  const home = homeIn();
+  const entregan = new Set(["E1", "E2"]);
+  const normal: Reglas = { ...enCurso(1), cuenta: (id) => !entregan.has(id) };
+  const entrega: Reglas = { ...enCurso(1), cuenta: (id) => entregan.has(id) };
+  const pid = process.pid;
+  expect(tomarLugar(home, "p", "A", pid, normal).ok).toBe(true);
+  // A llena max_runs, pero no el carril de entrega.
+  expect(tomarLugar(home, "p", "E1", pid, entrega).ok).toBe(true);
+  expect(tomarLugar(home, "p", "E2", pid, entrega)).toEqual({ ok: false, corriendo: ["E1"] });
+  expect(tomarLugar(home, "p", "B", pid, normal)).toEqual({ ok: false, corriendo: ["A"] });
+  expect(ocupados(home, "p", normal)).toEqual(["A"]);
+  expect(ocupados(home, "p", entrega)).toEqual(["E1"]);
+  expect(ocupados(home, "p", enCurso(1))).toEqual(["A", "E1"]);
+});

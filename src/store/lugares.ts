@@ -51,6 +51,11 @@ export interface Reglas {
   readonly max: number;
   /** Si el run está en curso según su log. */
   readonly ocupa: (runId: string) => boolean;
+  /**
+   * Qué lugares vigentes cuentan para `max`; todos si falta. Un lugar que no cuenta sigue valiendo:
+   * no se borra. Así entregar tiene su propio carril (ADR 0031).
+   */
+  readonly cuenta?: (runId: string) => boolean;
   readonly alive?: (pid: number) => boolean;
 }
 
@@ -106,7 +111,9 @@ export function tomarLugar(
     runId,
     (): Toma => {
       migrar(home, proyecto);
-      const otros = vigentes(home, proyecto, reglas, { borrar: true, salvo: runId });
+      const otros = vigentes(home, proyecto, reglas, { borrar: true, salvo: runId }).filter(
+        reglas.cuenta ?? (() => true),
+      );
       const file = lugarFile(home, proyecto, runId);
       if (!existsSync(file) && otros.length >= reglas.max) return { ok: false, corriendo: otros };
       escribir(file, { run_id: runId, pid });
@@ -119,7 +126,7 @@ export function tomarLugar(
 
 /** Los runs que hoy ocupan un lugar, sin tocar nada. */
 export function ocupados(home: string, proyecto: string, reglas: Reglas): string[] {
-  return vigentes(home, proyecto, reglas, { borrar: false });
+  return vigentes(home, proyecto, reglas, { borrar: false }).filter(reglas.cuenta ?? (() => true));
 }
 
 export function soltarLugar(home: string, proyecto: string, runId: string): void {

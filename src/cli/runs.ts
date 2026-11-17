@@ -76,14 +76,24 @@ function maxRuns(repo: string): number {
   }
 }
 
-function reglas(home: string, repo: string): Reglas {
-  return { max: maxRuns(repo), ocupa: (id) => ocupaLugar(home, id) };
+/**
+ * Las reglas de los lugares para este run. Un run al que solo le falta entregar no espera el tope:
+ * push y PR duran segundos, y en cola esperaba a runs de media hora (PIZ-14, ADR 0031). Su lugar se
+ * escribe igual, para que nadie lo lance dos veces, y se suelta al terminar.
+ */
+function reglas(home: string, state: RunState): Reglas {
+  const soloEntrega =
+    state.fase === "entregar" && (state.status === "en_curso" || state.status === "en_cola");
+  return {
+    max: soloEntrega ? Number.POSITIVE_INFINITY : maxRuns(state.repo),
+    ocupa: (id) => ocupaLugar(home, id),
+  };
 }
 
 /** Lanza el proceso del run y le pasa el lugar, que este comando ya tomó con su propio pid. */
 function handOver(home: string, state: RunState, run: RunPaths, env: NodeJS.ProcessEnv): void {
   const pid = spawnRunProcess(run, env);
-  tomarLugar(home, state.proyecto, run.id, pid, reglas(home, state.repo));
+  tomarLugar(home, state.proyecto, run.id, pid, reglas(home, state));
 }
 
 /** El run tiene un proceso vivo, que no es este, que lo está avanzando. */
@@ -105,7 +115,7 @@ export function lanzarOEncolar(home: string, id: string, env: NodeJS.ProcessEnv)
   return conTurnoSync(turnoFile(home, state.proyecto, "cola"), id, (): Lanzado => {
     if (isRunning(home, state)) return { tipo: "lanzado" };
     const run = runPaths(home, id);
-    const toma = tomarLugar(home, state.proyecto, id, process.pid, reglas(home, state.repo));
+    const toma = tomarLugar(home, state.proyecto, id, process.pid, reglas(home, state));
     if (toma.ok) {
       handOver(home, state, run, env);
       return { tipo: "lanzado" };
@@ -126,9 +136,10 @@ export function despacharCola(home: string, proyecto: string, env: NodeJS.Proces
     for (const { id, state } of colaDe(home, proyecto)) {
       // abort y rerun no toman este turno: un run que dejó la cola mientras tanto no se lanza.
       if (loadState(home, id).status !== "en_cola") continue;
-      const r = reglas(home, state.repo);
-      // Sin lugar no se toca el log: tick pasa cada pocos minutos y el run seguiría igual en cola.
-      if (ocupados(home, proyecto, r).length >= r.max) break;
+      const r = reglas(home, state);
+      // Sin lugar no se toca el log: tick pasa cada pocos minutos y el run seguiría igual en cola. Se
+      // sigue mirando: uno que solo tiene que entregar, más atrás, no espera el tope (ADR 0031).
+      if (ocupados(home, proyecto, r).length >= r.max) continue;
       const run = runPaths(home, id);
       appendEvent(run.dir, { tipo: "reanudado" });
       if (!tomarLugar(home, proyecto, id, process.pid, r).ok) {
@@ -793,7 +804,7 @@ export function abortRun(home: string, id: string, env: NodeJS.ProcessEnv) {
 export async function runProcess(home: string, id: string, env: NodeJS.ProcessEnv) {
   const state = loadState(home, id);
   const run = runPaths(home, id);
-  if (!tomarLugar(home, state.proyecto, id, process.pid, reglas(home, state.repo)).ok) {
+  if (!tomarLugar(home, state.proyecto, id, process.pid, reglas(home, state)).ok) {
     // Perdió su lugar entre el lanzamiento y el arranque: espera el próximo como cualquiera.
     appendEvent(run.dir, { tipo: "encolado" });
     avisarCambio(home, id, state.status, env);

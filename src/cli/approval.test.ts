@@ -7,7 +7,7 @@ import type { NewEvent } from "../store/events.ts";
 import { appendEvent } from "../store/run-log.ts";
 import { createRun } from "../store/runs.ts";
 import type { z } from "zod";
-import { describePlan, pisadas, type planViewSchema } from "./approval.ts";
+import { describePlan, pisadas, planViewSchema } from "./approval.ts";
 
 const task = (alcance: string[], dependencias: string[] = []): Subtask => ({
   id: "ST-1",
@@ -100,4 +100,28 @@ test("un criterio del run se muestra como del run, no como una sub-task", () => 
   const text = describePlan(view);
   expect(text).toContain("  AC-1 → ST-1: node tests/ac1.mjs");
   expect(text).toContain("  AC-2 → del run (lo comprueba verificar): ./.flowrunner/verify.sh");
+});
+
+// Si regresiona, quien aprueba no ve qué criterios probar no va a probar en el entorno (hallazgo de
+// /code-review en la PR #111).
+test("el plan dice qué criterios solo prueba su test, y la vista los conserva", () => {
+  const view = planViewSchema.shape.criterios.parse([
+    { id: "AC-1", comando: "node tests/ac1.mjs", subtarea: "ST-1", en_entorno: false },
+    { id: "AC-2", comando: "node tests/ac2.mjs", subtarea: "ST-1", en_entorno: true },
+  ]);
+  expect(view[0]).toMatchObject({ en_entorno: false });
+  const text = describePlan({
+    run: { id: "r-1", status: "esperando_aprobacion" },
+    plan: "p",
+    subtareas: [task(["src/a.ts"])],
+    criterios: view,
+    tests: [],
+    diff_tests: "",
+    cambia_lo_existente: [],
+    se_pisa_con: [],
+    versiones: null,
+    cambios: null,
+  } as unknown as z.infer<typeof planViewSchema>);
+  expect(text).toContain("  AC-1 → ST-1: node tests/ac1.mjs · solo su test, probar no lo prueba");
+  expect(text).toContain("  AC-2 → ST-1: node tests/ac2.mjs\n");
 });

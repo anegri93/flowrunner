@@ -54,14 +54,19 @@ export async function llamarHerramienta(
  * guarda lo que respondió. La herramienta nunca da `isError` por una excepción, la dice en el texto:
  * cualquiera de las dos es una falla del test.
  */
-export function validandoAlFinal(query: QueryFn, respuestas: string[]): QueryFn {
+export function validandoAlFinal(
+  query: QueryFn,
+  respuestas: string[],
+  /** El plan que la sesión valida; si falta, el de la salida del guion. */
+  plan?: unknown,
+): QueryFn {
   return (args) => {
     const inner = query(args);
     const gate = args.options?.mcpServers?.gate;
     return (async function* () {
       for await (const m of inner) {
         if (m.type === "result" && "structured_output" in m) {
-          const r = await llamarHerramienta(gate, "validar_plan", m.structured_output);
+          const r = await llamarHerramienta(gate, "validar_plan", plan ?? m.structured_output);
           const text = r.content[0]?.text ?? "";
           if (r.isError === true || text.startsWith("no se pudo validar el plan"))
             throw new Error(`validar_plan falló: ${text}`);

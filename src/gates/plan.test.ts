@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { repoWith } from "../../test/helpers/git.ts";
+import { repoConfigSchema } from "../config/schemas.ts";
 import type { Feature } from "../feature/feature.ts";
 import {
   checkCommandsFail,
@@ -46,7 +47,7 @@ const task = (id: string, alcance: string[], extra: Partial<Subtask> = {}): Subt
 
 function plan(
   subtareas: Subtask[],
-  criterios = [
+  criterios: Plan["criterios"] = [
     { id: "AC-1", comando: "false", subtarea: "ST-1" },
     { id: "AC-2", comando: "false", subtarea: "ST-2" },
   ],
@@ -242,6 +243,36 @@ describe("forma del plan", () => {
 test("sacar paquetes suma el manifiesto y el lockfile al alcance, como agregarlos", () => {
   const quita = task("ST-1", ["src/a.ts"], { quita_dependencias: ["viejo"] });
   expect(effectiveScope(quita, rules)).toEqual(["src/a.ts", "pnpm-lock.yaml", "package.json"]);
+});
+
+// Si regresiona, un plan llega a probar sin decir qué criterios se ven en el entorno, y probar vuelve a
+// intentar lo que solo prueba un test (ADR 0032).
+test("con probar configurado, cada criterio de una sub-task dice si se ve en el entorno", () => {
+  const tasks = [task("ST-1", ["src/a.ts"]), task("ST-2", ["src/b.ts"])];
+  const { probar } = repoConfigSchema.parse({
+    setup: "true",
+    tests_globs: ["tests/**"],
+    probar: { levantar: "npm run dev", urls: { app: "http://127.0.0.1:4390" } },
+  });
+  const conProbar = { ...rules, ...(probar === undefined ? {} : { probar }) };
+  const sin = plan(tasks);
+  expect(checkPlanShape(sin, feature, repo, conProbar)).toEqual([
+    "AC-1 no dice si se ve en el entorno (`en_entorno`): true si se ve usando la app levantada, una pantalla o la API; false si solo lo comprueba su test",
+    "AC-2 no dice si se ve en el entorno (`en_entorno`): true si se ve usando la app levantada, una pantalla o la API; false si solo lo comprueba su test",
+  ]);
+  const con = plan(tasks, [
+    { id: "AC-1", comando: "false", subtarea: "ST-1", en_entorno: true },
+    { id: "AC-2", comando: "false", subtarea: "ST-2", en_entorno: false },
+  ]);
+  expect(checkPlanShape(con, feature, repo, conProbar)).toEqual([]);
+  // Sin probar en la config no hace falta: nadie lo lee.
+  expect(checkPlanShape(sin, feature, repo, rules)).toEqual([]);
+  // Un criterio del run (el verify) no lo necesita: probar no lo prueba nunca.
+  const delRunSin = plan(tasks, [
+    { id: "AC-1", comando: "false", subtarea: "ST-1", en_entorno: true },
+    { id: "AC-2", comando: "./.flowrunner/verify.sh", subtarea: "run" },
+  ]);
+  expect(checkPlanShape(delRunSin, feature, repo, conProbar, () => true)).toEqual([]);
 });
 
 describe("las dependencias del plan", () => {

@@ -26,7 +26,14 @@ import { loadRepoConfig } from "../config/load.ts";
 import { ConfigError, MAX_RUNS_DEFAULT, type RepoConfig } from "../config/schemas.ts";
 import { conTurnoGitSync } from "../git/git.ts";
 import { isAlive } from "../store/lock.ts";
-import { lugarDe, ocupados, soltarLugar, tomarLugar, type Reglas } from "../store/lugares.ts";
+import {
+  lugarDe,
+  ocupados,
+  soltarLugar,
+  tomarLugar,
+  type Carril,
+  type Reglas,
+} from "../store/lugares.ts";
 import { repoNode } from "../proc/node.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
 import { colaDe, createRun, listRunIds, loadState, ocupaLugar, runPaths } from "../store/runs.ts";
@@ -76,14 +83,33 @@ function maxRuns(repo: string): number {
   }
 }
 
-function reglas(home: string, repo: string): Reglas {
-  return { max: maxRuns(repo), ocupa: (id) => ocupaLugar(home, id) };
+/** Cuántos runs del repo entregan a la vez, aparte de `max_runs` (ADR 0031). */
+const MAX_ENTREGAS = 1;
+
+/**
+ * El carril de un run que toma lugar: entrega si lo único que le falta es entregar (push, PR y a veces
+ * una sesión corta de lecciones). Uno que llega a entregar en su mismo proceso conserva el normal.
+ */
+const carrilDe = (state: RunState): Carril => (state.fase === "entregar" ? "entrega" : "normal");
+
+/**
+ * Las reglas de los lugares para este run. Entregar tiene su propio carril de `MAX_ENTREGAS`: no espera
+ * detrás de los runs que implementan (PIZ-14 esperó 12,7 minutos un entregar de segundos), y tampoco
+ * corren entregas sin tope. El lugar se escribe igual, para que nadie lo lance dos veces (ADR 0031).
+ */
+function reglas(home: string, state: RunState): Reglas {
+  const carril = carrilDe(state);
+  return {
+    max: carril === "entrega" ? MAX_ENTREGAS : maxRuns(state.repo),
+    ocupa: (id) => ocupaLugar(home, id),
+    carril,
+  };
 }
 
 /** Lanza el proceso del run y le pasa el lugar, que este comando ya tomó con su propio pid. */
 function handOver(home: string, state: RunState, run: RunPaths, env: NodeJS.ProcessEnv): void {
   const pid = spawnRunProcess(run, env);
-  tomarLugar(home, state.proyecto, run.id, pid, reglas(home, state.repo));
+  tomarLugar(home, state.proyecto, run.id, pid, reglas(home, state));
 }
 
 /** El run tiene un proceso vivo, que no es este, que lo está avanzando. */
@@ -105,13 +131,17 @@ export function lanzarOEncolar(home: string, id: string, env: NodeJS.ProcessEnv)
   return conTurnoSync(turnoFile(home, state.proyecto, "cola"), id, (): Lanzado => {
     if (isRunning(home, state)) return { tipo: "lanzado" };
     const run = runPaths(home, id);
-    const toma = tomarLugar(home, state.proyecto, id, process.pid, reglas(home, state.repo));
+    const toma = tomarLugar(home, state.proyecto, id, process.pid, reglas(home, state));
     if (toma.ok) {
       handOver(home, state, run, env);
       return { tipo: "lanzado" };
     }
     appendEvent(run.dir, { tipo: "encolado" });
-    const posicion = colaDe(home, state.proyecto).findIndex((q) => q.id === id) + 1;
+    // La posición entre los de su carril: los del otro no le cierran el paso (ADR 0031).
+    const posicion =
+      colaDe(home, state.proyecto)
+        .filter((q) => carrilDe(q.state) === carrilDe(state))
+        .findIndex((q) => q.id === id) + 1;
     return { tipo: "en_cola", posicion, corriendo: toma.corriendo };
   });
 }
@@ -126,14 +156,15 @@ export function despacharCola(home: string, proyecto: string, env: NodeJS.Proces
     for (const { id, state } of colaDe(home, proyecto)) {
       // abort y rerun no toman este turno: un run que dejó la cola mientras tanto no se lanza.
       if (loadState(home, id).status !== "en_cola") continue;
-      const r = reglas(home, state.repo);
-      // Sin lugar no se toca el log: tick pasa cada pocos minutos y el run seguiría igual en cola.
-      if (ocupados(home, proyecto, r).length >= r.max) break;
+      const r = reglas(home, state);
+      // Sin lugar no se toca el log: tick pasa cada pocos minutos y el run seguiría igual en cola. Se
+      // sigue mirando: uno del otro carril, más atrás, puede tener lugar (ADR 0031).
+      if (ocupados(home, proyecto, r).length >= r.max) continue;
       const run = runPaths(home, id);
       appendEvent(run.dir, { tipo: "reanudado" });
       if (!tomarLugar(home, proyecto, id, process.pid, r).ok) {
         appendEvent(run.dir, { tipo: "encolado" });
-        break;
+        continue;
       }
       handOver(home, loadState(home, id), run, env);
       avisarCambio(home, id, "en_cola", env);
@@ -730,7 +761,16 @@ export function pauseRun(home: string, id: string, para: string | undefined, ori
       `flowrunner resume ${id}`,
     );
   }
-  if (para !== undefined) requireQueued(home, para, state.proyecto);
+  if (para !== undefined) {
+    const otro = requireQueued(home, para, state.proyecto);
+    // Pausar libera un lugar del carril del pausado: a uno que espera el otro carril no le sirve.
+    const libera = lugarDe(home, state.proyecto, id)?.carril ?? carrilDe(state);
+    if (carrilDe(otro) !== libera)
+      throw new UserError(
+        `${para} espera el carril de ${carrilDe(otro)} y ${id} ocupa el de ${libera}: pausarlo no le hace lugar`,
+        `flowrunner status ${para}`,
+      );
+  }
   appendEvent(runPaths(home, id).dir, {
     tipo: "pausa_pedida",
     ...(para === undefined ? {} : { para }),
@@ -793,7 +833,7 @@ export function abortRun(home: string, id: string, env: NodeJS.ProcessEnv) {
 export async function runProcess(home: string, id: string, env: NodeJS.ProcessEnv) {
   const state = loadState(home, id);
   const run = runPaths(home, id);
-  if (!tomarLugar(home, state.proyecto, id, process.pid, reglas(home, state.repo)).ok) {
+  if (!tomarLugar(home, state.proyecto, id, process.pid, reglas(home, state)).ok) {
     // Perdió su lugar entre el lanzamiento y el arranque: espera el próximo como cualquiera.
     appendEvent(run.dir, { tipo: "encolado" });
     avisarCambio(home, id, state.status, env);

@@ -160,6 +160,8 @@ la terminal, Claude u Orca, no avisa: ya te lo dice la respuesta.
 
 Hasta dos runs de un repo avanzan a la vez. Un run que espera tu aprobación o está en pausa no ocupa
 lugar. El que no entra queda en cola y arranca solo cuando se libera un lugar, el más viejo primero.
+Entregar tiene su propio carril, de a un run: uno al que solo le falta entregar (después de que
+aceptaste lo que faltaba probar, por ejemplo) no espera detrás de los que implementan.
 Verify, los comandos de los criterios en verificar y probar usan tu entorno de desarrollo, así que
 esos pasos se turnan entre runs. Si el plan que vas a aprobar toca los mismos archivos que otro run
 con la PR sin cerrar, el plan te lo avisa. Para cambiar el tope:
@@ -203,7 +205,10 @@ desde la copia de la feature, llama a la API y navega la plataforma con Chrome. 
 vuelve a su sub-task con la evidencia. Un criterio que no se pudo probar detiene el run: arreglás lo que
 faltó y rehacés probar, o decidís entregar igual con `flowrunner accept-untested <run> "<por qué>"`, y
 ese motivo queda en la PR. Un criterio que es el verify del repo no se prueba acá: ya lo dio en verde
-verificar, y no cuenta como sin probar. Para todo esto el repo dice cómo levantar el entorno en
+verificar, y no cuenta como sin probar. Tampoco uno que solo comprueba su test, como un proceso que
+recibe una señal, la app nativa o un servicio real que el entorno reemplaza por uno falso: el plan
+marca cada criterio con `en_entorno`, y probar ejercita solo los que se ven usando la app. Si ninguno
+se ve, probar se saltea sin levantar el entorno. Para todo esto el repo dice cómo levantar el entorno en
 `.flowrunner/config.yaml`. Sin esto, probar se saltea: `feature check` lo avisa antes de lanzar, y
 `watch` y el panel de Orca muestran la etapa «salteada» con el motivo, no como lista:
 

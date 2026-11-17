@@ -1,6 +1,7 @@
 // El plan que devuelve planificar y su gate. El modelo propone; este código decide si sirve.
 import { realpathSync } from "node:fs";
 import { z } from "zod";
+import type { RepoConfig } from "../config/schemas.ts";
 import type { Feature } from "../feature/feature.ts";
 import { isUnrunnable, runShell, tail, type ProcResult } from "../proc/proc.ts";
 import { ALWAYS_PROTECTED, insideRoot, type Scope } from "../tripwires/rules.ts";
@@ -88,6 +89,16 @@ export const planSchema = z.object({
         .describe(
           "la sub-task que cubre el criterio: ST-n, o run si su comando es el verify del repo",
         ),
+      /**
+       * Si probar lo puede ver con la app levantada (ADR 0032). Opcional: un plan de antes, o de un repo
+       * sin `probar`, no lo dice, y probar lo intenta como siempre.
+       */
+      en_entorno: z
+        .boolean()
+        .optional()
+        .describe(
+          "true si el criterio se ve usando la app levantada: una pantalla o una respuesta de la API. false si solo lo comprueba su test: un proceso, una señal, la app nativa, un servicio real como Claude. Obligatorio si el repo configuró probar",
+        ),
     }),
   ),
   /** Los archivos de test que escribió, relativos al repo. */
@@ -102,12 +113,38 @@ export const planSchema = z.object({
 export type Plan = z.infer<typeof planSchema>;
 
 /**
+ * La salida de la sesión del planificador: el plan entero, o `{}` si es el último que pasó por
+ * `validar_plan`. Así no escribe dos veces el mismo plan (ADR 0033).
+ */
+export const salidaPlanSchema = planSchema.partial();
+export type SalidaPlan = z.infer<typeof salidaPlanSchema>;
+
+/**
+ * El plan que devolvió la sesión: el de la salida si vino entero, el último validado si vino vacía. Un
+ * texto con qué hacer si no hay ninguno o vino a medias: es un problema del gate, y la sesión se retoma.
+ */
+export function planDevuelto(salida: SalidaPlan, validado: Plan | undefined): Plan | string {
+  if (Object.keys(salida).length === 0)
+    return (
+      validado ??
+      "no devolviste el plan ni pasaste ninguno por `validar_plan`: pasalo por `validar_plan` y devolvé `{}`, o devolvé el plan entero"
+    );
+  const entero = planSchema.safeParse(salida);
+  return entero.success
+    ? entero.data
+    : `el plan que devolviste está incompleto (${entero.error.issues.map((i) => i.path.join(".")).join(", ")}): devolvé \`{}\` para usar el último que pasaste por \`validar_plan\`, o el plan entero`;
+}
+
+/**
  * La `subtarea` de un criterio cuyo comando es el verify del repo: no es de ninguna sub-task, lo
  * comprueba verificar sobre la rama integrada. No choca con los ids, que son `ST-n`.
  */
 export const CRITERIO_DEL_RUN = "run";
 
 /** A quién se le muestra asignado un criterio en el plan: su sub-task, o el run. */
+/** Lo que se le agrega a un criterio que solo prueba su test donde se muestra el plan (ADR 0032). */
+export const SOLO_SU_TEST = " · solo su test, probar no lo prueba";
+
 export const quienCubre = (subtarea: string) =>
   subtarea === CRITERIO_DEL_RUN ? "del run (lo comprueba verificar)" : subtarea;
 
@@ -195,7 +232,7 @@ export function checkPlanShape(
   feature: Feature,
   root: string,
   /** `verify` es el del repo (`config.verify`): el rechazo de un criterio del run lo nombra. */
-  rules: PlanRepoRules & { readonly verify: string },
+  rules: PlanRepoRules & { readonly verify: string } & Partial<Pick<RepoConfig, "probar">>,
   /** Si el comando es el verify del repo (`isVerifyCommand`): solo esos criterios pueden ser del run. */
   esVerify: (comando: string) => boolean = () => false,
 ): string[] {
@@ -216,6 +253,11 @@ export function checkPlanShape(
         );
     } else if (!idSet.has(entry.subtarea))
       problems.push(`${ac.id} apunta a ${entry.subtarea}, que no existe`);
+    // Probar intenta solo lo que se ve en el entorno: el plan lo tiene que decir (ADR 0032).
+    else if (rules.probar !== undefined && entry.en_entorno === undefined)
+      problems.push(
+        `${ac.id} no dice si se ve en el entorno (\`en_entorno\`): true si se ve usando la app levantada, una pantalla o la API; false si solo lo comprueba su test`,
+      );
   }
   for (const extra of plan.criterios.filter((c) => !feature.criterios.some((a) => a.id === c.id))) {
     problems.push(`${extra.id} no es un criterio de la feature`);

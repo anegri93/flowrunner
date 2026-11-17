@@ -46,6 +46,8 @@ export interface ValidarCtx extends Omit<EstaticosInput, "plan" | "conserva" | "
   readonly candidatas?: readonly string[];
   /** En un replan, el `conserva` del plan, armado igual que en el gate (`conservaDelPlan`). */
   readonly conservaDe?: (plan: Plan) => Promise<ConservaInput | undefined>;
+  /** Recibe cada plan que se valida: una salida vacía de la sesión usa el último (ADR 0033). */
+  readonly alValidar?: (plan: Plan) => void;
 }
 
 /**
@@ -55,15 +57,16 @@ export interface ValidarCtx extends Omit<EstaticosInput, "plan" | "conserva" | "
  * rechazo, y un falso problema puede deformar el plan.
  */
 export function validarPlanServer(ctx: ValidarCtx): McpServerConfig {
-  const { candidatas = [], conservaDe, ...estaticos } = ctx;
+  const { candidatas = [], conservaDe, alValidar, ...estaticos } = ctx;
   return createSdkMcpServer({
     name: "gate",
     tools: [
       tool(
         "validar_plan",
-        "Corre sobre el plan los chequeos del gate que no ejecutan nada: forma, alcances que se pisan, rutas protegidas, llamadores fuera del alcance, tests existentes sin declarar y tests declarados sin escribir. Pasale el mismo JSON que vas a devolver.",
+        "Corre sobre el plan los chequeos del gate que no ejecutan nada: forma, alcances que se pisan, rutas protegidas, llamadores fuera del alcance, tests existentes sin declarar y tests declarados sin escribir. Pasale el plan entero: si es el definitivo, al terminar devolvé `{}` y flowrunner usa este.",
         planSchema.shape,
         async (plan) => {
+          alValidar?.(plan);
           let text: string;
           try {
             // Como el gate de afuera: un criterio de verify es del run, lo haya asignado a quien sea.

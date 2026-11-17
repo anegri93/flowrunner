@@ -20,7 +20,7 @@ import {
 } from "../probar/herramientas.ts";
 import { featureText, render } from "../prompts/render.ts";
 import type { PhaseFn, RunPaths } from "../runner/types.ts";
-import type { Outcome } from "../store/events.ts";
+import type { Outcome, RunEvent } from "../store/events.ts";
 import { SIN_COMANDOS } from "../tripwires/comandos.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
 import { featureWorktree, runFeature } from "./inputs.ts";
@@ -57,6 +57,17 @@ export function lastTestDir(run: RunPaths): string | undefined {
   return last === undefined ? undefined : join(root, last);
 }
 
+/**
+ * La carpeta de las pruebas que valen hoy: la última, salvo que la última vez probar se salteó, y
+ * entonces ninguna. Sin esto, después de un replan la PR mostraba pruebas del plan anterior.
+ */
+export function currentTestDir(run: RunPaths, events: readonly RunEvent[]): string | undefined {
+  const last = events.findLast((e) => e.tipo === "accion_terminada" && e.fase === "probar");
+  if (last?.tipo === "accion_terminada" && last.resultado.tipo === "ok" && last.resultado.salteada)
+    return undefined;
+  return lastTestDir(run);
+}
+
 /** Lo que dejó una corrida de probar: las pruebas, si llegó a devolverlas, y sus videos. */
 export function readTests(dir: string): { pruebas: Pruebas | undefined; videos: string[] } {
   const file = join(dir, "pruebas.json");
@@ -86,12 +97,36 @@ export const probar: PhaseFn = async (ctx) => {
   const { run, deps, emit, action, state } = ctx;
   const worktree = featureWorktree(run);
   const config = loadRepoConfig(worktree);
-  if (config.probar === undefined) {
-    const motivo = "el repo no dice cómo levantar el entorno (`probar` en .flowrunner/config.yaml)";
+  const saltear = (motivo: string): Outcome => {
     emit({ tipo: "aviso", fase: "probar", texto: `probar se salteó: ${motivo}` });
     return { tipo: "ok", salteada: motivo };
-  }
+  };
+  if (config.probar === undefined)
+    return saltear(
+      "el repo no dice cómo levantar el entorno (`probar` en .flowrunner/config.yaml)",
+    );
   const probarConfig = config.probar;
+  const plan = readPlan(run);
+  // Un criterio que es el verify del repo, como «`npm run check` pasa», ya lo comprobó verificar en
+  // verde antes de llegar acá, y probar no corre comandos: no se prueba ni cuenta como sin probar.
+  // En PIZ-3 frenó el run sin nada que arreglar.
+  const delVerify = new Set(
+    plan.criterios.filter((c) => isVerifyCommand(config, c.comando)).map((c) => c.id),
+  );
+  // Lo mismo uno que solo prueba su test, como un proceso o la app nativa (ADR 0032). Con una
+  // instrucción de la persona se prueba todo: puede estar pidiendo justo uno de esos.
+  const soloTest = new Set(
+    action.instruccion === undefined
+      ? plan.criterios
+          .filter((c) => c.en_entorno === false && !delVerify.has(c.id))
+          .map((c) => c.id)
+      : [],
+  );
+  const noAca = (id: string) => delVerify.has(id) || soloTest.has(id);
+  if (plan.criterios.length > 0 && plan.criterios.every((c) => noAca(c.id)))
+    return saltear(
+      "ningún criterio se ve en el entorno: los prueban sus tests, en verde en verificar",
+    );
   // Con el turno del entorno de levantar a bajar: las URLs de probar son fijas (ADR 0019).
   return conEntorno(ctx, async (): Promise<Outcome> => {
     const nombre = sessionName(run, "probar");
@@ -106,14 +141,7 @@ export const probar: PhaseFn = async (ctx) => {
     if (up.tipo === "falla") return { tipo: "falla", clase: "entorno", motivo: up.motivo };
     const urls = [...Object.entries(probarConfig.urls), ...Object.entries(probarConfig.servicios)];
     const origins = [...new Set(urls.map(([, u]) => new URL(u).origin))];
-    const plan = readPlan(run);
     const ids = plan.subtareas.map((t) => t.id);
-    // Un criterio que es el verify del repo, como «`npm run check` pasa», ya lo comprobó verificar en
-    // verde antes de llegar acá, y probar no corre comandos: no se prueba ni cuenta como sin probar.
-    // En PIZ-3 frenó el run sin nada que arreglar.
-    const delVerify = new Set(
-      plan.criterios.filter((c) => isVerifyCommand(config, c.comando)).map((c) => c.id),
-    );
     const declaradas = probarConfig.fallas;
     const hayFallas = Object.keys(declaradas).length > 0;
     const fallas = fallasServer(declaradas, {
@@ -147,10 +175,18 @@ export const probar: PhaseFn = async (ctx) => {
                   .join("\n")
               : "El repo no declaró fallas: un criterio que pide provocar una no se puede probar acá.",
             subtareas: ids.join(", "),
-            verificados:
-              delVerify.size === 0
-                ? ""
-                : `${[...delVerify].join(", ")}: es el verify del repo y verificar ya lo comprobó en verde. No lo pruebes.`,
+            verificados: [
+              ...(delVerify.size === 0
+                ? []
+                : [
+                    `${[...delVerify].join(", ")}: es el verify del repo y verificar ya lo comprobó en verde. No lo pruebes.`,
+                  ]),
+              ...(soloTest.size === 0
+                ? []
+                : [
+                    `${[...soloTest].join(", ")}: solo lo prueba su test, que verificar ya corrió en verde. No lo pruebes.`,
+                  ]),
+            ].join("\n\n"),
             instruccion:
               action.instruccion === undefined
                 ? ""
@@ -202,7 +238,14 @@ export const probar: PhaseFn = async (ctx) => {
           ? result
           : { tipo: "falla", clase: result.clase, motivo: result.motivo };
       }
-      const tests = result.output;
+      // Lo que no se prueba acá y la sesión igual devolvió sin probar no es un criterio sin probar: no
+      // va a pruebas.json ni a la PR.
+      const tests = {
+        ...result.output,
+        pruebas: result.output.pruebas.filter(
+          (p) => !(p.resultado === "no_probado" && noAca(p.criterio)),
+        ),
+      };
       const unknown = tests.pruebas.filter(
         (p) => p.resultado === "falla" && !ids.includes(p.subtarea),
       );
@@ -218,9 +261,7 @@ export const probar: PhaseFn = async (ctx) => {
         emit({ tipo: "decision", fase: "probar", que: d.que, por_que: d.por_que });
       const etiqueta = (p: Pruebas["pruebas"][number]) =>
         p.criterio === "" ? p.que : `${p.criterio} (${p.que})`;
-      const untested = tests.pruebas.filter(
-        (x) => x.resultado === "no_probado" && !delVerify.has(x.criterio),
-      );
+      const untested = tests.pruebas.filter((x) => x.resultado === "no_probado");
       for (const p of untested) {
         emit({
           tipo: "aviso",

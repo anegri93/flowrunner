@@ -33,7 +33,7 @@ const BLOCKER = {
 };
 
 /** Un run cuya revisión devuelve ST-1 una vez, con el guion que propone las lecciones. */
-async function withRound(proposal: SimScript) {
+async function withRound(proposal: SimScript, lessons?: string) {
   const w = simWorld({
     real: ["preparar", "planificar", "aprobar", "implementar", "verificar", "revisar", "entregar"],
     scripts: [
@@ -46,7 +46,10 @@ async function withRound(proposal: SimScript) {
     ],
     feature: FEATURE,
     // Un repo que pide vueltas automáticas: sin ellas, la vuelta de revisar es una pregunta (ADR 0023).
-    project: { config: { setup: "true", tests_globs: ["tests/**"], vueltas: 2 } },
+    project: {
+      config: { setup: "true", tests_globs: ["tests/**"], vueltas: 2 },
+      ...(lessons === undefined ? {} : { files: { ".flowrunner/lecciones.md": lessons } }),
+    },
   });
   const id = w.launch();
   await waitFor("esperando", () => w.state(id).status === "esperando_aprobacion", 60_000);
@@ -123,6 +126,28 @@ describe("lecciones propuestas en la PR de entrega", () => {
     expect(subjects).not.toContain("docs(lecciones): lo que aprendió SHOP-214");
     expect(body).toContain("Se arregla en la configuración del repo, no con una lección:");
     expect(body).toContain("- Sumá `format: npx prettier --write` a .flowrunner/config.yaml.");
+  }, 240_000);
+
+  // Si regresiona, una lección que ya estaba y no evitó el error queda igual y nadie se entera.
+  test("una lección que ya estaba y no alcanzó queda en las propuestas y en la PR, sin lección nueva", async () => {
+    const { w, id, body } = await withRound(
+      {
+        match: PROPOSER,
+        output: {
+          lecciones: [],
+          no_alcanzaron: [
+            { leccion: "L-1", origen: "revisar, vuelta 1" },
+            { leccion: "L-8", origen: "revisar, vuelta 1" },
+          ],
+        },
+      },
+      "# Lecciones\n\n### L-1 · Los CSV llevan encabezado\n\nRegla: Encabezado primero.\n",
+    );
+    const proposals = git(w.remote, "show", `${BRANCH}:.flowrunner/propuestas/SHOP-214.md`);
+    expect(proposals).toContain(`## No alcanzaron\n\n- L-1 · run ${id} · revisar, vuelta 1 ·`);
+    expect(proposals).not.toContain("L-8");
+    expect(body).toContain("Lecciones que ya estaban y no alcanzaron");
+    expect(body).toContain("L-1 (revisar, vuelta 1)");
   }, 240_000);
 
   // Si regresiona, flowrunner gasta una sesión buscando lecciones en un run que salió derecho.

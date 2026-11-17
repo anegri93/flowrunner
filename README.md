@@ -382,6 +382,8 @@ Aprende de dos fuentes, y en las dos decidís vos:
   trae lecciones propuestas en un commit aparte, en `.flowrunner/propuestas/<clave>.md`, cada una con
   dónde aplica. Si una no te convence, la borrás antes de mergear. Lo que se arregla en la configuración
   del repo llega como sugerencia en la PR, no como lección.
+  Si una lección que ya estaba cubría el error y no lo evitó, no se escribe otra: queda anotada debajo de
+  esa lección (`No alcanzó:`), para saber cuáles hay que reescribir.
 - **Tus correcciones a la PR.** Después del merge, tus commits (no los merges) y tus comentarios se vuelven
   lecciones.
 

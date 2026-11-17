@@ -45,9 +45,15 @@ export function frictions(events: readonly RunEvent[]): Friction[] {
 const lessonSchema = z.object({
   titulo: z.string().min(1),
   regla: z.string().min(1),
+  /** Dónde del repo vale la regla. Una lección que no puede decirlo era de esa feature y no sirve. */
+  aplica: z.string().min(1),
   origen: z.string().min(1),
 });
-export const proposalSchema = z.object({ lecciones: z.array(lessonSchema).max(3) });
+export const proposalSchema = z.object({
+  lecciones: z.array(lessonSchema).max(2),
+  /** Lo que se arregla en la configuración del repo (format, typecheck, un script), no con una lección. */
+  sugerencias: z.array(z.string().min(1)).max(3).default([]),
+});
 export type Lesson = z.infer<typeof lessonSchema>;
 
 /** Las lecciones como entradas de lecciones.md, numeradas después de la última que ya hay. */
@@ -61,7 +67,7 @@ export function formatLessons(
   return lessons
     .map(
       (l) =>
-        `\n### L-${String(n++)} · ${l.titulo}\n\nRegla: ${l.regla}\n\nOrigen: run ${runId} · ${l.origen} · ${today}\n`,
+        `\n### L-${String(n++)} · ${l.titulo}\n\nRegla: ${l.regla}\n\nAplica: ${l.aplica}\n\nOrigen: run ${runId} · ${l.origen} · ${today}\n`,
     )
     .join("");
 }
@@ -129,9 +135,13 @@ export async function proposeLessons(
     return;
   }
   const lessons = result.output.lecciones;
+  const suggestions =
+    result.output.sugerencias.length === 0
+      ? ""
+      : `\n\nSe arregla en la configuración del repo, no con una lección:\n\n${result.output.sugerencias.map((s) => `- ${s}`).join("\n")}`;
   if (lessons.length === 0) {
     write(
-      `Nada nuevo para el cerebro: lo que hubo que corregir (${found.map((f) => f.origen).join("; ")}) fue propio de esta feature.`,
+      `Nada nuevo para el cerebro: lo que hubo que corregir (${found.map((f) => f.origen).join("; ")}) fue propio de esta feature.${suggestions}`,
       0,
     );
     return;
@@ -153,5 +163,5 @@ export async function proposeLessons(
     ],
     deps.env,
   );
-  write(`${HOW_TO_REJECT}\n${added}`, lessons.length);
+  write(`${HOW_TO_REJECT}\n${added}${suggestions}`, lessons.length);
 }

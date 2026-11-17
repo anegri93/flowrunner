@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { RunEvent } from "../store/events.ts";
-import { formatLessons, frictions } from "./proponer.ts";
+import { formatLessons, frictions, proposalSchema } from "./proponer.ts";
 
 const AT = "2026-11-07T10:00:00.000Z";
 const vuelve = (fase: "revisar" | "verificar", motivo: string): RunEvent => ({
@@ -44,6 +44,7 @@ test("formatLessons numera después de la última y cita el run y la fecha", () 
       {
         titulo: "Grilla de la barra",
         regla: "Sumar una columna al agregar un hijo.",
+        aplica: "src/Barra.tsx",
         origen: "revisar, vuelta 1",
       },
     ],
@@ -52,6 +53,21 @@ test("formatLessons numera después de la última y cita el run y la fecha", () 
     "2026-11-07",
   );
   expect(text).toBe(
-    "\n### L-3 · Grilla de la barra\n\nRegla: Sumar una columna al agregar un hijo.\n\nOrigen: run PIZ-1-x · revisar, vuelta 1 · 2026-11-07\n",
+    "\n### L-3 · Grilla de la barra\n\nRegla: Sumar una columna al agregar un hijo.\n\nAplica: src/Barra.tsx\n\nOrigen: run PIZ-1-x · revisar, vuelta 1 · 2026-11-07\n",
   );
+});
+
+describe("proposalSchema", () => {
+  const lesson = { titulo: "t", regla: "r", aplica: "src/a.ts", origen: "revisar, vuelta 1" };
+  // Si regresiona, entran lecciones que no dicen dónde valen: las de una sola feature.
+  test("una lección sin dónde aplica no pasa", () => {
+    const { aplica: _, ...sinAplica } = lesson;
+    expect(proposalSchema.safeParse({ lecciones: [sinAplica] }).success).toBe(false);
+  });
+
+  // Si regresiona, cada vuelta vuelve a dejar hasta tres lecciones.
+  test("pasan hasta dos lecciones, y sin sugerencias es una lista vacía", () => {
+    expect(proposalSchema.parse({ lecciones: [lesson, lesson] }).sugerencias).toEqual([]);
+    expect(proposalSchema.safeParse({ lecciones: [lesson, lesson, lesson] }).success).toBe(false);
+  });
 });

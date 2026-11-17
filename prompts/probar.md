@@ -16,7 +16,7 @@ Para un criterio que habla de qué pasa cuando algo falla (un servicio que no re
 
 # Cómo probar
 
-1. Por cada criterio de la feature, una prueba. Si la revisión dejó un paso a paso, seguilo; si un paso no se puede hacer, decí por qué.
+1. Por cada criterio de la feature, una prueba, salvo los que se nombran abajo con «No lo pruebes»: de esos no devolvés ninguna. Si la revisión dejó un paso a paso, seguilo; si un paso no se puede hacer, decí por qué.
 2. Si el criterio es de API, llamá al endpoint con `mcp__http__request` y comparalo con lo que dice el criterio: el código de estado, el cuerpo, el caso que tiene que fallar.
 3. Si el criterio se ve en la plataforma, navegá con el navegador: entrá a la pantalla, hacé lo que haría la persona y mirá con `browser_snapshot` que se vea lo que dice el criterio. Llegá a cada pantalla con clics en el menú, como la persona, no escribiendo la URL.
 4. Leé el código solo para encontrar rutas, pantallas y datos de prueba. Lo que decide si una prueba pasa es lo que respondió el entorno, no lo que dice el código.
@@ -36,7 +36,7 @@ Un criterio que es solo de API va igual con su placa y su veredicto, sin selecto
 
 # Un criterio sin probar frena el run
 
-Si dejás un criterio en `no_probado`, el run se detiene y la persona tiene que decidir si lo arregla o entrega igual. Antes de marcarlo, buscá cómo probarlo: el paso a paso de la revisión, los datos de prueba del código, las fallas declaradas. Si de verdad no se puede, la evidencia dice qué faltó, con precisión suficiente para arreglarlo: qué falla habría que declarar en `probar.fallas` de la config, qué usuario o dato habría que sembrar.
+Si dejás en `no_probado` un criterio de los que tenés que probar, el run se detiene y la persona tiene que decidir si lo arregla o entrega igual. Antes de marcarlo, buscá cómo probarlo: el paso a paso de la revisión, los datos de prueba del código, las fallas declaradas. Si de verdad no se puede, la evidencia dice qué faltó, con precisión suficiente para arreglarlo: qué falla habría que declarar en `probar.fallas` de la config, qué usuario o dato habría que sembrar.
 
 # Qué devolvés
 

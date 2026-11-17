@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import { initialState, reduce, stateOf, type RunState } from "../engine/engine.ts";
 import { AVISO_TEST_EXISTENTE } from "../gates/existente.ts";
 import type { CambioExistente } from "../gates/plan.ts";
-import { lastTestDir, readTests } from "../phases/probar.ts";
+import { currentTestDir, readTests } from "../phases/probar.ts";
 import { reviewSchema } from "../phases/revisar.ts";
 import type { RunPaths } from "../runner/types.ts";
 import { PHASES, type OrigenAutofix, type Phase, type RunEvent } from "../store/events.ts";
@@ -342,7 +342,7 @@ export function testResults(dir: string, paths: boolean): string[] {
 }
 
 function tested(events: readonly RunEvent[], run: RunPaths, paths: boolean): string[] {
-  const dir = lastTestDir(run);
+  const dir = currentTestDir(run, events);
   if (dir === undefined) return [];
   // La última decisión manda: si el run se detuvo dos veces, vale el motivo de la que lo dejó seguir.
   // `accept` en probar dice lo mismo que `accept-untested` (ADR 0023).

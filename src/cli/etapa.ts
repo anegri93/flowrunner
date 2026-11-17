@@ -4,8 +4,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { stateOf } from "../engine/engine.ts";
-import { quienCubre } from "../gates/plan.ts";
-import { lastTestDir } from "../phases/probar.ts";
+import { quienCubre, SOLO_SU_TEST } from "../gates/plan.ts";
+import { currentTestDir } from "../phases/probar.ts";
 import { reviewSchema } from "../phases/revisar.ts";
 import { planChanges, previousDir } from "../phases/plan-anterior.ts";
 import { readPlan, readPlanAt } from "../phases/planificar.ts";
@@ -114,7 +114,8 @@ function own(events: readonly RunEvent[], run: RunPaths, fase: Phase): string[] 
           `- **${t.id}** ${plain(t.titulo)}${t.depende_de.length > 0 ? ` (depende de ${t.depende_de.join(", ")})` : ""}`,
       );
       const criteria = plan.criterios.map(
-        (c) => `- **${c.id}** → ${quienCubre(c.subtarea)}: \`${c.comando}\``,
+        (c) =>
+          `- **${c.id}** → ${quienCubre(c.subtarea)}: \`${c.comando}\`${c.en_entorno === false ? SOLO_SU_TEST : ""}`,
       );
       const diff = existsSync(join(previousDir(run), "tasks.json"))
         ? planChanges(readPlanAt(previousDir(run)), plan)
@@ -194,7 +195,7 @@ function own(events: readonly RunEvent[], run: RunPaths, fase: Phase): string[] 
       );
     }
     case "probar": {
-      const dir = lastTestDir(run);
+      const dir = currentTestDir(run, events);
       return dir === undefined ? [] : section("Pruebas en el entorno", testResults(dir, true));
     }
     case "entregar": {

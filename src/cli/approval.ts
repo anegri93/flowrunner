@@ -9,6 +9,7 @@ import {
   effectiveScope,
   quienCubre,
   scopeOverlap,
+  SOLO_SU_TEST,
   subtaskSchema,
   type CambioExistente,
   type PlanRepoRules,
@@ -42,7 +43,15 @@ export const planViewSchema = z.strictObject({
   run: runSummarySchema,
   plan: z.string(),
   subtareas: z.array(subtaskSchema),
-  criterios: z.array(z.object({ id: z.string(), comando: z.string(), subtarea: z.string() })),
+  criterios: z.array(
+    z.object({
+      id: z.string(),
+      comando: z.string(),
+      subtarea: z.string(),
+      /** false: solo lo prueba su test, y probar no lo prueba (ADR 0032). */
+      en_entorno: z.boolean().optional(),
+    }),
+  ),
   tests: z.array(z.string()),
   diff_tests: z.string(),
   /** Lo que hoy existe y el plan cambia. Con algo acá, `approve` pide `--acepto-cambios`. */
@@ -163,7 +172,10 @@ export function describePlan(view: z.infer<typeof planViewSchema>): string {
         (allDependencies(t).length > 0 ? `  agrega ${allDependencies(t).join(", ")}` : ""),
     ),
     "",
-    ...view.criterios.map((c) => `  ${c.id} → ${quienCubre(c.subtarea)}: ${c.comando}`),
+    ...view.criterios.map(
+      (c) =>
+        `  ${c.id} → ${quienCubre(c.subtarea)}: ${c.comando}${c.en_entorno === false ? SOLO_SU_TEST : ""}`,
+    ),
     ...changesText(view.cambios),
     "",
     view.plan,

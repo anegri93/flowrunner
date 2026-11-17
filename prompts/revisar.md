@@ -61,6 +61,10 @@ Si algo de esto hacía falta para cumplir un criterio, o para que sea cierto lo 
 
 {{convenciones}}
 
+## Contexto
+
+{{contexto}}
+
 ## Qué es una buena PR acá
 
 {{que_es_bien}}

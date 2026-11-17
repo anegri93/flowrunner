@@ -32,6 +32,7 @@ export const DRAFT_HEADING = "## Borrador de flowrunner init";
  */
 const OLD_TEMPLATES: Readonly<Record<string, readonly string[]>> = {
   "contexto.md": [
+    "# Contexto del repo\n\nEl mapa: arquitectura, glosario del negocio, dónde vive cada cosa, cómo se corre y se testea, y qué\nreusar. Lo leen planificar e implementar.",
     "# Contexto del repo\n\nArquitectura, dónde vive cada cosa y cómo se testea. Lo leen planificar e implementar.\n\n-",
   ],
   "convenciones.md": [

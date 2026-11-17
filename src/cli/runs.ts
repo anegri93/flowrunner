@@ -44,12 +44,19 @@ import { UserError } from "./output.ts";
 
 export const BIN = join(import.meta.dirname, "..", "..", "bin", "flowrunner.js");
 
-/** Lanza el proceso del run separado de la terminal; su salida va a `run.log`. */
-function spawnRunProcess(run: RunPaths, env: NodeJS.ProcessEnv): number {
+/**
+ * Lanza un proceso del run separado de la terminal: `_run` lo avanza, `_learn` aprende de su PR. Su
+ * salida va a `run.log`.
+ */
+export function spawnRunProcess(
+  run: RunPaths,
+  env: NodeJS.ProcessEnv,
+  comando: "_run" | "_learn" = "_run",
+): number {
   const log = openSync(join(run.dir, "run.log"), "a");
   const child = spawn(
     process.execPath,
-    ["--disable-warning=ExperimentalWarning", BIN, "_run", run.id],
+    ["--disable-warning=ExperimentalWarning", BIN, comando, run.id],
     { detached: true, stdio: ["ignore", log, log], env },
   );
   child.unref();

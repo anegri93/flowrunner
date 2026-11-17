@@ -123,8 +123,9 @@ export function decisionArgs(id: string, decision: Decision): string {
       if (!PHASES.includes(decision.desde))
         throw new Error(`fase inválida: ${String(decision.desde)}`);
       return `rerun ${quote(id)} --desde ${decision.desde}`;
+    // Aprender lleva minutos y cada comando se corta a los 20 s: corre aparte y avisa al terminar.
     case "aprender":
-      return `learn ${quote(id)}`;
+      return `learn ${quote(id)} --fondo`;
     case "abortar":
       return `abort ${quote(id)}`;
     // Pausar y priorizar dicen que vinieron de Orca, como las demás decisiones de la persona.

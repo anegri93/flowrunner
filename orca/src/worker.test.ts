@@ -363,7 +363,7 @@ test("cada decisión corre su comando fijo, con el motivo tal cual, y devuelve l
       `approve ${id} --origen orca --json`,
       `changes ${id} ${motivo} --origen orca --json`,
       `resume ${id} --json`,
-      `learn ${id} --json`,
+      `learn ${id} --fondo --json`,
       `approve ${id} --acepto-cambios --origen orca --json`,
       `approve ${id} --origen orca --json`,
       `abort ${id} --json`,

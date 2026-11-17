@@ -9,7 +9,7 @@ import { addProject, initRepoBrain } from "./project.ts";
 import { approveRun, describePlan, requestChanges, showPlan } from "./approval.ts";
 import { showReport, showSession, showUnit } from "./report.ts";
 import { showPhase } from "./etapa.ts";
-import { learnOne, tick } from "./tick.ts";
+import { learnAndNotify, learnInBackground, learnOne, tick } from "./tick.ts";
 import { describeDoctor, doctor } from "./doctor.ts";
 import { installLaunchd, plistPath, uninstallLaunchd } from "./launchd.ts";
 import { installSkill } from "./skill.ts";
@@ -82,7 +82,8 @@ const USAGE = `uso: flowrunner <comando> [--json]
   report <run> --unidad ST-n     una sub-task: qué tenía que hacer, qué dice que hizo y su diff
   report <run> --fase <fase>     una etapa: intentos, lo propio de la etapa, decisiones y sesiones
   tick                           lo que corre launchd: retoma pausados y aprende de PRs mergeadas
-  learn <run>                    revisa la PR de un run y aprende en el momento
+  learn <run> [--fondo]          revisa la PR de un run y aprende en el momento; con --fondo,
+                                 en un proceso aparte que avisa al terminar
   doctor                         qué le falta a esta máquina para correr runs
   self-update                    mueve el flowrunner que corre runs a origin/main
   launchd install|uninstall      instala o quita el job que corre tick
@@ -197,6 +198,7 @@ export async function main(
       reemplazar: { type: "boolean", default: false },
       once: { type: "boolean", default: false },
       cerrados: { type: "boolean", default: false },
+      fondo: { type: "boolean", default: false },
       runs: { type: "boolean", default: false },
       "github-user": { type: "string" },
       approve: { type: "string" },
@@ -411,7 +413,9 @@ export async function main(
         return 0;
       }
       case "learn": {
-        const learned = await learnOne(home, runArg(home, first), env);
+        const id = runArg(home, first);
+        const learned =
+          values.fondo === true ? learnInBackground(home, id, env) : await learnOne(home, id, env);
         print(learned, `${learned.id}: ${learned.resultado}`);
         return 0;
       }
@@ -515,6 +519,11 @@ export async function main(
               : [`con la plantilla de hoy:\n  ${init.actualizados.join("\n  ")}`]),
           ].join("\n"),
         );
+        return 0;
+      }
+      case "_learn": {
+        const id = runArg(home, first);
+        io.out(`aprender ${id}: ${await learnAndNotify(home, id, env)}`);
         return 0;
       }
       case "_run": {

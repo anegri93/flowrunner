@@ -9,7 +9,7 @@ import { runCli } from "./helpers/cli.ts";
 import { tempDir } from "./helpers/git.ts";
 import {
   executions,
-  FEATURE,
+  launchClave,
   runDir,
   stateNow,
   waitFor,
@@ -20,13 +20,6 @@ import {
 const CONFIG = {
   ".flowrunner/config.yaml": 'setup: "true"\ntests_globs: [tests/**]\nmax_runs: 1\n',
 };
-
-/** Otra feature del mismo proyecto: otra clave, otra rama. */
-function feature(clave: string): string {
-  const file = join(tempDir(), `${clave}.md`);
-  writeFileSync(file, FEATURE.replace("SHOP-214", clave));
-  return file;
-}
 
 function cli(w: World, ...args: string[]) {
   const result = runCli([...args, "--json"], w.env);
@@ -46,8 +39,8 @@ describe("pausar", () => {
     const semaforo = join(tempDir(), "siga");
     const w = world({ FAKE_SEMAFORO: semaforo }, CONFIG);
     const a = cli(w, "run", w.feature).id;
-    const viejo = cli(w, "run", feature("SHOP-215")).id;
-    const nuevo = cli(w, "run", feature("SHOP-216")).id;
+    const viejo = launchClave(w, "SHOP-215");
+    const nuevo = launchClave(w, "SHOP-216");
     await waitFor("a en preparar", () => executions(w, a).length === 1);
     // El lugar es para un run que espera en la cola: ni el mismo ni uno que no está en cola.
     expect(runCli(["pause", a, "--para", a, "--json"], w.env).stdout).toMatch(/no está en cola/);
@@ -83,8 +76,8 @@ describe("pausar", () => {
     const semaforo = join(tempDir(), "siga");
     const w = world({ FAKE_SEMAFORO: semaforo }, CONFIG);
     const a = cli(w, "run", w.feature).id;
-    const viejo = cli(w, "run", feature("SHOP-215")).id;
-    const nuevo = cli(w, "run", feature("SHOP-216")).id;
+    const viejo = launchClave(w, "SHOP-215");
+    const nuevo = launchClave(w, "SHOP-216");
     expect(cli(w, "pause", viejo).accion).toBe("pausado");
     expect(stateNow(w, viejo).status).toBe("pausado");
     expect(cli(w, "prioritize", nuevo).accion).toMatch(/sale primero/);
@@ -100,7 +93,7 @@ describe("pausar", () => {
   test("pause rechaza un run que no trabaja ni está en cola, y un --para que no está en cola", () => {
     const w = world({ FAKE_ESPERA_APROBAR: "1" });
     const a = cli(w, "run", w.feature).id;
-    const b = cli(w, "run", feature("SHOP-215")).id;
+    const b = launchClave(w, "SHOP-215");
     return waitFor("los dos esperando", () =>
       [a, b].every((id) => stateNow(w, id).status === "esperando_aprobacion"),
     ).then(() => {

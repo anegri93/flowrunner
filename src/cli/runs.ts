@@ -26,7 +26,14 @@ import { loadRepoConfig } from "../config/load.ts";
 import { ConfigError, MAX_RUNS_DEFAULT, type RepoConfig } from "../config/schemas.ts";
 import { conTurnoGitSync } from "../git/git.ts";
 import { isAlive } from "../store/lock.ts";
-import { lugarDe, ocupados, soltarLugar, tomarLugar, type Reglas } from "../store/lugares.ts";
+import {
+  lugarDe,
+  ocupados,
+  soltarLugar,
+  tomarLugar,
+  type Carril,
+  type Reglas,
+} from "../store/lugares.ts";
 import { repoNode } from "../proc/node.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
 import { colaDe, createRun, listRunIds, loadState, ocupaLugar, runPaths } from "../store/runs.ts";
@@ -79,16 +86,11 @@ function maxRuns(repo: string): number {
 /** Cuántos runs del repo entregan a la vez, aparte de `max_runs` (ADR 0031). */
 const MAX_ENTREGAS = 1;
 
-/** Si al run solo le falta entregar: push, PR y a veces una sesión corta de lecciones. */
-const soloEntrega = (state: RunState) => state.fase === "entregar";
-
-function entregaLugar(home: string, id: string): boolean {
-  try {
-    return soloEntrega(loadState(home, id));
-  } catch {
-    return false;
-  }
-}
+/**
+ * El carril de un run que toma lugar: entrega si lo único que le falta es entregar (push, PR y a veces
+ * una sesión corta de lecciones). Uno que llega a entregar en su mismo proceso conserva el normal.
+ */
+const carrilDe = (state: RunState): Carril => (state.fase === "entregar" ? "entrega" : "normal");
 
 /**
  * Las reglas de los lugares para este run. Entregar tiene su propio carril de `MAX_ENTREGAS`: no espera
@@ -96,11 +98,11 @@ function entregaLugar(home: string, id: string): boolean {
  * corren entregas sin tope. El lugar se escribe igual, para que nadie lo lance dos veces (ADR 0031).
  */
 function reglas(home: string, state: RunState): Reglas {
-  const entrega = soloEntrega(state);
+  const carril = carrilDe(state);
   return {
-    max: entrega ? MAX_ENTREGAS : maxRuns(state.repo),
+    max: carril === "entrega" ? MAX_ENTREGAS : maxRuns(state.repo),
     ocupa: (id) => ocupaLugar(home, id),
-    cuenta: (id) => entregaLugar(home, id) === entrega,
+    carril,
   };
 }
 
@@ -135,7 +137,11 @@ export function lanzarOEncolar(home: string, id: string, env: NodeJS.ProcessEnv)
       return { tipo: "lanzado" };
     }
     appendEvent(run.dir, { tipo: "encolado" });
-    const posicion = colaDe(home, state.proyecto).findIndex((q) => q.id === id) + 1;
+    // La posición entre los de su carril: los del otro no le cierran el paso (ADR 0031).
+    const posicion =
+      colaDe(home, state.proyecto)
+        .filter((q) => carrilDe(q.state) === carrilDe(state))
+        .findIndex((q) => q.id === id) + 1;
     return { tipo: "en_cola", posicion, corriendo: toma.corriendo };
   });
 }
@@ -755,7 +761,16 @@ export function pauseRun(home: string, id: string, para: string | undefined, ori
       `flowrunner resume ${id}`,
     );
   }
-  if (para !== undefined) requireQueued(home, para, state.proyecto);
+  if (para !== undefined) {
+    const otro = requireQueued(home, para, state.proyecto);
+    // Pausar libera un lugar del carril del pausado: a uno que espera el otro carril no le sirve.
+    const libera = lugarDe(home, state.proyecto, id)?.carril ?? carrilDe(state);
+    if (carrilDe(otro) !== libera)
+      throw new UserError(
+        `${para} espera el carril de ${carrilDe(otro)} y ${id} ocupa el de ${libera}: pausarlo no le hace lugar`,
+        `flowrunner status ${para}`,
+      );
+  }
   appendEvent(runPaths(home, id).dir, {
     tipo: "pausa_pedida",
     ...(para === undefined ? {} : { para }),

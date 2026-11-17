@@ -89,20 +89,24 @@ describe("ocupados y soltarLugar", () => {
   });
 });
 
-// Si regresiona, un run que entrega le quita el lugar a uno que implementa, o al revés: entregar tiene
-// su propio carril (ADR 0031). Y un lugar del otro carril no se borra por no contar.
-test("cuenta separa los carriles: cada tope cuenta los suyos, y los del otro siguen valiendo", () => {
+// Si regresiona, un run que entrega le quita el lugar a uno que implementa, o al revés, o un run que
+// pasa a entregar en su proceso se cambia de carril y deja correr max_runs + 2 (ADR 0031).
+test("cada carril cuenta los suyos, y el carril queda fijo al tomar el lugar", () => {
   const home = homeIn();
-  const entregan = new Set(["E1", "E2"]);
-  const normal: Reglas = { ...enCurso(1), cuenta: (id) => !entregan.has(id) };
-  const entrega: Reglas = { ...enCurso(1), cuenta: (id) => entregan.has(id) };
+  const normal: Reglas = { ...enCurso(1), carril: "normal" };
+  const entrega: Reglas = { ...enCurso(1), carril: "entrega" };
   const pid = process.pid;
   expect(tomarLugar(home, "p", "A", pid, normal).ok).toBe(true);
   // A llena max_runs, pero no el carril de entrega.
   expect(tomarLugar(home, "p", "E1", pid, entrega).ok).toBe(true);
   expect(tomarLugar(home, "p", "E2", pid, entrega)).toEqual({ ok: false, corriendo: ["E1"] });
   expect(tomarLugar(home, "p", "B", pid, normal)).toEqual({ ok: false, corriendo: ["A"] });
+  // A llega a entregar en su mismo proceso y retoma su lugar: sigue en el carril normal.
+  expect(tomarLugar(home, "p", "A", pid, entrega).ok).toBe(true);
+  expect(lugarDe(home, "p", "A")).toEqual({ run_id: "A", pid, carril: "normal" });
   expect(ocupados(home, "p", normal)).toEqual(["A"]);
   expect(ocupados(home, "p", entrega)).toEqual(["E1"]);
-  expect(ocupados(home, "p", enCurso(1))).toEqual(["A", "E1"]);
+  // Un lugar de antes, sin carril, es normal.
+  writeFileSync(join(lugaresDir(home, "p"), "V.json"), JSON.stringify({ run_id: "V", pid }));
+  expect(ocupados(home, "p", normal)).toEqual(["A", "V"]);
 });

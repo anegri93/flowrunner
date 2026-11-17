@@ -13,6 +13,6 @@ test("un run entregado espera tu merge, o con la PR mergeada, que otro run publi
   ];
   expect(waitingReason(delivered)).toBe("la PR sigue abierta");
   expect(waitingReason([...delivered, { tipo: "pr_cerrada", at, mergeada: true }])).toBe(
-    "PR mergeada: aprende cuando otro run del proyecto termine de publicar sus lecciones",
+    "PR mergeada: aprende cuando se mergee la PR de lecciones de otro run del proyecto",
   );
 });

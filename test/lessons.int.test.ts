@@ -1,5 +1,6 @@
 // T7.3: al mergear, las correcciones de la persona se vuelven lecciones con su PR y auto-merge.
 import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import type { SimScript } from "./helpers/sim-sdk.ts";
 import { readLog } from "../src/store/run-log.ts";
@@ -56,6 +57,45 @@ describe("lecciones", () => {
       cantidad: 2,
       auto_merge: true,
     });
+  }, 240_000);
+
+  // Si regresiona, dos runs seguidos escriben la misma L-n y sus PRs de lecciones chocan.
+  test("con la PR de lecciones de otro run abierta, espera a que se mergee para escribir las suyas", async () => {
+    const d = await delivered();
+    const oid = d.pushCorrection("yo", "src/export/csv.js", "export const csv = 2;\n");
+    addScripts(d, [
+      {
+        output: {
+          lecciones: [
+            {
+              titulo: "Los valores de export son constantes",
+              regla: "Usar const.",
+              origen: `https://github.com/acme/acme-api/pull/412/commits/${oid}`,
+            },
+          ],
+        },
+      },
+    ]);
+    const stateFile = join(d.env.HOME ?? "", "gh-state.json");
+    const s = d.ghState();
+    const [feature] = s.prs;
+    if (feature === undefined) throw new Error("falta la PR de la feature");
+    s.prs.push({
+      ...structuredClone(feature),
+      number: 900,
+      headRefName: "chore/lecciones-OTRA-1",
+    });
+    writeFileSync(stateFile, JSON.stringify(s));
+    d.setPr(412, (pr) => (pr.state = "MERGED"));
+
+    expect(runCli(["learn", d.id], d.env).stdout).toContain(
+      "aprende cuando se mergee la PR de lecciones de otro run",
+    );
+    expect(d.ghLog().filter((a) => a[1] === "create")).toHaveLength(1);
+
+    d.setPr(900, (pr) => (pr.state = "MERGED"));
+    expect(runCli(["learn", d.id], d.env).stdout).toContain("quedó cerrado");
+    expect(lessonsOnBase(d)).toContain("### L-1 · Los valores de export son constantes");
   }, 240_000);
 
   test("una lección sin un origen de la persona es falla de gate y no abre PR", async () => {

@@ -38,6 +38,7 @@ import { featureWorktree, graftIndex, prepared, runFeature, unitWorktree } from 
 import { brainVars, readPlan, sessionName } from "./planificar.ts";
 import { runFixers } from "./fixers.ts";
 import { SETUP_TIMEOUT_MS } from "./preparar.ts";
+import { reusarDependencias } from "./reinstalar.ts";
 
 export const MAX_UNIT_ATTEMPTS = 3;
 export const UNIT_TIMEOUT_MS = 60 * 60_000;
@@ -298,6 +299,7 @@ export function loQueDijo(texto: string): string {
 export const implementar: PhaseFn = async (ctx) => {
   const { run, deps, emit, action, state } = ctx;
   const featureWt = featureWorktree(run);
+  const base = prepared(ctx.events).base_sha;
   // La rama tiene los tests del plan y lo ya integrado, que el índice de preparar no tiene. Sin índice
   // no se detiene nada: cada sub-task recibe el texto de falla de `contextoGraft` y sigue como antes.
   try {
@@ -373,14 +375,23 @@ export const implementar: PhaseFn = async (ctx) => {
     for (let attempt = tried + 1; attempt <= MAX_UNIT_ATTEMPTS; attempt++) {
       const start = await headSha(featureWt, deps.env);
       await addWorktree(state.repo, wt, branch, start, deps.env);
-      const setup = await runShell(config.setup, {
-        cwd: wt,
-        env: deps.env,
-        timeoutMs: SETUP_TIMEOUT_MS,
-      });
-      if (setup.code !== 0) {
-        const why = `el setup falló en el worktree de ${task.id}: ${tail(setup)}`;
-        return { ok: false, motivo: why, fatal: { tipo: "falla", clase: "entorno", motivo: why } };
+      // Con un setup que solo instala, se clona el node_modules de la feature: npm ci tardaba 25 a 37 s
+      // por sub-task (ADR 0035). Si no se puede, el setup de siempre.
+      const reusado = await reusarDependencias(featureWt, wt, config, base, start, deps.env);
+      if (!reusado) {
+        const setup = await runShell(config.setup, {
+          cwd: wt,
+          env: deps.env,
+          timeoutMs: SETUP_TIMEOUT_MS,
+        });
+        if (setup.code !== 0) {
+          const why = `el setup falló en el worktree de ${task.id}: ${tail(setup)}`;
+          return {
+            ok: false,
+            motivo: why,
+            fatal: { tipo: "falla", clase: "entorno", motivo: why },
+          };
+        }
       }
       emit({
         tipo: "unidad",
@@ -549,7 +560,7 @@ export const implementar: PhaseFn = async (ctx) => {
       // Pero si el plan aprobado no lo declaraba, la persona tiene que verlo en la PR.
       const existing = await existedAt(
         wt,
-        prepared(ctx.events).base_sha,
+        base,
         testsTouched(changes, config.tests_globs),
         deps.env,
       );

@@ -205,6 +205,37 @@ describe("implementar", () => {
     expect(unitEvents(run.dir)).toEqual(["ST-1:iniciada", "ST-1:fallida"]);
   });
 
+  // Si regresiona, cada sub-task vuelve a correr `npm ci` entero en su worktree: 25 a 37 s cada una en
+  // pizarra-en-vivo (ADR 0035).
+  test("con un setup que solo instala, la sub-task arranca con el node_modules de la feature clonado", async () => {
+    const sim = simQuery(byUnit({ "ST-1": [{ calls: [write("src/a/x.js", "export {};\n")] }] }));
+    const vistos: boolean[] = [];
+    const query: typeof sim.query = (args) => {
+      vistos.push(existsSync(join(args.options?.cwd ?? "", "node_modules", "marca")));
+      return sim.query(args);
+    };
+    const deps = testDeps({ query });
+    const { run, featureWt } = await plannedRun(planWith([st("ST-1", ["src/a/"])]), TESTS, deps, {
+      files: {
+        ".gitignore": "node_modules/\n",
+        "package.json": '{"name":"x","version":"1.0.0"}\n',
+        "package-lock.json":
+          '{"name":"x","version":"1.0.0","lockfileVersion":3,"requires":true,"packages":{"":{"name":"x","version":"1.0.0"}}}\n',
+      },
+      config: {
+        setup: "npm ci",
+        tests_globs: ["tests/**"],
+        lockfiles: ["package-lock.json"],
+        manifests: ["package.json"],
+      },
+    });
+    // Lo que dejó instalado preparar en la feature: `npm ci` en la sub-task lo borraría.
+    mkdirSync(join(featureWt, "node_modules"), { recursive: true });
+    writeFileSync(join(featureWt, "node_modules", "marca"), "");
+    await implementar(contextFor(run, "implementar", deps));
+    expect(vistos).toEqual([true]);
+  });
+
   // Regresión: en COMPARTIR-1 (rskate) el worktree no tenía .env.local y los e2e de una sub-task no
   // podían levantar la app. Los secretos tienen que estar para los comandos y no para el agente.
   test("la sub-task corre con los env_files sin poder leerlos, y no quedan en su commit", async () => {

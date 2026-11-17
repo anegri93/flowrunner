@@ -25,6 +25,7 @@ import {
   currentEntry,
   implementar,
   integradasText,
+  loQueDijo,
   prefersExact,
   unitComandos,
   unitScope,
@@ -470,6 +471,22 @@ describe("implementar", () => {
     );
     expect(outcome).toEqual({ tipo: "ok" });
     expect(unitEvents(run.dir)).toEqual(["ST-1:integrada", "ST-1:iniciada", "ST-1:sin_cambios"]);
+    // Lo que contestó queda para la revisión siguiente y el informe (ADR 0030).
+    const sinCambios = readLog(run.dir).events.find(
+      (e) => e.tipo === "unidad" && e.estado === "sin_cambios",
+    );
+    expect(sinCambios).toMatchObject({ motivo: "mi parte ya está bien" });
+  });
+
+  // Si regresiona, se guarda el principio de la respuesta y se pierde el porqué, que suele ir al final
+  // (hallazgo de /code-review en la PR #109).
+  test("de lo que dijo una sub-task se guarda el final, sin partir un carácter", () => {
+    expect(loQueDijo("  ok  ")).toBe("ok");
+    const largo = `${"contexto ".repeat(80)}así que no hay nada que cambiar 👍`;
+    const dicho = loQueDijo(largo);
+    expect(dicho.startsWith("…")).toBe(true);
+    expect(dicho.endsWith("no hay nada que cambiar 👍")).toBe(true);
+    expect(Array.from(new Intl.Segmenter().segment(dicho))).toHaveLength(401);
   });
 
   describe("tras un fix desde una pregunta de implementar", () => {

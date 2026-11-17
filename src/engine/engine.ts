@@ -130,6 +130,16 @@ export interface RunState {
    * no lo vuelve a correr solo en la próxima detención (ADR 0028).
    */
   readonly autofixCorrio: boolean;
+  /**
+   * Un bloqueante de revisar o probar ya fue directo a su sub-task desde la última respuesta de la
+   * persona: el próximo pregunta (ADR 0030). Aparte de `autofixCorrio`, así uno no le quita el otro.
+   */
+  readonly directaCorrio: boolean;
+  /**
+   * Un bloqueante de revisar o probar vuelve directo a su sub-task, sin Autofix, que no lo arregla
+   * (ADR 0030). Lo congela `run_creado`: un run anterior sigue como antes.
+   */
+  readonly vueltaDirecta: boolean;
 }
 
 export type Action =
@@ -231,7 +241,7 @@ export function opcionesDe(
     return [
       ...suggested,
       ...fixes,
-      autofix,
+      ...(autofixSirve(state, fase) ? [autofix] : []),
       byHand,
       accept(`seguir a ${next} igual; tu motivo queda en la PR`),
       replan,
@@ -248,6 +258,20 @@ export function opcionesDe(
     return [first, { comando: resume, que: queHace(resume, R, fase) }, abort];
   return [first, abort];
 }
+
+/**
+ * Una respuesta de la persona que manda el run a trabajar: flowrunner puede volver a responder solo,
+ * con Autofix (ADR 0028) o con la vuelta directa de un bloqueante (ADR 0030).
+ */
+const RESPONDIO_LA_PERSONA = { autofixCorrio: false, directaCorrio: false } as const;
+
+/**
+ * Autofix corre el formateador y el lint y vuelve a verificar: sirve para un rojo de verificar. Para
+ * un bloqueante de revisar o probar solo repetía la revisión sobre el mismo código (PIZ-9, PIZ-13),
+ * así que en un run con `vueltaDirecta` no se ofrece ahí (ADR 0030).
+ */
+const autofixSirve = (state: RunState, fase: Phase): boolean =>
+  !state.vueltaDirecta || fase === "verificar";
 
 /** La única forma de dejar un run detenido: con su motivo y sus opciones, que nunca faltan. */
 function halt(
@@ -329,13 +353,21 @@ function onOutcome(state: RunState, fase: Phase, outcome: Outcome): RunState {
         );
       }
       const vueltas = { ...state.vueltas, [fase]: state.vueltas[fase] + 1 };
-      // Autofix ya pasó las herramientas y sigue en rojo: la persona pidió que lo corrijan las
-      // sub-tasks sin preguntarle, una vez (ADR 0026). Sin sub-tasks a quién dárselo, pregunta.
-      if (vueltas[fase] > state.vueltasMax && state.autofix && outcome.unidades.length > 0) {
+      // Las vueltas que nadie eligió van a las sub-tasks sin preguntar: la que sigue a Autofix, que ya
+      // pasó las herramientas y sigue en rojo (ADR 0026), y la de un bloqueante de revisar o probar,
+      // que el formateador no arregla, una vez por respuesta de la persona (ADR 0030). Sin sub-tasks a
+      // quién dárselo, pregunta.
+      const directa = !autofixSirve(state, fase) && !state.directaCorrio;
+      if (
+        vueltas[fase] > state.vueltasMax &&
+        outcome.unidades.length > 0 &&
+        (state.autofix || directa)
+      ) {
         return enter({ ...state, vueltas }, "implementar", {
           unidades: outcome.unidades,
           instruccion: roundInstruction(outcome),
           autofix: false,
+          directaCorrio: state.directaCorrio || directa,
         });
       }
       if (vueltas[fase] > state.vueltasMax) {
@@ -436,6 +468,8 @@ export function initialState(): RunState {
     aMano: false,
     autofix: false,
     autofixCorrio: false,
+    directaCorrio: false,
+    vueltaDirecta: false,
   };
 }
 
@@ -472,6 +506,7 @@ export function reduce(state: RunState, event: RunEvent): RunState {
         budgetUsd: event.budget_usd,
         vueltasMax: event.vueltas ?? LEGACY_ROUNDS,
         reintentosRed: event.reintentos_red,
+        vueltaDirecta: event.vuelta_directa === true,
       };
     case "accion_iniciada":
       return { ...state, interrumpida: true };
@@ -539,7 +574,7 @@ export function reduce(state: RunState, event: RunEvent): RunState {
     case "sin_probar_aceptado":
       // Durante un arreglo a mano no: la PR saldría sin el cambio, que queda sin commitear.
       return state.status === "detenido" && state.sinProbar && !state.aMano
-        ? enter(state, "entregar", { autofixCorrio: false })
+        ? enter(state, "entregar", RESPONDIO_LA_PERSONA)
         : state;
     case "arreglo_pedido": {
       if (!offersFix(state, event.unidades)) return state;
@@ -549,13 +584,13 @@ export function reduce(state: RunState, event: RunEvent): RunState {
         return enter(state, "implementar", {
           unidades: [...new Set([...event.unidades, ...(state.halt?.unidades ?? [])])],
           instruccion: `Para ${event.unidades.join(", ")}: ${event.instruccion}`,
-          autofixCorrio: false,
+          ...RESPONDIO_LA_PERSONA,
         });
       }
       return enter(state, "implementar", {
         unidades: event.unidades,
         instruccion: event.instruccion,
-        autofixCorrio: false,
+        ...RESPONDIO_LA_PERSONA,
       });
     }
     case "arreglo_manual_iniciado":
@@ -567,7 +602,7 @@ export function reduce(state: RunState, event: RunEvent): RunState {
         : state;
     case "arreglo_manual":
       return state.status === "detenido" && state.aMano
-        ? enter(state, "verificar", { autofixCorrio: false })
+        ? enter(state, "verificar", RESPONDIO_LA_PERSONA)
         : state;
     // Lo de las herramientas ya está commiteado (el CLI o el proceso del run lo hizo antes de escribir
     // el evento): se verifica, y el próximo rojo con sub-tasks vuelve a implementar sin preguntar. Lo
@@ -583,11 +618,11 @@ export function reduce(state: RunState, event: RunEvent): RunState {
         event.fase === state.fase &&
         isRoundPhase(event.fase) &&
         next !== undefined;
-      return applies ? enter(state, next, { autofixCorrio: false }) : state;
+      return applies ? enter(state, next, RESPONDIO_LA_PERSONA) : state;
     }
     case "rehacer":
       return enter(
-        { ...state, vueltas: NO_ROUNDS, autofix: false, autofixCorrio: false },
+        { ...state, vueltas: NO_ROUNDS, autofix: false, ...RESPONDIO_LA_PERSONA },
         event.desde,
       );
     case "abortado":
@@ -614,6 +649,7 @@ export function reduce(state: RunState, event: RunEvent): RunState {
  */
 export const correAutofixSolo = (state: RunState): boolean =>
   state.status === "detenido" &&
+  autofixSirve(state, state.fase) &&
   !state.aMano &&
   !state.sinProbar &&
   !state.autofixCorrio &&

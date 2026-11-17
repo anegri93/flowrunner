@@ -243,6 +243,25 @@ function decisions(events: readonly RunEvent[]): string[] {
   ];
 }
 
+/**
+ * Las sub-tasks devueltas que contestaron que no había nada que cambiar, con la fase que las devolvió:
+ * un bloqueante que pudo ser falso. Con este número se decide si conviene verificar cada bloqueante
+ * antes de devolverlo (ADR 0030).
+ */
+function returnedUnchanged(events: readonly RunEvent[]): string[] {
+  let from: Phase | undefined;
+  const lines: string[] = [];
+  for (const e of events) {
+    if (e.tipo === "accion_terminada" && e.resultado.tipo === "vuelve") from = e.fase;
+    if (e.tipo === "rehacer") from = undefined;
+    if (e.tipo === "unidad" && e.estado === "sin_cambios")
+      lines.push(
+        `- ${e.unidad}, devuelta ${from === undefined ? "sin fase" : `por ${from}`}${e.motivo === undefined ? "" : `: «${plain(e.motivo.replace(/\s+/g, " "))}»`}`,
+      );
+  }
+  return lines;
+}
+
 export function buildReport(events: readonly RunEvent[], run: RunPaths): string {
   const summaries = phaseSummaries(events);
   const existing = existingChanges(events, run);
@@ -277,6 +296,9 @@ export function buildReport(events: readonly RunEvent[], run: RunPaths): string 
     s.vueltas.map((v) => `- ${s.fase} devolvió trabajo: ${plain(v)}`),
   );
   if (rounds.length > 0) lines.push("", "## Vueltas", "", ...rounds);
+  const unchanged = returnedUnchanged(events);
+  if (unchanged.length > 0)
+    lines.push("", `## Devueltas sin nada que cambiar: ${unchanged.length}`, "", ...unchanged);
   if (gate.length > 0) lines.push("", "## Reintentos por gate", "", ...gate);
   if (infra.length > 0) lines.push("", "## Fallas de infraestructura", "", ...infra);
   const rejections = events.flatMap((e) =>

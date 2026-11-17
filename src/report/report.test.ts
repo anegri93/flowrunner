@@ -475,3 +475,40 @@ test("Tus decisiones cuenta en palabras el Autofix que flowrunner corrió solo, 
   );
   expect(lines[2]).toMatch(/· elegiste Autofix desde terminal, 9 s después de que te esperó$/);
 });
+
+// Si regresiona, no hay cómo saber cuántos bloqueantes la sub-task contestó que no hacían falta, que es
+// el dato para decidir si vale verificar cada bloqueante antes de devolverlo (ADR 0030).
+test("el informe cuenta las devueltas sin nada que cambiar, con la fase y lo que dijo la sub-task", () => {
+  const unidad = (unidad: string, estado: "integrada" | "sin_cambios", motivo?: string) =>
+    ev({
+      tipo: "unidad",
+      fase: "implementar",
+      unidad,
+      estado,
+      ...(motivo === undefined ? {} : { motivo }),
+    });
+  const events = [
+    created,
+    ...step("revisar", { tipo: "vuelve", unidades: ["ST-1", "ST-2"], motivo: "bloqueantes" }),
+    unidad("ST-1", "integrada"),
+    unidad("ST-2", "sin_cambios", "Prettier ya\nlo deja así"),
+    ...step("verificar", { tipo: "vuelve", unidades: ["ST-3"], motivo: "rojo" }),
+    unidad("ST-3", "sin_cambios"),
+  ];
+  const report = buildReport(events, run);
+  expect(report).toContain(
+    [
+      "## Devueltas sin nada que cambiar: 2",
+      "",
+      "- ST-2, devuelta por revisar: «Prettier ya lo deja así»",
+      "- ST-3, devuelta por verificar",
+    ].join("\n"),
+  );
+  expect(buildReport([created], run)).not.toContain("Devueltas sin nada que cambiar");
+  // Después de un rerun, la fase que la devolvió ya no es la de antes (hallazgo de /code-review).
+  const rerun = buildReport(
+    [...events, ev({ tipo: "rehacer", desde: "implementar" }), unidad("ST-4", "sin_cambios")],
+    run,
+  );
+  expect(rerun).toContain("- ST-4, devuelta sin fase\n");
+});

@@ -15,7 +15,15 @@ import { z } from "zod";
 import { isAlive } from "./lock.ts";
 import { conTurnoSync, turnoFile } from "./turno.ts";
 
-const lugarSchema = z.strictObject({ run_id: z.string(), pid: z.int() });
+/** Entregar tiene su propio carril (ADR 0031); un lugar de antes, sin carril, es normal. */
+const carrilSchema = z.enum(["normal", "entrega"]);
+export type Carril = z.infer<typeof carrilSchema>;
+
+const lugarSchema = z.strictObject({
+  run_id: z.string(),
+  pid: z.int(),
+  carril: carrilSchema.optional(),
+});
 export type Lugar = z.infer<typeof lugarSchema>;
 
 export function lugaresDir(home: string, proyecto: string): string {
@@ -51,6 +59,11 @@ export interface Reglas {
   readonly max: number;
   /** Si el run está en curso según su log. */
   readonly ocupa: (runId: string) => boolean;
+  /**
+   * El carril del que toma o cuenta: `max` cuenta solo los lugares de ese carril, que queda fijo al
+   * tomarlo aunque el run cambie de fase. Normal si falta (ADR 0031).
+   */
+  readonly carril?: Carril;
   readonly alive?: (pid: number) => boolean;
 }
 
@@ -106,10 +119,19 @@ export function tomarLugar(
     runId,
     (): Toma => {
       migrar(home, proyecto);
-      const otros = vigentes(home, proyecto, reglas, { borrar: true, salvo: runId });
+      const carril = reglas.carril ?? "normal";
+      const otros = delCarril(
+        home,
+        proyecto,
+        carril,
+        vigentes(home, proyecto, reglas, { borrar: true, salvo: runId }),
+      );
       const file = lugarFile(home, proyecto, runId);
-      if (!existsSync(file) && otros.length >= reglas.max) return { ok: false, corriendo: otros };
-      escribir(file, { run_id: runId, pid });
+      const propio = leerLugar(file);
+      if (propio === undefined && otros.length >= reglas.max)
+        return { ok: false, corriendo: otros };
+      // Quien ya tenía lugar conserva su carril: se fija una vez, al tomarlo.
+      escribir(file, { run_id: runId, pid, carril: propio?.carril ?? carril });
       return { ok: true };
     },
     // Se tiene por milisegundos: diez segundos sin tomarlo es un error, no una espera.
@@ -119,7 +141,22 @@ export function tomarLugar(
 
 /** Los runs que hoy ocupan un lugar, sin tocar nada. */
 export function ocupados(home: string, proyecto: string, reglas: Reglas): string[] {
-  return vigentes(home, proyecto, reglas, { borrar: false });
+  return delCarril(
+    home,
+    proyecto,
+    reglas.carril ?? "normal",
+    vigentes(home, proyecto, reglas, { borrar: false }),
+  );
+}
+
+/** De los lugares vigentes, los de ese carril. */
+function delCarril(
+  home: string,
+  proyecto: string,
+  carril: Carril,
+  ids: readonly string[],
+): string[] {
+  return ids.filter((id) => (lugarDe(home, proyecto, id)?.carril ?? "normal") === carril);
 }
 
 export function soltarLugar(home: string, proyecto: string, runId: string): void {

@@ -240,6 +240,29 @@ describe("lo que revisar sabe de antes (ADR 0030)", () => {
     );
   });
 
+  // Si regresiona, la revisión ve vueltas de un intento descartado, cree que nadie trabajó un
+  // bloqueante que la persona arregló a mano, o una respuesta en varias líneas rompe la lista
+  // (hallazgos de /code-review en la PR #109).
+  test("las vueltas arrancan en el último rerun, cuentan el arreglo a mano y la respuesta va en una línea", () => {
+    const vuelve = (motivo: string) =>
+      terminada("revisar", { tipo: "vuelve", unidades: ["ST-2"], motivo });
+    const events: RunEvent[] = [
+      { tipo: "aprobado", at },
+      vuelve("de un intento que se rehízo"),
+      { tipo: "rehacer", at, desde: "implementar" },
+      vuelve("primera del intento nuevo"),
+      { tipo: "arreglo_manual", at, sha: "abcdef123" },
+      vuelve("segunda"),
+      unidad("ST-2", "sin_cambios", { motivo: "Revisé.\n\n## No hace falta\n- ST-3 cambió" }),
+    ];
+    const text = revisionesAnteriores(events);
+    expect(text).not.toContain("de un intento que se rehízo");
+    expect(text).toContain(
+      "## Vuelta 1\n\nprimera del intento nuevo\n\nLo que hicieron las sub-tasks:\n- La persona lo arregló a mano en el worktree (abcdef1).",
+    );
+    expect(text).toContain("- ST-2 no cambió nada. Dijo: «Revisé. ## No hace falta - ST-3 cambió»");
+  });
+
   // Si regresiona, revisar no sabe qué comprobó verify y frena por formato, lint o tipos.
   test("verify: si pasó o si la persona aceptó el rojo, con lo que corre el script", () => {
     const script = "#!/bin/sh\nnpm run check\n";
@@ -265,6 +288,6 @@ describe("lo que revisar sabe de antes (ADR 0030)", () => {
     expect(prompt).toContain("```sh\n#!/bin/sh\nexit 0\n```");
     expect(prompt).toContain("# Las revisiones anteriores");
     expect(prompt).toContain("Es la primera revisión de este plan.");
-    expect(prompt).toContain("Formato, lint y tipos no son hallazgos");
+    expect(prompt).toContain("Lo que corre el script de verify (abajo) no es hallazgo");
   });
 });

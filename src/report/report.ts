@@ -253,9 +253,10 @@ function returnedUnchanged(events: readonly RunEvent[]): string[] {
   const lines: string[] = [];
   for (const e of events) {
     if (e.tipo === "accion_terminada" && e.resultado.tipo === "vuelve") from = e.fase;
+    if (e.tipo === "rehacer") from = undefined;
     if (e.tipo === "unidad" && e.estado === "sin_cambios")
       lines.push(
-        `- ${e.unidad}, devuelta por ${from ?? "?"}${e.motivo === undefined ? "" : `: «${plain(e.motivo)}»`}`,
+        `- ${e.unidad}, devuelta ${from === undefined ? "sin fase" : `por ${from}`}${e.motivo === undefined ? "" : `: «${plain(e.motivo.replace(/\s+/g, " "))}»`}`,
       );
   }
   return lines;

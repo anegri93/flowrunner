@@ -22,20 +22,25 @@ contestaba que no había nada que cambiar. Dos vueltas de más, unos 8 minutos y
 
 1. **Un bloqueante de revisar o un criterio en rojo de probar vuelve directo a implementar**, con el
    motivo y los arreglos propuestos (la misma instrucción que la vuelta que seguía a Autofix), sin
-   detenerse. Una vez por respuesta de la persona: lo marca `autofixCorrio`, que ahora significa
-   «flowrunner ya respondió solo». Si la revisión siguiente vuelve a frenar, el run se detiene y
-   pregunta.
+   detenerse. Una vez por respuesta de la persona: lo marca `directaCorrio`, aparte de
+   `autofixCorrio`, así un Autofix por un rojo de verificar anterior no le quita la vuelta directa a
+   la revisión, y la vuelta directa no le quita Autofix a un rojo de verificar posterior. Las respuestas
+   de la persona que mandan el run a trabajar reinician los dos. Si la revisión siguiente vuelve a
+   frenar, el run se detiene y pregunta.
 2. **Autofix queda para verificar.** Ahí sí sirve: un rojo de formato o lint lo arreglan las
    herramientas sin gastar una sesión. En revisar y probar no se ofrece ni corre solo.
 3. **Lo congela `run_creado`** con `vuelta_directa: true`. Un run creado antes sigue el camino de ADR
    0028: su log se reduce igual (C8), y un run que ya esperaba a la persona no cambia al actualizar.
 4. **La revisión recibe qué comprobó verify**: si pasó o si la persona aceptó el rojo, y el script que
-   corre (sin seguir links). Formato, lint y tipos no son hallazgos: los decide verify.
-5. **La revisión recibe las vueltas anteriores** desde la última aprobación: cada motivo y lo que hizo
-   cada sub-task (cambió su código, con el commit, o no cambió nada y lo que dijo). Comprueba cada
+   corre (sin seguir links). Lo que corre el script no es hallazgo; lo que no corre, como los tipos en
+   un repo sin typecheck, sí se revisa.
+5. **La revisión recibe las vueltas anteriores** desde la última aprobación o el último rerun: cada
+   motivo y lo que se hizo con él (la sub-task cambió su código, con el commit; no cambió nada y lo que
+   dijo, en una línea; la persona lo arregló a mano; Autofix pasó las herramientas). Comprueba cada
    bloqueante anterior, y repite uno que la sub-task explicó que no hacía falta solo si leyó algo que
    muestre que la explicación está mal.
-6. **`sin_cambios` guarda lo que dijo la sub-task** en `motivo`, hasta 400 caracteres.
+6. **`sin_cambios` guarda lo que dijo la sub-task** en `motivo`: los últimos 400 caracteres, que es
+   donde suele estar el porqué, sin partir un carácter.
 7. **El informe cuenta las devueltas sin nada que cambiar**, con la fase que las devolvió y lo que
    dijeron: son los bloqueantes que pudieron ser falsos.
 
@@ -53,18 +58,24 @@ contestaba que no había nada que cambiar. Dos vueltas de más, unos 8 minutos y
 ## Consecuencias
 
 - Un bloqueante de la revisión le cuesta a la sub-task una vuelta, no una revisión extra antes.
-- Si verify sale en rojo después de la vuelta directa, la detención pregunta sin correr Autofix solo:
-  flowrunner ya respondió una vez. Las sub-tasks ya pasan el formateador por lo que cambian antes de
-  commitear.
+- Si verify sale en rojo después de la vuelta directa, Autofix corre solo como en cualquier rojo de
+  verificar.
 - El prompt de revisar crece con el script de verify (hasta 2000 caracteres) y los motivos anteriores.
+
+Una revisión con `/code-review high` de la PR #109 encontró que un solo flag para Autofix y para la
+vuelta directa hacía que uno le quitara el otro; de ahí `directaCorrio`.
 
 ## Verificación
 
 - `src/engine/engine.test.ts`, «un bloqueante de revisar o probar va directo a la sub-task (ADR
   0030)»: revisar y probar van a implementar con el motivo y los arreglos; una vez por respuesta, y la
-  siguiente pregunta sin ofrecer Autofix; verificar sigue igual; un run sin `vuelta_directa` sigue
-  como antes.
+  siguiente pregunta sin ofrecer Autofix; después de la vuelta directa, un rojo de verificar corre
+  Autofix solo; un Autofix anterior no le quita la vuelta directa a la revisión; verificar sigue igual;
+  un run sin `vuelta_directa` sigue como antes.
 - `src/phases/revisar.test.ts`, «lo que revisar sabe de antes (ADR 0030)»: las vueltas anteriores con
-  lo que hizo cada sub-task, el texto de verify y las secciones del prompt.
-- `src/phases/implementar.test.ts`: `sin_cambios` guarda lo que dijo la sub-task.
+  lo que hizo cada sub-task, desde el último rerun, con el arreglo a mano y en una línea; el texto de
+  verify y las secciones del prompt.
+- `src/phases/implementar.test.ts`: `sin_cambios` guarda el final de lo que dijo la sub-task.
+- `test/vuelta-directa.int.test.ts`, con el CLI real: un bloqueante de revisar vuelve a implementar
+  sin detenerse ni correr Autofix, y el run entrega.
 - `src/report/report.test.ts`: el informe cuenta las devueltas sin nada que cambiar.

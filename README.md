@@ -333,8 +333,8 @@ Un bloqueante de revisar o un criterio que probar vio fallar no lo arregla el fo
 sub-task responsable lo corrige sola, con el motivo y los arreglos propuestos, una vez por respuesta
 tuya, sin pasar por Autofix ni por otra revisión del mismo código (ADR 0030). Si la revisión siguiente
 vuelve a frenar, te pregunta. La revisión recibe qué comprobó verify y lo que cada sub-task hizo o
-contestó en la vuelta anterior, así que no frena por formato, lint ni tipos, ni repite a ciegas lo que
-una sub-task explicó que no hacía falta. El informe cuenta las sub-tasks devueltas que no encontraron
+contestó en la vuelta anterior, así que no frena por lo que verify ya comprobó, ni repite a ciegas lo
+que una sub-task explicó que no hacía falta. El informe cuenta las sub-tasks devueltas que no encontraron
 nada que cambiar.
 
 Cada run ofrece solo las que tienen sentido en su detención, y los comandos aceptan solo esas. Por

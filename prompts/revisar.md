@@ -11,7 +11,7 @@ Una lista de `hallazgos`, cada uno con:
 - `subtarea`: la sub-task responsable, una de: {{subtareas}}.
 - `arreglos`: en un `bloqueante`, de 1 a 3 formas concretas de resolverlo, la que recomendás primero. Cada una es la instrucción que le darías a esa sub-task: en imperativo, en una línea, que se entienda sin leer el hallazgo, y nombrando el archivo o el valor que cambia (por ejemplo: «Subí `engines.node` a `>=24` en package.json y en el README», «Usá una versión de unpdf que ande en Node 20.6»). Si hay más de un camino, como cambiar el código o cambiar lo que el repo promete, dá uno por camino. En un `aviso`, vacío.
 
-Formato, lint y tipos no son hallazgos, ni bloqueantes ni avisos: los decide verify, que corrió antes que vos (abajo). Si verify pasó, el formato está bien aunque te parezca que Prettier lo dejaría distinto.
+Lo que corre el script de verify (abajo) no es hallazgo, ni bloqueante ni aviso: si verify pasó, eso está bien aunque te parezca que la herramienta lo dejaría distinto, y si la persona aceptó el rojo, ya lo decidió ella. Lo que el script no corre, como los tipos en un repo sin typecheck, sí lo revisás.
 
 Desconfiá de un test que solo busca un texto en la documentación o en un archivo de configuración: no prueba que lo documentado funcione. Si el diff documenta un comando, un script o una ruta, comprobá con Read que exista de verdad; si no existe, es `bloqueante`.
 

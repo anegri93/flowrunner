@@ -491,7 +491,7 @@ test("el informe cuenta las devueltas sin nada que cambiar, con la fase y lo que
     created,
     ...step("revisar", { tipo: "vuelve", unidades: ["ST-1", "ST-2"], motivo: "bloqueantes" }),
     unidad("ST-1", "integrada"),
-    unidad("ST-2", "sin_cambios", "Prettier ya lo deja así"),
+    unidad("ST-2", "sin_cambios", "Prettier ya\nlo deja así"),
     ...step("verificar", { tipo: "vuelve", unidades: ["ST-3"], motivo: "rojo" }),
     unidad("ST-3", "sin_cambios"),
   ];
@@ -505,4 +505,10 @@ test("el informe cuenta las devueltas sin nada que cambiar, con la fase y lo que
     ].join("\n"),
   );
   expect(buildReport([created], run)).not.toContain("Devueltas sin nada que cambiar");
+  // Después de un rerun, la fase que la devolvió ya no es la de antes (hallazgo de /code-review).
+  const rerun = buildReport(
+    [...events, ev({ tipo: "rehacer", desde: "implementar" }), unidad("ST-4", "sin_cambios")],
+    run,
+  );
+  expect(rerun).toContain("- ST-4, devuelta sin fase\n");
 });

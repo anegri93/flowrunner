@@ -1256,6 +1256,35 @@ describe("un bloqueante de revisar o probar va directo a la sub-task (ADR 0030)"
     expect(nextAction(answered)).toMatchObject({ fase: "implementar", unidades: ["ST-2"] });
   });
 
+  // Si regresiona, un rojo de formato después de la vuelta directa espera a la persona en vez de pasar
+  // por el formateador (hallazgo de /code-review en la PR #109).
+  test("después de la vuelta directa, un rojo de verificar corre Autofix solo", () => {
+    const red = stateOf([
+      ...reviewed,
+      ...ok("implementar"),
+      ...done("verificar", { tipo: "vuelve", unidades: ["ST-2"], motivo: "prettier" }),
+    ]);
+    expect(red.status).toBe("detenido");
+    expect(correAutofixSolo(red)).toBe(true);
+  });
+
+  // Si regresiona, un Autofix por un rojo de verificar anterior deja el bloqueante de la revisión
+  // esperando a la persona: el camino de PIZ-9 (hallazgo de /code-review en la PR #109).
+  test("un Autofix anterior por un rojo de verificar no le quita la vuelta directa a la revisión", () => {
+    const s = stateOf([
+      directo,
+      ...implemented,
+      ...done("verificar", { tipo: "vuelve", unidades: ["ST-1"], motivo: "prettier" }),
+      ev({ tipo: "autofix", origen: "flowrunner", sha: null }),
+      ...done("verificar", { tipo: "vuelve", unidades: ["ST-1"], motivo: "lint" }),
+      ...ok("implementar"),
+      ...ok("verificar"),
+      ...blocked("revisar"),
+    ]);
+    expect(s.status).toBe("en_curso");
+    expect(nextAction(s)).toMatchObject({ fase: "implementar", unidades: ["ST-2"] });
+  });
+
   // Si regresiona, un rojo de formato o lint deja de pasar por las herramientas, que son las que lo
   // arreglan sin gastar una sesión.
   test("un rojo de verificar sigue deteniéndose para que corra Autofix solo", () => {

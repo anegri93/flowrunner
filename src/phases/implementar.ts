@@ -283,6 +283,18 @@ type UnitResult =
       readonly pregunta?: true;
     };
 
+/** De lo que dijo una sub-task se guardan hasta estos caracteres. */
+const MAX_DICHO = 400;
+
+/**
+ * Lo que dijo una sub-task devuelta sin cambios, para la revisión siguiente y el informe: el final, que
+ * es donde suele estar el porqué, sin partir un carácter (ADR 0030).
+ */
+export function loQueDijo(texto: string): string {
+  const chars = Array.from(new Intl.Segmenter().segment(texto.trim()), (g) => g.segment);
+  return chars.length > MAX_DICHO ? `…${chars.slice(-MAX_DICHO).join("")}` : chars.join("");
+}
+
 export const implementar: PhaseFn = async (ctx) => {
   const { run, deps, emit, action, state } = ctx;
   const featureWt = featureWorktree(run);
@@ -490,7 +502,7 @@ export const implementar: PhaseFn = async (ctx) => {
           integradas.has(task.id) &&
           rejectedWrites.length === 0
         ) {
-          const dijo = result.texto.trim().slice(0, 400);
+          const dijo = loQueDijo(result.texto);
           emit({
             tipo: "unidad",
             fase: "implementar",

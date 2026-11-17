@@ -96,7 +96,8 @@ export function verifyText(events: readonly RunEvent[], path: string, script: st
  * contestó que no hacía falta (PIZ-15, ADR 0030).
  */
 export function revisionesAnteriores(events: readonly RunEvent[]): string {
-  const since = events.findLastIndex((e) => e.tipo === "aprobado");
+  // Un rerun descarta las vueltas de antes, como hace el engine con `vueltas`.
+  const since = events.findLastIndex((e) => e.tipo === "aprobado" || e.tipo === "rehacer");
   const rounds: { motivo: string; hechos: string[] }[] = [];
   // La vuelta que están trabajando las sub-tasks: una de verificar o probar no es de la revisión.
   let round: { motivo: string; hechos: string[] } | undefined;
@@ -105,14 +106,20 @@ export function revisionesAnteriores(events: readonly RunEvent[]): string {
       round = e.fase === "revisar" ? { motivo: e.resultado.motivo, hechos: [] } : undefined;
       if (round !== undefined) rounds.push(round);
     }
-    if (round === undefined || e.tipo !== "unidad" || e.fase !== "implementar") continue;
+    if (round === undefined) continue;
+    if (e.tipo === "arreglo_manual")
+      round.hechos.push(
+        `- La persona lo arregló a mano en el worktree${e.sha === null ? "" : ` (${e.sha.slice(0, 7)})`}.`,
+      );
+    if (e.tipo === "autofix") round.hechos.push("- Autofix pasó el formateador y el lint.");
+    if (e.tipo !== "unidad" || e.fase !== "implementar") continue;
     if (e.estado === "integrada")
       round.hechos.push(
         `- ${e.unidad} cambió su código${e.sha === undefined ? "" : ` (${e.sha.slice(0, 7)})`}.`,
       );
     if (e.estado === "sin_cambios")
       round.hechos.push(
-        `- ${e.unidad} no cambió nada.${e.motivo === undefined ? "" : ` Dijo: «${e.motivo}»`}`,
+        `- ${e.unidad} no cambió nada.${e.motivo === undefined ? "" : ` Dijo: «${e.motivo.replace(/\s+/g, " ")}»`}`,
       );
   }
   if (rounds.length === 0) return "Es la primera revisión de este plan.";

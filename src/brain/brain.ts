@@ -22,6 +22,12 @@ export const BRAIN_FILES = {
 } as const;
 export const MAX_EXAMPLES = 20;
 
+/**
+ * Las lecciones que propone el run de una feature, en un archivo propio dentro de su PR: dos PRs de
+ * features no chocan en lecciones.md. Al mergear, aprender las numera y las pasa a lecciones.md.
+ */
+export const proposalsFile = (clave: string) => `.flowrunner/propuestas/${clave}.md`;
+
 /** Dónde empieza lo que redactó init; lo de arriba es de la persona. */
 export const DRAFT_HEADING = "## Borrador de flowrunner init";
 

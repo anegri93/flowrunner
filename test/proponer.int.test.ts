@@ -81,16 +81,16 @@ describe("lecciones propuestas en la PR de entrega", () => {
     const subjects = git(w.remote, "log", "--format=%s", `main..${BRANCH}`).split("\n");
     expect(subjects[0]).toBe("docs(lecciones): lo que aprendió SHOP-214");
     expect(git(w.remote, "show", "--name-only", "--format=", BRANCH)).toBe(
-      ".flowrunner/lecciones.md",
+      ".flowrunner/propuestas/SHOP-214.md",
     );
     expect(git(w.remote, "log", "-1", "--format=%b", BRANCH)).toContain(`Flowrunner-Run: ${id}`);
-    const lessons = git(w.remote, "show", `${BRANCH}:.flowrunner/lecciones.md`);
-    expect(lessons).toContain("### L-1 · Los CSV llevan encabezado");
+    const lessons = git(w.remote, "show", `${BRANCH}:.flowrunner/propuestas/SHOP-214.md`);
+    expect(lessons).toContain("### Los CSV llevan encabezado");
     expect(lessons).toContain("Aplica: src/export/");
     expect(lessons).toContain(`Origen: run ${id} · revisar, vuelta 1 ·`);
     expect(body).toContain("## Lo que aprendió este run");
     expect(body).toContain("Los CSV llevan encabezado");
-    expect(body).toContain("borrala de `.flowrunner/lecciones.md`");
+    expect(body).toContain("Si alguna no te convence, borrala de ese archivo antes de mergear");
   }, 240_000);
 
   // Si regresiona, un modelo mete en el cerebro una lección que no sale de nada de lo que pasó.

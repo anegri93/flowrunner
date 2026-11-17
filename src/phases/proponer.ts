@@ -1,19 +1,20 @@
 // Antes de abrir la PR, lo que al run le costó corregirse solo se vuelve lecciones propuestas: las
 // vueltas de verificar y revisar y los cambios que la persona pidió al plan. Llegan en un commit aparte
-// de la misma PR, así que la persona las revisa junto con el código: si una no la convence, la borra;
-// si mergea, quedan en el cerebro. Las escribe un modelo, por eso nunca entran sin esa revisión.
+// de la misma PR, en `.flowrunner/propuestas/<clave>.md`, así que la persona las revisa junto con el
+// código: si una no la convence, la borra; si mergea, aprender las pasa a lecciones.md con su número.
+// Las escribe un modelo, por eso nunca entran sin esa revisión.
 // Aprender es secundario: si algo falla acá, la entrega sigue con un aviso.
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 import { runSession } from "../agent/session.ts";
-import { BRAIN_FILES } from "../brain/brain.ts";
+import { BRAIN_FILES, proposalsFile } from "../brain/brain.ts";
 import type { RepoConfig } from "../config/schemas.ts";
 import { git } from "../git/git.ts";
 import { featureText, render } from "../prompts/render.ts";
 import type { PhaseContext } from "../runner/types.ts";
 import type { RunEvent } from "../store/events.ts";
-import { APRENDER_TIMEOUT_MS, nextLessonNumber, readOnlyHook } from "./aprender.ts";
+import { APRENDER_TIMEOUT_MS, readOnlyHook } from "./aprender.ts";
 import { runFeature } from "./inputs.ts";
 import { sessionName } from "./planificar.ts";
 
@@ -56,18 +57,15 @@ export const proposalSchema = z.object({
 });
 export type Lesson = z.infer<typeof lessonSchema>;
 
-/** Las lecciones como entradas de lecciones.md, numeradas después de la última que ya hay. */
-export function formatLessons(
-  lessons: readonly Lesson[],
-  current: string,
-  runId: string,
-  today: string,
-): string {
-  let n = nextLessonNumber(current);
+/**
+ * Las lecciones como entradas del archivo de propuestas, sin número: el número lo pone aprender al
+ * pasarlas a lecciones.md, ya con la base al día.
+ */
+export function formatLessons(lessons: readonly Lesson[], runId: string, today: string): string {
   return lessons
     .map(
       (l) =>
-        `\n### L-${String(n++)} · ${l.titulo}\n\nRegla: ${l.regla}\n\nAplica: ${l.aplica}\n\nOrigen: run ${runId} · ${l.origen} · ${today}\n`,
+        `\n### ${l.titulo}\n\nRegla: ${l.regla}\n\nAplica: ${l.aplica}\n\nOrigen: run ${runId} · ${l.origen} · ${today}\n`,
     )
     .join("");
 }
@@ -75,8 +73,8 @@ export function formatLessons(
 /** El archivo del run con la sección de la PR: lo que se propone, o por qué no hay nada. */
 export const proposalFile = (runDir: string) => join(runDir, "lecciones-propuestas.md");
 
-const HOW_TO_REJECT =
-  "flowrunner propone sumar al cerebro estas lecciones, en un commit aparte de esta PR. Si alguna no te convence, borrala de `.flowrunner/lecciones.md` antes de mergear; si mergeás, quedan.";
+const howToReject = (file: string) =>
+  `flowrunner propone sumar al cerebro estas lecciones, en un commit aparte de esta PR, en \`${file}\`. Si alguna no te convence, borrala de ese archivo antes de mergear; al mergear, flowrunner las pasa a \`.flowrunner/lecciones.md\` con su número.`;
 
 export async function proposeLessons(
   ctx: PhaseContext,
@@ -146,10 +144,15 @@ export async function proposeLessons(
     );
     return;
   }
-  const added = formatLessons(lessons, current, run.id, deps.now().toISOString().slice(0, 10));
-  writeFileSync(lessonsFile, `${current.trimEnd()}\n${added}`);
   const feature = runFeature(run);
-  await git(worktree, ["add", join(".flowrunner", BRAIN_FILES.lecciones.file)], deps.env);
+  const file = proposalsFile(feature.clave);
+  const added = formatLessons(lessons, run.id, deps.now().toISOString().slice(0, 10));
+  mkdirSync(dirname(join(worktree, file)), { recursive: true });
+  writeFileSync(
+    join(worktree, file),
+    `# Lecciones propuestas por ${feature.clave}\n\nAl mergear su PR, flowrunner las pasa a \`lecciones.md\` con su número.\n${added}`,
+  );
+  await git(worktree, ["add", file], deps.env);
   await git(
     worktree,
     [
@@ -163,5 +166,5 @@ export async function proposeLessons(
     ],
     deps.env,
   );
-  write(`${HOW_TO_REJECT}\n${added}${suggestions}`, lessons.length);
+  write(`${howToReject(file)}\n${added}${suggestions}`, lessons.length);
 }

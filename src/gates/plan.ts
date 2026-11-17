@@ -1,6 +1,7 @@
 // El plan que devuelve planificar y su gate. El modelo propone; este código decide si sirve.
 import { realpathSync } from "node:fs";
 import { z } from "zod";
+import type { RepoConfig } from "../config/schemas.ts";
 import type { Feature } from "../feature/feature.ts";
 import { isUnrunnable, runShell, tail, type ProcResult } from "../proc/proc.ts";
 import { ALWAYS_PROTECTED, insideRoot, type Scope } from "../tripwires/rules.ts";
@@ -104,6 +105,9 @@ export type Plan = z.infer<typeof planSchema>;
 export const CRITERIO_DEL_RUN = "run";
 
 /** A quién se le muestra asignado un criterio en el plan: su sub-task, o el run. */
+/** Lo que se le agrega a un criterio que solo prueba su test donde se muestra el plan (ADR 0032). */
+export const SOLO_SU_TEST = " · solo su test, probar no lo prueba";
+
 export const quienCubre = (subtarea: string) =>
   subtarea === CRITERIO_DEL_RUN ? "del run (lo comprueba verificar)" : subtarea;
 
@@ -191,7 +195,7 @@ export function checkPlanShape(
   feature: Feature,
   root: string,
   /** `verify` es el del repo (`config.verify`): el rechazo de un criterio del run lo nombra. */
-  rules: PlanRepoRules & { readonly verify: string; readonly probar?: unknown },
+  rules: PlanRepoRules & { readonly verify: string } & Partial<Pick<RepoConfig, "probar">>,
   /** Si el comando es el verify del repo (`isVerifyCommand`): solo esos criterios pueden ser del run. */
   esVerify: (comando: string) => boolean = () => false,
 ): string[] {

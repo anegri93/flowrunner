@@ -261,6 +261,26 @@ test("el informe trae las pruebas en el entorno con su evidencia; la PR, sin rut
   expect(body).not.toContain("file://");
 });
 
+// Si regresiona, después de un replan en el que probar se salteó, la PR muestra las pruebas del plan
+// anterior como si fueran de este (hallazgo de /code-review en la PR #111).
+test("si la última vez probar se salteó, el informe y la PR no muestran pruebas de antes", () => {
+  const dir = tempDir();
+  const tests = join(dir, "pruebas", "probar-1");
+  mkdirSync(tests, { recursive: true });
+  writeFileSync(join(tests, "pruebas.json"), JSON.stringify({ pruebas: [], decisiones: [] }));
+  const paths = { id: "R", home: "/nada", dir, worktrees: "/nada" };
+  const events = [
+    created,
+    ...step("probar", { tipo: "ok" }),
+    ev({ tipo: "rehacer", desde: "planificar" }),
+    ...step("probar", { tipo: "ok", salteada: "ningún criterio se ve en el entorno" }),
+  ];
+  expect(buildReport(events, paths)).not.toContain("## Pruebas en el entorno");
+  expect(prBody(events, paths)).not.toContain("## Pruebas en el entorno");
+  // Sin saltear, las de la última corrida siguen ahí.
+  expect(buildReport(events.slice(0, 3), paths)).toContain("## Pruebas en el entorno");
+});
+
 // Si regresiona, la PR no dice que se entregó con criterios sin probar ni por qué (ADR 0017).
 test("si la persona aceptó entregar sin probar, el informe y la PR lo dicen con su motivo", () => {
   const dir = tempDir();

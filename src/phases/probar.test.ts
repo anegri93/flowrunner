@@ -27,6 +27,13 @@ const plan: Plan = {
   cambia_lo_existente: [],
 };
 
+const soloSuTest = {
+  id: "AC-1",
+  comando: "node tests/ac1.mjs",
+  subtarea: "ST-1",
+  en_entorno: false,
+} as const;
+
 const prueba = (extra: Partial<Pruebas["pruebas"][number]>): Pruebas["pruebas"][number] => ({
   criterio: "AC-1",
   que: "crear una cuenta",
@@ -42,6 +49,7 @@ async function testWith(
   withConfig = true,
   probarExtra: Record<string, unknown> = {},
   conPlan: Plan = plan,
+  instruccion?: string,
 ) {
   const port = await freePort();
   const url = `http://127.0.0.1:${String(port)}`;
@@ -65,7 +73,9 @@ async function testWith(
         }
       : {}),
   });
-  const outcome = await probar(contextFor(run, "probar", deps));
+  const outcome = await probar(
+    contextFor(run, "probar", deps, instruccion === undefined ? {} : { instruccion }),
+  );
   return { outcome, sim, run, url };
 }
 
@@ -268,6 +278,70 @@ describe("probar", () => {
     expect(sim.records).toHaveLength(0);
     expect(await responds(url)).toBe(false);
     expect(lastTestDir(run)).toBeUndefined();
+  });
+
+  // Si regresiona, un plan con criterios de su test y el del verify, el caso común, levanta el entorno
+  // igual (hallazgo de /code-review en la PR #111).
+  test("se saltea también si los que quedan son el verify del repo", async () => {
+    const { outcome, sim } = await testWith(
+      undefined,
+      true,
+      {},
+      {
+        ...plan,
+        criterios: [
+          { id: "AC-1", comando: "node tests/ac1.mjs", subtarea: "ST-1", en_entorno: false },
+          { id: "AC-9", comando: "./.flowrunner/verify.sh", subtarea: "run" },
+        ],
+      },
+    );
+    expect(outcome).toEqual({
+      tipo: "ok",
+      salteada: "ningún criterio se ve en el entorno: los prueban sus tests, en verde en verificar",
+    });
+    expect(sim.records).toHaveLength(0);
+  });
+
+  // Si regresiona, un `rerun --desde probar` con una instrucción se saltea sin leerla, y la persona no
+  // tiene cómo pedir que se pruebe un criterio mal marcado (hallazgo de /code-review en la PR #111).
+  test("con una instrucción de la persona no se saltea, y prueba todos los criterios", async () => {
+    const { outcome, sim } = await testWith(
+      { pruebas: [prueba({})], decisiones: [] },
+      true,
+      {},
+      { ...plan, criterios: [{ ...soloSuTest }] },
+      "probá AC-1 en la pantalla de cuentas",
+    );
+    expect(outcome).toEqual({ tipo: "ok" });
+    const prompt = sim.records[0]?.prompt ?? "";
+    expect(prompt).toContain("probá AC-1 en la pantalla de cuentas");
+    expect(prompt).not.toContain("solo lo prueba su test");
+  });
+
+  // Si regresiona, la PR lista como «sin probar» un criterio que probar no tenía que probar.
+  test("un no_probado de un criterio que no se prueba acá no llega a pruebas.json", async () => {
+    const { run } = await testWith(
+      {
+        pruebas: [
+          prueba({}),
+          prueba({ criterio: "AC-2", resultado: "no_probado", evidencia: "no hay SIGTERM" }),
+        ],
+        decisiones: [],
+      },
+      true,
+      {},
+      {
+        ...plan,
+        criterios: [
+          { id: "AC-1", comando: "node tests/ac1.mjs", subtarea: "ST-1", en_entorno: true },
+          { id: "AC-2", comando: "node tests/ac1.mjs", subtarea: "ST-2", en_entorno: false },
+        ],
+      },
+    );
+    const written = JSON.parse(
+      readFileSync(join(lastTestDir(run) ?? "", "pruebas.json"), "utf8"),
+    ) as Pruebas;
+    expect(written.pruebas.map((p) => p.criterio)).toEqual(["AC-1"]);
   });
 
   // Si regresiona, un repo sin entorno configurado queda trabado en probar, o su salto se ve como un ✓.

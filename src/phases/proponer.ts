@@ -14,7 +14,7 @@ import { git } from "../git/git.ts";
 import { featureText, render } from "../prompts/render.ts";
 import type { PhaseContext } from "../runner/types.ts";
 import type { RunEvent } from "../store/events.ts";
-import { APRENDER_TIMEOUT_MS, readOnlyHook } from "./aprender.ts";
+import { APRENDER_TIMEOUT_MS, lessonNumbers, MISSES_HEADING, readOnlyHook } from "./aprender.ts";
 import { runFeature } from "./inputs.ts";
 import { sessionName } from "./planificar.ts";
 
@@ -54,6 +54,11 @@ export const proposalSchema = z.object({
   lecciones: z.array(lessonSchema).max(2),
   /** Lo que se arregla en la configuración del repo (format, typecheck, un script), no con una lección. */
   sugerencias: z.array(z.string().min(1)).max(3).default([]),
+  /** Lecciones que ya estaban, cubrían la fricción y no la evitaron. */
+  no_alcanzaron: z
+    .array(z.object({ leccion: z.string().regex(/^L-\d+$/), origen: z.string().min(1) }))
+    .max(3)
+    .default([]),
 });
 export type Lesson = z.infer<typeof lessonSchema>;
 
@@ -133,11 +138,23 @@ export async function proposeLessons(
     return;
   }
   const lessons = result.output.lecciones;
+  const known = new Set(lessonNumbers(current).map((n) => `L-${String(n)}`));
+  const misses = result.output.no_alcanzaron.filter(
+    (m) => known.has(m.leccion) && origins.has(m.origen),
+  );
+  if (misses.length < result.output.no_alcanzaron.length) {
+    emit({
+      tipo: "aviso",
+      fase: "entregar",
+      texto:
+        "se descartó una lección que no alcanzó: no está en lecciones.md o cita algo que no pasó",
+    });
+  }
   const suggestions =
     result.output.sugerencias.length === 0
       ? ""
       : `\n\nSe arregla en la configuración del repo, no con una lección:\n\n${result.output.sugerencias.map((s) => `- ${s}`).join("\n")}`;
-  if (lessons.length === 0) {
+  if (lessons.length === 0 && misses.length === 0) {
     write(
       `Nada nuevo para el cerebro: lo que hubo que corregir (${found.map((f) => f.origen).join("; ")}) fue propio de esta feature.${suggestions}`,
       0,
@@ -146,11 +163,16 @@ export async function proposeLessons(
   }
   const feature = runFeature(run);
   const file = proposalsFile(feature.clave);
-  const added = formatLessons(lessons, run.id, deps.now().toISOString().slice(0, 10));
+  const today = deps.now().toISOString().slice(0, 10);
+  const added = formatLessons(lessons, run.id, today);
+  const missed =
+    misses.length === 0
+      ? ""
+      : `\n${MISSES_HEADING}\n\n${misses.map((m) => `- ${m.leccion} · run ${run.id} · ${m.origen} · ${today}`).join("\n")}\n`;
   mkdirSync(dirname(join(worktree, file)), { recursive: true });
   writeFileSync(
     join(worktree, file),
-    `# Lecciones propuestas por ${feature.clave}\n\nAl mergear su PR, flowrunner las pasa a \`lecciones.md\` con su número.\n${added}`,
+    `# Lecciones propuestas por ${feature.clave}\n\nAl mergear su PR, flowrunner las pasa a \`lecciones.md\` con su número.\n${added}${missed}`,
   );
   await git(worktree, ["add", file], deps.env);
   await git(
@@ -166,5 +188,13 @@ export async function proposeLessons(
     ],
     deps.env,
   );
-  write(`${howToReject(file)}\n${added}${suggestions}`, lessons.length);
+  const missedForPr =
+    misses.length === 0
+      ? ""
+      : `\n\nLecciones que ya estaban y no alcanzaron (al mergear, quedan anotadas en cada una): ${misses.map((m) => `${m.leccion} (${m.origen})`).join(", ")}.`;
+  const intro =
+    lessons.length === 0
+      ? "Ninguna lección nueva para el cerebro."
+      : `${howToReject(file)}\n${added}`;
+  write(`${intro}${missedForPr}${suggestions}`, lessons.length);
 }

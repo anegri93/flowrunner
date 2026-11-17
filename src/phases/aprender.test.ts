@@ -3,7 +3,13 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { git, repoWith } from "../../test/helpers/git.ts";
 import type { PrDetail } from "../github/gh.ts";
-import { autoMergeAllowed, corrections, detailOrphans, numberProposals } from "./aprender.ts";
+import {
+  autoMergeAllowed,
+  corrections,
+  detailOrphans,
+  numberProposals,
+  markMisses,
+} from "./aprender.ts";
 
 const URL = "https://github.com/acme/acme-api/pull/412";
 
@@ -175,5 +181,30 @@ describe("detailOrphans", () => {
       "# Detalle\n\n### L-1 · a\n\nporque\n\n### L-9 · b\n\n### L-12 · c\n\n### L-15 · d\n";
     expect(detailOrphans(lessons, detail)).toEqual([12, 15]);
     expect(detailOrphans(lessons, "# Detalle\n\n### L-9 · b\n")).toEqual([]);
+  });
+});
+
+describe("markMisses", () => {
+  const lessons = "# Lecciones\n\n### L-1 · Una\n\nRegla: a.\n\n### L-2 · Dos\n\nRegla: b.\n";
+  // Si regresiona, una lección que no evita su error sigue igual y nadie se entera.
+  test("anota debajo de cada lección que no alcanzó, y la que ya no está se ignora", () => {
+    const proposals =
+      "# Lecciones propuestas por PIZ-1\n\n### Nueva\n\nRegla: n.\n\n## No alcanzaron\n\n- L-1 · run PIZ-1-x · revisar, vuelta 1 · 2026-11-17\n- L-9 · run PIZ-1-x · revisar, vuelta 2 · 2026-11-17\n";
+    expect(markMisses(lessons, proposals)).toBe(
+      "# Lecciones\n\n### L-1 · Una\n\nRegla: a.\n\nNo alcanzó: run PIZ-1-x · revisar, vuelta 1 · 2026-11-17\n\n### L-2 · Dos\n\nRegla: b.\n",
+    );
+    expect(numberProposals(proposals, 3)).toEqual({
+      added: "\n### L-3 · Nueva\n\nRegla: n.\n",
+      count: 1,
+    });
+  });
+
+  test("la última lección del archivo también se anota, y sin la sección no cambia nada", () => {
+    const proposals =
+      "## No alcanzaron\n\n- L-2 · run PIZ-1-x · verificar, vuelta 1 · 2026-11-17\n";
+    expect(markMisses(lessons, `x\n${proposals}`)).toBe(
+      "# Lecciones\n\n### L-1 · Una\n\nRegla: a.\n\n### L-2 · Dos\n\nRegla: b.\n\nNo alcanzó: run PIZ-1-x · verificar, vuelta 1 · 2026-11-17\n",
+    );
+    expect(markMisses(lessons, "### Nueva\n")).toBe(lessons);
   });
 });

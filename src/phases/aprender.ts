@@ -99,7 +99,7 @@ export const consolidationSchema = z.object({
  */
 export const DETAIL_FILE = "lecciones-detalle.md";
 
-const lessonNumbers = (text: string) =>
+export const lessonNumbers = (text: string) =>
   [...text.matchAll(/^### L-(\d+)/gm)].map((m) => Number(m[1]));
 
 /** Las entradas del detalle cuya lección ya no está en lecciones.md. */
@@ -124,16 +124,39 @@ export function autoMergeAllowed(touched: readonly string[], consolidated: boole
   );
 }
 
+/** Dónde empieza, en el archivo de propuestas, la lista de lecciones que ya estaban y no alcanzaron. */
+export const MISSES_HEADING = "## No alcanzaron";
+
 /** Las lecciones propuestas (`### título`), numeradas desde `first` como entradas de lecciones.md. */
 export function numberProposals(text: string, first: number): { added: string; count: number } {
-  const at = text.search(/^### /m);
+  const cut = text.indexOf(`\n${MISSES_HEADING}`);
+  const body = cut === -1 ? text : text.slice(0, cut);
+  const at = body.search(/^### /m);
   if (at === -1) return { added: "", count: 0 };
   let n = first;
-  const added = `\n${text.slice(at).trimEnd()}\n`.replace(
+  const added = `\n${body.slice(at).trimEnd()}\n`.replace(
     /^### /gm,
     () => `### L-${String(n++)} · `,
   );
   return { added, count: n - first };
+}
+
+/**
+ * Anota debajo de cada lección que no alcanzó (`- L-n · run … · origen · fecha` en las propuestas) una
+ * línea `No alcanzó:`. Así se ve qué lecciones no se entienden; una que ya no está se ignora.
+ */
+export function markMisses(lessons: string, proposals: string): string {
+  const cut = proposals.indexOf(`\n${MISSES_HEADING}`);
+  if (cut === -1) return lessons;
+  let out = lessons;
+  for (const m of proposals.slice(cut).matchAll(/^- L-(\d+) · (.+)$/gm)) {
+    const start = out.search(new RegExp(`^### L-${m[1] ?? ""} · `, "m"));
+    if (start === -1) continue;
+    const next = out.slice(start + 1).search(/^### /m);
+    const end = next === -1 ? out.length : start + 1 + next;
+    out = `${out.slice(0, end).trimEnd()}\n\nNo alcanzó: ${m[2] ?? ""}\n${next === -1 ? "" : "\n"}${out.slice(end)}`;
+  }
+  return out;
 }
 
 export const APRENDER_TIMEOUT_MS = 15 * 60_000;
@@ -284,7 +307,7 @@ export const aprender: PhaseFn = async (ctx) => {
       correctionCount = result.output.lecciones.length;
     }
     const added = `${proposed.added}${fromCorrections}`;
-    let text = `${current.trimEnd()}\n${added}`;
+    let text = `${markMisses(current, proposals).trimEnd()}\n${added}`;
     let consolidated = false;
     // Al consolidar se unen y sacan lecciones: el detalle tiene que seguirlas o queda con números viejos.
     const detailFile = join(wt, ".flowrunner", DETAIL_FILE);

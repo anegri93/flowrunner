@@ -54,6 +54,11 @@ export async function corrections(
   const out: Correction[] = [];
   for (const commit of pr.commits.slice(lastOurs + 1)) {
     if (!commit.authors.some((a) => isPerson(a.login))) continue;
+    // Traer la base a la rama es un merge, no una corrección: sin esto, aprender solo aprendía a mergear.
+    const parents = await git(repo, ["rev-list", "--parents", "-n", "1", commit.oid], env).catch(
+      () => "",
+    );
+    if (parents.split(" ").length > 2) continue;
     // Tocar solo el cerebro, por ejemplo borrar una lección propuesta, no corrige el código.
     const files = await git(repo, ["show", "--name-only", "--format=", commit.oid], env).catch(
       () => "",

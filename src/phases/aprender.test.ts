@@ -119,6 +119,30 @@ describe("corrections", () => {
     expect(found).toEqual([]);
   });
 
+  // Si regresiona, traer main a la rama se vuelve una lección sobre cómo resolver conflictos.
+  test("un merge de la persona no es una corrección; su fix sí", async () => {
+    const h = repoWithHistory();
+    const branch = git(h.repo, "rev-parse", "--abbrev-ref", "HEAD");
+    git(h.repo, "checkout", "-qb", "base", h.ours);
+    writeFileSync(join(h.repo, "src/b.js"), "export const b = 1;\n");
+    git(h.repo, "add", "-A");
+    git(h.repo, "commit", "-qm", "feat: algo en la base");
+    git(h.repo, "checkout", "-q", branch);
+    git(h.repo, "merge", "-q", "--no-ff", "-m", "Merge main en la rama", "base");
+    const merge = git(h.repo, "rev-parse", "HEAD");
+    const found = await corrections(
+      pr([
+        { oid: h.ours, body: "Flowrunner-Run: SHOP-214-x", login: "bot" },
+        { oid: h.person, body: "", login: "anegri93" },
+        { oid: merge, body: "", login: "anegri93" },
+      ]),
+      "anegri93",
+      h.repo,
+      process.env,
+    );
+    expect(found.map((c) => c.origen)).toEqual([`${URL}/commits/${h.person}`]);
+  });
+
   test("el usuario se compara sin mayúsculas", async () => {
     const h = repoWithHistory();
     const found = await corrections(

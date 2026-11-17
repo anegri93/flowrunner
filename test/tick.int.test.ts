@@ -1,5 +1,5 @@
 // T7.1: flowrunner tick y learn: runs pausados y el estado de las PRs entregadas.
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { appendEvent, readLog } from "../src/store/run-log.ts";
@@ -76,6 +76,26 @@ describe("tick", () => {
     writeFileSync(join(d.dir(d.id), "aprender.lock"), String(process.pid));
     expect(runCli(["learn", d.id], d.env).stdout).toContain(
       "otro proceso ya está aprendiendo de este run",
+    );
+  }, 180_000);
+
+  // Regresión: el panel de Orca corta cada comando a los 20 s y aprender lleva minutos; mostraba
+  // «Command failed» aunque el aprendizaje terminaba bien.
+  test("learn --fondo contesta enseguida, aprende en un proceso aparte y avisa al terminar", async () => {
+    const d = await delivered();
+    d.setPr(412, (pr) => (pr.state = "MERGED"));
+    const out = runCli(["learn", d.id, "--fondo", "--json"], d.env);
+    expect(out.status).toBe(0);
+    expect(JSON.parse(out.stdout)).toEqual({
+      ok: true,
+      id: d.id,
+      resultado: "aprendiendo: te aviso cuando termine",
+    });
+    await waitFor("cerrado", () => d.state(d.id).status === "cerrado");
+    const avisos = join(d.env.HOME ?? "", "avisos.log");
+    await waitFor(
+      "el aviso",
+      () => existsSync(avisos) && readFileSync(avisos, "utf8").includes("SHOP-214: quedó cerrado"),
     );
   }, 180_000);
 

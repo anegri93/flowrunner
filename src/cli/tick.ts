@@ -1,16 +1,16 @@
 // `flowrunner tick`, lo que corre launchd, y `flowrunner learn <run>`, lo mismo para un run a pedido.
-import { rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { notifyMac } from "../notify/notify.ts";
 import { productionRuntime } from "../runner/production.ts";
 import { runUntilStop } from "../runner/runner.ts";
-import { tryLock } from "../store/lock.ts";
+import { isAlive, tryLock } from "../store/lock.ts";
 import type { RunEvent } from "../store/events.ts";
 import { writeReport } from "../report/report.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
 import { listRunIds, loadState, runPaths } from "../store/runs.ts";
 import { UserError } from "./output.ts";
-import { avisarCambio, despacharCola, lanzarOEncolar } from "./runs.ts";
+import { avisarCambio, despacharCola, lanzarOEncolar, spawnRunProcess } from "./runs.ts";
 
 /**
  * Por qué un run entregado sigue esperando: tu merge, o, con la PR ya mergeada, que otro run del
@@ -22,10 +22,12 @@ export function waitingReason(events: readonly RunEvent[]): string {
     : "la PR sigue abierta";
 }
 
+const aprenderLock = (dir: string) => join(dir, "aprender.lock");
+
 /** Aprende de un run entregado, si nadie más lo está haciendo. Devuelve el estado en que quedó. */
 export async function learnRun(home: string, id: string, env: NodeJS.ProcessEnv): Promise<string> {
   const run = runPaths(home, id);
-  const lock = join(run.dir, "aprender.lock");
+  const lock = aprenderLock(run.dir);
   if (!tryLock(lock)) return "otro proceso ya está aprendiendo de este run";
   try {
     const { deps, phases } = await productionRuntime(env, (t, b) => {
@@ -75,7 +77,8 @@ export async function tick(home: string, env: NodeJS.ProcessEnv, now: Date) {
   return { ok: true as const, acciones };
 }
 
-export async function learnOne(home: string, id: string, env: NodeJS.ProcessEnv) {
+/** Solo se aprende de un run que existe y está entregado. */
+function checkDelivered(home: string, id: string): void {
   let state;
   try {
     state = loadState(home, id);
@@ -88,5 +91,38 @@ export async function learnOne(home: string, id: string, env: NodeJS.ProcessEnv)
       `flowrunner status ${id}`,
     );
   }
+}
+
+export async function learnOne(home: string, id: string, env: NodeJS.ProcessEnv) {
+  checkDelivered(home, id);
   return { ok: true as const, id, resultado: await learnRun(home, id, env) };
+}
+
+/**
+ * `learn --fondo`: aprende en un proceso aparte y contesta enseguida. Aprender lleva minutos (varias
+ * sesiones de agente) y el panel de Orca corta cada comando a los 20 s: esperaba y mostraba «Command
+ * failed» aunque el aprendizaje terminaba bien. El resultado llega como aviso.
+ */
+export function learnInBackground(home: string, id: string, env: NodeJS.ProcessEnv) {
+  checkDelivered(home, id);
+  const run = runPaths(home, id);
+  const lock = aprenderLock(run.dir);
+  if (existsSync(lock) && isAlive(Number(readFileSync(lock, "utf8")))) {
+    return { ok: true as const, id, resultado: "otro proceso ya está aprendiendo de este run" };
+  }
+  spawnRunProcess(run, env, "_learn");
+  return { ok: true as const, id, resultado: "aprendiendo: te aviso cuando termine" };
+}
+
+/** El proceso de `learn --fondo`: aprende y avisa en qué quedó, también si falló. */
+export async function learnAndNotify(home: string, id: string, env: NodeJS.ProcessEnv) {
+  const clave = loadState(home, id).clave;
+  try {
+    const resultado = await learnRun(home, id, env);
+    notifyMac("flowrunner", `${clave}: ${resultado}`, env);
+    return resultado;
+  } catch (error) {
+    notifyMac("flowrunner", `${clave}: no pude aprender. El detalle está en run.log`, env);
+    throw error;
+  }
 }

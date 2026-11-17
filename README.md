@@ -435,7 +435,7 @@ equivalente de API: con la suscripción no se cobran, y lo que limita es su cupo
 | `flowrunner rerun <run> --desde <fase>`        | rehacer desde una fase                        |
 | `flowrunner accept-untested <run> "<por qué>"` | entregar con criterios sin probar             |
 | `flowrunner abort <run>`                       | cancelar un run                               |
-| `flowrunner learn <run>`                       | aprender ya de una PR mergeada                |
+| `flowrunner learn <run> [--fondo]`             | aprender ya; `--fondo`: aparte, con aviso     |
 | `flowrunner stats [proyecto]`                  | en qué fase se va el tiempo y el costo        |
 | `flowrunner stats --runs [proyecto]`           | tiempo, costo, rechazos y graft de cada run   |
 | `flowrunner doctor`                            | qué le falta a esta máquina                   |

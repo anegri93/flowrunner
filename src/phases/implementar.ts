@@ -10,7 +10,7 @@ import type { RepoConfig } from "../config/schemas.ts";
 import { esEsperaDeRed, initialState, reduce, stateOf } from "../engine/engine.ts";
 import { blockedByFailure, readyToStart } from "../engine/scheduler.ts";
 import { AVISO_TEST_EXISTENTE, existedAt, testsTouched, undeclared } from "../gates/existente.ts";
-import { allDependencies, type Plan, type Subtask } from "../gates/plan.ts";
+import { tocaDependencias, type Plan, type Subtask } from "../gates/plan.ts";
 import {
   addWorktree,
   changesSince,
@@ -119,26 +119,30 @@ export function prefersExact(manifest: string): boolean {
 /** Las dependencias de una sub-task como texto para su prompt. */
 function dependencyText(task: Subtask): string {
   const dev = task.dependencias_dev ?? [];
-  if (task.dependencias.length === 0 && dev.length === 0) return "(ninguna)";
+  const quita = task.quita_dependencias ?? [];
+  if (!tocaDependencias(task)) return "(ninguna)";
   return [
     ...(task.dependencias.length > 0 ? [task.dependencias.join(", ")] : []),
     ...(dev.length > 0 ? [`de desarrollo: ${dev.join(", ")}`] : []),
+    ...(quita.length > 0 ? [`saca: ${quita.join(", ")}`] : []),
   ].join("; ");
 }
 
 /** Los comandos de instalar las dependencias de la sub-task, según el lockfile y el estilo del repo. */
 export function installCommands(config: RepoConfig, task: Subtask, exact: boolean): string[] {
   const lock = config.lockfiles.join(" ");
-  const tool = lock.includes("pnpm-lock")
-    ? "pnpm add"
+  const [tool, remove] = lock.includes("pnpm-lock")
+    ? ["pnpm add", "pnpm remove"]
     : lock.includes("yarn.lock")
-      ? "yarn add"
-      : "npm install";
+      ? ["yarn add", "yarn remove"]
+      : ["npm install", "npm uninstall"];
   const pin = exact ? " -E" : "";
   const dev = task.dependencias_dev ?? [];
+  const quita = task.quita_dependencias ?? [];
   return [
     ...(task.dependencias.length > 0 ? [`${tool}${pin} ${task.dependencias.join(" ")}`] : []),
     ...(dev.length > 0 ? [`${tool} -D${pin} ${dev.join(" ")}`] : []),
+    ...(quita.length > 0 ? [`${remove} ${quita.join(" ")}`] : []),
   ];
 }
 
@@ -184,7 +188,7 @@ export function unitScope(
     harness: config.harness_files,
     lockfiles: config.lockfiles,
     manifests: config.manifests,
-    depsDeclared: allDependencies(task).length > 0,
+    depsDeclared: tocaDependencias(task),
     testGlobs: config.tests_globs,
     comandos,
     unreadable: config.env_files,

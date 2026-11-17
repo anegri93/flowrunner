@@ -8,6 +8,7 @@ import {
   checkCommandsFail,
   checkPlanShape,
   delRun,
+  effectiveScope,
   subtaskSchema,
   type Plan,
   type Subtask,
@@ -234,6 +235,13 @@ describe("forma del plan", () => {
     ]);
     expect(shape(p)).toEqual(["hay un ciclo de dependencias: ST-1 → ST-2 → ST-1"]);
   });
+});
+
+// Si regresiona, dos sub-tasks que sacan paquetes corren a la vez y chocan en el lockfile, o una que
+// saca paquetes no puede escribir el manifiesto (ADR 0034).
+test("sacar paquetes suma el manifiesto y el lockfile al alcance, como agregarlos", () => {
+  const quita = task("ST-1", ["src/a.ts"], { quita_dependencias: ["viejo"] });
+  expect(effectiveScope(quita, rules)).toEqual(["src/a.ts", "pnpm-lock.yaml", "package.json"]);
 });
 
 describe("las dependencias del plan", () => {

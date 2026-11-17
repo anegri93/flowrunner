@@ -1,6 +1,6 @@
 // Aprender: después del merge, las correcciones de la persona se vuelven lecciones que llegan a la
 // base por una PR chica con auto-merge. Solo cuentan los commits y comentarios de `github_user`.
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { runSession } from "../agent/session.ts";
@@ -88,7 +88,25 @@ export const lessonsSchema = z.object({
     .min(1)
     .max(3),
 });
-export const consolidationSchema = z.object({ lecciones_md: z.string().min(1) });
+export const consolidationSchema = z.object({
+  lecciones_md: z.string().min(1),
+  detalle_md: z.string().min(1).optional(),
+});
+
+/**
+ * El porqué y los ejemplos de cada lección, con el mismo número, fuera de lecciones.md para no pasar
+ * su tope. Es opcional y ningún prompt lo carga: lo lee quien siga el aviso de lecciones.md.
+ */
+export const DETAIL_FILE = "lecciones-detalle.md";
+
+const lessonNumbers = (text: string) =>
+  [...text.matchAll(/^### L-(\d+)/gm)].map((m) => Number(m[1]));
+
+/** Las entradas del detalle cuya lección ya no está en lecciones.md. */
+export function detailOrphans(lessons: string, detail: string): number[] {
+  const kept = new Set(lessonNumbers(lessons));
+  return lessonNumbers(detail).filter((n) => !kept.has(n));
+}
 
 /** El auto-merge solo entra si el diff toca únicamente lecciones.md y no hubo consolidación (spec, sección 4). */
 export function autoMergeAllowed(touched: readonly string[], consolidated: boolean): boolean {
@@ -101,8 +119,7 @@ export function autoMergeAllowed(touched: readonly string[], consolidated: boole
 
 export const APRENDER_TIMEOUT_MS = 15 * 60_000;
 
-export const nextLessonNumber = (text: string) =>
-  1 + Math.max(0, ...[...text.matchAll(/^### L-(\d+)/gm)].map((m) => Number(m[1])));
+export const nextLessonNumber = (text: string) => 1 + Math.max(0, ...lessonNumbers(text));
 
 /**
  * Una sesión que solo lee: sin herramientas de escritura, Bash ni agentes. Con `graft`, también las del
@@ -230,6 +247,9 @@ export const aprender: PhaseFn = async (ctx) => {
       .join("");
     let text = `${current.trimEnd()}\n${added}`;
     let consolidated = false;
+    // Al consolidar se unen y sacan lecciones: el detalle tiene que seguirlas o queda con números viejos.
+    const detailFile = join(wt, ".flowrunner", DETAIL_FILE);
+    const detail = existsSync(detailFile) ? readFileSync(detailFile, "utf8") : undefined;
     if (Array.from(text).length > BRAIN_FILES.lecciones.max) {
       const merged = await runSession(
         {
@@ -238,6 +258,7 @@ export const aprender: PhaseFn = async (ctx) => {
           prompt: render("consolidar", {
             lecciones: text,
             maximo: String(BRAIN_FILES.lecciones.max),
+            detalle: detail === undefined ? "" : render("consolidar-detalle", { detalle: detail }),
           }),
           cwd: wt,
           model: config.models.aprender,
@@ -254,6 +275,24 @@ export const aprender: PhaseFn = async (ctx) => {
           : { tipo: "falla", clase: merged.clase, motivo: merged.motivo };
       text = merged.output.lecciones_md;
       consolidated = true;
+      if (detail !== undefined) {
+        const newDetail = merged.output.detalle_md;
+        if (newDetail === undefined)
+          return {
+            tipo: "falla",
+            clase: "gate",
+            motivo: `la consolidación no reescribió ${DETAIL_FILE}`,
+          };
+        const orphans = detailOrphans(text, newDetail);
+        if (orphans.length > 0) {
+          return {
+            tipo: "falla",
+            clase: "gate",
+            motivo: `la consolidación dejó en ${DETAIL_FILE} lecciones que ya no están: ${orphans.map((n) => `L-${String(n)}`).join(", ")}`,
+          };
+        }
+        writeFileSync(detailFile, newDetail.endsWith("\n") ? newDetail : `${newDetail}\n`);
+      }
     }
     writeFileSync(lessonsFile, text.endsWith("\n") ? text : `${text}\n`);
     await commitAll(

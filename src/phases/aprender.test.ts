@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { git, repoWith } from "../../test/helpers/git.ts";
 import type { PrDetail } from "../github/gh.ts";
-import { autoMergeAllowed, corrections } from "./aprender.ts";
+import { autoMergeAllowed, corrections, detailOrphans } from "./aprender.ts";
 
 const URL = "https://github.com/acme/acme-api/pull/412";
 
@@ -138,5 +138,16 @@ describe("autoMergeAllowed", () => {
     expect(autoMergeAllowed([".flowrunner/lecciones.md", "src/a.js"], false)).toBe(false);
     expect(autoMergeAllowed([".flowrunner/convenciones.md"], false)).toBe(false);
     expect(autoMergeAllowed([".flowrunner/lecciones.md"], true)).toBe(false);
+  });
+});
+
+describe("detailOrphans", () => {
+  // Si regresiona, el detalle conserva lecciones que la consolidación unió o sacó.
+  test("las entradas del detalle sin su lección en lecciones.md", () => {
+    const lessons = "# Lecciones\n\n### L-1 · a\n\nRegla: x.\n\n### L-9 · b\n\nRegla: y.\n";
+    const detail =
+      "# Detalle\n\n### L-1 · a\n\nporque\n\n### L-9 · b\n\n### L-12 · c\n\n### L-15 · d\n";
+    expect(detailOrphans(lessons, detail)).toEqual([12, 15]);
+    expect(detailOrphans(lessons, "# Detalle\n\n### L-9 · b\n")).toEqual([]);
   });
 });

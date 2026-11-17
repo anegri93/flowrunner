@@ -71,6 +71,7 @@ describe("lecciones propuestas en la PR de entrega", () => {
           {
             titulo: "Los CSV llevan encabezado",
             regla: "Escribir la fila de encabezado primero.",
+            aplica: "src/export/",
             origen: "revisar, vuelta 1",
           },
         ],
@@ -85,6 +86,7 @@ describe("lecciones propuestas en la PR de entrega", () => {
     expect(git(w.remote, "log", "-1", "--format=%b", BRANCH)).toContain(`Flowrunner-Run: ${id}`);
     const lessons = git(w.remote, "show", `${BRANCH}:.flowrunner/lecciones.md`);
     expect(lessons).toContain("### L-1 · Los CSV llevan encabezado");
+    expect(lessons).toContain("Aplica: src/export/");
     expect(lessons).toContain(`Origen: run ${id} · revisar, vuelta 1 ·`);
     expect(body).toContain("## Lo que aprendió este run");
     expect(body).toContain("Los CSV llevan encabezado");
@@ -95,7 +97,9 @@ describe("lecciones propuestas en la PR de entrega", () => {
   test("una lección con un origen inventado no entra, y la PR se entrega igual con un aviso", async () => {
     const { w, id, body } = await withRound({
       match: PROPOSER,
-      output: { lecciones: [{ titulo: "x", regla: "y", origen: "revisar, vuelta 9" }] },
+      output: {
+        lecciones: [{ titulo: "x", regla: "y", aplica: "src/", origen: "revisar, vuelta 9" }],
+      },
     });
     const subjects = git(w.remote, "log", "--format=%s", `main..${BRANCH}`).split("\n");
     expect(subjects).not.toContain("docs(lecciones): lo que aprendió SHOP-214");
@@ -104,6 +108,21 @@ describe("lecciones propuestas en la PR de entrega", () => {
     );
     expect(warnings.some((t) => t.includes("revisar, vuelta 9"))).toBe(true);
     expect(body).toContain("## Lo que aprendió este run");
+  }, 240_000);
+
+  // Si regresiona, lo que se arregla en la configuración vuelve a entrar al cerebro como lección.
+  test("una fricción que se arregla en la configuración queda como sugerencia en la PR, sin lección", async () => {
+    const { w, body } = await withRound({
+      match: PROPOSER,
+      output: {
+        lecciones: [],
+        sugerencias: ["Sumá `format: npx prettier --write` a .flowrunner/config.yaml."],
+      },
+    });
+    const subjects = git(w.remote, "log", "--format=%s", `main..${BRANCH}`).split("\n");
+    expect(subjects).not.toContain("docs(lecciones): lo que aprendió SHOP-214");
+    expect(body).toContain("Se arregla en la configuración del repo, no con una lección:");
+    expect(body).toContain("- Sumá `format: npx prettier --write` a .flowrunner/config.yaml.");
   }, 240_000);
 
   // Si regresiona, flowrunner gasta una sesión buscando lecciones en un run que salió derecho.

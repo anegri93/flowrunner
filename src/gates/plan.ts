@@ -74,6 +74,16 @@ export const planSchema = z.object({
         .describe(
           "la sub-task que cubre el criterio: ST-n, o run si su comando es el verify del repo",
         ),
+      /**
+       * Si probar lo puede ver con la app levantada (ADR 0032). Opcional: un plan de antes, o de un repo
+       * sin `probar`, no lo dice, y probar lo intenta como siempre.
+       */
+      en_entorno: z
+        .boolean()
+        .optional()
+        .describe(
+          "true si el criterio se ve usando la app levantada: una pantalla o una respuesta de la API. false si solo lo comprueba su test: un proceso, una señal, la app nativa, un servicio real como Claude. Obligatorio si el repo configuró probar",
+        ),
     }),
   ),
   /** Los archivos de test que escribió, relativos al repo. */
@@ -181,7 +191,7 @@ export function checkPlanShape(
   feature: Feature,
   root: string,
   /** `verify` es el del repo (`config.verify`): el rechazo de un criterio del run lo nombra. */
-  rules: PlanRepoRules & { readonly verify: string },
+  rules: PlanRepoRules & { readonly verify: string; readonly probar?: unknown },
   /** Si el comando es el verify del repo (`isVerifyCommand`): solo esos criterios pueden ser del run. */
   esVerify: (comando: string) => boolean = () => false,
 ): string[] {
@@ -202,6 +212,11 @@ export function checkPlanShape(
         );
     } else if (!idSet.has(entry.subtarea))
       problems.push(`${ac.id} apunta a ${entry.subtarea}, que no existe`);
+    // Probar intenta solo lo que se ve en el entorno: el plan lo tiene que decir (ADR 0032).
+    else if (rules.probar !== undefined && entry.en_entorno === undefined)
+      problems.push(
+        `${ac.id} no dice si se ve en el entorno (\`en_entorno\`): true si se ve usando la app levantada, una pantalla o la API; false si solo lo comprueba su test`,
+      );
   }
   for (const extra of plan.criterios.filter((c) => !feature.criterios.some((a) => a.id === c.id))) {
     problems.push(`${extra.id} no es un criterio de la feature`);

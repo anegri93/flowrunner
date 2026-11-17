@@ -217,6 +217,59 @@ describe("probar", () => {
     }
   });
 
+  // Si regresiona, probar intenta lo que solo prueba un test (un proceso, la app nativa, Claude de
+  // verdad), lo deja sin probar y frena el run: 7 de 8 runs del 2026-11-12 (ADR 0032).
+  test("un criterio que solo prueba su test no se prueba ni frena el run como sin probar", async () => {
+    const { outcome, sim } = await testWith(
+      {
+        pruebas: [
+          prueba({}),
+          prueba({
+            criterio: "AC-2",
+            resultado: "no_probado",
+            evidencia: "el entorno corre con el generador de prueba",
+          }),
+        ],
+        decisiones: [],
+      },
+      true,
+      {},
+      {
+        ...plan,
+        criterios: [
+          { id: "AC-1", comando: "node tests/ac1.mjs", subtarea: "ST-1", en_entorno: true },
+          { id: "AC-2", comando: "node tests/ac1.mjs", subtarea: "ST-2", en_entorno: false },
+        ],
+      },
+    );
+    expect(outcome).toEqual({ tipo: "ok" });
+    expect(sim.records[0]?.prompt).toContain(
+      "AC-2: solo lo prueba su test, que verificar ya corrió en verde. No lo pruebes.",
+    );
+  });
+
+  // Si regresiona, probar levanta el entorno y gasta una sesión para no probar nada.
+  test("si ningún criterio se ve en el entorno, se saltea sin levantarlo ni abrir sesión", async () => {
+    const { outcome, sim, run, url } = await testWith(
+      undefined,
+      true,
+      {},
+      {
+        ...plan,
+        criterios: [
+          { id: "AC-1", comando: "node tests/ac1.mjs", subtarea: "ST-1", en_entorno: false },
+        ],
+      },
+    );
+    expect(outcome).toEqual({
+      tipo: "ok",
+      salteada: "ningún criterio se ve en el entorno: los prueban sus tests, en verde en verificar",
+    });
+    expect(sim.records).toHaveLength(0);
+    expect(await responds(url)).toBe(false);
+    expect(lastTestDir(run)).toBeUndefined();
+  });
+
   // Si regresiona, un repo sin entorno configurado queda trabado en probar, o su salto se ve como un ✓.
   test("sin `probar` en la config se saltea con un aviso, sin sesión y dice por qué", async () => {
     const { outcome, sim, run } = await testWith(undefined, false);

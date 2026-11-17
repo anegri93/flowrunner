@@ -203,7 +203,10 @@ desde la copia de la feature, llama a la API y navega la plataforma con Chrome. 
 vuelve a su sub-task con la evidencia. Un criterio que no se pudo probar detiene el run: arreglás lo que
 faltó y rehacés probar, o decidís entregar igual con `flowrunner accept-untested <run> "<por qué>"`, y
 ese motivo queda en la PR. Un criterio que es el verify del repo no se prueba acá: ya lo dio en verde
-verificar, y no cuenta como sin probar. Para todo esto el repo dice cómo levantar el entorno en
+verificar, y no cuenta como sin probar. Tampoco uno que solo comprueba su test, como un proceso que
+recibe una señal, la app nativa o un servicio real que el entorno reemplaza por uno falso: el plan
+marca cada criterio con `en_entorno`, y probar ejercita solo los que se ven usando la app. Si ninguno
+se ve, probar se saltea sin levantar el entorno. Para todo esto el repo dice cómo levantar el entorno en
 `.flowrunner/config.yaml`. Sin esto, probar se saltea: `feature check` lo avisa antes de lanzar, y
 `watch` y el panel de Orca muestran la etapa «salteada» con el motivo, no como lista:
 

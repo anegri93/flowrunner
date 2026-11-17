@@ -92,6 +92,16 @@ export const probar: PhaseFn = async (ctx) => {
     return { tipo: "ok", salteada: motivo };
   }
   const probarConfig = config.probar;
+  const plan = readPlan(run);
+  // Un criterio que solo prueba su test, como un proceso o la app nativa, ya lo corrió verificar en
+  // verde: no se prueba ni cuenta como sin probar. Sin ninguno que se vea, no se levanta nada (ADR 0032).
+  const soloTest = new Set(plan.criterios.filter((c) => c.en_entorno === false).map((c) => c.id));
+  if (plan.criterios.length > 0 && plan.criterios.every((c) => soloTest.has(c.id))) {
+    const motivo =
+      "ningún criterio se ve en el entorno: los prueban sus tests, en verde en verificar";
+    emit({ tipo: "aviso", fase: "probar", texto: `probar se salteó: ${motivo}` });
+    return { tipo: "ok", salteada: motivo };
+  }
   // Con el turno del entorno de levantar a bajar: las URLs de probar son fijas (ADR 0019).
   return conEntorno(ctx, async (): Promise<Outcome> => {
     const nombre = sessionName(run, "probar");
@@ -106,7 +116,6 @@ export const probar: PhaseFn = async (ctx) => {
     if (up.tipo === "falla") return { tipo: "falla", clase: "entorno", motivo: up.motivo };
     const urls = [...Object.entries(probarConfig.urls), ...Object.entries(probarConfig.servicios)];
     const origins = [...new Set(urls.map(([, u]) => new URL(u).origin))];
-    const plan = readPlan(run);
     const ids = plan.subtareas.map((t) => t.id);
     // Un criterio que es el verify del repo, como «`npm run check` pasa», ya lo comprobó verificar en
     // verde antes de llegar acá, y probar no corre comandos: no se prueba ni cuenta como sin probar.
@@ -147,10 +156,18 @@ export const probar: PhaseFn = async (ctx) => {
                   .join("\n")
               : "El repo no declaró fallas: un criterio que pide provocar una no se puede probar acá.",
             subtareas: ids.join(", "),
-            verificados:
-              delVerify.size === 0
-                ? ""
-                : `${[...delVerify].join(", ")}: es el verify del repo y verificar ya lo comprobó en verde. No lo pruebes.`,
+            verificados: [
+              ...(delVerify.size === 0
+                ? []
+                : [
+                    `${[...delVerify].join(", ")}: es el verify del repo y verificar ya lo comprobó en verde. No lo pruebes.`,
+                  ]),
+              ...(soloTest.size === 0
+                ? []
+                : [
+                    `${[...soloTest].join(", ")}: solo lo prueba su test, que verificar ya corrió en verde. No lo pruebes.`,
+                  ]),
+            ].join("\n\n"),
             instruccion:
               action.instruccion === undefined
                 ? ""
@@ -219,7 +236,8 @@ export const probar: PhaseFn = async (ctx) => {
       const etiqueta = (p: Pruebas["pruebas"][number]) =>
         p.criterio === "" ? p.que : `${p.criterio} (${p.que})`;
       const untested = tests.pruebas.filter(
-        (x) => x.resultado === "no_probado" && !delVerify.has(x.criterio),
+        (x) =>
+          x.resultado === "no_probado" && !delVerify.has(x.criterio) && !soloTest.has(x.criterio),
       );
       for (const p of untested) {
         emit({

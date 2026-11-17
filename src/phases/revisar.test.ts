@@ -8,7 +8,14 @@ import type { Plan } from "../gates/plan.ts";
 import { commitAll } from "../git/git.ts";
 import { readLog } from "../store/run-log.ts";
 import { z } from "zod";
-import { rejectedWritesText, revisar, reviewSchema, type Review } from "./revisar.ts";
+import {
+  rejectedWritesText,
+  revisar,
+  revisionesAnteriores,
+  reviewSchema,
+  verifyText,
+  type Review,
+} from "./revisar.ts";
 import type { RunEvent } from "../store/events.ts";
 
 const plan: Plan = {
@@ -172,4 +179,92 @@ test("revisar recibe las escrituras rechazadas desde la última aprobación, sin
     "- ST-5: package.json solo se toca si ST-5 declaró dependencias",
   );
   expect(rejectedWritesText([])).toBe("Ninguna.");
+});
+
+describe("lo que revisar sabe de antes (ADR 0030)", () => {
+  const at = "2026-11-12T18:00:00.000Z";
+  type Terminada = Extract<RunEvent, { tipo: "accion_terminada" }>;
+  const terminada = (fase: Terminada["fase"], resultado: Terminada["resultado"]): RunEvent => ({
+    tipo: "accion_terminada",
+    at,
+    fase,
+    resultado,
+  });
+  const unidad = (
+    u: string,
+    estado: "integrada" | "sin_cambios",
+    extra: { sha?: string; motivo?: string },
+  ): RunEvent => ({
+    tipo: "unidad",
+    at,
+    fase: "implementar",
+    unidad: u,
+    estado,
+    ...extra,
+  });
+
+  // Si regresiona, revisar repite un bloqueante que la sub-task ya contestó, sin enterarse de la
+  // respuesta: en PIZ-15 frenó tres veces por un formato que verify daba por bueno.
+  test("cada vuelta anterior con lo que hizo cada sub-task, desde la última aprobación", () => {
+    const events: RunEvent[] = [
+      terminada("revisar", { tipo: "vuelve", unidades: ["ST-9"], motivo: "de un plan anterior" }),
+      { tipo: "aprobado", at },
+      terminada("revisar", {
+        tipo: "vuelve",
+        unidades: ["ST-1", "ST-2"],
+        motivo:
+          "la revisión encontró bloqueantes:\n- ST-2 · api.ts:1439: Prettier lo deja en una línea",
+      }),
+      unidad("ST-1", "integrada", { sha: "5cef593aa" }),
+      unidad("ST-2", "sin_cambios", {
+        motivo: "prettier --check da verde: no hay nada que cambiar",
+      }),
+      // Lo que se hace por un rojo de verificar no es una respuesta a la revisión.
+      terminada("verificar", { tipo: "vuelve", unidades: ["ST-1"], motivo: "lint rojo" }),
+      unidad("ST-1", "integrada", { sha: "9999999aa" }),
+      terminada("verificar", { tipo: "ok" }),
+    ];
+    expect(revisionesAnteriores(events)).toBe(
+      [
+        "## Vuelta 1",
+        "",
+        "la revisión encontró bloqueantes:\n- ST-2 · api.ts:1439: Prettier lo deja en una línea",
+        "",
+        "Lo que hicieron las sub-tasks:",
+        "- ST-1 cambió su código (5cef593).",
+        "- ST-2 no cambió nada. Dijo: «prettier --check da verde: no hay nada que cambiar»",
+      ].join("\n"),
+    );
+    expect(revisionesAnteriores([{ tipo: "aprobado", at }])).toBe(
+      "Es la primera revisión de este plan.",
+    );
+  });
+
+  // Si regresiona, revisar no sabe qué comprobó verify y frena por formato, lint o tipos.
+  test("verify: si pasó o si la persona aceptó el rojo, con lo que corre el script", () => {
+    const script = "#!/bin/sh\nnpm run check\n";
+    expect(
+      verifyText([terminada("verificar", { tipo: "ok" })], ".flowrunner/verify.sh", script),
+    ).toBe(
+      "verify (`.flowrunner/verify.sh`) pasó sobre esta rama. Corre:\n\n```sh\n#!/bin/sh\nnpm run check\n```",
+    );
+    const aceptado: RunEvent[] = [
+      terminada("verificar", { tipo: "vuelve", unidades: ["ST-1"], motivo: "lint rojo" }),
+      { tipo: "aceptado", at, fase: "verificar", motivo: "es un falso positivo", origen: "orca" },
+    ];
+    expect(verifyText(aceptado, ".flowrunner/verify.sh", script)).toContain(
+      "quedó en rojo y la persona lo aceptó: «es un falso positivo»",
+    );
+  });
+
+  // Si regresiona, el prompt pierde las secciones y la regla que frena los bloqueantes de formato.
+  test("el prompt lleva verify, las vueltas anteriores y la regla de formato", async () => {
+    const { sim } = await reviewWith({ hallazgos: [], decisiones: [] });
+    const prompt = sim.records[0]?.prompt ?? "";
+    expect(prompt).toContain("# Lo que ya comprobó verify");
+    expect(prompt).toContain("```sh\n#!/bin/sh\nexit 0\n```");
+    expect(prompt).toContain("# Las revisiones anteriores");
+    expect(prompt).toContain("Es la primera revisión de este plan.");
+    expect(prompt).toContain("Formato, lint y tipos no son hallazgos");
+  });
 });

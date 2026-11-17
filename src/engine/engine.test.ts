@@ -1190,3 +1190,96 @@ describe("arreglos escritos y Autofix solo (ADR 0028)", () => {
     }
   });
 });
+
+describe("un bloqueante de revisar o probar va directo a la sub-task (ADR 0030)", () => {
+  const R = "R1";
+  const directo: RunEvent = { ...created, vueltas: 0, vuelta_directa: true };
+  const implemented = [...upTo("preparar", "planificar"), ...ok("aprobar"), ...ok("implementar")];
+  const commands = (s: RunState) => s.halt?.opciones.map((o) => o.comando);
+  const motivo =
+    "la revisión encontró bloqueantes:\n- ST-2 · servidor/conexion.ts:90: sin pipefail";
+  const arreglos = [{ unidad: "ST-2", instruccion: "Agregá `set -o pipefail` antes del curl" }];
+  const blocked = (fase: "revisar" | "probar") =>
+    done(fase, {
+      tipo: "vuelve",
+      unidades: ["ST-2"],
+      motivo,
+      ...(fase === "revisar" ? { arreglos } : {}),
+    });
+  const reviewed = [directo, ...implemented, ...ok("verificar"), ...blocked("revisar")];
+  const roundAgain = [...ok("implementar"), ...ok("verificar"), ...blocked("revisar")];
+
+  // Si regresiona, flowrunner corre el formateador y otra revisión entera sobre el mismo código, y un
+  // bloqueante real puede desaparecer sin que nadie lo arregle (PIZ-9 y PIZ-13).
+  test("revisar con bloqueantes manda la sub-task a implementar con el motivo y los arreglos, sin detenerse", () => {
+    const s = stateOf(reviewed);
+    expect(s.status).toBe("en_curso");
+    expect(nextAction(s)).toMatchObject({
+      fase: "implementar",
+      unidades: ["ST-2"],
+      instruccion: `${motivo}\n\nArreglos propuestos:\n- ST-2: ${arreglos[0]?.instruccion ?? ""}`,
+    });
+    expect(correAutofixSolo(s)).toBe(false);
+  });
+
+  // Si regresiona, un criterio que probar vio fallar espera a la persona o pasa por el formateador.
+  test("probar con un criterio en rojo también va directo a la sub-task", () => {
+    const s = stateOf([
+      directo,
+      ...implemented,
+      ...upTo("verificar", "revisar"),
+      ...blocked("probar"),
+    ]);
+    expect(nextAction(s)).toMatchObject({
+      fase: "implementar",
+      unidades: ["ST-2"],
+      instruccion: motivo,
+    });
+  });
+
+  // Si regresiona, flowrunner manda vueltas sin fin sin preguntarle a la persona, u ofrece un Autofix
+  // que no arregla un bloqueante de la revisión (PIZ-3).
+  test("una vez por respuesta de la persona: si vuelve a frenar, pregunta sin ofrecer Autofix", () => {
+    const again = stateOf([...reviewed, ...roundAgain]);
+    expect(again.status).toBe("detenido");
+    expect(correAutofixSolo(again)).toBe(false);
+    expect(commands(again)).not.toContain(`flowrunner fix ${R} --auto`);
+    expect(commands(again)?.[0]).toBe(
+      `flowrunner fix ${R} --unidad ST-2 'Agregá \`set -o pipefail\` antes del curl'`,
+    );
+    const answered = stateOf([
+      ...reviewed,
+      ...roundAgain,
+      ev({ tipo: "arreglo_pedido", unidades: ["ST-2"], instruccion: "x", origen: "orca" }),
+      ...roundAgain,
+    ]);
+    expect(nextAction(answered)).toMatchObject({ fase: "implementar", unidades: ["ST-2"] });
+  });
+
+  // Si regresiona, un rojo de formato o lint deja de pasar por las herramientas, que son las que lo
+  // arreglan sin gastar una sesión.
+  test("un rojo de verificar sigue deteniéndose para que corra Autofix solo", () => {
+    const red = stateOf([
+      directo,
+      ...implemented,
+      ...done("verificar", { tipo: "vuelve", unidades: ["ST-2"], motivo: "prettier" }),
+    ]);
+    expect(red.status).toBe("detenido");
+    expect(correAutofixSolo(red)).toBe(true);
+    expect(commands(red)).toContain(`flowrunner fix ${R} --auto`);
+  });
+
+  // Si regresiona, un run que ya estaba en curso al actualizar flowrunner cambia de camino a la mitad
+  // y su log deja de reducirse igual (C8).
+  test("un run creado sin vuelta_directa sigue como antes: se detiene y corre Autofix solo", () => {
+    const old = stateOf([
+      { ...created, vueltas: 0 },
+      ...implemented,
+      ...ok("verificar"),
+      ...blocked("revisar"),
+    ]);
+    expect(old.status).toBe("detenido");
+    expect(correAutofixSolo(old)).toBe(true);
+    expect(commands(old)).toContain(`flowrunner fix ${R} --auto`);
+  });
+});

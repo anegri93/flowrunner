@@ -1,6 +1,6 @@
 // Revisar: una sesión de Opus de solo lectura contrasta el diff con el plan y el cerebro. Los
 // bloqueantes devuelven su sub-task a implementar; los avisos van al informe.
-import { realpathSync, writeFileSync } from "node:fs";
+import { lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { runSession } from "../agent/session.ts";
@@ -66,6 +66,71 @@ function arreglosDe(blockers: readonly z.infer<typeof findingSchema>[]): Arreglo
 /** Un diff más largo que esto se corta en el prompt; el revisor puede leer los archivos con Read. */
 export const MAX_DIFF_CHARS = 60_000;
 
+/** Lo que se le muestra a revisar del script de verify: alcanza para saber qué comprueba. */
+const MAX_VERIFY_CHARS = 2_000;
+
+/**
+ * Qué comprobó verify antes de esta revisión: si pasó o si la persona aceptó el rojo, y lo que corre el
+ * script. Formato, lint y tipos los decide verify, no la revisión (PIZ-15, ADR 0030).
+ */
+export function verifyText(events: readonly RunEvent[], path: string, script: string): string {
+  const last = events.findLastIndex((e) => e.tipo === "accion_terminada" && e.fase === "verificar");
+  const ended = events[last];
+  const accepted = events
+    .slice(last + 1)
+    .findLast((e) => e.tipo === "aceptado" && e.fase === "verificar");
+  const how =
+    ended?.tipo === "accion_terminada" && ended.resultado.tipo === "ok"
+      ? "pasó sobre esta rama"
+      : accepted?.tipo === "aceptado"
+        ? `quedó en rojo y la persona lo aceptó: «${accepted.motivo}»`
+        : "no pasó sobre esta rama";
+  const body =
+    script.length > MAX_VERIFY_CHARS ? `${script.slice(0, MAX_VERIFY_CHARS)}\n…` : script.trimEnd();
+  return `verify (\`${path}\`) ${how}. Corre:\n\n\`\`\`sh\n${body}\n\`\`\``;
+}
+
+/**
+ * Las vueltas de revisar desde la última aprobación del plan: cada bloqueante y lo que hizo cada
+ * sub-task con él. Así la revisión comprueba lo que se arregló y no repite a ciegas lo que una sub-task
+ * contestó que no hacía falta (PIZ-15, ADR 0030).
+ */
+export function revisionesAnteriores(events: readonly RunEvent[]): string {
+  const since = events.findLastIndex((e) => e.tipo === "aprobado");
+  const rounds: { motivo: string; hechos: string[] }[] = [];
+  // La vuelta que están trabajando las sub-tasks: una de verificar o probar no es de la revisión.
+  let round: { motivo: string; hechos: string[] } | undefined;
+  for (const e of events.slice(since + 1)) {
+    if (e.tipo === "accion_terminada" && e.resultado.tipo === "vuelve") {
+      round = e.fase === "revisar" ? { motivo: e.resultado.motivo, hechos: [] } : undefined;
+      if (round !== undefined) rounds.push(round);
+    }
+    if (round === undefined || e.tipo !== "unidad" || e.fase !== "implementar") continue;
+    if (e.estado === "integrada")
+      round.hechos.push(
+        `- ${e.unidad} cambió su código${e.sha === undefined ? "" : ` (${e.sha.slice(0, 7)})`}.`,
+      );
+    if (e.estado === "sin_cambios")
+      round.hechos.push(
+        `- ${e.unidad} no cambió nada.${e.motivo === undefined ? "" : ` Dijo: «${e.motivo}»`}`,
+      );
+  }
+  if (rounds.length === 0) return "Es la primera revisión de este plan.";
+  return rounds
+    .map((r, i) =>
+      [
+        `## Vuelta ${i + 1}`,
+        "",
+        r.motivo,
+        "",
+        ...(r.hechos.length === 0
+          ? ["Las sub-tasks todavía no la trabajaron."]
+          : ["Lo que hicieron las sub-tasks:", ...r.hechos]),
+      ].join("\n"),
+    )
+    .join("\n\n");
+}
+
 /**
  * Lo que el bloqueo no dejó escribir a las sub-tasks desde la última aprobación del plan. Una sub-task
  * puede seguir sin eso y no decirlo (VF-6: el script `mac` de package.json, rechazado dos veces,
@@ -80,6 +145,19 @@ export function rejectedWritesText(events: readonly RunEvent[]): string {
     lines.add(`- ${e.unidad ?? "?"}: ${e.motivo}`);
   }
   return lines.size === 0 ? "Ninguna." : [...lines].join("\n");
+}
+
+/**
+ * El script de verify, o por qué no se pudo leer: la revisión sigue igual. Un link no se sigue, como en
+ * `runVerify`: podría llevar al prompt un archivo de fuera del repo.
+ */
+function readScript(path: string): string {
+  try {
+    if (lstatSync(path).isSymbolicLink()) return "(es un link: flowrunner no sigue links)";
+    return readFileSync(path, "utf8");
+  } catch (error) {
+    return `(no se pudo leer: ${error instanceof Error ? error.message : String(error)})`;
+  }
 }
 
 export const revisar: PhaseFn = async (ctx) => {
@@ -113,6 +191,8 @@ export const revisar: PhaseFn = async (ctx) => {
         diff,
         blast: await blastRadius(worktree, graftIndex(run), prep.base_sha, deps.env),
         rechazos: rejectedWritesText(ctx.events),
+        verify: verifyText(ctx.events, config.verify, readScript(join(worktree, config.verify))),
+        anteriores: revisionesAnteriores(ctx.events),
         ...brainVars(brain),
       }),
       cwd: worktree,

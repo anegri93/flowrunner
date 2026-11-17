@@ -470,6 +470,11 @@ describe("implementar", () => {
     );
     expect(outcome).toEqual({ tipo: "ok" });
     expect(unitEvents(run.dir)).toEqual(["ST-1:integrada", "ST-1:iniciada", "ST-1:sin_cambios"]);
+    // Lo que contestó queda para la revisión siguiente y el informe (ADR 0030).
+    const sinCambios = readLog(run.dir).events.find(
+      (e) => e.tipo === "unidad" && e.estado === "sin_cambios",
+    );
+    expect(sinCambios).toMatchObject({ motivo: "mi parte ya está bien" });
   });
 
   describe("tras un fix desde una pregunta de implementar", () => {

@@ -317,9 +317,10 @@ panel de Orca dicen el motivo, a qué sub-task se atribuye y tus respuestas, com
 - `flowrunner fix <run> --auto` (Autofix): pasa el lint y el formateador del repo (`lint_fix` y `format`
   de su config de hoy) por lo que cambió la rama, lo commitea y vuelve a verificar. Si sigue en rojo,
   las sub-tasks lo corrigen solas con el motivo, una vez; si tampoco alcanza, te vuelve a preguntar.
-  Antes de preguntarte, flowrunner ya lo corrió solo, una vez por detención (ADR 0028): la pregunta
-  que te llega es la de después. Si Autofix se negó, por ejemplo por cambios sin commitear en el
-  worktree, el aviso del run dice por qué. El informe lo cuenta: «flowrunner corrió Autofix solo».
+  Se ofrece en un rojo de verificar, y antes de preguntarte flowrunner ya lo corrió solo, una vez por
+  detención (ADR 0028): la pregunta que te llega es la de después. Si Autofix se negó, por ejemplo por
+  cambios sin commitear en el worktree, el aviso del run dice por qué. El informe lo cuenta:
+  «flowrunner corrió Autofix solo».
 - `flowrunner fix <run> --yo`: lo arreglás vos en el worktree de la feature, que el comando te dice, y
   después `flowrunner resume <run>` commitea tu cambio y vuelve a verificar. Podés commitear vos
   también: resume chequea todo lo que cambió desde `fix --yo`. No pasa un cambio que toque `.git`,
@@ -327,6 +328,14 @@ panel de Orca dicen el motivo, a qué sub-task se atribuye y tus respuestas, com
 - `flowrunner accept <run> "<por qué>"`: seguir a la fase siguiente igual. Tu motivo queda en el
   informe y en la PR.
 - `flowrunner rerun <run> --desde planificar`: replanificar, o `flowrunner abort <run>` para cortarlo.
+
+Un bloqueante de revisar o un criterio que probar vio fallar no lo arregla el formateador: la
+sub-task responsable lo corrige sola, con el motivo y los arreglos propuestos, una vez por respuesta
+tuya, sin pasar por Autofix ni por otra revisión del mismo código (ADR 0030). Si la revisión siguiente
+vuelve a frenar, te pregunta. La revisión recibe qué comprobó verify y lo que cada sub-task hizo o
+contestó en la vuelta anterior, así que no frena por formato, lint ni tipos, ni repite a ciegas lo que
+una sub-task explicó que no hacía falta. El informe cuenta las sub-tasks devueltas que no encontraron
+nada que cambiar.
 
 Cada run ofrece solo las que tienen sentido en su detención, y los comandos aceptan solo esas. Por
 defecto, el primer rojo de verificar, revisar o probar ya es una pregunta. Si preferís que flowrunner

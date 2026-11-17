@@ -95,6 +95,11 @@ export const eventSchema = z.discriminatedUnion("tipo", [
      * corte de red como cualquier otra infraestructura: así un log viejo se sigue leyendo igual (C8).
      */
     reintentos_red: z.int().min(1).max(3).optional(),
+    /**
+     * Un bloqueante de revisar o probar vuelve directo a su sub-task, sin Autofix (ADR 0030). Un run
+     * anterior sin el campo se detiene y corre Autofix solo, como antes (C8).
+     */
+    vuelta_directa: z.literal(true).optional(),
   }),
   z.strictObject({ tipo: z.literal("accion_iniciada"), at, fase: phaseSchema }),
   z.strictObject({
@@ -137,7 +142,10 @@ export const eventSchema = z.discriminatedUnion("tipo", [
     at,
     fase: phaseSchema,
     unidad: z.string(),
-    /** sin_cambios: devuelta por verificar o revisar, no encontró nada que cambiar en su código. */
+    /**
+     * sin_cambios: devuelta por verificar o revisar, no encontró nada que cambiar en su código. Su
+     * `motivo` es lo último que dijo la sub-task, para la revisión siguiente y el informe.
+     */
     estado: z.enum(["iniciada", "commiteada", "integrada", "fallida", "sin_cambios"]),
     sha: z.string().optional(),
     motivo: z.string().optional(),

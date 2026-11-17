@@ -490,7 +490,14 @@ export const implementar: PhaseFn = async (ctx) => {
           integradas.has(task.id) &&
           rejectedWrites.length === 0
         ) {
-          emit({ tipo: "unidad", fase: "implementar", unidad: task.id, estado: "sin_cambios" });
+          const dijo = result.texto.trim().slice(0, 400);
+          emit({
+            tipo: "unidad",
+            fase: "implementar",
+            unidad: task.id,
+            estado: "sin_cambios",
+            ...(dijo === "" ? {} : { motivo: dijo }),
+          });
           await removeWorktree(state.repo, wt, deps.env);
           return { ok: true };
         }

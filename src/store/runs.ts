@@ -45,6 +45,7 @@ export function createRun(home: string, run: NewRun, now: Date): RunPaths {
       ...(run.budgetUsd === undefined ? {} : { budget_usd: run.budgetUsd }),
       ...(run.vueltas === undefined ? {} : { vueltas: run.vueltas }),
       reintentos_red: MAX_NETWORK_RETRIES,
+      vuelta_directa: true,
     },
     () => now,
   );

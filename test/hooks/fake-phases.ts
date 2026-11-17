@@ -7,6 +7,7 @@
 //   responda (un fix, aceptar, arreglarlo a mano o un Autofix suyo). Lo que flowrunner hace solo, como
 //   Autofix al detenerse (ADR 0028), no la destraba.
 // FAKE_ARREGLO: con FAKE_VUELVE, el arreglo ya escrito que verificar propone para esa sub-task.
+// FAKE_REVISAR_VUELVE: una sub-task, como "ST-1": la primera revisión la devuelve con un arreglo escrito.
 // FAKE_MAL_FORMATO: un archivo que implementar, la primera vez, escribe sin formatear y commitea en el
 //   worktree de la feature, como lo dejaría una sub-task. Deja también el plan, que planificar no escribe.
 // FAKE_PREGUNTA: sub-tasks separadas por comas: implementar pregunta por ellas la primera vez.
@@ -60,6 +61,15 @@ const fake: PhaseFn = async (ctx) => {
     readFileSync(join(ctx.run.dir, "ejecuciones.txt"), "utf8")
       .split("\n")
       .filter((f) => f === ctx.action.fase).length;
+  const revisarVuelve = process.env.FAKE_REVISAR_VUELVE;
+  if (ctx.action.fase === "revisar" && revisarVuelve !== undefined && ran() === 1) {
+    return {
+      tipo: "vuelve",
+      unidades: [revisarVuelve],
+      motivo: "la revisión encontró bloqueantes:\n- falta pipefail",
+      arreglos: [{ unidad: revisarVuelve, instruccion: "Agregá set -o pipefail" }],
+    };
+  }
   const malFormato = process.env.FAKE_MAL_FORMATO;
   if (ctx.action.fase === "implementar" && malFormato !== undefined && ran() === 1) {
     const preparado = ctx.events.find((e) => e.tipo === "preparado");

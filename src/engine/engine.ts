@@ -126,10 +126,16 @@ export interface RunState {
    */
   readonly autofix: boolean;
   /**
-   * Autofix ya corrió desde la última respuesta de la persona que mandó el run a trabajar: flowrunner
-   * no lo vuelve a correr solo en la próxima detención (ADR 0028).
+   * flowrunner ya respondió solo desde la última respuesta de la persona que mandó el run a trabajar,
+   * con Autofix (ADR 0028) o con la vuelta directa de un bloqueante (ADR 0030): la próxima detención
+   * le pregunta a la persona.
    */
   readonly autofixCorrio: boolean;
+  /**
+   * Un bloqueante de revisar o probar vuelve directo a su sub-task, sin Autofix, que no lo arregla
+   * (ADR 0030). Lo congela `run_creado`: un run anterior sigue como antes.
+   */
+  readonly vueltaDirecta: boolean;
 }
 
 export type Action =
@@ -231,7 +237,7 @@ export function opcionesDe(
     return [
       ...suggested,
       ...fixes,
-      autofix,
+      ...(autofixSirve(state, fase) ? [autofix] : []),
       byHand,
       accept(`seguir a ${next} igual; tu motivo queda en la PR`),
       replan,
@@ -248,6 +254,14 @@ export function opcionesDe(
     return [first, { comando: resume, que: queHace(resume, R, fase) }, abort];
   return [first, abort];
 }
+
+/**
+ * Autofix corre el formateador y el lint y vuelve a verificar: sirve para un rojo de verificar. Para
+ * un bloqueante de revisar o probar solo repetía la revisión sobre el mismo código (PIZ-9, PIZ-13),
+ * así que en un run con `vueltaDirecta` no se ofrece ahí (ADR 0030).
+ */
+const autofixSirve = (state: RunState, fase: Phase): boolean =>
+  !state.vueltaDirecta || fase === "verificar";
 
 /** La única forma de dejar un run detenido: con su motivo y sus opciones, que nunca faltan. */
 function halt(
@@ -336,6 +350,20 @@ function onOutcome(state: RunState, fase: Phase, outcome: Outcome): RunState {
           unidades: outcome.unidades,
           instruccion: roundInstruction(outcome),
           autofix: false,
+        });
+      }
+      // Un bloqueante de revisar o probar no lo arregla el formateador: va directo a su sub-task, una
+      // vez por respuesta de la persona, como la vuelta que seguía a Autofix (ADR 0030).
+      if (
+        vueltas[fase] > state.vueltasMax &&
+        !autofixSirve(state, fase) &&
+        !state.autofixCorrio &&
+        outcome.unidades.length > 0
+      ) {
+        return enter({ ...state, vueltas }, "implementar", {
+          unidades: outcome.unidades,
+          instruccion: roundInstruction(outcome),
+          autofixCorrio: true,
         });
       }
       if (vueltas[fase] > state.vueltasMax) {
@@ -436,6 +464,7 @@ export function initialState(): RunState {
     aMano: false,
     autofix: false,
     autofixCorrio: false,
+    vueltaDirecta: false,
   };
 }
 
@@ -472,6 +501,7 @@ export function reduce(state: RunState, event: RunEvent): RunState {
         budgetUsd: event.budget_usd,
         vueltasMax: event.vueltas ?? LEGACY_ROUNDS,
         reintentosRed: event.reintentos_red,
+        vueltaDirecta: event.vuelta_directa === true,
       };
     case "accion_iniciada":
       return { ...state, interrumpida: true };
@@ -614,6 +644,7 @@ export function reduce(state: RunState, event: RunEvent): RunState {
  */
 export const correAutofixSolo = (state: RunState): boolean =>
   state.status === "detenido" &&
+  autofixSirve(state, state.fase) &&
   !state.aMano &&
   !state.sinProbar &&
   !state.autofixCorrio &&

@@ -10,4 +10,4 @@ Al mergear la PR, flowrunner escribe lecciones a partir de los commits y comenta
 
 ## Consecuencias
 - Lo escrito por otra persona nunca entra al cerebro.
-- Una consolidación por tope se abre sin auto-merge.
+- Una consolidación por tope se abre sin auto-merge. Si el repo tiene `.flowrunner/lecciones-detalle.md` (el porqué de cada lección, con el mismo número), la consolidación lo reescribe también, y falla si deja entradas de lecciones que ya no están.

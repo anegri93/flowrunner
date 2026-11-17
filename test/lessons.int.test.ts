@@ -101,4 +101,76 @@ describe("lecciones", () => {
       "SHOP-214: la PR de lecciones necesita tu revisión: se consolidó lecciones.md.",
     );
   }, 240_000);
+  // Si regresiona, la consolidación une o saca lecciones y lecciones-detalle.md queda con números viejos.
+  test("al consolidar, también reescribe lecciones-detalle.md y la PR lleva los dos archivos", async () => {
+    const big = `# Lecciones\n\n### L-1 · Vieja\n\nRegla: ${"x".repeat(11_950)}\n`;
+    const detail = "# Lecciones: detalle\n\n### L-1 · Vieja\n\nEl porqué largo.\n";
+    const d = await delivered([], {
+      files: { ".flowrunner/lecciones.md": big, ".flowrunner/lecciones-detalle.md": detail },
+    });
+    const oid = d.pushCorrection("yo", "src/export/csv.js", "export const csv = 2;\n");
+    addScripts(d, [
+      {
+        output: {
+          lecciones: [
+            {
+              titulo: "Nueva",
+              regla: "Regla nueva.",
+              origen: `https://github.com/acme/acme-api/pull/412/commits/${oid}`,
+            },
+          ],
+        },
+      },
+      {
+        output: {
+          lecciones_md: "# Lecciones\n\n### L-1 · Consolidada\n\nRegla: todo junto.\n",
+          detalle_md:
+            "# Lecciones: detalle\n\n### L-1 · Consolidada\n\nEl porqué largo y lo nuevo.\n",
+        },
+      },
+    ]);
+    d.setPr(412, (pr) => (pr.state = "MERGED"));
+    runCli(["learn", d.id], d.env);
+    expect(git(d.remote, "show", "chore/lecciones-SHOP-214:.flowrunner/lecciones-detalle.md")).toBe(
+      "# Lecciones: detalle\n\n### L-1 · Consolidada\n\nEl porqué largo y lo nuevo.",
+    );
+    expect(d.ghLog().some((a) => a[1] === "merge")).toBe(false);
+  }, 240_000);
+
+  test("una consolidación que deja en el detalle lecciones que ya no están es falla de gate", async () => {
+    const big = `# Lecciones\n\n### L-1 · Vieja\n\nRegla: ${"x".repeat(11_950)}\n`;
+    const detail = "# Lecciones: detalle\n\n### L-1 · Vieja\n\nEl porqué.\n";
+    const d = await delivered([], {
+      files: { ".flowrunner/lecciones.md": big, ".flowrunner/lecciones-detalle.md": detail },
+    });
+    const oid = d.pushCorrection("yo", "src/export/csv.js", "export const csv = 2;\n");
+    addScripts(d, [
+      {
+        output: {
+          lecciones: [
+            {
+              titulo: "Nueva",
+              regla: "Regla nueva.",
+              origen: `https://github.com/acme/acme-api/pull/412/commits/${oid}`,
+            },
+          ],
+        },
+      },
+      {
+        output: {
+          lecciones_md: "# Lecciones\n\n### L-2 · Nueva\n\nRegla: nueva.\n",
+          detalle_md: detail,
+        },
+      },
+    ]);
+    d.setPr(412, (pr) => (pr.state = "MERGED"));
+    runCli(["learn", d.id], d.env);
+    const last = readLog(d.dir(d.id)).events.findLast((e) => e.tipo === "accion_terminada");
+    expect(last?.tipo === "accion_terminada" && last.resultado).toMatchObject({
+      tipo: "falla",
+      clase: "gate",
+      motivo: "la consolidación dejó en lecciones-detalle.md lecciones que ya no están: L-1",
+    });
+    expect(d.ghLog().filter((a) => a[1] === "create")).toHaveLength(1);
+  }, 240_000);
 });

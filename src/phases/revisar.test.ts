@@ -285,6 +285,8 @@ describe("lo que revisar sabe de antes (ADR 0030)", () => {
     const { sim } = await reviewWith({ hallazgos: [], decisiones: [] });
     const prompt = sim.records[0]?.prompt ?? "";
     expect(prompt).toContain("# Lo que ya comprobó verify");
+    // Si regresiona, revisar no ve lo que el repo sabe de su arquitectura y sus trampas (contexto.md).
+    expect(prompt).toContain("## Contexto\n\n# Contexto del repo\n\nEl mapa: arquitectura");
     expect(prompt).toContain("```sh\n#!/bin/sh\nexit 0\n```");
     expect(prompt).toContain("# Las revisiones anteriores");
     expect(prompt).toContain("Es la primera revisión de este plan.");

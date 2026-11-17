@@ -88,6 +88,29 @@ export const planSchema = z.object({
 export type Plan = z.infer<typeof planSchema>;
 
 /**
+ * La salida de la sesión del planificador: el plan entero, o `{}` si es el último que pasó por
+ * `validar_plan`. Así no escribe dos veces el mismo plan (ADR 0033).
+ */
+export const salidaPlanSchema = planSchema.partial();
+export type SalidaPlan = z.infer<typeof salidaPlanSchema>;
+
+/**
+ * El plan que devolvió la sesión: el de la salida si vino entero, el último validado si vino vacía. Un
+ * texto con qué hacer si no hay ninguno o vino a medias: es un problema del gate, y la sesión se retoma.
+ */
+export function planDevuelto(salida: SalidaPlan, validado: Plan | undefined): Plan | string {
+  if (Object.keys(salida).length === 0)
+    return (
+      validado ??
+      "no devolviste el plan ni pasaste ninguno por `validar_plan`: pasalo por `validar_plan` y devolvé `{}`, o devolvé el plan entero"
+    );
+  const entero = planSchema.safeParse(salida);
+  return entero.success
+    ? entero.data
+    : `el plan que devolviste está incompleto (${entero.error.issues.map((i) => i.path.join(".")).join(", ")}): devolvé \`{}\` para usar el último que pasaste por \`validar_plan\`, o el plan entero`;
+}
+
+/**
  * La `subtarea` de un criterio cuyo comando es el verify del repo: no es de ninguna sub-task, lo
  * comprueba verificar sobre la rama integrada. No choca con los ids, que son `ST-n`.
  */

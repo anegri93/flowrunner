@@ -24,8 +24,10 @@ import {
   checkCommandsFail,
   checkCommandsPass,
   delRun,
-  planSchema,
+  planDevuelto,
+  salidaPlanSchema,
   type Plan,
+  type SalidaPlan,
 } from "../gates/plan.ts";
 import { VALIDAR_PLAN_TOOL, validarPlanServer } from "../gates/validar-plan.ts";
 import { changesSince, commitAll, discardChanges, headSha } from "../git/git.ts";
@@ -226,13 +228,15 @@ interface Comun {
   readonly esVerify: (comando: string) => boolean;
   /** La sesión del planificador, sin lo que cambia entre un intento nuevo y uno retomado. */
   readonly spec: Omit<
-    SessionSpec<Plan>,
+    SessionSpec<SalidaPlan>,
     "prompt" | "nombre" | "sessionId" | "resume" | "mcpServers"
   >;
 }
 
 interface Intento {
-  readonly result: SessionResult<Plan>;
+  readonly result: SessionResult<SalidaPlan>;
+  /** El último plan que la sesión pasó por `validar_plan`: lo usa una salida vacía (ADR 0033). */
+  readonly validado: () => Plan | undefined;
   /** Los tests restaurados del plan anterior; vacío en un resume. */
   readonly restored: readonly (readonly [string, string])[];
   /** Hay que descartar los tests nuevos que el plan no declara (solo en un resume). */
@@ -309,7 +313,7 @@ export function gateRechazado(
 
 /** El único mensaje de un intento retomado. */
 export const mensajeRetomado = (motivo: string) =>
-  `El gate rechazó el plan que devolviste:\n\n${motivo}\n\nCorregí el plan y los tests en este mismo worktree, sin volver a explorar lo que ya leíste, y devolvé el plan completo otra vez.`;
+  `El gate rechazó el plan que devolviste:\n\n${motivo}\n\nCorregí el plan y los tests en este mismo worktree, sin volver a explorar lo que ya leíste. Pasá el plan corregido por \`validar_plan\` y devolvé \`{}\`, o devolvé el plan entero.`;
 
 /**
  * Borra del disco las conversaciones de esta llamada que no quedaron marcadas para retomar. Es una
@@ -377,7 +381,7 @@ function armarComun(ctx: PhaseContext): Comun {
       model: config.models.planificar,
       tools: ["Read", "Grep", "Glob", "Write", "Edit", "Agent"],
       hook,
-      schema: planSchema,
+      schema: salidaPlanSchema,
       agents: {
         explorador: {
           description:
@@ -403,6 +407,7 @@ function servidores(
   comun: Comun,
   inicioSesion: string,
   conserva: BaseConserva,
+  validados: { plan?: Plan },
 ): Record<string, McpServerConfig> {
   const { worktree, config, feature, esVerify } = comun;
   return {
@@ -417,6 +422,9 @@ function servidores(
       esVerify,
       candidatas: conserva.candidatas.map((c) => c.id),
       conservaDe: (plan) => conservaDelPlan(plan, conserva),
+      alValidar: (plan) => {
+        validados.plan = plan;
+      },
     }),
   };
 }
@@ -464,7 +472,7 @@ async function informePrevio(
   codigo: string,
 ): Promise<
   | { readonly tipo: "seguir"; readonly md: string | undefined }
-  | { readonly tipo: "cortar"; readonly result: SessionResult<Plan> }
+  | { readonly tipo: "cortar"; readonly result: SessionResult<SalidaPlan> }
 > {
   const file = join(ctx.run.dir, "exploracion.md");
   if (existsSync(file)) return { tipo: "seguir", md: readFileSync(file, "utf8") };
@@ -558,7 +566,8 @@ async function intentoNuevo(ctx: PhaseContext, comun: Comun, sessionId: string):
   const codigo = await codigoUbicado(feature, worktree, graftIndex(run), deps.env, sinIndice);
   const informe = await informePrevio(ctx, comun, codigo);
   const nombre = sessionName(run, "planificar");
-  const result: SessionResult<Plan> =
+  const validados: { plan?: Plan } = {};
+  const result: SessionResult<SalidaPlan> =
     informe.tipo === "cortar"
       ? informe.result
       : await runSession(
@@ -569,6 +578,7 @@ async function intentoNuevo(ctx: PhaseContext, comun: Comun, sessionId: string):
               comun,
               inicioSesion,
               baseConserva(ctx, comun, { previous, armada, rama, sinIndice }),
+              validados,
             ),
             nombre,
             sessionId,
@@ -588,6 +598,7 @@ async function intentoNuevo(ctx: PhaseContext, comun: Comun, sessionId: string):
         );
   return {
     result,
+    validado: () => validados.plan,
     restored,
     limpiarNoDeclarados: false,
     previous,
@@ -630,6 +641,7 @@ async function intentoRetomado(
     nuevos: Object.fromEntries((enRama?.subtasks ?? []).map((c) => [c.id, [...c.shas]])),
   };
   const inicioSesion = await headSha(worktree, deps.env);
+  const validados: { plan?: Plan } = {};
   const result = await runSession(
     {
       ...comun.spec,
@@ -638,6 +650,7 @@ async function intentoRetomado(
         comun,
         inicioSesion,
         baseConserva(ctx, comun, { previous, armada, rama, sinIndice: undefined }),
+        validados,
       ),
       nombre: sessionName(run, "planificar"),
       resume: sesion.sessionId,
@@ -647,6 +660,7 @@ async function intentoRetomado(
   );
   return {
     result,
+    validado: () => validados.plan,
     restored: [],
     limpiarNoDeclarados: true,
     previous,
@@ -670,9 +684,17 @@ async function gateYCierre(ctx: PhaseContext, comun: Comun, intento: Intento): P
     return result.tipo === "limite"
       ? result
       : { tipo: "falla", clase: result.clase, motivo: result.motivo };
+  // Sin plan, o a medias, es un problema del gate: se retoma la misma sesión con qué hacer (ADR 0033).
+  const devuelto = planDevuelto(result.output, intento.validado());
+  if (typeof devuelto === "string") {
+    const motivo = `el plan no pasó el gate:\n- ${devuelto}`;
+    if (sinIndice === undefined || armada.candidatas.length === 0)
+      writeFileSync(sesionFile(run), `${JSON.stringify({ ...intento.sesion, motivo })}\n`);
+    return { tipo: "falla", clase: "gate", motivo };
+  }
   // «verify en verde» es del run, no de una sub-task (VF-6: AC-12 en ST-6, que no era dueña de lo que
   // se rompía). flowrunner lo corrige solo en vez de rechazar: es el plan que pasa el gate y se escribe.
-  const plan = delRun(result.output, esVerify);
+  const plan = delRun(devuelto, esVerify);
   for (const [path] of restored.filter(([path]) => !plan.tests.includes(path))) {
     rmSync(join(worktree, path), { force: true });
   }

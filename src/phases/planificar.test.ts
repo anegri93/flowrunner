@@ -225,6 +225,39 @@ describe("planificar", () => {
 
   // Si regresiona, el planificador no puede chequear su plan antes de devolverlo y cada rechazo del
   // gate por algo que no corre nada es un intento más: en ML-1, VF-5 y VF-6, cinco de US$ 0,7 a 2,8.
+  describe("el plan se escribe una sola vez (ADR 0033)", () => {
+    // Si regresiona, el planificador vuelve a escribir entero el plan que ya pasó por validar_plan:
+    // 13 a 20 mil caracteres, casi un minuto por run de Opus escribiendo lo mismo (PIZ-9 a PIZ-16).
+    test("una salida vacía usa el último plan que pasó por validar_plan", async () => {
+      const preparado = await prepared_([{ calls: [writeTest], output: {} }]);
+      const respuestas: string[] = [];
+      const deps = {
+        ...preparado.deps,
+        query: validandoAlFinal(preparado.deps.query, respuestas, goodPlan),
+      };
+      expect(await planificar(contextFor(preparado.run, "planificar", deps))).toEqual({
+        tipo: "ok",
+      });
+      expect(respuestas).toEqual([respuestaValidar([])]);
+      expect(readPlan(preparado.run).subtareas.map((t) => t.id)).toEqual(["ST-1"]);
+      expect(preparado.sim.records[0]?.prompt).toContain("devolvé `{}`");
+    });
+
+    // Si regresiona, una salida vacía sin plan validado, o un plan a medias, rompe planificar o pasa
+    // como plan; tiene que ser un rechazo del gate que retoma la sesión con qué hacer.
+    test("vacía sin haber validado, o un plan a medias, es un rechazo del gate que se retoma", async () => {
+      for (const output of [{}, { plan: "# Plan a medias" }]) {
+        const { run, deps } = await prepared_([{ calls: [writeTest], output }]);
+        const outcome = await planificar(contextFor(run, "planificar", deps));
+        expect(outcome).toMatchObject({ tipo: "falla", clase: "gate" });
+        expect(outcome.tipo === "falla" && outcome.motivo).toMatch(
+          /^el plan no pasó el gate:\n- (no devolviste el plan|el plan que devolviste está incompleto)/,
+        );
+        expect(existsSync(join(run.dir, "planificar-sesion.json"))).toBe(true);
+      }
+    });
+  });
+
   test("la sesión del planificador recibe validar_plan, y el hook la permite", async () => {
     const validar = { tool: "mcp__gate__validar_plan", input: goodPlan };
     const { run, deps, sim } = await prepared_([{ calls: [writeTest, validar], output: goodPlan }]);
@@ -234,7 +267,7 @@ describe("planificar", () => {
       decision: "allow",
     });
     expect(Object.keys(sim.records[0]?.options?.mcpServers ?? {})).toEqual(["graft", "gate"]);
-    expect(sim.records[0]?.prompt).toContain("pasalo por `validar_plan`");
+    expect(sim.records[0]?.prompt).toContain("pasalo entero por `validar_plan`");
   });
 
   describe("el código que ya ubicó la feature", () => {

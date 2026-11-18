@@ -3,16 +3,26 @@
 //
 // El refresco no borra nada: si una lectura falla, quedan los runs anteriores con el error arriba.
 // Nunca dos lecturas a la vez, y una que quedó vieja por un cambio de workspace se descarta.
+import {
+  terminadas,
+  type CerebroSnapshot,
+  type DoctorSnapshot,
+  type Mantenimiento,
+  type TareasSnapshot,
+} from "./doctor";
 import type { Openable, Outcome, Snapshot } from "./protocol";
 import { enColaJunto, planVersion, type Decision, type Run } from "./runs";
 import {
+  DOCTOR_INICIAL,
   ESTADO_INICIAL,
   isOpen,
   pendingFor,
   textFor,
   vista,
   type Accion,
+  type AccionDoctor,
   type Estado,
+  type EstadoDoctor,
 } from "./vista";
 
 /** Lo que el panel necesita de afuera: el worker, el storage del plugin, el navegador y la hora. */
@@ -24,6 +34,13 @@ export interface Api {
   leer(key: string): Promise<unknown>;
   guardar(key: string, value: Readonly<Record<string, string | boolean>>): Promise<void>;
   externo(url: string): Promise<void>;
+  /** El doctor de la máquina y las tareas de fondo (ADR 0039). */
+  doctor(): Promise<DoctorSnapshot>;
+  tareas(): Promise<TareasSnapshot>;
+  mantener(m: Mantenimiento): Promise<Outcome>;
+  /** El cerebro del proyecto enfocado y el informe de su auditoría (ADR 0040). */
+  cerebro(): Promise<CerebroSnapshot>;
+  informeCerebro(): Promise<Outcome>;
   ahora(): number;
 }
 
@@ -131,8 +148,117 @@ export class Panel {
     );
   }
 
-  /** Lee los runs. Una lectura que no cambió nada no vuelve a dibujar. */
+  #setDoctor(patch: Partial<EstadoDoctor>): void {
+    const d = this.#e.doctor;
+    if (d !== null) this.#set({ doctor: { ...d, ...patch } });
+  }
+
+  /** Lo que dice doctor de la máquina: lento, se lee al abrir, al pedirlo y cuando termina una tarea. */
+  async #leerDoctor(): Promise<void> {
+    await Promise.all([this.#leerMaquina(), this.#leerCerebro()]);
+  }
+
+  /** El cerebro del proyecto enfocado; un error se muestra en su sección, no en la máquina. */
+  async #leerCerebro(): Promise<void> {
+    try {
+      this.#setDoctor({ cerebro: await this.#api.cerebro() });
+    } catch (error) {
+      this.#setDoctor({ cerebro: { auditoria: null, error: message(error) } });
+    }
+  }
+
+  async #leerMaquina(): Promise<void> {
+    try {
+      const snap = await this.#api.doctor();
+      this.#setDoctor({
+        ...(snap.doctor === undefined ? {} : { info: snap.doctor }),
+        tareas: snap.tareas,
+        error: snap.error ?? null,
+      });
+    } catch (error) {
+      this.#setDoctor({ error: message(error) });
+    }
+  }
+
+  /** Las tareas, barato: si una terminó, la versión y los chequeos pueden haber cambiado. */
+  async #leerTareas(): Promise<void> {
+    const antes = this.#e.doctor?.tareas ?? [];
+    try {
+      const snap = await this.#api.tareas();
+      if (snap.error !== undefined) {
+        this.#setDoctor({ error: snap.error });
+        return;
+      }
+      if (JSON.stringify(snap.tareas) !== JSON.stringify(antes))
+        this.#setDoctor({ tareas: snap.tareas });
+      if (terminadas(antes, snap.tareas).length > 0) await this.#leerDoctor();
+    } catch (error) {
+      this.#setDoctor({ error: message(error) });
+    }
+  }
+
+  async #mantener(m: Mantenimiento): Promise<void> {
+    this.#setDoctor({ confirmar: null, dicho: null, enviando: true });
+    try {
+      this.#setDoctor({ dicho: await this.#api.mantener(m) });
+    } catch (error) {
+      this.#setDoctor({ dicho: { ok: false, mensaje: message(error) } });
+    } finally {
+      this.#setDoctor({ enviando: false });
+    }
+    // La PR ya está: lo elegido pasa a «en la PR» al releer el cerebro.
+    if (m.accion === "aplicar") {
+      this.#setDoctor({ elegidas: {} });
+      await this.#leerCerebro();
+    }
+    await this.#leerTareas();
+  }
+
+  async #doctor(a: AccionDoctor): Promise<void> {
+    switch (a.t) {
+      case "abrir":
+        this.#set({ doctor: DOCTOR_INICIAL });
+        await this.#leerDoctor();
+        return;
+      case "cerrar":
+        this.#set({ doctor: null });
+        return;
+      case "releer":
+        this.#setDoctor({ info: undefined, error: null });
+        await this.#leerDoctor();
+        return;
+      case "preguntar":
+        this.#setDoctor({ confirmar: a.m });
+        return;
+      case "cancelar":
+        this.#setDoctor({ confirmar: null });
+        return;
+      case "mantener":
+        await this.#mantener(a.m);
+        return;
+      case "elegir": {
+        const elegidas = this.#e.doctor?.elegidas ?? {};
+        this.#setDoctor({ elegidas: { ...elegidas, [a.id]: elegidas[a.id] !== true } });
+        return;
+      }
+      case "informe": {
+        try {
+          const answer = await this.#api.informeCerebro();
+          if (!answer.ok) this.#setDoctor({ dicho: answer });
+        } catch (error) {
+          this.#setDoctor({ dicho: { ok: false, mensaje: message(error) } });
+        }
+        return;
+      }
+    }
+  }
+
+  /**
+   * Lee los runs, y con el doctor abierto, sus tareas. Una lectura que no cambió nada no vuelve a
+   * dibujar.
+   */
   async refresh(): Promise<void> {
+    if (this.#e.doctor !== null) await this.#leerTareas();
     if (this.#reading) return;
     this.#reading = true;
     const asked = this.#generation;
@@ -337,6 +463,9 @@ export class Panel {
         return;
       case "confirmarAbortar":
         await this.#abort(accion.run);
+        return;
+      case "doctor":
+        await this.#doctor(accion.a);
         return;
     }
   }

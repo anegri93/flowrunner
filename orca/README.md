@@ -57,6 +57,17 @@ como `flowrunner watch`, pensada para el ancho angosto de la barra:
   cola, lo pone primero.
 - Al final del menú ⋯ de cada run vivo, separado y en rojo, «Abortar el run…»: corta lo que corre, en
   cualquier etapa, y borra sus worktrees; la rama y la PR quedan. Pide confirmación.
+- «Doctor», arriba a la derecha, abre en lugar de los runs lo que dice `flowrunner doctor`: los
+  chequeos que fallan con su arreglo y la versión, con cuántos commits le faltan para el
+  `origin/main` del último fetch. «Actualizar flowrunner» y «Actualizar el plugin de Orca» piden
+  confirmación y corren aparte (`self-update --fondo`, `orca install --fondo`): el panel muestra la
+  tarea mientras corre y en qué quedó, y vuelve a leer el doctor cuando termina. Si Orca pide aprobar
+  el plugin, muestra el `--approve` para la terminal. «Volver a los runs» la cierra (ADR 0039).
+  Debajo, el cerebro del proyecto enfocado: «Auditar el cerebro» pide confirmación, porque es una
+  sesión de Claude, y corre aparte (`brain audit --fondo`). La última auditoría muestra su resumen,
+  los hallazgos y las decisiones: tocar una la elige, «Abrir PR con las elegidas» corre `brain apply`
+  con esas, y «Ver el informe» lo abre como pestaña. Las que no se pueden aplicar dicen por qué, y las
+  ya aplicadas, en qué PR están (ADR 0040).
 
 Se refresca cada 3 segundos mientras la pestaña se ve, y sigue al proyecto que tenés enfocado en Orca,
 como el explorador y los agentes: muestra los runs de ese proyecto, incluidos los de sus worktrees,
@@ -67,6 +78,8 @@ la nave en camino en vez de los runs del anterior. Para saber cuál está enfoca
 - `src/worker.ts` corre el CLI de flowrunner en un shell de login, para tener tu PATH: `watch`,
   `report --sesion`, `plan`, y cada decisión como un comando fijo (`approve`, `changes`, `resume`,
   `rerun --desde`, `learn`, `abort`, `skip-probar`). Valida el id del run, la fase y el motivo antes de llegar al shell.
+  El doctor también: `doctor --json`, `tareas --json` y cada mantenimiento con `--fondo`
+  (`src/doctor.ts`).
 - La pestaña es un frame (`sandboxed-ui`), no un panel de componentes: los componentes de Orca no
   dibujan SVG propio y rechazan las imágenes animadas, y los indicadores son SVG con animación CSS.
   `panel/index.html` carga `src/frame.ts`, lo único con DOM: lee los runs, escucha los clics y

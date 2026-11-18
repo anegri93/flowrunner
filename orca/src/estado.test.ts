@@ -58,6 +58,11 @@ function fakeApi(f: Fake): Api & {
       return Promise.resolve();
     },
     externo: () => Promise.resolve(),
+    doctor: unknown("flowrunner.doctor"),
+    tareas: unknown("flowrunner.tareas"),
+    mantener: unknown("flowrunner.mantener"),
+    cerebro: unknown("flowrunner.cerebro"),
+    informeCerebro: unknown("flowrunner.informeCerebro"),
     ahora: () => 0,
   };
 }

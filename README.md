@@ -46,8 +46,15 @@ flowrunner self-update
 
 No actualiza con un run corriendo: los que esperan aprobación, detenidos o en cola siguen con el código
 nuevo. El checkout que clonaste queda para desarrollar, y cambiar de rama ahí no afecta a ningún run.
-`flowrunner doctor` avisa si el comando o el job de launchd apuntan a otro lado. `self-update` instala con
+`flowrunner doctor` avisa si el comando o el job de launchd apuntan a otro lado, y dice cuántos commits
+le faltan para el `origin/main` del último fetch. `self-update` instala con
 `pnpm install --frozen-lockfile`: pnpm tiene que estar en el PATH de quien lo corre.
+
+Desde Orca, el botón **Doctor** de la pestaña de flowrunner hace lo mismo sin abrir una terminal: muestra
+lo que le falta a la máquina y la versión, y actualiza flowrunner o el plugin con un toque. Corren
+aparte (`self-update --fondo`, `orca install --fondo`) y el panel sigue en qué quedan con
+`flowrunner tareas`. Si Orca pide aprobar el plugin, te deja el `--approve` para correr en la terminal:
+aprobarlo es tuyo.
 
 ### Si ya tenías una versión anterior
 
@@ -397,6 +404,33 @@ Aprende de dos fuentes, y en las dos decidís vos:
 Las dos llegan a `lecciones.md` por una PR chica con auto-merge, después del merge y de a una por vez:
 así dos features no eligen el mismo número de lección.
 
+### Auditar el cerebro
+
+Con el tiempo, una lección puede quedar vieja, repetirse o no alcanzar. Para revisarlo entero:
+
+```bash
+flowrunner brain audit ~/ruta/al/repo
+```
+
+Una sesión de solo lectura lee el cerebro, comprueba contra el código lo que nombra y mira la historia
+de los runs del repo: dónde se detuvieron, qué respondiste y qué motivos se repiten. Devuelve
+hallazgos (contradicciones, duplicadas, obsoletas, sin valor, las que no alcanzaron y lo que falta) y
+decisiones, cada una con su evidencia, qué detención reduce y el cambio exacto a `.flowrunner/`: una
+lección reescrita o borrada, una que pasa a las convenciones, o la config, como más `vueltas` si casi
+siempre elegiste el primer arreglo propuesto. Nada de código, ni `verify.sh`. El informe queda en
+`~/.flowrunner/auditorias/<proyecto>/`.
+
+Nada se aplica solo. Elegís las que van y flowrunner abre una PR chica con esas, sobre el cerebro de
+hoy de la base:
+
+```bash
+flowrunner brain apply <proyecto>/<id> --decision D1 --decision D3
+```
+
+Una decisión cuyo archivo cambió desde la auditoría no entra, y la PR lo dice. Desde Orca, la sección
+Cerebro del Doctor hace lo mismo con el proyecto enfocado: auditar, elegir con un toque y abrir la PR
+(ADR 0040).
+
 ## Ver un run en vivo
 
 `flowrunner watch` muestra, al estilo de [agents-tree](https://github.com/anegri93/agents-tree), el
@@ -448,6 +482,9 @@ equivalente de API: con la suscripción no se cobran, y lo que limita es su cupo
 | `flowrunner init <ruta> [--aplicar]`           | revisar y dejar listo un repo                 |
 | `flowrunner brain draft <ruta>`                | proponer un borrador del cerebro en una PR    |
 | `brain draft <ruta> --reemplazar`              | cambiar el borrador anterior por uno nuevo    |
+| `flowrunner brain audit <ruta> [--fondo]`      | revisar el cerebro y proponer decisiones      |
+| `brain audit <ruta> --ultima`                  | la última auditoría, con su informe           |
+| `brain apply <proyecto>/<id> --decision Dn`    | una PR con las decisiones que elegiste        |
 | `flowrunner watch [run] [--json]`              | ver un run, o todos los activos, en vivo      |
 | `flowrunner status [run]`                      | el estado de los runs, o de uno fase por fase |
 | `flowrunner plan <run>`                        | el plan que espera aprobación                 |
@@ -469,8 +506,9 @@ equivalente de API: con la suscripción no se cobran, y lo que limita es su cupo
 | `flowrunner learn <run> [--fondo]`             | aprender ya; `--fondo`: aparte, con aviso     |
 | `flowrunner stats [proyecto]`                  | en qué fase se va el tiempo y el costo        |
 | `flowrunner stats --runs [proyecto]`           | tiempo, costo, rechazos y graft de cada run   |
-| `flowrunner doctor`                            | qué le falta a esta máquina                   |
-| `flowrunner self-update`                       | llevar el flowrunner que corre a `main`       |
+| `flowrunner doctor`                            | qué le falta a esta máquina, y su versión     |
+| `flowrunner self-update [--fondo]`             | llevar el flowrunner que corre a `main`       |
+| `flowrunner tareas`                            | en qué quedaron las tareas de fondo           |
 
 `run` puede ser el id completo o la clave de la feature, como `PIZ-1`. Casi nunca hace falta escribirlos:
 la skill de Claude Code los usa por vos.

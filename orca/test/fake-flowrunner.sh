@@ -22,6 +22,15 @@ case "$1" in
   prioritize) printf '{"ok":true,"id":"%s","accion":"priorizado"}\n' "$2" ;;
   abort) printf '{"ok":true,"id":"%s","accion":"abortado; las ramas quedan"}\n' "$2" ;;
   learn) printf '{"ok":true,"id":"%s","resultado":"la PR sigue abierta"}\n' "$2" ;;
+  # doctor sale 1 si falta algo, con su JSON igual.
+  doctor) printf '{"ok":false,"checks":[{"nombre":"git","ok":true,"arreglo":"instalá git"},{"nombre":"gh con sesión","ok":false,"arreglo":"corré gh auth login"}],"version":{"sha":"1a2b3c4","main":"9f8e7d6","atras":3}}\n'; exit 1 ;;
+  tareas) if [ -n "$FAKE_TAREAS" ]; then cat "$FAKE_TAREAS"; else printf '{"ok":true,"tareas":[]}\n'; fi ;;
+  self-update) printf '{"ok":true,"tarea":"self-update","resultado":"actualizando flowrunner a origin/main"}\n' ;;
+  orca) printf '{"ok":true,"tarea":"orca-install","resultado":"cargando el plugin en Orca"}\n' ;;
+  brain)
+    if [ "$2" = "apply" ]; then printf '{"ok":true,"pr":"https://github.com/o/r/pull/9","aplicadas":["D1"],"rechazadas":[],"resultado":"https://github.com/o/r/pull/9: D1; revisala y mergeala"}\n'
+    elif [ "$4" = "--ultima" ]; then printf '{"ok":true,"proyecto":"acme","auditoria":{"id":"20261117-100000","repo":"%s","fecha":"2026-11-17T10:00:00.000Z","costo_usd":0.4,"resumen":"L1 no existe","hallazgos":[{"id":"H1","tipo":"obsoleta","archivo":".flowrunner/lecciones.md","que":"L1"}],"decisiones":[{"id":"D1","titulo":"Borrar L1","por_que":"H1","reduce":"nada","aplicable":true,"motivo":null}],"aplicadas":[]},"informe":"# Auditoría del cerebro de acme\\n"}\n' "${FAKE_REPO:-/r}"
+    else printf '{"ok":true,"tarea":"auditar-acme","resultado":"auditando el cerebro de acme"}\n'; fi ;;
   resume) printf '{"ok":false,"error":{"message":"el run %s está en_curso, no detenido","next":"flowrunner status %s"}}\n' "$2" "$2"; exit 1 ;;
   *) echo "comando desconocido: $1" >&2; exit 1 ;;
 esac

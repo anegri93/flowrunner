@@ -5,6 +5,14 @@ import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { userInfo } from "node:os";
 import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import type { OrcaWorkerApi } from "orca/worker";
+import {
+  mantenimientoArgs,
+  parseCerebro,
+  parseDoctor,
+  parseTareas,
+  type CerebroSnapshot,
+  type Tarea,
+} from "./doctor";
 import type { Openable, Outcome, Snapshot } from "./protocol";
 import {
   isClosed,
@@ -18,6 +26,10 @@ import {
 } from "./runs";
 
 const TIMEOUT_MS = 20_000;
+/** doctor pregunta a gh, a Claude Code y a graft, cada uno con su tope: tarda más que un comando. */
+const DOCTOR_TIMEOUT_MS = 90_000;
+/** Aplicar trae origin, arma un worktree, empuja y abre la PR: más que un comando, menos que auditar. */
+const APLICAR_TIMEOUT_MS = 120_000;
 /** El CLI de Orca, que abre un archivo como pestaña: ningún método del host abre un archivo de afuera. */
 const orcaCli = () => process.env.ORCA_CLI ?? "/Applications/Orca.app/Contents/Resources/bin/orca";
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -63,13 +75,13 @@ interface Proc {
   readonly stderr: string;
 }
 
-function run(script: string): Promise<Proc> {
+function run(script: string, timeout = TIMEOUT_MS): Promise<Proc> {
   const env = childEnv(process.env);
   return new Promise((resolve) => {
     execFile(
       env.SHELL ?? "/bin/zsh",
       ["-lc", script],
-      { timeout: TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024, env },
+      { timeout, maxBuffer: 16 * 1024 * 1024, env },
       (error, stdout, stderr) => {
         const code = error === null ? 0 : typeof error.code === "number" ? error.code : 1;
         resolve({ code, stdout, stderr: stderr || (error?.message ?? "") });
@@ -454,6 +466,93 @@ export default function activate(orca: OrcaWorkerApi): void {
         `el plan de ${run.clave} cambió desde que lo abriste: abrilo de nuevo antes de aprobar`,
       );
   }
+
+  const tareas = async (): Promise<Tarea[]> =>
+    parseTareas(await ok(`${await command(orca)} tareas --json`));
+
+  orca.panels.handle("flowrunner.doctor", async () => {
+    try {
+      // doctor sale 1 cuando falta algo: su JSON vale igual, y es justo lo que hay que mostrar.
+      const proc = await run(`${await command(orca)} doctor --json`, DOCTOR_TIMEOUT_MS);
+      const doctor = parseDoctor(proc.stdout);
+      return { doctor, tareas: await tareas() };
+    } catch (error) {
+      return { tareas: [], error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  orca.panels.handle("flowrunner.tareas", async () => {
+    try {
+      return { tareas: await tareas() };
+    } catch (error) {
+      return { tareas: [], error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  /** La ruta del proyecto enfocado, o undefined si Orca no la da (sin permiso, sin proyecto). */
+  const enfocado = async (): Promise<string | undefined> => {
+    try {
+      return await focusedPath(orca);
+    } catch {
+      return undefined;
+    }
+  };
+
+  /** La última auditoría del cerebro del proyecto enfocado, con su informe y su repo. */
+  async function ultimaAuditoria(): Promise<ReturnType<typeof parseCerebro>> {
+    const ruta = await enfocado();
+    if (ruta === undefined) throw new Error("enfocá un proyecto en Orca para ver su cerebro");
+    const proc = await run(`${await command(orca)} brain audit ${quote(ruta)} --ultima --json`);
+    if (proc.code !== 0) throw new Error(outcomeOf(proc).mensaje);
+    return parseCerebro(proc.stdout);
+  }
+
+  orca.panels.handle("flowrunner.cerebro", async (): Promise<CerebroSnapshot> => {
+    try {
+      const { proyecto, auditoria } = await ultimaAuditoria();
+      return { proyecto, auditoria };
+    } catch (error) {
+      return { auditoria: null, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  orca.panels.handle("flowrunner.informeCerebro", async (): Promise<Outcome> => {
+    try {
+      const { auditoria, repo, informe } = await ultimaAuditoria();
+      if (auditoria === null || repo === null || informe === null)
+        throw new Error("este proyecto todavía no tiene una auditoría");
+      const dir = await viewDir(repo, "cerebro");
+      mkdirSync(dir, { recursive: true });
+      const file = join(dir, `auditoria-${auditoria.ref.split("/")[1] ?? "ultima"}.md`);
+      writeFileSync(file, informe);
+      const opened = await exec(orcaCli(), [
+        "file",
+        "open",
+        file,
+        "--worktree",
+        `path:${repo}`,
+        "--focus",
+      ]);
+      if (opened.code !== 0)
+        throw new Error(`Orca no abrió el archivo: ${lastLines(opened.stderr)}`);
+      return { ok: true, mensaje: "abierto" };
+    } catch (error) {
+      return { ok: false, mensaje: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  orca.panels.handle("flowrunner.mantener", async ({ mantenimiento }) => {
+    let args: string;
+    try {
+      const ruta = mantenimiento.accion === "auditar" ? await enfocado() : undefined;
+      args = mantenimientoArgs(mantenimiento, ruta);
+    } catch (error) {
+      return { ok: false, mensaje: error instanceof Error ? error.message : String(error) };
+    }
+    orca.log(`mantenimiento: ${args}`);
+    const timeout = mantenimiento.accion === "aplicar" ? APLICAR_TIMEOUT_MS : TIMEOUT_MS;
+    return outcomeOf(await run(`${await command(orca)} ${args} --json`, timeout));
+  });
 
   orca.panels.handle("flowrunner.decidir", async ({ run: id, decision }) => {
     let args: string;

@@ -44,6 +44,10 @@ como `flowrunner watch`, pensada para el ancho angosto de la barra:
   no te gustó y lo manda con `flowrunner feedback … --origen orca`. flowrunner decide desde dónde
   rehacer, y el recorrido lo muestra: «Diste feedback sobre la PR» con tu texto, y aprender «con tu
   feedback», con desde dónde, las sub-tasks y por qué (ADR 0038).
+- «Levantar servicio», en un run con la PR abierta y `probar` en la config del repo: levanta el entorno
+  de la feature para probarla a mano, en un proceso aparte. Mientras levanta, la tarjeta dice
+  «Levantando el servicio…». Cuando responde, muestra sus URLs, que se abren con un toque, y el botón
+  pasa a «Parar servicio». Si no levantó, dice por qué (ADR 0042).
 - Aprobar se habilita después de abrir el plan (el botón Plan o el link de la etapa Aprobar). Un plan
   corregido se vuelve a abrir. Abrirlo con `flowrunner plan` o desde Claude no cuenta, y el panel lo
   recuerda aunque lo recargues. Si el plan cambió desde que lo abriste, el panel no lo aprueba y te

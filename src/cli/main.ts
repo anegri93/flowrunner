@@ -11,6 +11,7 @@ import { showReport, showSession, showUnit } from "./report.ts";
 import { showPhase } from "./etapa.ts";
 import { feedbackRun, learnAndNotify, learnInBackground, learnOne, tick } from "./tick.ts";
 import { explainAndNotify, explainInBackground, explainRun } from "./explain.ts";
+import { correrServicio, levantarServicio, pararServicio } from "./servicio.ts";
 import { describeDoctor, doctor } from "./doctor.ts";
 import { installLaunchd, plistPath, uninstallLaunchd } from "./launchd.ts";
 import { installSkill } from "./skill.ts";
@@ -106,6 +107,8 @@ const USAGE = `uso: flowrunner <comando> [--json]
   feedback <run> "<qué no te gustó>" [--origen terminal|claude|orca]
                                  con la PR abierta: evalúa tu feedback y rehace el run desde
                                  implementar o planificar, sobre la misma PR
+  servicio <run> levantar|parar  con la PR abierta, levanta el entorno de la feature con el
+                                 probar.levantar del repo para probarla a mano, o lo baja
   doctor                         qué le falta a esta máquina para correr runs, y su versión
   self-update [--fondo]          mueve el flowrunner que corre runs a origin/main; con --fondo,
                                  en un proceso aparte que deja su estado en tareas
@@ -716,6 +719,26 @@ export async function main(
               : [`con la plantilla de hoy:\n  ${init.actualizados.join("\n  ")}`]),
           ].join("\n"),
         );
+        return 0;
+      }
+      case "servicio": {
+        const id = runArg(home, first);
+        const que = rest[0];
+        if (que !== "levantar" && que !== "parar")
+          throw new UserError(
+            "falta qué hacer con el servicio",
+            `flowrunner servicio ${id} levantar`,
+          );
+        const hecho =
+          que === "levantar"
+            ? levantarServicio(home, id, env, new Date())
+            : pararServicio(home, id, new Date());
+        print(hecho, `${hecho.id}: ${hecho.accion}`);
+        return 0;
+      }
+      case "_servicio": {
+        const id = runArg(home, first);
+        io.out(`servicio ${id}: ${await correrServicio(home, id, env)}`);
         return 0;
       }
       case "_learn": {

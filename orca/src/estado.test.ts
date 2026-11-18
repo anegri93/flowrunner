@@ -716,6 +716,56 @@ test("Rehacer con feedback manda lo que escribiste, en un run con la PR abierta,
   assert.ok(sees(panel, "feedback recibido: evaluando desde dónde rehacer"));
 });
 
+// Si regresiona, para probar la feature con la PR abierta hay que levantar el entorno a mano en el
+// worktree, y bajarlo después (ADR 0042).
+test("con la PR abierta, Levantar servicio lo levanta, muestra dónde responde y Parar servicio lo baja", async () => {
+  const sent: { run: string; decision: Decision }[] = [];
+  const externos: string[] = [];
+  let servicio: Run["servicio"] = { estado: "parado", urls: {}, mensaje: "" };
+  const conServicio = () => runs.map((r) => (r.clave === "VF-1" ? { ...r, servicio } : r));
+  const api = fakeApi({
+    runs: () => ({ runs: conServicio(), at: 0 }),
+    decidir: (input) => {
+      sent.push(input);
+      return { ok: true, mensaje: "levantando el servicio: te aviso cuando responda" };
+    },
+  });
+  api.externo = (url) => {
+    externos.push(url);
+    return Promise.resolve();
+  };
+  const panel = await abrirPanel(api);
+  assert.ok(!sees(panel, "Parar servicio"));
+  await press(panel, "Levantar servicio");
+  assert.deepEqual(sent, [
+    { run: "VF-1-20261108-211454", decision: { accion: "levantarServicio" } },
+  ]);
+  assert.ok(sees(panel, "levantando el servicio: te aviso cuando responda"));
+
+  servicio = { estado: "arriba", urls: { web: "http://localhost:5173" }, mensaje: "" };
+  await panel.refresh();
+  assert.ok(!sees(panel, "Levantar servicio"));
+  await press(panel, "web http://localhost:5173");
+  assert.deepEqual(externos, ["http://localhost:5173"]);
+  await press(panel, "Parar servicio");
+  assert.deepEqual(sent.at(-1), {
+    run: "VF-1-20261108-211454",
+    decision: { accion: "pararServicio" },
+  });
+
+  servicio = { estado: "falla", urls: {}, mensaje: "el servicio no levantó: falta la base" };
+  await panel.refresh();
+  assert.ok(sees(panel, "el servicio no levantó: falta la base"));
+  assert.ok(sees(panel, "Levantar servicio"));
+});
+
+// Si regresiona, un repo sin `probar` ofrece un botón que solo puede fallar.
+test("sin servicio en lo que manda flowrunner, no hay botón para levantarlo", async () => {
+  const panel = await abrirPanel(fakeApi({}));
+  assert.ok(sees(panel, "Aprender ahora"));
+  assert.ok(!sees(panel, "Levantar servicio"));
+});
+
 // Si regresiona, el run desaparece del panel al cerrarse y la persona no ve cómo terminó.
 test("cuando un run con la PR abierta se cierra, su informe se abre solo, una vez", async () => {
   let current = runs;

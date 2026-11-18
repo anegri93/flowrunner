@@ -313,6 +313,29 @@ function explicar(e: Estado, run: Run): { boton: string; linea: string } {
   };
 }
 
+/** Cómo está el servicio de la feature (ADR 0042): dónde probarla, o en qué quedó. */
+function servicioLinea(e: Estado, run: Run): string {
+  const s = run.servicio;
+  switch (s?.estado) {
+    case "levantando":
+      return enviando("Levantando el servicio…", e.ahora);
+    case "parando":
+      return enviando("Bajando el servicio…", e.ahora);
+    case "arriba":
+      return `<div class="fila">${texto("Servicio arriba:", "chico", "success")}${Object.entries(
+        s.urls,
+      )
+        .map(([nombre, url]) =>
+          boton({ t: "externo", url }, esc(`${nombre} ${url}`), { clase: "lnk acento" }),
+        )
+        .join("")}</div>`;
+    case "falla":
+      return texto(s.mensaje, "chico", "danger");
+    default:
+      return "";
+  }
+}
+
 function decisiones(e: Estado, run: Run): string {
   const offered = decisionsFor(run);
   const mine = pendingFor(e, run);
@@ -384,6 +407,19 @@ function decisiones(e: Estado, run: Run): string {
     offered.includes("feedback")
       ? boton(ask({ accion: "feedback", texto: "" }), "Rehacer con feedback…")
       : "",
+    offered.includes("levantarServicio")
+      ? boton(
+          { t: "decidir", run: run.id, decision: { accion: "levantarServicio" } },
+          "Levantar servicio",
+          { label: "Levanta el entorno de la feature para probarla a mano" },
+        )
+      : "",
+    offered.includes("pararServicio")
+      ? boton(
+          { t: "decidir", run: run.id, decision: { accion: "pararServicio" } },
+          "Parar servicio",
+        )
+      : "",
     offered.includes("aprobar")
       ? boton(ask({ accion: "aprobar", plan: planVersion(run) }), "Aprobar", {
           clase: "btn solid success",
@@ -429,7 +465,7 @@ function decisiones(e: Estado, run: Run): string {
       : ""
   }${
     suggested.length === 0 ? "" : `<div class="pila">${suggested.join("")}</div>`
-  }${ex.linea}<div class="botones">${botones}</div>${
+  }${ex.linea}${servicioLinea(e, run)}<div class="botones">${botones}</div>${
     offered.includes("aprobar") && !seen
       ? texto("Abrí el plan para poder aprobar.", "chico apagado")
       : ""

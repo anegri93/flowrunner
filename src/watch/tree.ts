@@ -13,6 +13,7 @@ import { contextWindow, estimateCost, promptTokens, type Usage } from "./pricing
 import { PHASES, type Phase, type RunEvent } from "../store/events.ts";
 import type { CambioExistente } from "../gates/plan.ts";
 import type { EstadoExplicacion } from "../store/explicaciones.ts";
+import { servicioActivo, type EstadoServicio } from "../store/servicio.ts";
 import { recorridoOf, type Paso, type Vuelta } from "./recorrido.ts";
 
 export interface SessionFile {
@@ -108,6 +109,11 @@ export interface RunTree {
   readonly explicacion: EstadoExplicacion | undefined;
   /** Lo que hoy existe y el plan cambia: aprobarlo pide aceptarlo. Vacío sin plan o sin cambios. */
   readonly cambiaLoExistente: readonly CambioExistente[];
+  /**
+   * El servicio de la feature para probarla a mano (ADR 0042): con la PR abierta y `probar` en la
+   * config, o mientras sigue arriba. Undefined si no se puede levantar.
+   */
+  readonly servicio: EstadoServicio | undefined;
   /** El motivo con que la persona pidió saltear probar, mientras probar no corrió (ADR 0036). */
   readonly saltearProbar: string | undefined;
   /** Probar todavía no arrancó: se puede pedir saltearla, o deshacerlo. */
@@ -128,6 +134,8 @@ export interface TreeInput {
   readonly esfuerzos?: Partial<Record<Phase, string>>;
   /** Cómo está la explicación de la detención actual, leída de la carpeta del run. */
   readonly explicacion?: EstadoExplicacion;
+  /** El servicio de la feature, leído de la carpeta del run; undefined si el repo no tiene `probar`. */
+  readonly servicio?: EstadoServicio;
   readonly now: number;
 }
 
@@ -490,6 +498,10 @@ export function runTree(input: TreeInput): RunTree {
     unidades: state.status === "detenido" ? state.halt?.unidades : undefined,
     explicacion: state.status === "detenido" ? input.explicacion : undefined,
     cambiaLoExistente: input.cambiaLoExistente ?? [],
+    servicio:
+      (state.status === "entregado" && !state.prCerrada) || servicioActivo(input.servicio)
+        ? input.servicio
+        : undefined,
     // Después de probar la marca ya no dice nada: lo que pasó lo cuenta la etapa salteada.
     saltearProbar: probarNoArranco(state) ? state.probarSalteado : undefined,
     puedeSaltearProbar: probarNoArranco(state),

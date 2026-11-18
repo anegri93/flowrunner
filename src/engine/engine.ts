@@ -1,6 +1,6 @@
 // La máquina de estados del run: una función pura sobre el log. El código decide qué fase toca;
 // la fase solo informa cómo le fue.
-import type { Arreglo, Outcome, Phase, RunEvent } from "../store/events.ts";
+import { PHASES, type Arreglo, type Outcome, type Phase, type RunEvent } from "../store/events.ts";
 import { esCredencial, esFallaDeRed } from "./motivos.ts";
 
 export type RunStatus =
@@ -120,6 +120,11 @@ export interface RunState {
   readonly sinProbar: boolean;
   /** Detenido esperando que la persona arregle el worktree a mano y lo retome (`fix --yo`). */
   readonly aMano: boolean;
+  /**
+   * La persona pidió saltear probar, con este motivo (ADR 0036): cuando el run llega a probar, el
+   * runner no la corre. Sobrevive a un replan; `rehacer` desde probar la borra.
+   */
+  readonly probarSalteado: string | undefined;
   /**
    * Autofix en curso (ADR 0026): el próximo rojo con sub-tasks vuelve a implementar con su motivo en
    * vez de detenerse. Se gasta una vez; cualquier detención lo apaga.
@@ -466,6 +471,7 @@ export function initialState(): RunState {
     pausaPedida: false,
     sinProbar: false,
     aMano: false,
+    probarSalteado: undefined,
     autofix: false,
     autofixCorrio: false,
     directaCorrio: false,
@@ -492,6 +498,22 @@ export const offersFix = (state: RunState, unidades: readonly string[]): boolean
       (state.halt?.unidades ?? []).includes(u) &&
       offers(state, `flowrunner fix ${state.runId} --unidad ${u} `),
   );
+
+/** Cómo empieza el motivo de una probar salteada a pedido de la persona (ADR 0036). */
+export const SALTEADA_POR_LA_PERSONA = "la salteó la persona: ";
+
+/**
+ * Probar todavía no arrancó: el run está en una fase anterior, o en probar en cola o pausado, que
+ * todavía no la corrieron. Es cuando la persona puede pedir saltearla o deshacerlo (ADR 0036). En
+ * probar con un proceso andando, o detenido ahí, ya arrancó.
+ */
+export const probarNoArranco = (state: RunState): boolean =>
+  !TERMINAL.has(state.status) &&
+  state.status !== "entregado" &&
+  (PHASES.indexOf(state.fase) < PHASES.indexOf("probar") ||
+    (state.fase === "probar" &&
+      !state.interrumpida &&
+      (state.status === "en_cola" || state.status === "pausado")));
 
 export function reduce(state: RunState, event: RunEvent): RunState {
   if (state.status === "abortado") return state;
@@ -620,9 +642,20 @@ export function reduce(state: RunState, event: RunEvent): RunState {
         next !== undefined;
       return applies ? enter(state, next, RESPONDIO_LA_PERSONA) : state;
     }
+    case "probar_salteado":
+      return probarNoArranco(state) ? { ...state, probarSalteado: event.motivo } : state;
+    case "probar_restaurado":
+      return probarNoArranco(state) ? { ...state, probarSalteado: undefined } : state;
+    // Rehacer probar es pedir probar: la marca de saltearla no sobrevive (ADR 0036).
     case "rehacer":
       return enter(
-        { ...state, vueltas: NO_ROUNDS, autofix: false, ...RESPONDIO_LA_PERSONA },
+        {
+          ...state,
+          vueltas: NO_ROUNDS,
+          autofix: false,
+          ...RESPONDIO_LA_PERSONA,
+          ...(event.desde === "probar" ? { probarSalteado: undefined } : {}),
+        },
         event.desde,
       );
     case "abortado":

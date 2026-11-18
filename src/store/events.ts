@@ -192,6 +192,17 @@ export const eventSchema = z.discriminatedUnion("tipo", [
   }),
   /** La persona le dio prioridad a este run en la cola: sale antes que los demás, una vez. */
   z.strictObject({ tipo: z.literal("priorizado"), at, origen: origenSchema.optional() }),
+  /**
+   * La persona pidió saltear probar antes de que arranque, y dijo por qué (ADR 0036). Solo vale
+   * mientras probar no corrió; `probar_restaurado` lo deshace.
+   */
+  z.strictObject({
+    tipo: z.literal("probar_salteado"),
+    at,
+    motivo: z.string().min(1),
+    origen: origenSchema,
+  }),
+  z.strictObject({ tipo: z.literal("probar_restaurado"), at, origen: origenSchema }),
   /** La persona decidió entregar aunque probar dejó criterios sin probar, y dijo por qué. */
   z.strictObject({ tipo: z.literal("sin_probar_aceptado"), at, motivo: z.string().min(1) }),
   /** La persona eligió una respuesta de la pregunta: que esas sub-tasks lo corrijan (ADR 0023). */

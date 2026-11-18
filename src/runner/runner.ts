@@ -4,6 +4,7 @@ import {
   correAutofixSolo,
   esEsperaDeRed,
   nextAction,
+  SALTEADA_POR_LA_PERSONA,
   stateOf,
   type RunState,
   type RunStatus,
@@ -46,6 +47,19 @@ export interface RunOpts {
    * un error que dice por qué se niega, sin escribir nada. Sin esto, el run se detiene como antes.
    */
   readonly autofixSolo?: () => Promise<void>;
+}
+
+/**
+ * La persona pidió saltear probar (ADR 0036): no se corre la fase, ni se levanta el entorno ni se toma
+ * su turno. Queda como cuando probar se saltea sola: el aviso y `salteada` con el motivo.
+ */
+function salteadaPorLaPersona(
+  motivo: string,
+  emit: (event: Parameters<typeof appendEvent>[1]) => unknown,
+): Outcome {
+  const salteada = `${SALTEADA_POR_LA_PERSONA}${motivo}`;
+  emit({ tipo: "aviso", fase: "probar", texto: `probar se salteó: ${salteada}` });
+  return { tipo: "ok", salteada };
 }
 
 export async function runUntilStop(
@@ -96,7 +110,10 @@ export async function runUntilStop(
     const current = state.interrumpida
       ? events
       : [...events, emit({ tipo: "accion_iniciada", fase: action.fase })];
-    const outcome = await runPhase(registry, { run, state, action, events: current, emit, deps });
+    const outcome =
+      action.fase === "probar" && state.probarSalteado !== undefined
+        ? salteadaPorLaPersona(state.probarSalteado, emit)
+        : await runPhase(registry, { run, state, action, events: current, emit, deps });
     emit({ tipo: "accion_terminada", fase: action.fase, resultado: outcome });
     avanzo = true;
     // Una detención nueva puede volver a correr Autofix solo; el engine decide si toca.

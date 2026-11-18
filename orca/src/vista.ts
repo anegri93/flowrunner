@@ -23,6 +23,7 @@ import {
   ahoraOf,
   barraOf,
   canAbort,
+  canSkipProbar,
   canPause,
   enColaJunto,
   clock,
@@ -213,6 +214,9 @@ const flecha = (abierta: boolean) =>
 
 // --- Decisiones ----------------------------------------------------------------------------
 
+const SALTEAR_LABEL = "Por qué saltear probar; queda en la PR";
+const SALTEAR_PLACEHOLDER = "Por qué no hace falta probarla en el entorno";
+
 /** Las decisiones que se mandan con un texto de la persona: qué escribe y cómo se arma la decisión. */
 export function textFor(
   decision: Decision | undefined,
@@ -230,6 +234,22 @@ export function textFor(
         label: `Qué tiene que corregir ${unidad}`,
         placeholder: "Qué está mal y qué tiene que quedar",
         decision: (instruccion) => ({ accion: "arreglar", unidad, instruccion }),
+      };
+    }
+    // Saltear probar, sola o al aprobar, pide el motivo: queda en la PR (ADR 0036).
+    case "saltearProbar":
+      return {
+        label: SALTEAR_LABEL,
+        placeholder: SALTEAR_PLACEHOLDER,
+        decision: (motivo) => ({ accion: "saltearProbar", motivo }),
+      };
+    case "aprobar": {
+      if (decision.sinProbar !== "") return undefined;
+      const aprobar = decision;
+      return {
+        label: SALTEAR_LABEL,
+        placeholder: SALTEAR_PLACEHOLDER,
+        decision: (sinProbar) => ({ ...aprobar, sinProbar }),
       };
     }
     case "aceptar":
@@ -282,20 +302,24 @@ function decisiones(e: Estado, run: Run): string {
       )
       .join("")}</div><div class="botones">${cancelar}</div></div>`;
   }
-  if (offered.length === 0) return note;
+  // Un texto pedido desde el menú ⋯, como el motivo para saltear probar, va aunque el run no espere
+  // ninguna decisión.
   const asked = textFor(mine);
+  if (asked === undefined && offered.length === 0) return note;
   if (asked !== undefined) {
     return `<div class="pila"><input id="${CAMPO}" class="campo" aria-label="${esc(asked.label)}" placeholder="${esc(asked.placeholder)}" value="${esc(e.borrador)}" data-enviar="${esc(JSON.stringify({ t: "enviarTexto", run: run.id }))}"><div class="botones">${boton({ t: "enviarTexto", run: run.id }, "Enviar", { clase: "btn solid accent", disabled: e.borrador.trim() === "" })}${cancelar}</div></div>`;
   }
   const existing = existingChanges(run);
   if (mine?.accion === "aprobar" && existing.length > 0) {
     // Aprobar un plan que cambia lo que ya existe es aceptar esos cambios: se ven antes del botón.
-    return `<div class="pila">${texto(`⚠ El plan cambia lo que ya existe (${String(existing.length)})`, "fuerte", "warning")}${existing.map((c) => texto(`• ${describeExisting(c)}`, "chico")).join("")}${texto("Aprobar es aceptar estos cambios. Si alguno no va, cancelá y pedí cambios.", "chico apagado")}<div class="botones">${boton({ t: "decidir", run: run.id, decision: { accion: "aprobar", plan: mine.plan, aceptoCambios: true } }, "Acepto los cambios y apruebo", { clase: "btn solid warning" })}${cancelar}</div></div>`;
+    return `<div class="pila">${texto(`⚠ El plan cambia lo que ya existe (${String(existing.length)})`, "fuerte", "warning")}${existing.map((c) => texto(`• ${describeExisting(c)}`, "chico")).join("")}${texto("Aprobar es aceptar estos cambios. Si alguno no va, cancelá y pedí cambios.", "chico apagado")}<div class="botones">${boton({ t: "decidir", run: run.id, decision: { ...mine, aceptoCambios: true } }, "Acepto los cambios y apruebo", { clase: "btn solid warning" })}${cancelar}</div></div>`;
   }
   if (mine !== undefined) {
     const question =
       mine.accion === "aprobar"
-        ? "¿Aprobar el plan? Arranca implementar."
+        ? mine.sinProbar === undefined
+          ? "¿Aprobar el plan? Arranca implementar."
+          : `¿Aprobar el plan sin probar? Arranca implementar; probar se va a saltear: ${mine.sinProbar}`
         : mine.accion === "reanudar"
           ? `¿Reanudar ${run.clave}?`
           : mine.accion === "autofix"
@@ -326,6 +350,15 @@ function decisiones(e: Estado, run: Run): string {
           clase: "btn solid success",
           disabled: !seen,
         })
+      : "",
+    offered.includes("aprobar") && canSkipProbar(run)
+      ? boton(
+          ask({ accion: "aprobar", plan: planVersion(run), sinProbar: "" }),
+          "Aprobar sin probar…",
+          {
+            disabled: !seen,
+          },
+        )
       : "",
     offered.includes("cambios") ? boton(ask({ accion: "cambios", motivo: "" }), "Cambios") : "",
     run.status === "esperando_aprobacion"
@@ -591,6 +624,18 @@ function menu(e: Estado, run: Run): string {
       ? item({ t: "decidir", run: run.id, decision: { accion: "priorizar" } }, "Priorizar")
       : "",
     canPause(run) ? item({ t: "pausar", run: run.id }, "Pausar") : "",
+    canSkipProbar(run)
+      ? item(
+          { t: "preguntar", run: run.id, decision: { accion: "saltearProbar", motivo: "" } },
+          "Saltear probar…",
+        )
+      : "",
+    run.puedeSaltearProbar === true && run.saltearProbar !== undefined
+      ? item(
+          { t: "decidir", run: run.id, decision: { accion: "volverAProbar" } },
+          "Volver a probar",
+        )
+      : "",
     canAbort(run)
       ? `<div class="sep"></div>${item({ t: "abortar", run: run.id }, "Abortar el run…", " t-danger")}`
       : "",
@@ -685,7 +730,11 @@ function tarjeta(e: Estado, run: Run): string {
           .map((row) => etapa(e, run, row))
           .join("")}</div>`
       : recorridoDe(e, run);
-  return `<article class="tarjeta${needsYou(run) ? " te-necesita" : ""}${cerrado ? " cerrada" : ""}">${cabecera}<div class="titulo" title="${esc(run.titulo)}">${esc(run.titulo)}</div>${barra(run)}${lineaAhora(e, run)}${aviso}${decide}${open ? `<div class="sep"></div>${detalle}` : ""}${abortar(e, run)}</article>`;
+  return `<article class="tarjeta${needsYou(run) ? " te-necesita" : ""}${cerrado ? " cerrada" : ""}">${cabecera}<div class="titulo" title="${esc(run.titulo)}">${esc(run.titulo)}</div>${barra(run)}${lineaAhora(e, run)}${
+    run.saltearProbar === undefined
+      ? ""
+      : texto(`Probar se va a saltear: ${run.saltearProbar}`, "chico", "warning")
+  }${aviso}${decide}${open ? `<div class="sep"></div>${detalle}` : ""}${abortar(e, run)}</article>`;
 }
 
 /** Un run cerrado en una línea: cómo terminó, `CLAVE · título`, su reloj y su costo. Abierto, su tarjeta. */

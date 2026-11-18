@@ -117,10 +117,24 @@ function personText(value: unknown, falta: string, largo: string): string {
 export function decisionArgs(id: string, decision: Decision): string {
   switch (decision.accion) {
     // Aprobar y pedir cambios también dicen que vinieron de Orca (ADR 0023).
-    case "aprobar":
-      return decision.aceptoCambios === true
-        ? `approve ${quote(id)} --acepto-cambios --origen orca`
-        : `approve ${quote(id)} --origen orca`;
+    case "aprobar": {
+      const cambios = decision.aceptoCambios === true ? " --acepto-cambios" : "";
+      const sinProbar =
+        decision.sinProbar === undefined
+          ? ""
+          : ` --sin-probar ${quote(personText(decision.sinProbar, "falta el motivo para saltear probar", "el motivo es demasiado largo"))}`;
+      return `approve ${quote(id)}${cambios}${sinProbar} --origen orca`;
+    }
+    case "saltearProbar": {
+      const motivo = personText(
+        decision.motivo,
+        "falta el motivo para saltear probar",
+        "el motivo es demasiado largo",
+      );
+      return `skip-probar ${quote(id)} ${quote(motivo)} --origen orca`;
+    }
+    case "volverAProbar":
+      return `skip-probar ${quote(id)} --deshacer --origen orca`;
     case "cambios": {
       const motivo = personText(
         decision.motivo,

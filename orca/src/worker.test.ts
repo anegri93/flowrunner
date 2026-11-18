@@ -627,6 +627,47 @@ test("cada mantenimiento corre su comando fijo con --fondo; uno desconocido no l
   }
 });
 
+// Si regresiona, saltear probar desde el panel no llega a flowrunner, llega sin motivo o sin origen
+// (ADR 0036).
+test("saltear probar, volver a probar y aprobar sin probar corren su comando fijo con --origen orca", async () => {
+  const { worker, calls } = await fakeWorker();
+  const id = "PIZ-3-20261109-010000";
+  try {
+    const plan = `${id}#1`;
+    await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "saltearProbar", motivo: "solo docs" },
+    });
+    await worker.request("flowrunner.decidir", { run: id, decision: { accion: "volverAProbar" } });
+    await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "aprobar", plan, sinProbar: "sin entorno" },
+    });
+    await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "aprobar", plan, aceptoCambios: true, sinProbar: "sin entorno" },
+    });
+    const vacio = await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "saltearProbar", motivo: "  " },
+    });
+    assert.equal(vacio.ok, false);
+    const aprobarVacio = await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "aprobar", plan, sinProbar: "" },
+    });
+    assert.equal(aprobarVacio.ok, false);
+    assert.deepEqual(decided(calls()), [
+      `skip-probar ${id} solo docs --origen orca --json`,
+      `skip-probar ${id} --deshacer --origen orca --json`,
+      `approve ${id} --sin-probar sin entorno --origen orca --json`,
+      `approve ${id} --acepto-cambios --sin-probar sin entorno --origen orca --json`,
+    ]);
+  } finally {
+    await worker.deactivate();
+  }
+});
+
 // Si regresiona, el panel no ve en qué quedó una actualización que corre aparte.
 test("las tareas salen de flowrunner tareas --json", async () => {
   const { worker } = await fakeWorker();

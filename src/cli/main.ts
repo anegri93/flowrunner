@@ -44,6 +44,7 @@ import {
   fixRun,
   rerunRun,
   resumeRun,
+  skipProbar,
   runProcess,
   startRun,
   statusAll,
@@ -77,15 +78,20 @@ const USAGE = `uso: flowrunner <comando> [--json]
   accept-untested <run> "<por qué>"
                                  entrega aunque probar dejó criterios sin probar; el motivo
                                  queda en el informe y en la PR
+  skip-probar <run> "<por qué>"  cuando el run llegue a probar, la saltea; el motivo queda en el
+                                 informe y en la PR. Solo antes de que probar arranque
+  skip-probar <run> --deshacer   vuelve a probar normal
+                                 skip-probar con [--origen terminal|claude|orca]
   pause <run> [--para <run>]     pausa un run: termina lo que está haciendo y suelta su lugar;
                                  con --para, ese run de la cola entra antes; sigue con resume
   prioritize <run>               un run en cola sale primero
                                  pause y prioritize con [--origen terminal|claude|orca]
   abort <run>                    cancela un run y borra sus worktrees; las ramas quedan
   plan <run>                     muestra el plan que espera aprobación
-  approve <run> [--acepto-cambios] [--origen terminal|claude|orca]
+  approve <run> [--acepto-cambios] [--sin-probar "<por qué>"] [--origen terminal|claude|orca]
                                  aprueba el plan y sigue a implementar; si el plan cambia
-                                 lo que ya existe, pide --acepto-cambios
+                                 lo que ya existe, pide --acepto-cambios; con --sin-probar,
+                                 probar se saltea con ese motivo
   changes <run> "<motivo>" [--origen terminal|claude|orca]
                                  vuelve a planificar con tu instrucción
   report <run> [--sesion s]      el informe del run, o el transcript de una sesión
@@ -215,6 +221,15 @@ function parseOrigen(value: unknown): Origen {
   return parsed.data;
 }
 
+/**
+ * El motivo de `--sin-probar`: con `strict: false`, el flag sin valor llega como `true`. Ausente es
+ * undefined; presente, un texto, que `approveRun` exige no vacío.
+ */
+function sinProbarArg(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  return typeof value === "string" ? value : "";
+}
+
 /** Un valor de `parseArgs` con `multiple`: siempre una lista de textos. */
 const strings = (value: unknown): string[] =>
   (Array.isArray(value) ? value : [value]).filter((v): v is string => typeof v === "string");
@@ -262,6 +277,8 @@ export async function main(
       "github-user": { type: "string" },
       approve: { type: "string" },
       "acepto-cambios": { type: "boolean", default: false },
+      "sin-probar": { type: "string" },
+      deshacer: { type: "boolean", default: false },
     },
   });
   const json = values.json === true;
@@ -396,6 +413,15 @@ export async function main(
         print(accepted, `run ${accepted.id} ${accepted.accion}`);
         return 0;
       }
+      case "skip-probar": {
+        const skipped = skipProbar(home, runArg(home, first), {
+          motivo: rest.join(" "),
+          deshacer: values.deshacer === true,
+          origen: parseOrigen(values.origen),
+        });
+        print(skipped, `run ${skipped.id}: ${skipped.accion}`);
+        return 0;
+      }
       case "rerun": {
         const desde = typeof values.desde === "string" ? values.desde : undefined;
         const rerun = rerunRun(home, runArg(home, first), desde, env);
@@ -430,6 +456,7 @@ export async function main(
           env,
           values["acepto-cambios"] === true,
           parseOrigen(values.origen),
+          sinProbarArg(values["sin-probar"]),
         );
         print(approved, `run ${approved.id} ${approved.accion}`);
         return 0;

@@ -428,7 +428,13 @@ export class Panel {
         const run = this.#run(accion.run);
         const asked = run === undefined ? undefined : textFor(pendingFor(this.#e, run));
         if (asked === undefined || this.#e.borrador.trim() === "") return;
-        await this.#decide(accion.run, asked.decision(this.#e.borrador));
+        const decision = asked.decision(this.#e.borrador.trim());
+        // Aprobar sin probar: con el motivo escrito, se confirma como cualquier Aprobar (ADR 0036).
+        if (decision.accion === "aprobar") {
+          this.#set({ pendiente: { run: accion.run, decision }, borrador: "" });
+          return;
+        }
+        await this.#decide(accion.run, decision);
         return;
       }
       case "abortar":

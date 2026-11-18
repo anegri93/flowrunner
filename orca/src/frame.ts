@@ -23,6 +23,8 @@ const api: Api = {
   doctor: () => orca.plugin.request("flowrunner.doctor", undefined),
   tareas: () => orca.plugin.request("flowrunner.tareas", undefined),
   mantener: (mantenimiento) => orca.plugin.request("flowrunner.mantener", { mantenimiento }),
+  cerebro: () => orca.plugin.request("flowrunner.cerebro", undefined),
+  informeCerebro: () => orca.plugin.request("flowrunner.informeCerebro", undefined),
   externo: async (url) => {
     await orca.shell?.openExternal(url);
   },

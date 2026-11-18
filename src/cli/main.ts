@@ -23,6 +23,14 @@ import { renderRuns, watchLive, watchTargets } from "./watch.ts";
 import { selfUpdate, sinProcesosVivos } from "../setup/app.ts";
 import { aprobarPlugin, correrTarea, lanzarTarea, listarTareas, type Fin } from "./tareas.ts";
 import { commandDir, describeInit, draftExistingBrain, init } from "../setup/init.ts";
+import {
+  applyAudit,
+  auditBrain,
+  describeAplicar,
+  describeAuditar,
+  proyectoDe,
+  ultimaAuditoria,
+} from "../setup/auditar.ts";
 import { productionRuntime } from "../runner/production.ts";
 import { describeStats, describeStatsPorRun, stats, statsPorRun } from "../report/stats.ts";
 import { origenSchema, type Origen } from "../store/events.ts";
@@ -101,6 +109,11 @@ const USAGE = `uso: flowrunner <comando> [--json]
   project add <ruta>             registra un repo [--nombre n] [--github-user u]
   brain init <ruta>              escribe las plantillas de .flowrunner/ sin pisar nada; una
                                  plantilla vieja que nadie editó pasa a la de hoy
+  brain audit <ruta> [--fondo]   una sesión de solo lectura revisa el cerebro contra el código y la
+                                 historia de los runs, y propone decisiones; con --fondo, aparte
+  brain audit <ruta> --ultima    la última auditoría del proyecto, con su informe
+  brain apply <proyecto>/<id> --decision Dn [--decision Dm]
+                                 abre una PR con las decisiones elegidas de esa auditoría
   brain draft <ruta> [--reemplazar]
                                  propone en una PR un borrador del cerebro leído del repo;
                                  con --reemplazar, cambia el borrador anterior por uno nuevo`;
@@ -157,7 +170,16 @@ async function reapuntar(env: NodeJS.ProcessEnv): Promise<{ ok: true; reapuntado
 }
 
 /** El trabajo de cada tarea de `_tarea`: lo que el panel lanza y sigue (ADR 0039). */
-async function tarea(nombre: string, env: NodeJS.ProcessEnv): Promise<Fin> {
+async function tarea(
+  nombre: string,
+  args: readonly string[],
+  env: NodeJS.ProcessEnv,
+): Promise<Fin> {
+  if (nombre.startsWith("auditar-")) {
+    const { deps } = await productionRuntime(env, () => undefined);
+    const done = await auditBrain(need(args[0], "la ruta del repo"), deps, () => undefined);
+    return { ok: true, mensaje: describeAuditar(done) };
+  }
   if (nombre === "self-update") {
     const updated = await selfUpdate(env);
     const orca = updated.reapuntado.find((r) => r.startsWith("Orca "));
@@ -234,6 +256,8 @@ export async function main(
       cerrados: { type: "boolean", default: false },
       fondo: { type: "boolean", default: false },
       runs: { type: "boolean", default: false },
+      ultima: { type: "boolean", default: false },
+      decision: { type: "string", multiple: true },
       "github-user": { type: "string" },
       approve: { type: "string" },
       "acepto-cambios": { type: "boolean", default: false },
@@ -562,6 +586,49 @@ export async function main(
         return 0;
       }
       case "brain": {
+        if (first === "audit") {
+          const ruta = need(rest[0], "la ruta del repo");
+          if (values.ultima === true) {
+            // Lo que lee el panel: la última auditoría del proyecto, con su informe ya escrito.
+            const { nombre } = await proyectoDe(ruta, env);
+            const ultima = ultimaAuditoria(home, nombre);
+            const informe = ultima === undefined ? null : readFileSync(ultima.md, "utf8");
+            print(
+              { ok: true, proyecto: nombre, auditoria: ultima?.registro ?? null, informe },
+              informe ?? `${nombre} todavía no tiene auditorías: flowrunner brain audit ${ruta}`,
+            );
+            return 0;
+          }
+          if (values.fondo === true) {
+            const { nombre, repo } = await proyectoDe(ruta, env);
+            const started = lanzarTarea(
+              home,
+              `auditar-${nombre}`,
+              [repo],
+              `auditando el cerebro de ${nombre}`,
+              env,
+              new Date(),
+            );
+            print({ ...started, proyecto: nombre }, started.resultado);
+            return 0;
+          }
+          const { deps } = await productionRuntime(env, () => undefined);
+          const done = await auditBrain(ruta, deps, progressLog(io, json));
+          print(done, describeAuditar(done));
+          return 0;
+        }
+        if (first === "apply") {
+          const { deps } = await productionRuntime(env, () => undefined);
+          const done = await applyAudit(
+            need(rest[0], "la auditoría, como <proyecto>/<id>"),
+            strings(values.decision),
+            deps,
+            progressLog(io, json),
+          );
+          // `resultado`: lo que muestra el panel de Orca, como en las demás tareas.
+          print({ ...done, resultado: describeAplicar(done) }, describeAplicar(done));
+          return 0;
+        }
         if (first === "draft") {
           const { deps } = await productionRuntime(env, () => undefined);
           const drafted = await draftExistingBrain(
@@ -602,7 +669,13 @@ export async function main(
       }
       case "_tarea": {
         const nombre = need(first, "la tarea");
-        const fin = await correrTarea(home, nombre, "trabajando", () => tarea(nombre, env), env);
+        const fin = await correrTarea(
+          home,
+          nombre,
+          "trabajando",
+          () => tarea(nombre, rest, env),
+          env,
+        );
         io.out(`${nombre}: ${fin.mensaje}`);
         return fin.ok ? 0 : 1;
       }

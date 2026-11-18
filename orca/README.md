@@ -58,6 +58,11 @@ como `flowrunner watch`, pensada para el ancho angosto de la barra:
   confirmación y corren aparte (`self-update --fondo`, `orca install --fondo`): el panel muestra la
   tarea mientras corre y en qué quedó, y vuelve a leer el doctor cuando termina. Si Orca pide aprobar
   el plugin, muestra el `--approve` para la terminal. «Volver a los runs» la cierra (ADR 0039).
+  Debajo, el cerebro del proyecto enfocado: «Auditar el cerebro» pide confirmación, porque es una
+  sesión de Claude, y corre aparte (`brain audit --fondo`). La última auditoría muestra su resumen,
+  los hallazgos y las decisiones: tocar una la elige, «Abrir PR con las elegidas» corre `brain apply`
+  con esas, y «Ver el informe» lo abre como pestaña. Las que no se pueden aplicar dicen por qué, y las
+  ya aplicadas, en qué PR están (ADR 0040).
 
 Se refresca cada 3 segundos mientras la pestaña se ve, y sigue al proyecto que tenés enfocado en Orca,
 como el explorador y los agentes: muestra los runs de ese proyecto, incluidos los de sus worktrees,

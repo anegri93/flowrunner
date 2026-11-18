@@ -90,6 +90,28 @@ test("al terminar deja en qué quedó: ok con su mensaje, o la falla con el coma
   });
 });
 
+// Si regresiona, mientras corre el panel dice «trabajando» en vez de qué está haciendo.
+test("al arrancar, el proceso conserva el mensaje con que se lanzó la tarea", async () => {
+  const h = home([corriendo({ pid: null, inicio: NOW.toISOString() })]);
+  let mientras: Tarea | undefined;
+  await correrTarea(
+    h,
+    "self-update",
+    "trabajando",
+    () => {
+      mientras = leerTarea(h, "self-update", NOW);
+      return Promise.resolve({ ok: true, mensaje: "listo" });
+    },
+    ENV,
+    () => NOW,
+  );
+  expect(mientras).toMatchObject({
+    estado: "corriendo",
+    pid: process.pid,
+    mensaje: "actualizando flowrunner a origin/main",
+  });
+});
+
 // Si regresiona, el panel no puede decir qué correr cuando Orca pide aprobar el plugin.
 test("arma el --approve que pidió Orca; sin fingerprint, nada", () => {
   expect(

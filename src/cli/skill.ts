@@ -17,6 +17,8 @@ export const ASK_RULES = [
   // Responder la pregunta de un run detenido también (ADR 0023).
   "Bash(flowrunner fix:*)",
   "Bash(flowrunner accept:*)",
+  // Abrir una PR sobre el cerebro con las decisiones de una auditoría es de la persona (ADR 0040).
+  "Bash(flowrunner brain apply:*)",
 ] as const;
 /** El hook SessionStart: con la ruta del bin, para no depender del PATH con que arranca Claude Code. */
 export const SESSION_HOOK = `${shellQuote(BIN)} hook session-start`;

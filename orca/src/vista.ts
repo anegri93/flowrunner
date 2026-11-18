@@ -9,7 +9,14 @@
 // Cada control es un <button> con su acción en `data-accion` (JSON): `frame.ts` la lee al tocarlo y
 // se la pasa al panel. Todo texto que viene de flowrunner pasa por `esc`.
 import { indicador, indicadorDeEtapa, indicadorDeTarea, INDICADORES_CSS } from "./indicadores";
-import { TAREA_DE, type Doctor, type Mantenimiento, type Tarea } from "./doctor";
+import {
+  esTareaDe,
+  type AuditoriaCerebro,
+  type CerebroSnapshot,
+  type Doctor,
+  type Mantenimiento,
+  type Tarea,
+} from "./doctor";
 import type { Openable, Outcome, Snapshot } from "./protocol";
 import {
   activity,
@@ -85,7 +92,10 @@ export type AccionDoctor =
   /** Un mantenimiento pide confirmación: actualizar cambia el código con que siguen los runs. */
   | { readonly t: "preguntar"; readonly m: Mantenimiento }
   | { readonly t: "cancelar" }
-  | { readonly t: "mantener"; readonly m: Mantenimiento };
+  | { readonly t: "mantener"; readonly m: Mantenimiento }
+  /** Elegir o soltar una decisión de la auditoría para la PR. */
+  | { readonly t: "elegir"; readonly id: string }
+  | { readonly t: "informe" };
 
 /** La vista del doctor, abierta en lugar de los runs. */
 export interface EstadoDoctor {
@@ -97,6 +107,10 @@ export interface EstadoDoctor {
   readonly enviando: boolean;
   /** Lo que contestó flowrunner al lanzar un mantenimiento. */
   readonly dicho: Outcome | null;
+  /** El cerebro del proyecto enfocado; undefined mientras se lee. */
+  readonly cerebro: CerebroSnapshot | undefined;
+  /** Las decisiones de la auditoría elegidas para la PR, por id. */
+  readonly elegidas: Readonly<Record<string, boolean>>;
 }
 
 export const DOCTOR_INICIAL: EstadoDoctor = {
@@ -106,6 +120,8 @@ export const DOCTOR_INICIAL: EstadoDoctor = {
   confirmar: null,
   enviando: false,
   dicho: null,
+  cerebro: undefined,
+  elegidas: {},
 };
 
 /** Todo lo que se ve. Lo arma y lo cambia `Panel` (estado.ts). */
@@ -697,7 +713,7 @@ const doctorAccion = (a: AccionDoctor): Accion => ({ t: "doctor", a });
 
 /** Qué hace cada mantenimiento, para su botón y su confirmación. */
 const MANTENIMIENTO: Record<
-  Mantenimiento["accion"],
+  Exclude<Mantenimiento["accion"], "aplicar">,
   { readonly boton: string; readonly pregunta: string; readonly detalle: string }
 > = {
   actualizar: {
@@ -711,6 +727,12 @@ const MANTENIMIENTO: Record<
     pregunta: "¿Volver a cargar el plugin de Orca?",
     detalle:
       "Orca puede pedir aprobarlo: si lo pide, te dejo el comando para correr en la terminal.",
+  },
+  auditar: {
+    boton: "Auditar el cerebro",
+    pregunta: "¿Auditar el cerebro de este proyecto?",
+    detalle:
+      "Una sesión de Claude lee el cerebro, el código y la historia de los runs, y propone decisiones. Tarda unos minutos y usa tu suscripción; no cambia nada hasta que elijas.",
   },
 };
 
@@ -742,12 +764,12 @@ function versionTexto(d: Doctor): string {
 
 function mantenimientos(d: EstadoDoctor): string {
   if (d.enviando) return texto("Enviando…", "chico apagado");
-  if (d.confirmar !== null) {
+  if (d.confirmar !== null && d.confirmar.accion !== "aplicar") {
     const m = MANTENIMIENTO[d.confirmar.accion];
     return `<div class="pila">${texto(m.pregunta, "fuerte")}${texto(m.detalle, "chico apagado")}<div class="botones">${boton(doctorAccion({ t: "mantener", m: d.confirmar }), "Sí, confirmar", { clase: "btn solid success" })}${boton(doctorAccion({ t: "cancelar" }), "Cancelar", { clase: "btn ghost" })}</div></div>`;
   }
   const corre = (m: Mantenimiento) =>
-    d.tareas.some((t) => t.nombre === TAREA_DE[m.accion] && t.estado === "corriendo");
+    d.tareas.some((t) => esTareaDe(m, t) && t.estado === "corriendo");
   const botones = (["actualizar", "plugin"] as const)
     .map((accion) =>
       boton(doctorAccion({ t: "preguntar", m: { accion } }), MANTENIMIENTO[accion].boton, {
@@ -760,6 +782,69 @@ function mantenimientos(d: EstadoDoctor): string {
       ? ""
       : texto(d.dicho.mensaje, "nota motivo entero", d.dicho.ok ? "success" : "danger");
   return `<div class="pila"><div class="botones">${botones}</div>${dicho}</div>`;
+}
+
+const marcaDecision = (elegida: boolean) => (elegida ? "☑" : "☐");
+
+function auditoriaVista(a: AuditoriaCerebro, elegidas: Readonly<Record<string, boolean>>): string {
+  const ids = a.decisiones.filter((x) => x.aplicable && x.pr === null && elegidas[x.id] === true);
+  const hallazgos =
+    a.hallazgos.length === 0
+      ? ""
+      : `<div class="pila">${texto(`Hallazgos · ${String(a.hallazgos.length)}`, "fuerte chico")}${a.hallazgos
+          .map((h) => texto(`${h.id} · ${h.tipo} · ${h.archivo}: ${h.que}`, "chico motivo entero"))
+          .join("")}</div>`;
+  const decisiones = a.decisiones
+    .map((x) => {
+      const cuerpo = `${texto(x.porQue, "chico apagado motivo entero")}${texto(`Reduce: ${x.reduce}`, "chico motivo entero")}`;
+      if (x.pr !== null)
+        return `<div class="pila">${texto(`✓ ${x.id} · ${x.titulo}`, "fuerte chico", "success")}${boton({ t: "externo", url: x.pr }, esc(`En la PR ${x.pr}`), { clase: "lnk acento" })}</div>`;
+      if (!x.aplicable)
+        return `<div class="pila">${texto(`${x.id} · ${x.titulo}`, "fuerte chico apagado")}${texto(`No se puede aplicar: ${x.motivo ?? ""}`, "chico motivo entero", "warning")}</div>`;
+      const elegida = elegidas[x.id] === true;
+      return `<div class="pila">${boton(doctorAccion({ t: "elegir", id: x.id }), esc(`${marcaDecision(elegida)} ${x.id} · ${x.titulo}`), { clase: "btn arreglo", aria: `role="checkbox" aria-checked="${elegida ? "true" : "false"}"` })}${cuerpo}</div>`;
+    })
+    .join("");
+  const aplicar = boton(
+    doctorAccion({
+      t: "mantener",
+      m: { accion: "aplicar", auditoria: a.ref, decisiones: ids.map((x) => x.id) },
+    }),
+    ids.length === 0
+      ? "Abrir PR con las elegidas"
+      : `Abrir PR con las elegidas (${String(ids.length)})`,
+    { clase: "btn solid accent", disabled: ids.length === 0 },
+  );
+  return `<div class="pila">${texto(`Última auditoría: ${a.fecha.slice(0, 16).replace("T", " ")} · $${a.costoUsd.toFixed(2)}`, "chico apagado num")}${texto(a.resumen, "nota motivo entero")}${hallazgos}${
+    a.decisiones.length === 0
+      ? texto("Sin decisiones: el cerebro está bien así.", "chico", "success")
+      : `${texto("Decisiones: elegí las que van en la PR", "fuerte chico")}${decisiones}`
+  }<div class="botones">${a.decisiones.length === 0 ? "" : aplicar}${boton(doctorAccion({ t: "informe" }), "Ver el informe", { clase: "btn ghost" })}</div></div>`;
+}
+
+/** El cerebro del proyecto enfocado: auditarlo y elegir qué decisiones van en una PR (ADR 0040). */
+function cerebroVista(d: EstadoDoctor): string {
+  const c = d.cerebro;
+  const titulo = texto(c?.proyecto === undefined ? "CEREBRO" : `CEREBRO · ${c.proyecto}`, "rotulo");
+  if (c === undefined)
+    return `<div class="pila">${titulo}${texto("Leyendo…", "chico apagado")}</div>`;
+  if (c.error !== undefined)
+    return `<div class="pila">${titulo}${texto(c.error, "chico motivo entero", "warning")}</div>`;
+  const auditando = d.tareas.some(
+    (t) => esTareaDe({ accion: "auditar" }, t) && t.estado === "corriendo",
+  );
+  const auditar = auditando
+    ? texto("Auditando el cerebro…", "chico", "accent")
+    : boton(
+        doctorAccion({ t: "preguntar", m: { accion: "auditar" } }),
+        MANTENIMIENTO.auditar.boton,
+        { disabled: d.enviando || d.confirmar !== null },
+      );
+  return `<div class="pila">${titulo}${texto("Revisa que lo que leen los runs siga siendo cierto y útil, y propone cambios para que se detengan menos.", "chico apagado")}<div class="botones">${auditar}</div>${
+    c.auditoria === null
+      ? texto("Todavía no tiene auditorías.", "chico apagado")
+      : auditoriaVista(c.auditoria, d.elegidas)
+  }</div>`;
 }
 
 /** La vista del doctor: la máquina, la versión, las actualizaciones y en qué quedaron. */
@@ -783,7 +868,7 @@ function vistaDoctor(d: EstadoDoctor, ahora: number): string {
     d.tareas.length === 0
       ? ""
       : `<div class="sep"></div><div class="pila">${texto("TAREAS", "rotulo")}${d.tareas.map((t) => tareaFila(t, ahora)).join("")}</div>`;
-  return `${cabecera}${error}${checks}<div class="sep"></div>${mantenimientos(d)}${tareas}<div class="botones">${boton(doctorAccion({ t: "releer" }), "Revisar de nuevo", { clase: "btn ghost" })}</div>`;
+  return `${cabecera}${error}${checks}<div class="sep"></div>${mantenimientos(d)}${tareas}<div class="sep"></div>${cerebroVista(d)}<div class="sep"></div><div class="botones">${boton(doctorAccion({ t: "releer" }), "Revisar de nuevo", { clase: "btn ghost" })}</div>`;
 }
 
 /** La pestaña entera. Antes de la primera lectura, la nave en camino. */

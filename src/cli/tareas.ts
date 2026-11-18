@@ -137,14 +137,17 @@ export async function correrTarea(
   env: NodeJS.ProcessEnv,
   now: () => Date = () => new Date(),
 ): Promise<Fin> {
-  const inicio = leerTarea(home, nombre, now())?.inicio ?? now().toISOString();
+  // Lo que escribió `lanzarTarea` dice mejor qué hace («actualizando flowrunner…»): se conserva.
+  const lanzada = leerTarea(home, nombre, now());
+  const previa = lanzada?.estado === "corriendo" ? lanzada : undefined;
+  const inicio = previa?.inicio ?? now().toISOString();
   escribir(home, {
     nombre: nombreOk(nombre),
     estado: "corriendo",
     pid: process.pid,
     inicio,
     fin: null,
-    mensaje,
+    mensaje: previa?.mensaje ?? mensaje,
     siguiente: null,
   });
   let fin: Fin;

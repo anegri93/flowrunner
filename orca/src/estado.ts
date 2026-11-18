@@ -3,7 +3,13 @@
 //
 // El refresco no borra nada: si una lectura falla, quedan los runs anteriores con el error arriba.
 // Nunca dos lecturas a la vez, y una que quedó vieja por un cambio de workspace se descarta.
-import { terminadas, type DoctorSnapshot, type Mantenimiento, type TareasSnapshot } from "./doctor";
+import {
+  terminadas,
+  type CerebroSnapshot,
+  type DoctorSnapshot,
+  type Mantenimiento,
+  type TareasSnapshot,
+} from "./doctor";
 import type { Openable, Outcome, Snapshot } from "./protocol";
 import { enColaJunto, planVersion, type Decision, type Run } from "./runs";
 import {
@@ -32,6 +38,9 @@ export interface Api {
   doctor(): Promise<DoctorSnapshot>;
   tareas(): Promise<TareasSnapshot>;
   mantener(m: Mantenimiento): Promise<Outcome>;
+  /** El cerebro del proyecto enfocado y el informe de su auditoría (ADR 0040). */
+  cerebro(): Promise<CerebroSnapshot>;
+  informeCerebro(): Promise<Outcome>;
   ahora(): number;
 }
 
@@ -146,6 +155,19 @@ export class Panel {
 
   /** Lo que dice doctor de la máquina: lento, se lee al abrir, al pedirlo y cuando termina una tarea. */
   async #leerDoctor(): Promise<void> {
+    await Promise.all([this.#leerMaquina(), this.#leerCerebro()]);
+  }
+
+  /** El cerebro del proyecto enfocado; un error se muestra en su sección, no en la máquina. */
+  async #leerCerebro(): Promise<void> {
+    try {
+      this.#setDoctor({ cerebro: await this.#api.cerebro() });
+    } catch (error) {
+      this.#setDoctor({ cerebro: { auditoria: null, error: message(error) } });
+    }
+  }
+
+  async #leerMaquina(): Promise<void> {
     try {
       const snap = await this.#api.doctor();
       this.#setDoctor({
@@ -184,6 +206,11 @@ export class Panel {
     } finally {
       this.#setDoctor({ enviando: false });
     }
+    // La PR ya está: lo elegido pasa a «en la PR» al releer el cerebro.
+    if (m.accion === "aplicar") {
+      this.#setDoctor({ elegidas: {} });
+      await this.#leerCerebro();
+    }
     await this.#leerTareas();
   }
 
@@ -209,6 +236,20 @@ export class Panel {
       case "mantener":
         await this.#mantener(a.m);
         return;
+      case "elegir": {
+        const elegidas = this.#e.doctor?.elegidas ?? {};
+        this.#setDoctor({ elegidas: { ...elegidas, [a.id]: elegidas[a.id] !== true } });
+        return;
+      }
+      case "informe": {
+        try {
+          const answer = await this.#api.informeCerebro();
+          if (!answer.ok) this.#setDoctor({ dicho: answer });
+        } catch (error) {
+          this.#setDoctor({ dicho: { ok: false, mensaje: message(error) } });
+        }
+        return;
+      }
     }
   }
 

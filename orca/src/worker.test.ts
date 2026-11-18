@@ -662,3 +662,108 @@ test("las tareas salen de flowrunner tareas --json", async () => {
     await worker.deactivate();
   }
 });
+
+/** Un worker con un proyecto enfocado en Orca, encontrado por su nombre y su rama. */
+async function workerEnfocado() {
+  const { worker, calls, repo } = await fakeWorker();
+  await worker.deactivate();
+  const enfocado = await mountWorker(main, {
+    host: mockHost({
+      settings: { comando: FAKE },
+      results: {
+        "workspace.readContext": { branch: "main", displayName: "acme", terminals: [] },
+        "workspace.list": {
+          workspaces: [
+            {
+              id: "a",
+              kind: "worktree",
+              name: "acme",
+              path: repo,
+              branch: "refs/heads/main",
+              hostId: "local",
+            },
+          ],
+          truncated: false,
+        },
+      },
+    }),
+  });
+  return { worker: enfocado, calls, repo };
+}
+
+// Si regresiona, el panel audita otro proyecto que el enfocado, o lo que manda llega al shell sin
+// validar.
+test("auditar va con la ruta del proyecto enfocado; aplicar, solo con una auditoría y decisiones válidas", async () => {
+  const { worker, calls, repo } = await workerEnfocado();
+  try {
+    const audit = await worker.request("flowrunner.mantener", {
+      mantenimiento: { accion: "auditar" },
+    });
+    assert.deepEqual(audit, { ok: true, mensaje: "auditando el cerebro de acme" });
+    const apply = await worker.request("flowrunner.mantener", {
+      mantenimiento: {
+        accion: "aplicar",
+        auditoria: "acme/20261117-100000",
+        decisiones: ["D1", "D3"],
+      },
+    });
+    assert.equal(apply.ok, true);
+    assert.match(apply.mensaje, /pull\/9/);
+    const malos = [
+      { accion: "aplicar" as const, auditoria: "../../etc", decisiones: ["D1"] },
+      {
+        accion: "aplicar" as const,
+        auditoria: "acme/20261117-100000",
+        decisiones: ["D1; rm -rf ~"],
+      },
+      { accion: "aplicar" as const, auditoria: "acme/20261117-100000", decisiones: [] },
+    ];
+    for (const mantenimiento of malos)
+      assert.equal((await worker.request("flowrunner.mantener", { mantenimiento })).ok, false);
+    assert.deepEqual(decided(calls()), [
+      `brain audit ${repo} --fondo --json`,
+      "brain apply acme/20261117-100000 --decision D1 --decision D3 --json",
+    ]);
+  } finally {
+    await worker.deactivate();
+  }
+});
+
+// Si regresiona, la sección del cerebro no muestra la última auditoría, o «Ver el informe» no la abre.
+test("lee la última auditoría del proyecto enfocado y abre su informe como pestaña", async () => {
+  const { worker, calls, repo } = await workerEnfocado();
+  try {
+    const snap = await worker.request("flowrunner.cerebro");
+    assert.equal(snap.error, undefined);
+    assert.equal(snap.proyecto, "acme");
+    assert.equal(snap.auditoria?.ref, "acme/20261117-100000");
+    assert.deepEqual(
+      snap.auditoria?.decisiones.map((d) => [d.id, d.aplicable, d.pr]),
+      [["D1", true, null]],
+    );
+    const opened = await worker.request("flowrunner.informeCerebro");
+    assert.deepEqual(opened, { ok: true, mensaje: "abierto" });
+    const file = join(repo, ".git", "flowrunner", "cerebro", "auditoria-20261117-100000.md");
+    assert.match(readFileSync(file, "utf8"), /^# Auditoría del cerebro de acme/);
+    assert.ok(calls().includes(`orca file open ${file} --worktree path:${repo} --focus`));
+  } finally {
+    await worker.deactivate();
+  }
+});
+
+// Si regresiona, sin un proyecto enfocado el panel audita cualquier cosa o se queda mudo.
+test("sin un proyecto enfocado, auditar y el cerebro dicen que hay que enfocar uno", async () => {
+  const { worker, calls } = await fakeWorker();
+  try {
+    const audit = await worker.request("flowrunner.mantener", {
+      mantenimiento: { accion: "auditar" },
+    });
+    assert.equal(audit.ok, false);
+    assert.match(audit.mensaje, /enfocá un proyecto/);
+    const snap = await worker.request("flowrunner.cerebro");
+    assert.match(snap.error ?? "", /enfocá un proyecto/);
+    assert.deepEqual(decided(calls()), []);
+  } finally {
+    await worker.deactivate();
+  }
+});

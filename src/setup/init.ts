@@ -60,7 +60,7 @@ function readGlobal(env: NodeJS.ProcessEnv): Global {
   return (parse(readFileSync(file, "utf8")) as Global | null) ?? {};
 }
 
-async function defaultBranch(repo: string, env: NodeJS.ProcessEnv): Promise<string> {
+export async function defaultBranch(repo: string, env: NodeJS.ProcessEnv): Promise<string> {
   const out = await git(repo, ["ls-remote", "--symref", "origin", "HEAD"], env).catch(() => "");
   return /^ref: refs\/heads\/(\S+)\tHEAD/m.exec(out)?.[1] ?? "main";
 }
@@ -99,7 +99,7 @@ function draftSession(env: NodeJS.ProcessEnv, name: string): RunPaths {
 }
 
 /** Commitea `.flowrunner/` del worktree en `branch`, la empuja y abre su PR contra la base. */
-async function openBrainPr(
+export async function openBrainPr(
   worktree: string,
   pr: { branch: string; base: string; title: string; body: readonly string[] },
   env: NodeJS.ProcessEnv,
@@ -187,7 +187,11 @@ async function probarFaltaEnBase(
 }
 
 /** Si la base ya tiene el cerebro de flowrunner. */
-async function hasBrain(repo: string, base: string, env: NodeJS.ProcessEnv): Promise<boolean> {
+export async function hasBrain(
+  repo: string,
+  base: string,
+  env: NodeJS.ProcessEnv,
+): Promise<boolean> {
   return git(repo, ["cat-file", "-e", `origin/${base}:.flowrunner/config.yaml`], env)
     .then(() => true)
     .catch(() => false);

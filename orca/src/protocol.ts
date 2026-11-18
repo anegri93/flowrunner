@@ -1,5 +1,5 @@
 // El contrato entre el panel y el worker, declarado una vez: lo leen src/frame.ts y src/worker.ts.
-import type { DoctorSnapshot, Mantenimiento, TareasSnapshot } from "./doctor";
+import type { CerebroSnapshot, DoctorSnapshot, Mantenimiento, TareasSnapshot } from "./doctor";
 import type { Decision, Run } from "./runs";
 
 export interface Snapshot {
@@ -53,7 +53,14 @@ declare module "orca" {
     "flowrunner.doctor": { input: undefined; output: DoctorSnapshot };
     /** Solo las tareas de fondo: barato, para seguir una que corre. */
     "flowrunner.tareas": { input: undefined; output: TareasSnapshot };
-    /** Lanza un mantenimiento en segundo plano: actualizar flowrunner o cargar el plugin. */
+    /** La última auditoría del cerebro del proyecto enfocado en Orca (ADR 0040). */
+    "flowrunner.cerebro": { input: undefined; output: CerebroSnapshot };
+    /** Abre el informe de esa auditoría como pestaña de Orca. */
+    "flowrunner.informeCerebro": { input: undefined; output: Outcome };
+    /**
+     * Un mantenimiento: actualizar flowrunner, cargar el plugin o auditar el cerebro, en segundo
+     * plano; o abrir la PR con las decisiones elegidas de una auditoría.
+     */
     "flowrunner.mantener": { input: { mantenimiento: Mantenimiento }; output: Outcome };
   }
 }

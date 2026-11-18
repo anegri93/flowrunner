@@ -16,7 +16,9 @@ si su queja es de código, de plan o de feature.
 1. **`flowrunner feedback <run> "<qué no te gustó>"`**, y «Rehacer con feedback…» en Orca, valen con
    el run entregado y la PR abierta. El texto es obligatorio. Escriben `feedback_pedido` con el texto y
    el origen, con el candado de aprender: un tick que mira la PR en ese momento terminaría con «la PR
-   sigue abierta» y se tragaría el feedback.
+   sigue abierta» y se tragaría el feedback. Con el candado tomado, los dos vuelven a leer el estado:
+   aprender no corre si un feedback ya puso el run a trabajar (dos aprender a la vez evaluaban dos
+   veces y detenían el run), y el feedback no se escribe si un tick cerró el run mientras tanto.
 2. **El reductor lleva el run a aprender, en curso**, con el feedback pendiente en el estado y las
    vueltas en cero, como cualquier respuesta tuya. Un run que no está entregado, o con la PR ya
    mergeada o cerrada (`pr_cerrada`, que ahora deja `prCerrada`), lo ignora.
@@ -25,7 +27,10 @@ si su queja es de código, de plan o de feature.
    sub-tasks y el diff, y decide `implementar` con sub-tasks e instrucciones, `planificar`, o
    `feature`, siempre con un `por_que` para la persona. Antes, trae al worktree lo que la persona
    empujó a la rama de la PR, si solo la adelanta: si no, el push de la próxima entrega lo rechazaría o
-   lo pisaría. Una rama que se separó detiene el run.
+   lo pisaría. Una rama que se separó detiene el run. Un test bloqueado que la persona corrigió ahí
+   queda como el nuevo bloqueado, con un aviso, como en `fix --yo`. Lo que vio en GitHub queda en
+   `rama-remota.sha` del run. El diff que lee la sesión es contra `origin/<base>`: un «Update branch»
+   de GitHub no lo infla.
 4. **Un outcome nuevo, `reentrar`**, solo de aprender y solo con un feedback pendiente: `planificar`
    replanifica con el feedback como instrucción y vuelve a pasar por tu aprobación; `implementar`
    corre solo esas sub-tasks con la instrucción, como una vuelta. Un `reentrar` de otra fase, o sin
@@ -38,11 +43,18 @@ si su queja es de código, de plan o de feature.
    abortar. Rehacer desde aprender lo vuelve a evaluar; desde otra fase, el feedback se descarta.
 7. **La misma PR.** Entregar ya reusaba la PR abierta de la rama; ahora, si hubo feedback, reescribe su
    descripción (`gh pr edit --body-file`) con una sección «Feedback de la persona»: cada feedback y
-   desde dónde se rehízo. Si la PR se mergeó o se cerró mientras se rehacía, entregar se detiene como
-   antes: flowrunner no la reabre.
+   desde dónde se rehízo. Antes de empujar mira la PR: si se mergeó o se cerró mientras se rehacía, no
+   empuja, deja un aviso y sigue a aprender, que aprende del merge o cierra el run (detenerse lo dejaba
+   trabado sin aprender). Después de un feedback solo empuja sobre lo que flowrunner ya tiene: lo que
+   vio en GitHub al traer la rama, o algo que el HEAD contiene; si la persona empujó otra vez mientras
+   se rehacía, entregar se detiene y le pide traerlo, en vez de pisarlo con el push forzado.
 8. **El feedback es una corrección.** Es una fricción para las lecciones propuestas («tu feedback
    sobre la PR n»), y entregar las vuelve a proponer después de cada feedback, en vez de una vez por
-   run. Si la PR ya se mergeó cuando aprender lo ve, queda un aviso y aprender sigue como siempre.
+   run. Las propuestas de una entrega anterior de la misma PR siguen en la rama: las nuevas se suman
+   a ese archivo, la sesión las ve para no repetirlas, y la sección de la PR muestra todo lo que entra
+   al mergear. Si la PR ya se mergeó cuando aprender lo ve, queda un aviso y aprender sigue como
+   siempre. Si la detención por `feature` termina en un merge, el motivo dice cómo aprender:
+   `rerun --desde aprender`.
 
 ## Alternativas descartadas
 

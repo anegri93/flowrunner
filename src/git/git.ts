@@ -188,10 +188,15 @@ export async function cherryPick(
   }
 }
 
+/**
+ * `lease`: el sha que se espera en la rama remota. Sin él, el lease es el ref de seguimiento, que
+ * cualquier fetch del repo pone al día: no protege lo que alguien empujó y nadie trajo (ADR 0038).
+ */
 export async function pushBranch(
   worktree: string,
   branch: string,
   env?: NodeJS.ProcessEnv,
+  lease?: string,
 ): Promise<void> {
   if (!PUSHABLE.test(branch))
     throw new GitError(
@@ -202,7 +207,15 @@ export async function pushBranch(
   await conTurnoGit(worktree, () =>
     git(
       worktree,
-      ["push", "--quiet", "--force-with-lease", "origin", `HEAD:refs/heads/${branch}`],
+      [
+        "push",
+        "--quiet",
+        lease === undefined
+          ? "--force-with-lease"
+          : `--force-with-lease=refs/heads/${branch}:${lease}`,
+        "origin",
+        `HEAD:refs/heads/${branch}`,
+      ],
       env,
     ),
   );

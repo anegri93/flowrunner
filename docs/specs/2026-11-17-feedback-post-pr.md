@@ -37,10 +37,12 @@ corregir, corregir a mano en la rama, o abortar y empezar de cero.
 - **Modelo:** el de `models.revisar` (Opus por defecto), como el diagnóstico de verificar: es una
   lectura de juicio sobre código y plan, no un trabajo de escritura. Sin clave nueva en la config.
 - **Si empujaste commits a la rama** después de la entrega, entran al worktree antes de rehacer, solo
-  si la adelantan. Si la rama se separó, el run se detiene y te dice qué traer.
+  si la adelantan. Si la rama se separó, el run se detiene y te dice qué traer. Un test bloqueado que
+  corregiste queda como el nuevo bloqueado. Si empujás otra vez mientras se rehace, entregar no lo
+  pisa: se detiene y te pide traerlo.
 - **PR mergeada o cerrada.** El comando la rechaza si flowrunner ya lo vio. Si se mergea antes de que
   aprender evalúe, queda un aviso y aprender sigue como siempre; si se mergea mientras se rehace,
-  entregar se detiene como antes, sin reabrirla.
+  entregar no empuja, deja un aviso y vuelve a aprender, que aprende del merge (revisión de la PR).
 - **Orca pide el texto en línea**, como «Cambios», sin confirmación aparte: escribir el feedback ya es
   la decisión. La respuesta de flowrunner («evaluando desde dónde rehacer») queda en la tarjeta.
 - **La skill pregunta antes**: `flowrunner feedback` es una regla `ask`, como `fix` y `accept`.

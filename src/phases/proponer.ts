@@ -88,6 +88,35 @@ export const proposalFile = (runDir: string) => join(runDir, "lecciones-propuest
 const howToReject = (file: string) =>
   `flowrunner propone sumar al cerebro estas lecciones, en un commit aparte de esta PR, en \`${file}\`. Si alguna no te convence, borrala de ese archivo antes de mergear; al mergear, flowrunner las pasa a \`.flowrunner/lecciones.md\` con su número.`;
 
+/**
+ * Las partes del archivo de propuestas que ya está en la rama: las lecciones, cada una desde su
+ * `### `, y las líneas de las que no alcanzaron. Después de un feedback la PR se entrega de nuevo y
+ * ese archivo sigue en la rama: lo nuevo se suma, no lo reemplaza (ADR 0038).
+ */
+export function partesDePropuestas(text: string): { lecciones: string; noAlcanzaron: string[] } {
+  const i = text.indexOf(`\n${MISSES_HEADING}`);
+  const antes = i === -1 ? text : text.slice(0, i);
+  const despues = i === -1 ? "" : text.slice(i + MISSES_HEADING.length + 1);
+  const j = antes.indexOf("\n### ");
+  return {
+    lecciones: j === -1 ? "" : `${antes.slice(j).trimEnd()}\n`,
+    noAlcanzaron: despues.split("\n").filter((l) => l.startsWith("- ")),
+  };
+}
+
+export const cuantasLecciones = (lecciones: string) => (lecciones.match(/^### /gm) ?? []).length;
+
+/** El archivo de propuestas de la feature, con sus lecciones y las que no alcanzaron. */
+export function archivoDePropuestas(
+  clave: string,
+  lecciones: string,
+  noAlcanzaron: readonly string[],
+): string {
+  const missed =
+    noAlcanzaron.length === 0 ? "" : `\n${MISSES_HEADING}\n\n${noAlcanzaron.join("\n")}\n`;
+  return `# Lecciones propuestas por ${clave}\n\nAl mergear su PR, flowrunner las pasa a \`lecciones.md\` con su número.\n${lecciones}${missed}`;
+}
+
 export async function proposeLessons(
   ctx: PhaseContext,
   worktree: string,
@@ -95,12 +124,33 @@ export async function proposeLessons(
 ): Promise<void> {
   const { run, deps, emit } = ctx;
   const found = frictions(ctx.events);
+  const feature = runFeature(run);
+  const file = proposalsFile(feature.clave);
+  // Lo que propuso una entrega anterior de esta misma PR sigue en la rama: al mergear entra igual,
+  // así que la sección de la PR lo muestra y la sesión no lo repite.
+  const previas = existsSync(join(worktree, file))
+    ? partesDePropuestas(readFileSync(join(worktree, file), "utf8"))
+    : { lecciones: "", noAlcanzaron: [] };
+  const cuantasPrevias = cuantasLecciones(previas.lecciones);
+  const hayPrevias = cuantasPrevias > 0 || previas.noAlcanzaron.length > 0;
+  const bloquePrevio = hayPrevias
+    ? `\n\nYa propuesto en una entrega anterior de esta PR:\n${previas.lecciones}${
+        previas.noAlcanzaron.length === 0
+          ? ""
+          : `\n${MISSES_HEADING}\n\n${previas.noAlcanzaron.join("\n")}\n`
+      }`
+    : "";
   const write = (text: string, cantidad: number) => {
     writeFileSync(proposalFile(run.dir), `${text}\n`);
     emit({ tipo: "lecciones_propuestas", cantidad });
   };
+  /** Sin nada nuevo: la sección dice por qué, y sigue mostrando lo que ya estaba en la rama. */
+  const nadaNuevo = (porque: string) => {
+    if (!hayPrevias) write(porque, 0);
+    else write(`${howToReject(file)}${bloquePrevio}\nEn esta entrega: ${porque}`, cuantasPrevias);
+  };
   if (found.length === 0) {
-    write("Nada nuevo para el cerebro: no hubo vueltas ni cambios al plan.", 0);
+    nadaNuevo("Nada nuevo para el cerebro: no hubo vueltas ni cambios al plan.");
     return;
   }
   const lessonsFile = join(worktree, ".flowrunner", BRAIN_FILES.lecciones.file);
@@ -113,7 +163,10 @@ export async function proposeLessons(
         origenes: found.map((f) => f.origen).join("\n"),
         feature: featureText(runFeature(run)),
         friccion: found.map((f) => `### ${f.origen}\n\n${f.texto}`).join("\n\n"),
-        lecciones: current,
+        lecciones:
+          cuantasPrevias === 0
+            ? current
+            : `${current}\n\n# Ya propuestas en esta PR, que no hay que repetir\n${previas.lecciones}`,
       }),
       cwd: worktree,
       model: config.models.aprender,
@@ -127,7 +180,7 @@ export async function proposeLessons(
   if (result.tipo !== "ok") {
     const why = result.tipo === "limite" ? "el límite de la suscripción" : result.motivo;
     emit({ tipo: "aviso", fase: "entregar", texto: `no se pudieron proponer lecciones: ${why}` });
-    write("No se pudieron proponer lecciones en este run; el informe dice por qué.", 0);
+    nadaNuevo("No se pudieron proponer lecciones en este run; el informe dice por qué.");
     return;
   }
   const origins = new Set(found.map((f) => f.origen));
@@ -138,9 +191,8 @@ export async function proposeLessons(
       fase: "entregar",
       texto: `se descartaron las lecciones propuestas: una cita un origen que no pasó en el run, ${invented[0]?.origen ?? ""}`,
     });
-    write(
+    nadaNuevo(
       "Las lecciones propuestas se descartaron porque citaban algo que no pasó; el informe dice qué.",
-      0,
     );
     return;
   }
@@ -162,24 +214,21 @@ export async function proposeLessons(
       ? ""
       : `\n\nSe arregla en la configuración del repo, no con una lección:\n\n${result.output.sugerencias.map((s) => `- ${s}`).join("\n")}`;
   if (lessons.length === 0 && misses.length === 0) {
-    write(
+    nadaNuevo(
       `Nada nuevo para el cerebro: lo que hubo que corregir (${found.map((f) => f.origen).join("; ")}) fue propio de esta feature.${suggestions}`,
-      0,
     );
     return;
   }
-  const feature = runFeature(run);
-  const file = proposalsFile(feature.clave);
   const today = deps.now().toISOString().slice(0, 10);
   const added = formatLessons(lessons, run.id, today);
-  const missed =
-    misses.length === 0
-      ? ""
-      : `\n${MISSES_HEADING}\n\n${misses.map((m) => `- ${m.leccion} · run ${run.id} · ${m.origen} · ${today}`).join("\n")}\n`;
+  const missLines = misses.map((m) => `- ${m.leccion} · run ${run.id} · ${m.origen} · ${today}`);
   mkdirSync(dirname(join(worktree, file)), { recursive: true });
   writeFileSync(
     join(worktree, file),
-    `# Lecciones propuestas por ${feature.clave}\n\nAl mergear su PR, flowrunner las pasa a \`lecciones.md\` con su número.\n${added}${missed}`,
+    archivoDePropuestas(feature.clave, `${previas.lecciones}${added}`, [
+      ...previas.noAlcanzaron,
+      ...missLines,
+    ]),
   );
   await git(worktree, ["add", file], deps.env);
   await git(
@@ -201,7 +250,9 @@ export async function proposeLessons(
       : `\n\nLecciones que ya estaban y no alcanzaron (al mergear, quedan anotadas en cada una): ${misses.map((m) => `${m.leccion} (${m.origen})`).join(", ")}.`;
   const intro =
     lessons.length === 0
-      ? "Ninguna lección nueva para el cerebro."
+      ? hayPrevias
+        ? `${howToReject(file)}\n\nNinguna lección nueva en esta entrega.`
+        : "Ninguna lección nueva para el cerebro."
       : `${howToReject(file)}\n${added}`;
-  write(`${intro}${missedForPr}${suggestions}`, lessons.length);
+  write(`${intro}${missedForPr}${suggestions}${bloquePrevio}`, lessons.length + cuantasPrevias);
 }

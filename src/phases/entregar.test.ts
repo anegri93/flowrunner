@@ -6,7 +6,8 @@ import { git, tempDir } from "../../test/helpers/git.ts";
 import { plannedRun } from "../../test/helpers/planned.ts";
 import { contextFor, testDeps } from "../../test/helpers/project.ts";
 import { PLAN } from "../../test/helpers/plan-fixtures.ts";
-import { readLog } from "../store/run-log.ts";
+import { appendEvent, readLog } from "../store/run-log.ts";
+import { leaseFile } from "./feedback.ts";
 import { entregar } from "./entregar.ts";
 
 async function delivered() {
@@ -86,6 +87,66 @@ describe("entregar", () => {
     expect(await entregar(contextFor(run, "entregar", failing))).toMatchObject({
       tipo: "falla",
       clase: "infra",
+    });
+  });
+
+  describe("después de tu feedback (ADR 0038)", () => {
+    const BRANCH = "feat/SHOP-214-exportar-pedidos-a-csv";
+    const remoteSha = (work: string) =>
+      git(work, "ls-remote", "origin", `refs/heads/${BRANCH}`).split(/\s/)[0];
+    const commit = (dir: string, file: string, text: string) => {
+      writeFileSync(join(dir, file), text);
+      git(dir, "add", file);
+      git(dir, "commit", "-qm", `toca ${file}`);
+    };
+
+    // Si regresiona, mergear la PR mientras se rehace deja el run detenido en entregar para siempre,
+    // sin aprender del merge, y empuja a una rama ya mergeada.
+    test("si la PR se mergeó mientras se rehacía, no empuja y sigue a aprender con un aviso", async () => {
+      const { run, deps, home, featureWt, work } = await delivered();
+      await entregar(contextFor(run, "entregar", deps));
+      appendEvent(run.dir, { tipo: "feedback_pedido", texto: "otra cosa", origen: "orca" });
+      const stateFile = join(home, "gh-state.json");
+      const state = JSON.parse(readFileSync(stateFile, "utf8")) as { prs: { state: string }[] };
+      for (const pr of state.prs) pr.state = "MERGED";
+      writeFileSync(stateFile, JSON.stringify(state));
+      const antes = remoteSha(work);
+      commit(featureWt, "rehecho.txt", "rehecho\n");
+      expect(await entregar(contextFor(run, "entregar", deps))).toEqual({ tipo: "ok" });
+      expect(remoteSha(work)).toBe(antes);
+      expect(readLog(run.dir).events.findLast((e) => e.tipo === "aviso")).toMatchObject({
+        texto: expect.stringMatching(/se mergeó mientras se rehacía/) as unknown,
+      });
+    });
+
+    // Si regresiona, un commit que empujaste a la PR mientras se rehacía desaparece con el push
+    // forzado de la entrega, aunque un fetch de otro run haya puesto al día el ref de seguimiento.
+    test("no pisa lo que empujaste mientras se rehacía; después de traerlo, entrega", async () => {
+      const { run, deps, featureWt, work } = await delivered();
+      await entregar(contextFor(run, "entregar", deps));
+      appendEvent(run.dir, { tipo: "feedback_pedido", texto: "otra cosa", origen: "orca" });
+      // Las lecciones de esta entrega ya están: este test es sobre el push.
+      appendEvent(run.dir, { tipo: "lecciones_propuestas", cantidad: 0 });
+      writeFileSync(leaseFile(run), `${remoteSha(work) ?? ""}\n`);
+      const persona = tempDir("persona-");
+      git(persona, "clone", "-q", "-b", BRANCH, git(work, "remote", "get-url", "origin"), ".");
+      commit(persona, "tuyo.txt", "lo empujé yo\n");
+      git(persona, "push", "-q", "origin", BRANCH);
+      const tuyo = git(persona, "rev-parse", "HEAD");
+      git(work, "fetch", "-q", "origin");
+      commit(featureWt, "rehecho.txt", "rehecho\n");
+
+      expect(await entregar(contextFor(run, "entregar", deps))).toMatchObject({
+        tipo: "falla",
+        clase: "entorno",
+        motivo: expect.stringMatching(/empujaste a feat\/SHOP-214/) as unknown,
+      });
+      expect(remoteSha(work)).toBe(tuyo);
+
+      git(featureWt, "merge", "-q", "--no-edit", `origin/${BRANCH}`);
+      expect(await entregar(contextFor(run, "entregar", deps))).toEqual({ tipo: "ok" });
+      expect(git(work, "fetch", "-q", "origin")).toBe("");
+      expect(git(work, "merge-base", "--is-ancestor", tuyo, `origin/${BRANCH}`)).toBe("");
     });
   });
 });

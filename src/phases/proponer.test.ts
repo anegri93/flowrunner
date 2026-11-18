@@ -1,6 +1,22 @@
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import { PLAN } from "../../test/helpers/plan-fixtures.ts";
+import { plannedRun } from "../../test/helpers/planned.ts";
+import { contextFor, testDeps } from "../../test/helpers/project.ts";
+import { loadRepoConfig } from "../config/load.ts";
 import type { RunEvent } from "../store/events.ts";
-import { formatLessons, frictions, proposalSchema } from "./proponer.ts";
+import { readLog } from "../store/run-log.ts";
+import {
+  archivoDePropuestas,
+  cuantasLecciones,
+  formatLessons,
+  frictions,
+  partesDePropuestas,
+  proposalFile,
+  proposalSchema,
+  proposeLessons,
+} from "./proponer.ts";
 
 const AT = "2026-11-07T10:00:00.000Z";
 const vuelve = (fase: "revisar" | "verificar", motivo: string): RunEvent => ({
@@ -82,5 +98,69 @@ describe("proposalSchema", () => {
   test("pasan hasta dos lecciones, y sin sugerencias es una lista vacía", () => {
     expect(proposalSchema.parse({ lecciones: [lesson, lesson] }).sugerencias).toEqual([]);
     expect(proposalSchema.safeParse({ lecciones: [lesson, lesson, lesson] }).success).toBe(false);
+  });
+});
+
+// Si regresiona, la segunda entrega después de un feedback reemplaza las propuestas de la primera, o
+// la PR dice «nada nuevo» mientras al mergear entran lecciones que ya no anuncia (ADR 0038).
+describe("propuestas de una entrega anterior de la misma PR", () => {
+  const PREVIA = formatLessons(
+    [
+      {
+        titulo: "Los CSV llevan encabezado",
+        regla: "r",
+        aplica: "src/",
+        origen: "revisar, vuelta 1",
+      },
+    ],
+    "R1",
+    "2026-11-17",
+  );
+  const archivo = archivoDePropuestas("SHOP-214", PREVIA, [
+    "- L-3 · run R1 · revisar · 2026-11-17",
+  ]);
+
+  test("partes y archivo van y vuelven: lo nuevo se suma después de lo anterior", () => {
+    const partes = partesDePropuestas(archivo);
+    expect(partes).toEqual({
+      lecciones: PREVIA,
+      noAlcanzaron: ["- L-3 · run R1 · revisar · 2026-11-17"],
+    });
+    expect(cuantasLecciones(partes.lecciones)).toBe(1);
+    const nueva = formatLessons(
+      [{ titulo: "Separar con punto y coma", regla: "r", aplica: "src/", origen: "tu feedback" }],
+      "R1",
+      "2026-11-18",
+    );
+    const junto = archivoDePropuestas(
+      "SHOP-214",
+      `${partes.lecciones}${nueva}`,
+      partes.noAlcanzaron,
+    );
+    expect(junto.indexOf("### Los CSV")).toBeLessThan(junto.indexOf("### Separar"));
+    expect(cuantasLecciones(partesDePropuestas(junto).lecciones)).toBe(2);
+    expect(partesDePropuestas("# Lecciones propuestas por X\n")).toEqual({
+      lecciones: "",
+      noAlcanzaron: [],
+    });
+  });
+
+  test("sin nada nuevo, la sección de la PR sigue mostrando lo que ya está en la rama", async () => {
+    const deps = testDeps();
+    const { run, featureWt } = await plannedRun(
+      PLAN,
+      { "tests/ac1.mjs": "process.exit(0);\n" },
+      deps,
+    );
+    mkdirSync(join(featureWt, ".flowrunner", "propuestas"), { recursive: true });
+    writeFileSync(join(featureWt, ".flowrunner", "propuestas", "SHOP-214.md"), archivo);
+    const config = loadRepoConfig(featureWt);
+    await proposeLessons(contextFor(run, "entregar", deps), featureWt, config);
+    const seccion = readFileSync(proposalFile(run.dir), "utf8");
+    expect(seccion).toContain("### Los CSV llevan encabezado");
+    expect(seccion).toContain("En esta entrega: Nada nuevo para el cerebro");
+    expect(
+      readLog(run.dir).events.findLast((e) => e.tipo === "lecciones_propuestas"),
+    ).toMatchObject({ cantidad: 1 });
   });
 });

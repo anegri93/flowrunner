@@ -36,6 +36,10 @@ export async function learnRun(home: string, id: string, env: NodeJS.ProcessEnv)
   const lock = aprenderLock(run.dir);
   if (!tryLock(lock)) return "otro proceso ya está aprendiendo de este run";
   try {
+    // Con el candado tomado, otra vez: un `feedback` que entró antes lo puso a trabajar, y su proceso
+    // ya corre aprender. Dos aprender a la vez gastaban el feedback dos veces y detenían el run.
+    const ahora = loadState(home, id).status;
+    if (ahora !== "entregado") return `ya no espera su merge: está ${ahora}`;
     const { deps, phases } = await productionRuntime(env, (t, b) => {
       notifyMac(t, b, env);
     });
@@ -150,20 +154,23 @@ export function feedbackRun(
       "falta el feedback: qué no te gustó de la PR",
       `flowrunner feedback ${id} "<qué no te gustó>"`,
     );
-  let state;
-  try {
-    state = loadState(home, id);
-  } catch {
-    throw new UserError(`no existe el run ${id}`, "flowrunner status");
-  }
-  if (state.status !== "entregado" || state.prCerrada) {
-    throw new UserError(
-      state.status === "entregado"
-        ? `la PR de ${id} ya se mergeó: el feedback va en una feature nueva`
-        : `el run ${id} está ${state.status} en ${state.fase}: el feedback es para un run con la PR abierta`,
-      `flowrunner status ${id}`,
-    );
-  }
+  const check = () => {
+    let state;
+    try {
+      state = loadState(home, id);
+    } catch {
+      throw new UserError(`no existe el run ${id}`, "flowrunner status");
+    }
+    if (state.status !== "entregado" || state.prCerrada) {
+      throw new UserError(
+        state.status === "entregado"
+          ? `la PR de ${id} ya se mergeó: el feedback va en una feature nueva`
+          : `el run ${id} está ${state.status} en ${state.fase}: el feedback es para un run con la PR abierta`,
+        `flowrunner status ${id}`,
+      );
+    }
+  };
+  check();
   const run = runPaths(home, id);
   const lock = aprenderLock(run.dir);
   if (!tryLock(lock))
@@ -172,6 +179,9 @@ export function feedbackRun(
       `flowrunner feedback ${id} "<qué no te gustó>"`,
     );
   try {
+    // Otra vez con el candado: un tick pudo cerrar el run entre la primera lectura y el candado, y el
+    // feedback se ignoraría mientras la respuesta dice «evaluando».
+    check();
     appendEvent(run.dir, { tipo: "feedback_pedido", texto: texto.trim(), origen });
   } finally {
     rmSync(lock, { force: true });

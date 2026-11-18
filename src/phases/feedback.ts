@@ -3,14 +3,16 @@
 // tienen que cambiar; planificar, que vuelve a pasar por la aprobación; o, si el feedback cambia lo
 // que pide la feature, ninguna: el run se detiene y le pregunta a la persona. El código solo decide si
 // la respuesta sirve; ante la duda, replanifica, que es lo que pasa por la persona.
-import { realpathSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 import { runSession } from "../agent/session.ts";
 import { loadRepoConfig } from "../config/load.ts";
 import { feedbackInstruction } from "../engine/engine.ts";
 import { fetchOrigin, git, GitError } from "../git/git.ts";
 import { featureText, render } from "../prompts/render.ts";
-import type { PhaseContext } from "../runner/types.ts";
+import type { PhaseContext, RunPaths } from "../runner/types.ts";
 import type { Outcome } from "../store/events.ts";
 import { readOnlyHook } from "./aprender.ts";
 import { featureWorktree, prepared, runFeature } from "./inputs.ts";
@@ -32,20 +34,29 @@ export const FEEDBACK_TIMEOUT_MS = 15 * 60_000;
  * al worktree antes de rehacer: si no, el push de la próxima entrega lo rechazaría (`--force-with-lease`)
  * o lo pisaría. Solo se adelanta: una rama que se separó la decide la persona.
  */
-async function traerLaRama(ctx: PhaseContext, worktree: string): Promise<Outcome | undefined> {
-  const { deps, state, events } = ctx;
+export async function traerLaRama(
+  ctx: PhaseContext,
+  worktree: string,
+): Promise<Outcome | undefined> {
+  const { deps, state, events, run, emit } = ctx;
   const rama = prepared(events).rama;
+  const lease = leaseFile(run);
   try {
     await fetchOrigin(state.repo, deps.env);
     const remota = `origin/${rama}`;
     const head = await git(worktree, ["rev-parse", "HEAD"], deps.env);
     const otra = await git(worktree, ["rev-parse", remota], deps.env).catch(() => undefined);
+    // Lo que se vio en GitHub es lo único que la próxima entrega puede pisar: si la persona empuja
+    // otra vez mientras se rehace, el push se rechaza en vez de borrar sus commits.
+    if (otra === undefined) rmSync(lease, { force: true });
+    else writeFileSync(lease, `${otra}\n`);
     if (otra === undefined || otra === head) return undefined;
     const adelante = await git(worktree, ["merge-base", "--is-ancestor", head, remota], deps.env)
       .then(() => true)
       .catch(() => false);
     if (adelante) {
       await git(worktree, ["merge", "--ff-only", "--quiet", remota], deps.env);
+      relock(run, worktree, await changed(worktree, head, otra, deps.env), emit);
       return undefined;
     }
     const atras = await git(worktree, ["merge-base", "--is-ancestor", remota, head], deps.env)
@@ -63,6 +74,54 @@ async function traerLaRama(ctx: PhaseContext, worktree: string): Promise<Outcome
   }
 }
 
+/** El sha de la rama en GitHub que trajo el último feedback: el lease de la entrega que sigue. */
+export const leaseFile = (run: RunPaths) => join(run.dir, "rama-remota.sha");
+
+/** El lease para empujar después de un feedback, si lo hay. */
+export function leaseDe(run: RunPaths): string | undefined {
+  const file = leaseFile(run);
+  if (!existsSync(file)) return undefined;
+  const sha = readFileSync(file, "utf8").trim();
+  return /^[0-9a-f]{40}$/.test(sha) ? sha : undefined;
+}
+
+async function changed(
+  worktree: string,
+  from: string,
+  to: string,
+  env: NodeJS.ProcessEnv,
+): Promise<string[]> {
+  const out = await git(worktree, ["diff", "--name-only", "-z", from, to], env);
+  return out.split("\0").filter((p) => p !== "");
+}
+
+/**
+ * Un test bloqueado que corrigió la persona en la rama de la PR es el nuevo bloqueado: hash nuevo,
+ * como en `fix --yo`. Sin esto, verificar lo daba por cambiado a mano y detenía el run.
+ */
+function relock(
+  run: RunPaths,
+  worktree: string,
+  paths: readonly string[],
+  emit: PhaseContext["emit"],
+): void {
+  const { locked } = readPlan(run);
+  const tocados = paths.filter((p) => locked[p] !== undefined && existsSync(join(worktree, p)));
+  if (tocados.length === 0) return;
+  const hashes = tocados.map((p) => [p, sha256(readFileSync(join(worktree, p), "utf8"))]);
+  writeFileSync(
+    join(run.dir, "locked.json"),
+    `${JSON.stringify({ ...locked, ...Object.fromEntries(hashes) }, null, 2)}\n`,
+  );
+  emit({
+    tipo: "aviso",
+    fase: "aprender",
+    texto: `tu commit en la rama cambió ${tocados.length === 1 ? "el test bloqueado" : "los tests bloqueados"} ${tocados.join(", ")}: queda${tocados.length === 1 ? "" : "n"} como lo dejaste`,
+  });
+}
+
+const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
+
 /** Evalúa el feedback pendiente con la PR abierta y dice desde dónde vuelve a trabajar el run. */
 export async function evaluarFeedback(ctx: PhaseContext, feedback: string): Promise<Outcome> {
   const { run, deps, emit, events } = ctx;
@@ -72,7 +131,13 @@ export async function evaluarFeedback(ctx: PhaseContext, feedback: string): Prom
   const config = loadRepoConfig(worktree);
   const plan = readPlan(run);
   const ids = plan.subtareas.map((t) => t.id);
-  const fullDiff = await git(worktree, ["diff", `${prepared(events).base_sha}..HEAD`], deps.env);
+  // Contra la base de hoy: un «Update branch» de GitHub entra por ff y, contra el sha de preparar,
+  // sumaba al diff todo lo de la base.
+  const fullDiff = await git(
+    worktree,
+    ["diff", `origin/${config.base_branch}...HEAD`],
+    deps.env,
+  ).catch(() => git(worktree, ["diff", `${prepared(events).base_sha}..HEAD`], deps.env));
   const diff =
     fullDiff.length > MAX_DIFF_CHARS
       ? `${fullDiff.slice(0, MAX_DIFF_CHARS)}\n… (el diff sigue: leé los archivos con Read)`
@@ -130,7 +195,7 @@ export function decide(
     });
     return {
       tipo: "pregunta",
-      motivo: `tu feedback cambia lo que pide la feature: ${d.por_que}\n${d.instruccion}\nPara replanificar con tu feedback: flowrunner rerun ${run.id} --desde planificar. Si la feature tiene que ser otra, abortá el run y escribí una nueva.`,
+      motivo: `tu feedback cambia lo que pide la feature: ${d.por_que}\n${d.instruccion}\nPara replanificar con tu feedback: flowrunner rerun ${run.id} --desde planificar. Si la feature tiene que ser otra, abortá el run y escribí una nueva. Si la mergeás igual: flowrunner rerun ${run.id} --desde aprender.`,
     };
   }
   const unidades = [...new Set(d.unidades)];

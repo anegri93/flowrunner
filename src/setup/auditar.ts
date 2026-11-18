@@ -12,7 +12,7 @@ import {
   realpathSync,
   writeFileSync,
 } from "node:fs";
-import { join, posix, resolve } from "node:path";
+import { dirname, join, posix, resolve } from "node:path";
 import { z } from "zod";
 import { runSession } from "../agent/session.ts";
 import { loadBrain } from "../brain/brain.ts";
@@ -154,13 +154,17 @@ export function aplicarEdiciones(
  */
 function leerArchivos(root: string, decisiones: readonly Decision[]): Map<string, string> {
   const textos = new Map<string, string>();
+  const real = realpathSync(root);
   for (const d of decisiones)
     for (const e of d.ediciones) {
       const archivo = archivoPermitido(e.archivo);
       if (archivo === undefined || textos.has(archivo)) continue;
-      const file = join(root, archivo);
-      if (existsSync(file) && lstatSync(file).isFile())
-        textos.set(archivo, readFileSync(file, "utf8"));
+      const file = join(real, archivo);
+      if (!existsSync(file) || !lstatSync(file).isFile()) continue;
+      // Una carpeta del camino que es un link, como `.flowrunner/propuestas` → `~/.claude`, también
+      // saca la escritura del cerebro: el camino real tiene que ser el mismo.
+      if (realpathSync(dirname(file)) !== dirname(file)) continue;
+      textos.set(archivo, readFileSync(file, "utf8"));
     }
   return textos;
 }
@@ -631,13 +635,16 @@ export async function applyAudit(
   await addDetachedWorktree(registro.repo, worktree, `origin/${registro.base}`, env);
   try {
     const root = realpathSync(worktree);
-    let textos: ReadonlyMap<string, string> = leerArchivos(root, pedidas);
+    // Si cambió se compara contra lo de la base; las ediciones se encadenan sobre `textos`: dos
+    // decisiones elegidas sobre el mismo archivo entran juntas si no chocan.
+    const originales = leerArchivos(root, pedidas);
+    let textos: ReadonlyMap<string, string> = originales;
     const aplicadas: DecisionRevisada[] = [];
     for (const d of pedidas) {
       const cambiado = d.ediciones
         .map((e) => archivoPermitido(e.archivo) ?? e.archivo)
         .find((a) => {
-          const text = textos.get(a);
+          const text = originales.get(a);
           return text === undefined || sha256(text) !== registro.archivos[a];
         });
       if (cambiado !== undefined) {

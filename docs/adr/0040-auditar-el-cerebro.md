@@ -23,7 +23,11 @@ eligió casi siempre el primer arreglo propuesto, flowrunner podría haberlo hec
 3. **Solo el cerebro y su config.** Las ediciones pueden tocar `.flowrunner/*.md`,
    `.flowrunner/propuestas/*.md` y `.flowrunner/config.yaml`; ni `verify.sh`, que corre en cada run,
    ni `ejemplos/`, ni código del repo. El código revisa cada decisión contra el cerebro auditado y
-   marca la que no se puede aplicar, con su motivo.
+   marca la que no se puede aplicar, con su motivo. Un archivo, o una carpeta de su camino, que es un
+   link no se edita: el camino real tiene que quedar dentro del worktree. `config.yaml` sí entra,
+   aunque tiene comandos que corren en la máquina (`setup`, `probar.levantar`, `fallas.*.simular`):
+   las opciones que bajan detenciones viven ahí, y nada llega a la base sin la PR que revisa la
+   persona. Quien revisa esa PR tiene que mirar esos comandos como miraría un `verify.sh`.
 4. **La auditoría se guarda** en `~/.flowrunner/auditorias/<proyecto>/<id>.json`, con el sha256 de
    cada archivo que tocan sus decisiones, y su informe en `<id>.md`.
 5. **Aplicar es de la persona.** `flowrunner brain apply <proyecto>/<id> --decision Dn …` aplica solo

@@ -3,11 +3,19 @@
 // actualizar recarga el plugin a mitad de camino: cada una corre en su propio proceso y deja su estado
 // en `~/.flowrunner/tareas/<nombre>.json`, que el panel lee (ADR 0039).
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { notifyMac } from "../notify/notify.ts";
-import { isAlive } from "../store/lock.ts";
+import { isAlive, tryLock } from "../store/lock.ts";
 import { UserError } from "./output.ts";
 import { BIN } from "./runs.ts";
 
@@ -15,6 +23,11 @@ import { BIN } from "./runs.ts";
 export const TAREA_NOMBRE = /^(self-update|orca-install|auditar-[a-z0-9-]+)$/;
 /** Lo que tiene un proceso recién lanzado para escribir su pid antes de darlo por muerto. */
 const ARRANQUE_MS = 60_000;
+/**
+ * Lo más que tarda una tarea: la auditoría tiene 15 minutos de sesión. Más que esto con el pid vivo es
+ * un pid reciclado después de un reinicio, no la tarea.
+ */
+const MAX_TAREA_MS = 2 * 60 * 60_000;
 
 export const tareaSchema = z.object({
   nombre: z.string().regex(TAREA_NOMBRE),
@@ -70,10 +83,9 @@ export function leerTarea(
     return undefined;
   }
   if (parsed.estado !== "corriendo") return parsed;
+  const lleva = now.getTime() - Date.parse(parsed.inicio);
   const muerta =
-    parsed.pid === null
-      ? now.getTime() - Date.parse(parsed.inicio) > ARRANQUE_MS
-      : !vivo(parsed.pid);
+    lleva > MAX_TAREA_MS || (parsed.pid === null ? lleva > ARRANQUE_MS : !vivo(parsed.pid));
   if (!muerta) return parsed;
   return {
     ...parsed,
@@ -99,6 +111,30 @@ export function listarTareas(home: string, now: Date): Tarea[] {
  * así nunca queda un «corriendo» escrito después de un «ok».
  */
 export function lanzarTarea(
+  home: string,
+  nombre: string,
+  args: readonly string[],
+  mensaje: string,
+  env: NodeJS.ProcessEnv,
+  now: Date,
+): { ok: true; tarea: string; resultado: string } {
+  // Mirar y escribir con un candado: sin él, dos pedidos casi juntos lanzaban la tarea dos veces.
+  mkdirSync(dirOf(home), { recursive: true });
+  const candado = join(dirOf(home), `${nombreOk(nombre)}.lanzando`);
+  if (!tryLock(candado))
+    return {
+      ok: true,
+      tarea: nombre,
+      resultado: "ya está corriendo: la está lanzando otro pedido",
+    };
+  try {
+    return lanzarConCandado(home, nombre, args, mensaje, env, now);
+  } finally {
+    rmSync(candado, { force: true });
+  }
+}
+
+function lanzarConCandado(
   home: string,
   nombre: string,
   args: readonly string[],

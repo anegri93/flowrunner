@@ -3,7 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { UserError } from "./output.ts";
-import { aprobarPlugin, correrTarea, leerTarea, listarTareas, type Tarea } from "./tareas.ts";
+import {
+  aprobarPlugin,
+  correrTarea,
+  lanzarTarea,
+  leerTarea,
+  listarTareas,
+  type Tarea,
+} from "./tareas.ts";
 
 // El aviso de macOS va a un osascript falso: los tests no muestran notificaciones.
 const ENV = { PATH: join(import.meta.dirname, "..", "..", "test", "bin") };
@@ -121,4 +128,21 @@ test("arma el --approve que pidió Orca; sin fingerprint, nada", () => {
   ).toBe("flowrunner orca install --approve ap1-test");
   expect(aprobarPlugin("Loaded local.flowrunner")).toBeUndefined();
   expect(aprobarPlugin("--approve $(rm -rf ~)")).toBeUndefined();
+});
+
+// Si regresiona, un pid reciclado después de un reinicio deja la tarea «corriendo» para siempre y el
+// botón del panel no se puede volver a usar (revisión de la PR).
+test("una tarea que lleva más que su tope corriendo se ve como cortada aunque el pid viva", () => {
+  const h = home([corriendo({ inicio: "2026-11-17T08:00:00Z" })]);
+  expect(leerTarea(h, "self-update", NOW, () => true)?.estado).toBe("falla");
+});
+
+// Si regresiona, dos pedidos casi juntos (el panel y la terminal) lanzan la misma tarea dos veces, y
+// la segunda auditoría borra el worktree de la primera en medio de su sesión.
+test("mientras otro proceso lanza la misma tarea, no se lanza otra", () => {
+  const h = home();
+  writeFileSync(join(h, "tareas", "auditar-acme.lanzando"), String(process.ppid));
+  const r = lanzarTarea(h, "auditar-acme", [], "auditando", ENV, NOW);
+  expect(r.resultado).toMatch(/ya está corriendo/);
+  expect(leerTarea(h, "auditar-acme", NOW)).toBeUndefined();
 });

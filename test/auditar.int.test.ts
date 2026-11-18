@@ -1,7 +1,7 @@
 // `flowrunner brain audit` y `brain apply` con el SDK simulado, el gh falso y un repo con remote: la
 // auditoría queda guardada con sus decisiones revisadas, y aplicar abre una PR solo con las elegidas,
 // solo sobre `.flowrunner/` y solo si lo que tocan no cambió desde la auditoría (ADR 0040).
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { runCli } from "./helpers/cli.ts";
@@ -192,6 +192,76 @@ describe("brain apply", () => {
     expect(code.status).toBe(1);
     expect(code.stdout).toContain("README.md no se puede editar");
     expect(prs(w)).toHaveLength(1);
+
+    // Si regresiona, un apply que se cortó después de abrir la PR y antes de anotarla deja esa
+    // decisión sin poder aplicarse nunca más: la PR ya existe y `gh pr create` falla.
+    const reg = join(w.env.HOME ?? "", ".flowrunner", "auditorias", "acme-api", `${id}.json`);
+    writeFileSync(reg, JSON.stringify({ ...JSON.parse(readFileSync(reg, "utf8")), aplicadas: [] }));
+    const otra = runCli(["brain", "apply", `acme-api/${id}`, "--decision", "D1", "--json"], w.env);
+    expect(otra.status, otra.stdout + otra.stderr).toBe(0);
+    expect((JSON.parse(otra.stdout) as { pr: string }).pr).toBe(applied.pr);
+    expect(prs(w)).toHaveLength(1);
+
+    // Y si falta el informe escrito, --ultima lo vuelve a armar en vez de fallar.
+    rmSync(reg.replace(/\.json$/, ".md"));
+    const ultima = runCli(["brain", "audit", w.work, "--ultima", "--json"], w.env);
+    expect(ultima.status, ultima.stdout + ultima.stderr).toBe(0);
+    expect((JSON.parse(ultima.stdout) as { informe: string }).informe).toContain("# Auditoría");
+  }, 120_000);
+
+  // Si regresiona, elegir dos decisiones sobre el mismo archivo, como dos lecciones de lecciones.md,
+  // rechaza la segunda como si el archivo hubiera cambiado: volver a auditar no lo arregla.
+  test("dos decisiones elegidas sobre el mismo archivo entran juntas", () => {
+    const dos: SimScript = {
+      ...AUDITORIA,
+      output: {
+        resumen: "dos arreglos en lecciones.md",
+        hallazgos: [],
+        decisiones: [
+          {
+            id: "D1",
+            titulo: "Borrar L1",
+            por_que: "no existe",
+            reduce: "nada",
+            hallazgos: [],
+            ediciones: [
+              { archivo: ".flowrunner/lecciones.md", buscar: `${LECCION}\n`, reemplazar: "" },
+            ],
+          },
+          {
+            id: "D2",
+            titulo: "Renombrar el título",
+            por_que: "más claro",
+            reduce: "nada",
+            hallazgos: [],
+            ediciones: [
+              {
+                archivo: ".flowrunner/lecciones.md",
+                buscar: "# Lecciones",
+                reemplazar: "# Lecciones del repo",
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const w = simWorld({ real: [], scripts: [dos], feature: "" });
+    writeFileSync(join(w.work, ".flowrunner", "lecciones.md"), `# Lecciones\n\n${LECCION}\n`);
+    git(w.work, "commit", "-qam", "lección");
+    git(w.work, "push", "-q", "origin", "main");
+    const out0 = runCli(["brain", "audit", w.work, "--json"], w.env);
+    expect(out0.status, out0.stdout + out0.stderr).toBe(0);
+    const { id } = JSON.parse(out0.stdout) as Auditado;
+    const out = runCli(
+      ["brain", "apply", `acme-api/${id}`, "--decision", "D1", "--decision", "D2", "--json"],
+      w.env,
+    );
+    expect(out.status, out.stdout + out.stderr).toBe(0);
+    expect((JSON.parse(out.stdout) as { aplicadas: string[] }).aplicadas).toEqual(["D1", "D2"]);
+    const branch = `chore/flowrunner-auditoria-${id}-d1-d2`;
+    expect(git(w.remote, "show", `${branch}:.flowrunner/lecciones.md`)).toBe(
+      "# Lecciones del repo",
+    );
   }, 120_000);
 
   test("una auditoría con otro formato se rechaza antes de tocar el disco", () => {

@@ -108,6 +108,10 @@ export async function openBrainPr(
   await git(worktree, ["add", ".flowrunner"], env);
   await git(worktree, ["commit", "--quiet", "--no-verify", "-m", pr.title], env);
   await pushBranch(worktree, pr.branch, env);
+  // Una que ya está abierta en esa rama, de un intento que se cortó después de crearla, se reusa:
+  // `gh pr create` fallaría y la rama ya tiene lo nuevo.
+  const abierta = await findPr(worktree, pr.branch, env);
+  if (abierta?.state === "OPEN") return abierta;
   const bodyFile = join(worktree, "..", `${pr.branch.replace("/", "-")}.md`);
   writeFileSync(bodyFile, [...pr.body, ""].join("\n"));
   return createPr(worktree, { branch: pr.branch, base: pr.base, title: pr.title, bodyFile }, env);

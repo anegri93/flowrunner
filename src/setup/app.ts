@@ -18,6 +18,7 @@ import {
 import { runProc, runShell, tail } from "../proc/proc.ts";
 import { isAlive, tryLock } from "../store/lock.ts";
 import { leerLugar } from "../store/lugares.ts";
+import { listarTareas } from "../cli/tareas.ts";
 
 const INSTALL_TIMEOUT_MS = 10 * 60_000;
 /** launchctl y el CLI de Orca, que tiene su propio tope de un minuto. */
@@ -66,6 +67,11 @@ export function procesosVivos(home: string): string[] {
     const pid = Number(readFileSync(tick, "utf8"));
     if (isAlive(pid)) vivos.push(`tick (pid ${String(pid)})`);
   }
+  // Las tareas de fondo, como una auditoría, también corren con el código de la app. El propio
+  // self-update de fondo es el que pregunta: no se cuenta.
+  for (const t of listarTareas(home, new Date()))
+    if (t.estado === "corriendo" && t.nombre !== "self-update")
+      vivos.push(`tarea ${t.nombre}${t.pid === null ? "" : ` (pid ${String(t.pid)})`}`);
   return vivos;
 }
 
@@ -94,7 +100,7 @@ export function sinProcesosVivos(home: string): void {
   const vivos = procesosVivos(home);
   if (vivos.length > 0) {
     throw new UserError(
-      `no actualizo con runs corriendo: ${vivos.join(", ")}`,
+      `no actualizo con runs o tareas corriendo: ${vivos.join(", ")}`,
       "esperá a que terminen o corré flowrunner status",
     );
   }

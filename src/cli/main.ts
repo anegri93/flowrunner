@@ -30,6 +30,7 @@ import {
   describeAuditar,
   proyectoDe,
   ultimaAuditoria,
+  informe as informeAuditoria,
 } from "../setup/auditar.ts";
 import { productionRuntime } from "../runner/production.ts";
 import { describeStats, describeStatsPorRun, stats, statsPorRun } from "../report/stats.ts";
@@ -592,7 +593,13 @@ export async function main(
             // Lo que lee el panel: la última auditoría del proyecto, con su informe ya escrito.
             const { nombre } = await proyectoDe(ruta, env);
             const ultima = ultimaAuditoria(home, nombre);
-            const informe = ultima === undefined ? null : readFileSync(ultima.md, "utf8");
+            // Sin el `.md`, por una escritura cortada, se vuelve a armar del registro.
+            const informe =
+              ultima === undefined
+                ? null
+                : existsSync(ultima.md)
+                  ? readFileSync(ultima.md, "utf8")
+                  : informeAuditoria(ultima.registro);
             print(
               { ok: true, proyecto: nombre, auditoria: ultima?.registro ?? null, informe },
               informe ?? `${nombre} todavía no tiene auditorías: flowrunner brain audit ${ruta}`,

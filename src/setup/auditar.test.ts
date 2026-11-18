@@ -179,6 +179,28 @@ test("un archivo del cerebro que es un link no se puede editar", () => {
   expect(r.decisiones[0]?.aplicable).toBe(false);
 });
 
+// Si regresiona, `.flowrunner/propuestas` como link a otra carpeta, como `~/.claude`, hace que aplicar
+// escriba fuera del cerebro aunque el archivo final no sea un link (revisión de la PR).
+test("un archivo dentro de una carpeta del cerebro que es un link tampoco se puede editar", () => {
+  const afuera = repo({ "CLAUDE.md": "x\n" });
+  const root = repo({ ".flowrunner/lecciones.md": LECCIONES });
+  symlinkSync(afuera, join(root, ".flowrunner", "propuestas"));
+  const r = revisarDecisiones(
+    root,
+    auditoriaSchema.parse({
+      resumen: "r",
+      hallazgos: [],
+      decisiones: [
+        decision("D1", [
+          { archivo: ".flowrunner/propuestas/CLAUDE.md", buscar: "x", reemplazar: "y" },
+        ]),
+      ],
+    }),
+  );
+  expect(r.decisiones[0]?.aplicable).toBe(false);
+  expect(r.archivos).toEqual({});
+});
+
 test("el informe dice cómo aplicar cada decisión, o por qué no se puede", () => {
   const registro: Registro = {
     id: "20261117-100000",

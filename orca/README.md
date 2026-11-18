@@ -46,6 +46,11 @@ como `flowrunner watch`, pensada para el ancho angosto de la barra:
 - Si el plan cambia lo que ya existe, la tarjeta lo avisa y la pestaña del plan lo pone arriba de
   todo. Aprobar muestra cada cambio, con dónde está y qué criterio lo pide, y el botón pasa a ser
   «Acepto los cambios y apruebo», que aprueba con `--acepto-cambios`. Si alguno no va, pedí cambios.
+- «Saltear probar…», en el menú ⋯ de un run que todavía no llegó a probar, pide tu motivo en línea y
+  marca el run para que probar se saltee cuando llegue; la tarjeta dice «Probar se va a saltear» con
+  el motivo, y el menú pasa a ofrecer «Volver a probar». Al lado de «Aprobar», «Aprobar sin probar…»
+  pide el motivo y después confirma como Aprobar, también con «Acepto los cambios y apruebo». El motivo
+  queda en el informe y en la PR (ADR 0036).
 - «Pausar», en el menú ⋯ de un run que trabaja o está en cola: termina lo que está haciendo y suelta
   su lugar, sin perder nada; sigue con «Reanudar». Si en la cola de su repo hay más de un run, la
   tarjeta pregunta para quién es el lugar; con uno solo, se lo da a ese. «Priorizar», en un run en
@@ -61,7 +66,7 @@ la nave en camino en vez de los runs del anterior. Para saber cuál está enfoca
 
 - `src/worker.ts` corre el CLI de flowrunner en un shell de login, para tener tu PATH: `watch`,
   `report --sesion`, `plan`, y cada decisión como un comando fijo (`approve`, `changes`, `resume`,
-  `rerun --desde`, `learn`, `abort`). Valida el id del run, la fase y el motivo antes de llegar al shell.
+  `rerun --desde`, `learn`, `abort`, `skip-probar`). Valida el id del run, la fase y el motivo antes de llegar al shell.
 - La pestaña es un frame (`sandboxed-ui`), no un panel de componentes: los componentes de Orca no
   dibujan SVG propio y rechazan las imágenes animadas, y los indicadores son SVG con animación CSS.
   `panel/index.html` carga `src/frame.ts`, lo único con DOM: lee los runs, escucha los clics y

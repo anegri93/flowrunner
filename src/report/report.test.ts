@@ -532,3 +532,19 @@ test("el informe cuenta las devueltas sin nada que cambiar, con la fase y lo que
   );
   expect(rerun).toContain("- ST-4, devuelta sin fase\n");
 });
+
+// Si regresiona, la PR llega sin pruebas y sin decir que la persona decidió no probar (ADR 0036).
+test("si la persona salteó probar, el informe y la PR lo dicen con su motivo", () => {
+  const paths = { id: "R", home: "/nada", dir: tempDir(), worktrees: "/nada" };
+  const events = [
+    created,
+    ev({ tipo: "probar_salteado", motivo: "solo cambia docs", origen: "orca" }),
+    ...step("probar", { tipo: "ok", salteada: "la salteó la persona: solo cambia docs" }),
+  ];
+  const aviso = "> ⚠️ No se probó en el entorno, por decisión de la persona: solo cambia docs";
+  expect(buildReport(events, paths)).toContain(aviso);
+  expect(prBody(events, paths)).toContain(aviso);
+  // Si se salteó sola, como hasta ahora, no lo atribuye a la persona.
+  const sola = [created, ...step("probar", { tipo: "ok", salteada: "ningún criterio se ve" })];
+  expect(prBody(sola, paths)).not.toContain("por decisión de la persona");
+});

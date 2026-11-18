@@ -217,6 +217,27 @@ describe("recorridoOf", () => {
     expect(r.at(-2)).toMatchObject({ detalle: "le deja el lugar a PIZ-10-x" });
   });
 
+  // Si regresiona, saltear probar o deshacerlo no queda en la historia del run (ADR 0036).
+  test("saltear probar y volver a probar son pasos tuyos, con el motivo", () => {
+    const upTo = piz9.slice(
+      0,
+      piz9.findIndex((e) => e.tipo === "autofix"),
+    );
+    const r = build(
+      [
+        ...upTo,
+        { tipo: "probar_salteado", at: at(1300), motivo: "solo docs", origen: "orca" },
+        { tipo: "probar_restaurado", at: at(1301), origen: "orca" },
+      ],
+      "en_curso",
+    ).recorrido;
+    expect(r.map(brief).slice(-3, -1)).toEqual([
+      "tú: salteaste probar v1",
+      "tú: volviste a probar v1",
+    ]);
+    expect(r.at(-3)).toMatchObject({ detalle: "solo docs" });
+  });
+
   // Si regresiona, un nodo que abriste se cierra solo en el refresco siguiente.
   test("las claves no cambian cuando el run agrega eventos", () => {
     const short = piz9.slice(

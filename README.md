@@ -233,6 +233,13 @@ probar:
   navegador_visible: false # true abre Chrome con ventana mientras prueba
 ```
 
+Si ya sabés que esta feature no hace falta probarla en el entorno, como un cambio de docs o de la CLI,
+salteala antes de que arranque: al aprobar el plan, con `flowrunner approve <run> --sin-probar "<por
+qué>"`, o en cualquier momento antes de probar, con `flowrunner skip-probar <run> "<por qué>"`. Cuando el
+run llega a probar, no levanta el entorno ni abre sesión, y tu motivo queda en el informe y en la PR. Si
+cambiás de idea, `skip-probar <run> --deshacer`; `rerun --desde probar` también vuelve a probar. Una vez
+que probar arrancó ya no se saltea: si se detiene, decidís con `accept-untested` (ADR 0036).
+
 El agente elige una falla por su nombre, nunca el comando, y al terminar flowrunner restaura las que
 hayan quedado puestas. El video se entiende solo: antes de cada criterio, una placa con qué se prueba y
 qué debería pasar; un cursor que marca cada clic; lo que se toca queda centrado en la pantalla; y al
@@ -445,6 +452,7 @@ equivalente de API: con la suscripción no se cobran, y lo que limita es su cupo
 | `flowrunner status [run]`                      | el estado de los runs, o de uno fase por fase |
 | `flowrunner plan <run>`                        | el plan que espera aprobación                 |
 | `flowrunner approve <run>`                     | aprobar el plan                               |
+| `approve <run> --sin-probar "<por qué>"`       | aprobar el plan y saltear probar              |
 | `flowrunner changes <run> "<motivo>"`          | pedir cambios al plan                         |
 | `flowrunner report <run>`                      | el informe del run, con tus decisiones        |
 | `flowrunner resume <run>`                      | retomar un run detenido o pausado             |
@@ -455,6 +463,8 @@ equivalente de API: con la suscripción no se cobran, y lo que limita es su cupo
 | `flowrunner accept <run> "<por qué>"`          | seguir a la fase siguiente igual              |
 | `flowrunner rerun <run> --desde <fase>`        | rehacer desde una fase                        |
 | `flowrunner accept-untested <run> "<por qué>"` | entregar con criterios sin probar             |
+| `flowrunner skip-probar <run> "<por qué>"`     | saltear probar antes de que arranque          |
+| `flowrunner skip-probar <run> --deshacer`      | volver a probar normal                        |
 | `flowrunner abort <run>`                       | cancelar un run                               |
 | `flowrunner learn <run> [--fondo]`             | aprender ya; `--fondo`: aparte, con aviso     |
 | `flowrunner stats [proyecto]`                  | en qué fase se va el tiempo y el costo        |

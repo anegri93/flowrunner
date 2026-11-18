@@ -280,7 +280,15 @@ export function approveRun(
   env: NodeJS.ProcessEnv,
   aceptaCambios = false,
   origen: Origen = "terminal",
+  sinProbar?: string,
 ) {
+  // Saltear probar es una decisión con motivo (ADR 0036): sin él no se aprueba nada.
+  if (sinProbar !== undefined && sinProbar.trim() === "") {
+    throw new UserError(
+      "falta el motivo de --sin-probar: por qué se saltea probar; queda en el informe y en la PR",
+      `flowrunner approve ${id} --sin-probar "<por qué>"`,
+    );
+  }
   waitingOrExplain(home, id);
   const run = runPaths(home, id);
   const plan = readPlan(run);
@@ -302,6 +310,9 @@ export function approveRun(
       `flowrunner approve ${id} --acepto-cambios${origen === "claude" ? " --origen claude" : ""}`,
     );
   }
+  // Después de todas las validaciones: si la aprobación no pasa, no queda una marca suelta.
+  if (sinProbar !== undefined)
+    appendEvent(run.dir, { tipo: "probar_salteado", motivo: sinProbar.trim(), origen });
   appendEvent(run.dir, { tipo: "aprobado", cambios_aceptados: cambios.length, origen });
   return lanzamiento(
     id,

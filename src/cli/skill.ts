@@ -14,6 +14,8 @@ export const ASK_RULES = [
   "Bash(flowrunner changes:*)",
   // Entregar con criterios sin probar es de la persona, como aprobar (ADR 0017).
   "Bash(flowrunner accept-untested:*)",
+  // Saltear probar antes de que arranque, también: es la misma decisión, más temprano (ADR 0036).
+  "Bash(flowrunner skip-probar:*)",
   // Responder la pregunta de un run detenido también (ADR 0023).
   "Bash(flowrunner fix:*)",
   "Bash(flowrunner accept:*)",

@@ -50,6 +50,7 @@ describe("skill install", () => {
       "Bash(flowrunner approve:*)",
       "Bash(flowrunner changes:*)",
       "Bash(flowrunner accept-untested:*)",
+      "Bash(flowrunner skip-probar:*)",
       "Bash(flowrunner fix:*)",
       "Bash(flowrunner accept:*)",
     ]);
@@ -66,6 +67,7 @@ describe("skill install", () => {
       "Bash(flowrunner approve:*)",
       "Bash(flowrunner changes:*)",
       "Bash(flowrunner accept-untested:*)",
+      "Bash(flowrunner skip-probar:*)",
       "Bash(flowrunner fix:*)",
       "Bash(flowrunner accept:*)",
     ]);

@@ -48,6 +48,8 @@ const tree: RunTree = {
   opciones: undefined,
   unidades: undefined,
   cambiaLoExistente: [],
+  saltearProbar: undefined,
+  puedeSaltearProbar: false,
   // Sin recorrido: watch dibuja las fases como antes.
   recorrido: [],
   vueltas: [],

@@ -2,11 +2,12 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadRepoConfig } from "../config/load.ts";
-import { git, GitError, isAncestor, pushBranch } from "../git/git.ts";
+import { fetchOrigin, git, GitError, isAncestor, pushBranch } from "../git/git.ts";
 import { createPr, editPrBody, findPr, GhError } from "../github/gh.ts";
 import { prBody } from "../report/report.ts";
 import { readLog } from "../store/run-log.ts";
 import type { PhaseFn } from "../runner/types.ts";
+import { choques, resolverChoques } from "./choques.ts";
 import { featureWorktree, prepared, runFeature } from "./inputs.ts";
 import { leaseDe } from "./feedback.ts";
 import { proposeLessons } from "./proponer.ts";
@@ -21,6 +22,15 @@ export const entregar: PhaseFn = async (ctx) => {
   // Una vez por entrega: si entregar se reintenta, las lecciones ya están en la rama. Después de tu
   // feedback sobre la PR se proponen de nuevo, con el feedback como corrección (ADR 0038).
   const desdeFeedback = ctx.events.findLastIndex((e) => e.tipo === "feedback_pedido");
+  // Lo rehecho después de la entrega: con tu feedback, o porque aprender vio un choque con la base y
+  // trajo lo que había en GitHub (ADR 0041). Desde ahí, el push solo pisa lo que flowrunner ya vio.
+  const desdeRehacer = Math.max(
+    desdeFeedback,
+    ctx.events.findLastIndex(
+      (e) =>
+        e.tipo === "accion_terminada" && e.fase === "aprender" && e.resultado.tipo === "reentrar",
+    ),
+  );
   let pr;
   try {
     // Antes de empujar: si la persona mergeó o cerró la PR mientras se rehacía, empujar a esa rama no
@@ -32,11 +42,11 @@ export const entregar: PhaseFn = async (ctx) => {
   }
   if (pr !== undefined && pr.state !== "OPEN") {
     const estado = pr.state === "MERGED" ? "mergeó" : "cerró";
-    if (desdeFeedback !== -1) {
+    if (desdeRehacer !== -1) {
       emit({
         tipo: "aviso",
         fase: "entregar",
-        texto: `la PR ${pr.url} se ${estado} mientras se rehacía con tu feedback: lo rehecho no se entregó`,
+        texto: `la PR ${pr.url} se ${estado} mientras se rehacía: lo rehecho no se entregó`,
       });
       return { tipo: "ok" };
     }
@@ -45,6 +55,16 @@ export const entregar: PhaseFn = async (ctx) => {
       clase: "invariante",
       motivo: `la PR ${pr.url} ya está ${pr.state === "MERGED" ? "mergeada" : "cerrada"}: flowrunner no la vuelve a abrir`,
     };
+  }
+  // La PR tiene que poder mergearse: si la base avanzó y choca con la rama, se resuelve antes de
+  // empujar, y lo resuelto vuelve a pasar por verificar (ADR 0041).
+  try {
+    await fetchOrigin(ctx.state.repo, deps.env);
+    const archivos = await choques(worktree, "HEAD", base, deps.env);
+    if (archivos.length > 0) return await resolverChoques(ctx, worktree, config, archivos);
+  } catch (error) {
+    if (error instanceof GitError) return { tipo: "falla", clase: "infra", motivo: error.message };
+    throw error;
   }
   if (!ctx.events.slice(desdeFeedback + 1).some((e) => e.tipo === "lecciones_propuestas")) {
     try {
@@ -59,11 +79,11 @@ export const entregar: PhaseFn = async (ctx) => {
     }
   }
   try {
-    // Después de un feedback se empuja solo sobre lo que flowrunner ya tiene: lo que vio en GitHub al
+    // Después de rehacer se empuja solo sobre lo que flowrunner ya tiene: lo que vio en GitHub al
     // traer la rama, o algo que el HEAD ya contiene. Un push tuyo posterior frena la entrega en vez de
     // perderse: cualquier fetch del repo pone al día el ref de seguimiento, que era el lease (ADR 0038).
     let lease: string | undefined;
-    if (desdeFeedback !== -1) {
+    if (desdeRehacer !== -1) {
       const remota = (
         await git(worktree, ["ls-remote", "origin", `refs/heads/${prep.rama}`], deps.env)
       ).split(/\s/)[0];
@@ -73,7 +93,7 @@ export const entregar: PhaseFn = async (ctx) => {
           return {
             tipo: "falla",
             clase: "entorno",
-            motivo: `empujaste a ${prep.rama} mientras se rehacía con tu feedback, y entregar no lo pisa: traé esos commits al worktree ${worktree} y seguí con flowrunner resume ${run.id}`,
+            motivo: `empujaste a ${prep.rama} mientras se rehacía, y entregar no lo pisa: traé esos commits al worktree ${worktree} y seguí con flowrunner resume ${run.id}`,
           };
         lease = remota;
       }

@@ -104,7 +104,9 @@ export function steps(events: readonly RunEvent[]): z.infer<typeof phaseStepSche
         r.tipo === "falla" || r.tipo === "vuelve" || r.tipo === "pregunta"
           ? r.motivo
           : r.tipo === "reentrar"
-            ? `con tu feedback, desde ${r.desde}${r.unidades === undefined ? "" : ` (${r.unidades.join(", ")})`}: ${r.por_que}`
+            ? r.desde === "verificar"
+              ? `vuelve a verificar: ${r.por_que}`
+              : `con tu feedback, desde ${r.desde}${r.unidades === undefined ? "" : ` (${r.unidades.join(", ")})`}: ${r.por_que}`
             : null;
       if (open === undefined) out.push(step);
     }

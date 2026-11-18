@@ -161,6 +161,11 @@ Homebrew; si no está instalada, verify no corre y el run se detiene diciendo c�
    pedir aprobar el plan; o, si tu feedback cambia lo que pide la feature, se detiene y te pregunta. El
    recorrido y `status` dicen desde dónde y por qué. El run vuelve a entregar en la misma PR, con su
    descripción al día, y lo que hayas empujado a la rama se conserva (ADR 0038).
+8. Si la base avanza y choca con la rama, flowrunner lo resuelve: antes de subir la rama y, con la PR
+   abierta, en cada chequeo. Fusiona la base en la rama, una sesión resuelve los choques de esos
+   archivos y el run vuelve a verificar, revisar y probar antes de entregar en la misma PR. Si el
+   choque está en un test bloqueado, o la sesión deja marcas de conflicto, deshace el merge y te
+   pregunta (ADR 0041).
 
 ### Avisos
 

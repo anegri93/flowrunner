@@ -1,21 +1,24 @@
-import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { TEST_BIN } from "../../test/helpers/cli.ts";
 import { git, tempDir } from "../../test/helpers/git.ts";
 import { plannedRun } from "../../test/helpers/planned.ts";
 import { contextFor, testDeps } from "../../test/helpers/project.ts";
 import { PLAN } from "../../test/helpers/plan-fixtures.ts";
+import { simQuery, type SimScript } from "../../test/helpers/sim-sdk.ts";
+import type { Deps } from "../runner/types.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
 import { leaseFile } from "./feedback.ts";
 import { entregar } from "./entregar.ts";
 
-async function delivered() {
+async function delivered(overrides: Partial<Deps> = {}) {
   const home = tempDir("gh-home-");
   const notices: string[] = [];
   const deps = testDeps({
     notify: (_t, body) => notices.push(body),
     env: { ...testDeps().env, HOME: home, PATH: `${TEST_BIN}:${process.env.PATH ?? ""}` },
+    ...overrides,
   });
   const planned = await plannedRun(PLAN, { "tests/ac1.mjs": "process.exit(0);\n" }, deps);
   const ghLog = () =>
@@ -147,6 +150,78 @@ describe("entregar", () => {
       expect(await entregar(contextFor(run, "entregar", deps))).toEqual({ tipo: "ok" });
       expect(git(work, "fetch", "-q", "origin")).toBe("");
       expect(git(work, "merge-base", "--is-ancestor", tuyo, `origin/${BRANCH}`)).toBe("");
+    });
+  });
+
+  describe("choques con la base (ADR 0041)", () => {
+    const BRANCH = "feat/SHOP-214-exportar-pedidos-a-csv";
+    const commit = (dir: string, file: string, text: string) => {
+      mkdirSync(dirname(join(dir, file)), { recursive: true });
+      writeFileSync(join(dir, file), text);
+      git(dir, "add", file);
+      git(dir, "commit", "-qm", `toca ${file}`);
+    };
+    /** La feature escribe `src/x.js`; otra PR, ya mergeada en la base, lo escribe distinto. */
+    async function chocando(scripts: SimScript[] = [], baseFile = "src/x.js") {
+      const sim = simQuery(scripts);
+      const d = await delivered(scripts.length === 0 ? {} : { query: sim.query });
+      commit(d.featureWt, "src/x.js", "export const x = 1;\n");
+      commit(d.work, baseFile, "export const x = 0;\n");
+      git(d.work, "push", "-q", "origin", "main");
+      return { ...d, sim };
+    }
+
+    // Si regresiona, la PR llega a GitHub sin poder mergearse y el choque lo resolvés vos a mano.
+    test("si la base choca con la rama, una sesión resuelve el merge y el run vuelve a verificar sin empujar", async () => {
+      const { run, deps, featureWt, work, sim } = await chocando([
+        {
+          calls: [
+            { tool: "Write", input: { file_path: "src/x.js", content: "export const x = 2;\n" } },
+          ],
+        },
+      ]);
+      expect(await entregar(contextFor(run, "entregar", deps))).toMatchObject({
+        tipo: "reentrar",
+        desde: "verificar",
+      });
+      expect(git(featureWt, "rev-list", "--parents", "-n", "1", "HEAD").split(" ")).toHaveLength(3);
+      expect(readFileSync(join(featureWt, "src/x.js"), "utf8")).toBe("export const x = 2;\n");
+      expect(git(featureWt, "status", "--porcelain")).toBe("");
+      expect(sim.records[0]?.prompt).toContain("src/x.js");
+      // Lo que se empuja es lo que pasó otra vez por verificar, no el merge recién hecho.
+      expect(git(work, "ls-remote", "--heads", "origin", BRANCH)).toBe("");
+    });
+
+    // Si regresiona, un merge a medias con marcas de conflicto llega a la PR, o el worktree queda trabado.
+    test("si la sesión deja marcas de conflicto, deshace el merge y te pregunta", async () => {
+      const { run, deps, featureWt } = await chocando([{}]);
+      const head = git(featureWt, "rev-parse", "HEAD");
+      expect(await entregar(contextFor(run, "entregar", deps))).toMatchObject({
+        tipo: "pregunta",
+        motivo: expect.stringContaining("src/x.js") as unknown,
+      });
+      expect(git(featureWt, "rev-parse", "HEAD")).toBe(head);
+      expect(git(featureWt, "status", "--porcelain")).toBe("");
+    });
+
+    // Si regresiona, un agente reescribe un test de aceptación bloqueado para que el merge cierre.
+    test("un choque en un test bloqueado no lo resuelve un agente: te pregunta", async () => {
+      const { run, deps, featureWt } = await chocando([], "tests/ac1.mjs");
+      const head = git(featureWt, "rev-parse", "HEAD");
+      expect(await entregar(contextFor(run, "entregar", deps))).toMatchObject({
+        tipo: "pregunta",
+        motivo: expect.stringContaining("tests/ac1.mjs") as unknown,
+      });
+      expect(git(featureWt, "rev-parse", "HEAD")).toBe(head);
+    });
+
+    // Si regresiona, cada entrega suma un merge de la base aunque GitHub la mergee sin problema.
+    test("si la base avanzó sin chocar, entrega sin merge", async () => {
+      const { run, deps, featureWt, work } = await delivered();
+      commit(work, "otro.txt", "otro\n");
+      git(work, "push", "-q", "origin", "main");
+      expect(await entregar(contextFor(run, "entregar", deps))).toEqual({ tipo: "ok" });
+      expect(git(featureWt, "rev-list", "--parents", "-n", "1", "HEAD").split(" ")).toHaveLength(2);
     });
   });
 });

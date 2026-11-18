@@ -67,6 +67,7 @@ function outcomeText(o: Outcome): string {
     case "pregunta":
       return `se detuvo a preguntar${o.unidades === undefined ? "" : ` por ${o.unidades.join(", ")}`}: ${plain(o.motivo)}`;
     case "reentrar":
+      if (o.desde === "verificar") return `vuelve a verificar: ${plain(o.por_que)}`;
       return `con tu feedback, rehace desde ${o.desde}${o.unidades === undefined ? "" : ` con ${o.unidades.join(", ")}`}: ${plain(o.por_que)}`;
   }
 }

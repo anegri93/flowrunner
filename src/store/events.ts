@@ -66,11 +66,13 @@ export const outcomeSchema = z.discriminatedUnion("tipo", [
   /**
    * Aprender evaluó el feedback de la persona sobre la PR abierta y el run vuelve a trabajar desde ahí
    * (ADR 0038): a planificar, que pasa otra vez por la aprobación, o a implementar, con las sub-tasks
-   * que tienen que cambiar. Solo aprender lo devuelve, y solo con un feedback pendiente.
+   * que tienen que cambiar. Solo aprender lo devuelve, y solo con un feedback pendiente. `verificar`
+   * es otra cosa (ADR 0041): entregar o aprender fusionaron la base para resolver un choque, el código
+   * cambió y vuelve a pasar por verificar, revisar y probar. No necesita feedback.
    */
   z.strictObject({
     tipo: z.literal("reentrar"),
-    desde: z.enum(["planificar", "implementar"]),
+    desde: z.enum(["planificar", "implementar", "verificar"]),
     instruccion: z.string().min(1),
     unidades: z.array(z.string().min(1)).min(1).optional(),
     /** Por qué desde ahí, en palabras para la persona: lo muestran watch, Orca y el informe. */

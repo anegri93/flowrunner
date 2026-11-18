@@ -29,6 +29,7 @@ import type { Phase } from "../store/events.ts";
 import { intentarTurno, soltarTurno, turnoFile } from "../store/turno.ts";
 import { SIN_COMANDOS } from "../tripwires/comandos.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
+import { vigilarChoques } from "./choques.ts";
 import { evaluarFeedback } from "./feedback.ts";
 import { featureWorktree, runFeature } from "./inputs.ts";
 import { sessionName } from "./planificar.ts";
@@ -217,10 +218,13 @@ export const aprender: PhaseFn = async (ctx) => {
     if (error instanceof GhError) return { tipo: "falla", clase: "infra", motivo: error.message };
     throw error;
   }
-  // Con la PR abierta, tu feedback dice desde dónde rehacer (ADR 0038). Si ya no está abierta, no
-  // hay PR que actualizar: queda un aviso y aprender sigue como siempre, y el engine lo descarta.
+  // Con la PR abierta, tu feedback dice desde dónde rehacer (ADR 0038); sin feedback, se mira que la
+  // PR siga fusionándose con la base (ADR 0041). Si ya no está abierta, no hay PR que actualizar:
+  // queda un aviso y aprender sigue como siempre, y el engine lo descarta.
   if (pr.state === "OPEN")
-    return state.feedback === undefined ? { tipo: "espera" } : evaluarFeedback(ctx, state.feedback);
+    return state.feedback === undefined
+      ? vigilarChoques(ctx)
+      : evaluarFeedback(ctx, state.feedback);
   if (state.feedback !== undefined)
     emit({
       tipo: "aviso",

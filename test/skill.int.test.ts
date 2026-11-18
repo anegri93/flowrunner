@@ -50,8 +50,10 @@ describe("skill install", () => {
       "Bash(flowrunner approve:*)",
       "Bash(flowrunner changes:*)",
       "Bash(flowrunner accept-untested:*)",
+      "Bash(flowrunner skip-probar:*)",
       "Bash(flowrunner fix:*)",
       "Bash(flowrunner accept:*)",
+      "Bash(flowrunner brain apply:*)",
     ]);
     expect(existsSync(join(env.HOME ?? "", ".claude", "skills", "flowrunner", "SKILL.md"))).toBe(
       true,
@@ -66,8 +68,10 @@ describe("skill install", () => {
       "Bash(flowrunner approve:*)",
       "Bash(flowrunner changes:*)",
       "Bash(flowrunner accept-untested:*)",
+      "Bash(flowrunner skip-probar:*)",
       "Bash(flowrunner fix:*)",
       "Bash(flowrunner accept:*)",
+      "Bash(flowrunner brain apply:*)",
     ]);
   });
 

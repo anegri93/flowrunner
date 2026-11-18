@@ -20,6 +20,11 @@ const api: Api = {
   decidir: (run, decision) => orca.plugin.request("flowrunner.decidir", { run, decision }),
   leer: (key) => orca.storage.get(key),
   guardar: (key, value) => orca.storage.set(key, value),
+  doctor: () => orca.plugin.request("flowrunner.doctor", undefined),
+  tareas: () => orca.plugin.request("flowrunner.tareas", undefined),
+  mantener: (mantenimiento) => orca.plugin.request("flowrunner.mantener", { mantenimiento }),
+  cerebro: () => orca.plugin.request("flowrunner.cerebro", undefined),
+  informeCerebro: () => orca.plugin.request("flowrunner.informeCerebro", undefined),
   externo: async (url) => {
     await orca.shell?.openExternal(url);
   },

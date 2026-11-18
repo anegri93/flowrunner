@@ -218,3 +218,40 @@ describe("aprobar un plan que cambia lo existente", () => {
     expect(runCli(["approve", id], w.env).status).toBe(0);
   });
 });
+
+describe("aprobar sin probar (ADR 0036)", () => {
+  const CAMBIO = { que: "cambia el alta", donde: "src/alta.ts:1", criterio: "AC-1" };
+  const changing = () =>
+    simWorld({
+      real: ["preparar", "planificar", "aprobar"],
+      scripts: [{ calls: [WRITE_TEST], output: { ...PLAN, cambia_lo_existente: [CAMBIO] } }],
+      feature: FEATURE,
+      project: { config: { setup: "true", tests_globs: ["tests/**"] } },
+    });
+  const marcas = (w: { dir: (id: string) => string }, id: string) =>
+    readLog(w.dir(id)).events.filter((e) => e.tipo === "probar_salteado");
+
+  // Si regresiona, una aprobación que no pasó deja probar marcado para saltearse, sin que nadie
+  // haya aprobado nada; o el motivo no llega al log.
+  test("si approve no pasa no escribe la marca; si pasa, escribe la marca y después aprobado", async () => {
+    const w = changing();
+    const id = w.launch();
+    await waitFor("esperando", () => w.state(id).status === "esperando_aprobacion", 60_000);
+
+    const sinMotivo = runCli(["approve", id, "--acepto-cambios", "--sin-probar"], w.env);
+    expect(sinMotivo.status).toBe(1);
+    expect(sinMotivo.stderr).toMatch(/falta el motivo de --sin-probar/);
+    const sinAceptar = runCli(["approve", id, "--sin-probar", "solo docs"], w.env);
+    expect(sinAceptar.status).toBe(1);
+    expect(marcas(w, id)).toHaveLength(0);
+
+    const ok = runCli(
+      ["approve", id, "--acepto-cambios", "--sin-probar", "solo docs", "--origen", "orca"],
+      w.env,
+    );
+    expect(ok.status).toBe(0);
+    expect(marcas(w, id)).toMatchObject([{ motivo: "solo docs", origen: "orca" }]);
+    const tipos = readLog(w.dir(id)).events.map((e) => e.tipo);
+    expect(tipos.indexOf("probar_salteado")).toBe(tipos.indexOf("aprobado") - 1);
+  });
+});

@@ -1320,6 +1320,46 @@ describe("un bloqueante de revisar o probar va directo a la sub-task (ADR 0030)"
   });
 });
 
+// Saltear probar a pedido (ADR 0036): una decisión de la persona antes de que probar arranque.
+describe("saltear probar a pedido", () => {
+  const salteado = (motivo = "solo docs") =>
+    ev({ tipo: "probar_salteado", motivo, origen: "terminal" });
+  const restaurado = ev({ tipo: "probar_restaurado", origen: "terminal" });
+  const hastaRevisar = [
+    upTo("preparar", "planificar"),
+    ok("aprobar"),
+    upTo("implementar", "verificar"),
+  ];
+
+  // Si regresiona, la marca de la persona no llega a probar, o llega una que ya no vale.
+  test("aplica mientras probar no arrancó y guarda el motivo", () => {
+    expect(state(upTo("preparar"), [salteado()]).probarSalteado).toBe("solo docs");
+    expect(state(...hastaRevisar, [salteado("sin entorno")]).probarSalteado).toBe("sin entorno");
+  });
+
+  test("en probar en cola o pausado aplica; con probar ya hecho no", () => {
+    const enProbar = [...hastaRevisar, ok("revisar")];
+    const enCola = state(...enProbar, [ev({ tipo: "encolado" }), salteado()]);
+    expect(enCola.fase).toBe("probar");
+    expect(enCola.probarSalteado).toBe("solo docs");
+    const corriendo = state(...enProbar, [salteado()]);
+    expect(corriendo.probarSalteado).toBeUndefined();
+    const entregando = state(...enProbar, ok("probar"), [salteado()]);
+    expect(entregando.probarSalteado).toBeUndefined();
+  });
+
+  test("probar_restaurado la borra; rerun desde probar la borra; desde implementar la mantiene", () => {
+    expect(state(upTo("preparar"), [salteado(), restaurado]).probarSalteado).toBeUndefined();
+    const marcado = [...hastaRevisar, [salteado()]];
+    expect(
+      state(...marcado, [ev({ tipo: "rehacer", desde: "probar" })]).probarSalteado,
+    ).toBeUndefined();
+    expect(state(...marcado, [ev({ tipo: "rehacer", desde: "implementar" })]).probarSalteado).toBe(
+      "solo docs",
+    );
+  });
+});
+
 describe("detencionDe (ADR 0037)", () => {
   const stop = done("preparar", { tipo: "falla", clase: "entorno", motivo: "base roja" });
   const explicacion = ev({

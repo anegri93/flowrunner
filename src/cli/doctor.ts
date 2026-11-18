@@ -9,6 +9,7 @@ import { ghAuthOk } from "../github/gh.ts";
 import { runProc } from "../proc/proc.ts";
 import { appBin, resolvesToApp } from "../setup/app.ts";
 import { commandDir } from "../setup/init.ts";
+import { describeVersion, localVersion } from "../setup/version.ts";
 import { plistPath } from "./launchd.ts";
 
 export interface Check {
@@ -123,11 +124,13 @@ export async function doctor(env: NodeJS.ProcessEnv) {
     },
     appCheck(env),
   ];
-  return { ok: checks.every((c) => c.ok), checks };
+  // La versión no cuenta para `ok`: un flowrunner atrás de main corre runs igual.
+  return { ok: checks.every((c) => c.ok), checks, version: await localVersion(env) };
 }
 
 export function describeDoctor(result: Awaited<ReturnType<typeof doctor>>): string {
-  return result.checks
-    .map((c) => (c.ok ? `✓ ${c.nombre}` : `✗ ${c.nombre}: ${c.arreglo}`))
-    .join("\n");
+  return [
+    ...result.checks.map((c) => (c.ok ? `✓ ${c.nombre}` : `✗ ${c.nombre}: ${c.arreglo}`)),
+    describeVersion(result.version),
+  ].join("\n");
 }

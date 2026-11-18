@@ -606,3 +606,233 @@ test("si flowrunner falla, devuelve el error y ningún run", async () => {
     await worker.deactivate();
   }
 });
+
+// Si regresiona, el doctor del panel no muestra nada justo cuando a la máquina le falta algo: doctor
+// sale 1 y su JSON vale igual.
+test("el doctor lee doctor --json aunque salga 1, con la versión y las tareas", async () => {
+  const { worker, calls } = await fakeWorker();
+  try {
+    const snap = await worker.request("flowrunner.doctor");
+    assert.equal(snap.error, undefined);
+    assert.equal(snap.doctor?.ok, false);
+    assert.deepEqual(
+      snap.doctor?.checks.map((c) => [c.nombre, c.ok]),
+      [
+        ["git", true],
+        ["gh con sesión", false],
+      ],
+    );
+    assert.deepEqual(snap.doctor?.version, { sha: "1a2b3c4", main: "9f8e7d6", atras: 3 });
+    assert.deepEqual(decided(calls()), ["doctor --json", "tareas --json"]);
+  } finally {
+    await worker.deactivate();
+  }
+});
+
+// Si regresiona, actualizar desde el panel corta a los 20 s del worker, o deja pasar otra cosa al
+// shell: cada mantenimiento es un comando fijo que corre aparte.
+test("cada mantenimiento corre su comando fijo con --fondo; uno desconocido no llega a flowrunner", async () => {
+  const { worker, calls } = await fakeWorker();
+  try {
+    const update = await worker.request("flowrunner.mantener", {
+      mantenimiento: { accion: "actualizar" },
+    });
+    assert.deepEqual(update, { ok: true, mensaje: "actualizando flowrunner a origin/main" });
+    const plugin = await worker.request("flowrunner.mantener", {
+      mantenimiento: { accion: "plugin" },
+    });
+    assert.deepEqual(plugin, { ok: true, mensaje: "cargando el plugin en Orca" });
+    const bad = await worker.request("flowrunner.mantener", {
+      mantenimiento: { accion: "rm -rf ~" as "plugin" },
+    });
+    assert.equal(bad.ok, false);
+    assert.deepEqual(decided(calls()), [
+      "self-update --fondo --json",
+      "orca install --fondo --json",
+    ]);
+  } finally {
+    await worker.deactivate();
+  }
+});
+
+// Si regresiona, saltear probar desde el panel no llega a flowrunner, llega sin motivo o sin origen
+// (ADR 0036).
+test("saltear probar, volver a probar y aprobar sin probar corren su comando fijo con --origen orca", async () => {
+  const { worker, calls } = await fakeWorker();
+  const id = "PIZ-3-20261109-010000";
+  try {
+    const plan = `${id}#1`;
+    await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "saltearProbar", motivo: "solo docs" },
+    });
+    await worker.request("flowrunner.decidir", { run: id, decision: { accion: "volverAProbar" } });
+    await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "aprobar", plan, sinProbar: "sin entorno" },
+    });
+    await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "aprobar", plan, aceptoCambios: true, sinProbar: "sin entorno" },
+    });
+    const vacio = await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "saltearProbar", motivo: "  " },
+    });
+    assert.equal(vacio.ok, false);
+    const aprobarVacio = await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "aprobar", plan, sinProbar: "" },
+    });
+    assert.equal(aprobarVacio.ok, false);
+    assert.deepEqual(decided(calls()), [
+      `skip-probar ${id} solo docs --origen orca --json`,
+      `skip-probar ${id} --deshacer --origen orca --json`,
+      `approve ${id} --sin-probar sin entorno --origen orca --json`,
+      `approve ${id} --acepto-cambios --sin-probar sin entorno --origen orca --json`,
+    ]);
+  } finally {
+    await worker.deactivate();
+  }
+});
+
+// Si regresiona, el panel no ve en qué quedó una actualización que corre aparte.
+test("las tareas salen de flowrunner tareas --json", async () => {
+  const { worker } = await fakeWorker();
+  const file = join(mkdtempSync(join(tmpdir(), "flowrunner-tareas-")), "tareas.json");
+  writeFileSync(
+    file,
+    JSON.stringify({
+      ok: true,
+      tareas: [
+        {
+          nombre: "orca-install",
+          estado: "falla",
+          inicio: "2026-11-17T12:00:00Z",
+          fin: "2026-11-17T12:00:05Z",
+          mensaje: "Orca pide aprobar el plugin",
+          siguiente: "flowrunner orca install --approve ap1-test",
+          pid: 1,
+        },
+        { nombre: "x", estado: "rara" },
+      ],
+    }),
+  );
+  process.env.FAKE_TAREAS = file;
+  try {
+    const snap = await worker.request("flowrunner.tareas");
+    assert.equal(snap.error, undefined);
+    assert.deepEqual(
+      snap.tareas.map((t) => [t.nombre, t.estado, t.siguiente]),
+      [["orca-install", "falla", "flowrunner orca install --approve ap1-test"]],
+    );
+  } finally {
+    delete process.env.FAKE_TAREAS;
+    await worker.deactivate();
+  }
+});
+
+/** Un worker con un proyecto enfocado en Orca, encontrado por su nombre y su rama. */
+async function workerEnfocado() {
+  const { worker, calls, repo } = await fakeWorker();
+  await worker.deactivate();
+  const enfocado = await mountWorker(main, {
+    host: mockHost({
+      settings: { comando: FAKE },
+      results: {
+        "workspace.readContext": { branch: "main", displayName: "acme", terminals: [] },
+        "workspace.list": {
+          workspaces: [
+            {
+              id: "a",
+              kind: "worktree",
+              name: "acme",
+              path: repo,
+              branch: "refs/heads/main",
+              hostId: "local",
+            },
+          ],
+          truncated: false,
+        },
+      },
+    }),
+  });
+  return { worker: enfocado, calls, repo };
+}
+
+// Si regresiona, el panel audita otro proyecto que el enfocado, o lo que manda llega al shell sin
+// validar.
+test("auditar va con la ruta del proyecto enfocado; aplicar, solo con una auditoría y decisiones válidas", async () => {
+  const { worker, calls, repo } = await workerEnfocado();
+  try {
+    const audit = await worker.request("flowrunner.mantener", {
+      mantenimiento: { accion: "auditar" },
+    });
+    assert.deepEqual(audit, { ok: true, mensaje: "auditando el cerebro de acme" });
+    const apply = await worker.request("flowrunner.mantener", {
+      mantenimiento: {
+        accion: "aplicar",
+        auditoria: "acme/20261117-100000",
+        decisiones: ["D1", "D3"],
+      },
+    });
+    assert.equal(apply.ok, true);
+    assert.match(apply.mensaje, /pull\/9/);
+    const malos = [
+      { accion: "aplicar" as const, auditoria: "../../etc", decisiones: ["D1"] },
+      {
+        accion: "aplicar" as const,
+        auditoria: "acme/20261117-100000",
+        decisiones: ["D1; rm -rf ~"],
+      },
+      { accion: "aplicar" as const, auditoria: "acme/20261117-100000", decisiones: [] },
+    ];
+    for (const mantenimiento of malos)
+      assert.equal((await worker.request("flowrunner.mantener", { mantenimiento })).ok, false);
+    assert.deepEqual(decided(calls()), [
+      `brain audit ${repo} --fondo --json`,
+      "brain apply acme/20261117-100000 --decision D1 --decision D3 --json",
+    ]);
+  } finally {
+    await worker.deactivate();
+  }
+});
+
+// Si regresiona, la sección del cerebro no muestra la última auditoría, o «Ver el informe» no la abre.
+test("lee la última auditoría del proyecto enfocado y abre su informe como pestaña", async () => {
+  const { worker, calls, repo } = await workerEnfocado();
+  try {
+    const snap = await worker.request("flowrunner.cerebro");
+    assert.equal(snap.error, undefined);
+    assert.equal(snap.proyecto, "acme");
+    assert.equal(snap.auditoria?.ref, "acme/20261117-100000");
+    assert.deepEqual(
+      snap.auditoria?.decisiones.map((d) => [d.id, d.aplicable, d.pr]),
+      [["D1", true, null]],
+    );
+    const opened = await worker.request("flowrunner.informeCerebro");
+    assert.deepEqual(opened, { ok: true, mensaje: "abierto" });
+    const file = join(repo, ".git", "flowrunner", "cerebro", "auditoria-20261117-100000.md");
+    assert.match(readFileSync(file, "utf8"), /^# Auditoría del cerebro de acme/);
+    assert.ok(calls().includes(`orca file open ${file} --worktree path:${repo} --focus`));
+  } finally {
+    await worker.deactivate();
+  }
+});
+
+// Si regresiona, sin un proyecto enfocado el panel audita cualquier cosa o se queda mudo.
+test("sin un proyecto enfocado, auditar y el cerebro dicen que hay que enfocar uno", async () => {
+  const { worker, calls } = await fakeWorker();
+  try {
+    const audit = await worker.request("flowrunner.mantener", {
+      mantenimiento: { accion: "auditar" },
+    });
+    assert.equal(audit.ok, false);
+    assert.match(audit.mensaje, /enfocá un proyecto/);
+    const snap = await worker.request("flowrunner.cerebro");
+    assert.match(snap.error ?? "", /enfocá un proyecto/);
+    assert.deepEqual(decided(calls()), []);
+  } finally {
+    await worker.deactivate();
+  }
+});

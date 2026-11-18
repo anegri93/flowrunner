@@ -1,7 +1,13 @@
 // El árbol de un run para `flowrunner watch`: fases, sub-tasks y sesiones, armado del log de eventos,
 // del plan y de los transcripts que cada sesión escribe mientras corre. Función pura: el disco lo lee
 // `load.ts`.
-import { stateOf, TERMINAL, type Opcion, type RunStatus } from "../engine/engine.ts";
+import {
+  probarNoArranco,
+  stateOf,
+  TERMINAL,
+  type Opcion,
+  type RunStatus,
+} from "../engine/engine.ts";
 import type { Step } from "../report/transcript.ts";
 import { contextWindow, estimateCost, promptTokens, type Usage } from "./pricing.ts";
 import { PHASES, type Phase, type RunEvent } from "../store/events.ts";
@@ -102,6 +108,10 @@ export interface RunTree {
   readonly explicacion: EstadoExplicacion | undefined;
   /** Lo que hoy existe y el plan cambia: aprobarlo pide aceptarlo. Vacío sin plan o sin cambios. */
   readonly cambiaLoExistente: readonly CambioExistente[];
+  /** El motivo con que la persona pidió saltear probar, mientras probar no corrió (ADR 0036). */
+  readonly saltearProbar: string | undefined;
+  /** Probar todavía no arrancó: se puede pedir saltearla, o deshacerlo. */
+  readonly puedeSaltearProbar: boolean;
   readonly fases: PhaseNode[];
   /** Lo que pasó, en orden, con las vueltas agrupadas: la línea de tiempo de watch y de Orca. */
   readonly recorrido: Paso[];
@@ -384,7 +394,10 @@ export function runTree(input: TreeInput): RunTree {
           ? r.motivo
           : r?.tipo === "ok"
             ? r.salteada
-            : undefined;
+            : // Lo que va a pasar cuando llegue: la persona pidió saltearla (ADR 0036).
+              fase === "probar" && estado === "pendiente" && state.probarSalteado !== undefined
+              ? `se va a saltear: ${state.probarSalteado}`
+              : undefined;
     const mine = sessions.filter((s) => s.owner?.fase === fase);
     const unidades =
       fase === "implementar"
@@ -458,6 +471,9 @@ export function runTree(input: TreeInput): RunTree {
     unidades: state.status === "detenido" ? state.halt?.unidades : undefined,
     explicacion: state.status === "detenido" ? input.explicacion : undefined,
     cambiaLoExistente: input.cambiaLoExistente ?? [],
+    // Después de probar la marca ya no dice nada: lo que pasó lo cuenta la etapa salteada.
+    saltearProbar: probarNoArranco(state) ? state.probarSalteado : undefined,
+    puedeSaltearProbar: probarNoArranco(state),
     fases,
     ...recorridoOf({ events, sessions, tasks: input.tasks, status: state.status, now: clock }),
   };

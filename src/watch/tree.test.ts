@@ -460,6 +460,57 @@ describe("runTree", () => {
     expect(probar({ tipo: "ok" })).toMatchObject({ estado: "ok", detalle: undefined });
   });
 
+  // Si regresiona, el panel no sabe si ofrecer saltear probar, ni muestra que se va a saltear.
+  test("un run que no llegó a probar se puede saltear; marcado, probar pendiente dice por qué", () => {
+    const tree = (events: RunEvent[]) =>
+      runTree({ events, tasks, titulo: "x", sessions: new Map(), now: T0 + 300_000 });
+    const esperando: RunEvent[] = [
+      ...base,
+      { tipo: "accion_terminada", at: at(161), fase: "aprobar", resultado: { tipo: "espera" } },
+    ];
+    expect(tree(esperando)).toMatchObject({ puedeSaltearProbar: true, saltearProbar: undefined });
+    const marcado = tree([
+      ...esperando,
+      { tipo: "probar_salteado", at: at(170), motivo: "solo docs", origen: "orca" },
+    ]);
+    expect(marcado).toMatchObject({ puedeSaltearProbar: true, saltearProbar: "solo docs" });
+    expect(marcado.fases.find((f) => f.fase === "probar")).toMatchObject({
+      estado: "pendiente",
+      detalle: "se va a saltear: solo docs",
+    });
+    const okEn = (fase: "implementar" | "verificar" | "revisar", s: number): RunEvent[] => [
+      { tipo: "accion_iniciada", at: at(s), fase },
+      { tipo: "accion_terminada", at: at(s + 1), fase, resultado: { tipo: "ok" } },
+    ];
+    const probando = tree([
+      ...esperando,
+      { tipo: "aprobado", at: at(171) },
+      ...okEn("implementar", 180),
+      ...okEn("verificar", 182),
+      ...okEn("revisar", 184),
+      { tipo: "accion_iniciada", at: at(200), fase: "probar" },
+    ]);
+    expect(probando.puedeSaltearProbar).toBe(false);
+    // Marcada y ya salteada, la tarjeta no sigue diciendo que se va a saltear.
+    const salteada = tree([
+      ...esperando,
+      { tipo: "probar_salteado", at: at(170), motivo: "solo docs", origen: "orca" },
+      { tipo: "aprobado", at: at(171) },
+      ...okEn("implementar", 180),
+      ...okEn("verificar", 182),
+      ...okEn("revisar", 184),
+      { tipo: "accion_iniciada", at: at(200), fase: "probar" },
+      {
+        tipo: "accion_terminada",
+        at: at(200),
+        fase: "probar",
+        resultado: { tipo: "ok", salteada: "la salteó la persona: solo docs" },
+      },
+    ]);
+    expect(salteada.saltearProbar).toBeUndefined();
+    expect(salteada.fases.find((f) => f.fase === "probar")).toMatchObject({ estado: "salteada" });
+  });
+
   // Si regresiona, watch muestra el modelo sin el esfuerzo con que corrió cada fase.
   test("cada sesión lleva el esfuerzo configurado para su fase", () => {
     const tree = runTree({

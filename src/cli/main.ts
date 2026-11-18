@@ -20,7 +20,8 @@ import { join } from "node:path";
 import { closedRuns, loadTree, resolveRun } from "../watch/load.ts";
 
 import { renderRuns, watchLive, watchTargets } from "./watch.ts";
-import { selfUpdate } from "../setup/app.ts";
+import { selfUpdate, sinProcesosVivos } from "../setup/app.ts";
+import { aprobarPlugin, correrTarea, lanzarTarea, listarTareas, type Fin } from "./tareas.ts";
 import { commandDir, describeInit, draftExistingBrain, init } from "../setup/init.ts";
 import { productionRuntime } from "../runner/production.ts";
 import { describeStats, describeStatsPorRun, stats, statsPorRun } from "../report/stats.ts";
@@ -84,11 +85,16 @@ const USAGE = `uso: flowrunner <comando> [--json]
   tick                           lo que corre launchd: retoma pausados y aprende de PRs mergeadas
   learn <run> [--fondo]          revisa la PR de un run y aprende en el momento; con --fondo,
                                  en un proceso aparte que avisa al terminar
-  doctor                         qué le falta a esta máquina para correr runs
-  self-update                    mueve el flowrunner que corre runs a origin/main
+  doctor                         qué le falta a esta máquina para correr runs, y su versión
+  self-update [--fondo]          mueve el flowrunner que corre runs a origin/main; con --fondo,
+                                 en un proceso aparte que deja su estado en tareas
+  tareas                         en qué quedaron las tareas de fondo: self-update, orca install
+                                 y la auditoría del cerebro
   launchd install|uninstall      instala o quita el job que corre tick
   skill install [--confirmar]    instala la skill de Claude Code; con --confirmar, las reglas ask y el hook
   orca install [--approve fp]    carga en Orca el plugin de este flowrunner, esté donde esté clonado
+  orca install --fondo           lo mismo en un proceso aparte; si Orca pide aprobarlo, la tarea
+                                 dice el --approve que corrés vos
   hook session-start             el hook de Claude Code: avisa a la sesión si el repo usa flowrunner
   stats [--runs] [proyecto]      qué fase reintenta más, motivos, costo y lecciones; con --runs,
                                  tiempo activo, costo, planes y rechazos de cada run
@@ -148,6 +154,34 @@ async function reapuntar(env: NodeJS.ProcessEnv): Promise<{ ok: true; reapuntado
   }
   reapuntado.push(`skill ${installSkill(env, true).skill}`);
   return { ok: true, reapuntado };
+}
+
+/** El trabajo de cada tarea de `_tarea`: lo que el panel lanza y sigue (ADR 0039). */
+async function tarea(nombre: string, env: NodeJS.ProcessEnv): Promise<Fin> {
+  if (nombre === "self-update") {
+    const updated = await selfUpdate(env);
+    const orca = updated.reapuntado.find((r) => r.startsWith("Orca "));
+    const siguiente = orca === undefined ? undefined : aprobarPlugin(orca);
+    return {
+      ok: true,
+      mensaje: `flowrunner en ${updated.sha.slice(0, 7)}: ${updated.reapuntado.join(", ")}`,
+      ...(siguiente === undefined ? {} : { siguiente }),
+    };
+  }
+  if (nombre === "orca-install") {
+    const done = await installOrcaPlugin(env, undefined);
+    const siguiente = done.ok ? undefined : aprobarPlugin(done.salida);
+    return {
+      ok: done.ok,
+      mensaje: done.ok
+        ? done.salida || "plugin cargado"
+        : siguiente === undefined
+          ? done.salida
+          : "Orca pide aprobar el plugin: corré el comando de abajo en la terminal",
+      ...(siguiente === undefined ? {} : { siguiente }),
+    };
+  }
+  throw new UserError(`tarea desconocida: ${nombre}`);
 }
 
 /** De dónde viene la decisión: la skill pasa `claude`, el panel de Orca `orca` (ADR 0023). */
@@ -425,6 +459,20 @@ export async function main(
         return result.ok ? 0 : 1;
       }
       case "self-update": {
+        if (values.fondo === true) {
+          // Lo que se puede rechazar enseguida, se rechaza acá: el panel lo muestra sin esperar.
+          sinProcesosVivos(home);
+          const started = lanzarTarea(
+            home,
+            "self-update",
+            [],
+            "actualizando flowrunner a origin/main",
+            env,
+            new Date(),
+          );
+          print(started, started.resultado);
+          return 0;
+        }
         const updated = await selfUpdate(env);
         print(
           updated,
@@ -464,6 +512,23 @@ export async function main(
       }
       case "orca": {
         if (first !== "install") break;
+        if (values.fondo === true) {
+          if (typeof values.approve === "string")
+            throw new UserError(
+              "--approve no va con --fondo: aprobar el plugin lo hacés vos en la terminal",
+              `flowrunner orca install --approve ${values.approve}`,
+            );
+          const started = lanzarTarea(
+            home,
+            "orca-install",
+            [],
+            "cargando el plugin en Orca",
+            env,
+            new Date(),
+          );
+          print(started, started.resultado);
+          return 0;
+        }
         const done = await installOrcaPlugin(
           env,
           typeof values.approve === "string" ? values.approve : undefined,
@@ -525,6 +590,21 @@ export async function main(
         const id = runArg(home, first);
         io.out(`aprender ${id}: ${await learnAndNotify(home, id, env)}`);
         return 0;
+      }
+      case "tareas": {
+        const tareas = listarTareas(home, new Date());
+        print(
+          { ok: true, tareas },
+          tareas.map((t) => `${t.nombre}  ${t.estado}  ${t.mensaje}`).join("\n") ||
+            "no corrió ninguna tarea",
+        );
+        return 0;
+      }
+      case "_tarea": {
+        const nombre = need(first, "la tarea");
+        const fin = await correrTarea(home, nombre, "trabajando", () => tarea(nombre, env), env);
+        io.out(`${nombre}: ${fin.mensaje}`);
+        return fin.ok ? 0 : 1;
       }
       case "_run": {
         const final = await runProcess(home, runArg(home, first), env);

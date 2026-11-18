@@ -578,3 +578,87 @@ test("si flowrunner falla, devuelve el error y ningún run", async () => {
     await worker.deactivate();
   }
 });
+
+// Si regresiona, el doctor del panel no muestra nada justo cuando a la máquina le falta algo: doctor
+// sale 1 y su JSON vale igual.
+test("el doctor lee doctor --json aunque salga 1, con la versión y las tareas", async () => {
+  const { worker, calls } = await fakeWorker();
+  try {
+    const snap = await worker.request("flowrunner.doctor");
+    assert.equal(snap.error, undefined);
+    assert.equal(snap.doctor?.ok, false);
+    assert.deepEqual(
+      snap.doctor?.checks.map((c) => [c.nombre, c.ok]),
+      [
+        ["git", true],
+        ["gh con sesión", false],
+      ],
+    );
+    assert.deepEqual(snap.doctor?.version, { sha: "1a2b3c4", main: "9f8e7d6", atras: 3 });
+    assert.deepEqual(decided(calls()), ["doctor --json", "tareas --json"]);
+  } finally {
+    await worker.deactivate();
+  }
+});
+
+// Si regresiona, actualizar desde el panel corta a los 20 s del worker, o deja pasar otra cosa al
+// shell: cada mantenimiento es un comando fijo que corre aparte.
+test("cada mantenimiento corre su comando fijo con --fondo; uno desconocido no llega a flowrunner", async () => {
+  const { worker, calls } = await fakeWorker();
+  try {
+    const update = await worker.request("flowrunner.mantener", {
+      mantenimiento: { accion: "actualizar" },
+    });
+    assert.deepEqual(update, { ok: true, mensaje: "actualizando flowrunner a origin/main" });
+    const plugin = await worker.request("flowrunner.mantener", {
+      mantenimiento: { accion: "plugin" },
+    });
+    assert.deepEqual(plugin, { ok: true, mensaje: "cargando el plugin en Orca" });
+    const bad = await worker.request("flowrunner.mantener", {
+      mantenimiento: { accion: "rm -rf ~" as "plugin" },
+    });
+    assert.equal(bad.ok, false);
+    assert.deepEqual(decided(calls()), [
+      "self-update --fondo --json",
+      "orca install --fondo --json",
+    ]);
+  } finally {
+    await worker.deactivate();
+  }
+});
+
+// Si regresiona, el panel no ve en qué quedó una actualización que corre aparte.
+test("las tareas salen de flowrunner tareas --json", async () => {
+  const { worker } = await fakeWorker();
+  const file = join(mkdtempSync(join(tmpdir(), "flowrunner-tareas-")), "tareas.json");
+  writeFileSync(
+    file,
+    JSON.stringify({
+      ok: true,
+      tareas: [
+        {
+          nombre: "orca-install",
+          estado: "falla",
+          inicio: "2026-11-17T12:00:00Z",
+          fin: "2026-11-17T12:00:05Z",
+          mensaje: "Orca pide aprobar el plugin",
+          siguiente: "flowrunner orca install --approve ap1-test",
+          pid: 1,
+        },
+        { nombre: "x", estado: "rara" },
+      ],
+    }),
+  );
+  process.env.FAKE_TAREAS = file;
+  try {
+    const snap = await worker.request("flowrunner.tareas");
+    assert.equal(snap.error, undefined);
+    assert.deepEqual(
+      snap.tareas.map((t) => [t.nombre, t.estado, t.siguiente]),
+      [["orca-install", "falla", "flowrunner orca install --approve ap1-test"]],
+    );
+  } finally {
+    delete process.env.FAKE_TAREAS;
+    await worker.deactivate();
+  }
+});

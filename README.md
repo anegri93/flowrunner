@@ -46,8 +46,15 @@ flowrunner self-update
 
 No actualiza con un run corriendo: los que esperan aprobación, detenidos o en cola siguen con el código
 nuevo. El checkout que clonaste queda para desarrollar, y cambiar de rama ahí no afecta a ningún run.
-`flowrunner doctor` avisa si el comando o el job de launchd apuntan a otro lado. `self-update` instala con
+`flowrunner doctor` avisa si el comando o el job de launchd apuntan a otro lado, y dice cuántos commits
+le faltan para el `origin/main` del último fetch. `self-update` instala con
 `pnpm install --frozen-lockfile`: pnpm tiene que estar en el PATH de quien lo corre.
+
+Desde Orca, el botón **Doctor** de la pestaña de flowrunner hace lo mismo sin abrir una terminal: muestra
+lo que le falta a la máquina y la versión, y actualiza flowrunner o el plugin con un toque. Corren
+aparte (`self-update --fondo`, `orca install --fondo`) y el panel sigue en qué quedan con
+`flowrunner tareas`. Si Orca pide aprobar el plugin, te deja el `--approve` para correr en la terminal:
+aprobarlo es tuyo.
 
 ### Si ya tenías una versión anterior
 
@@ -459,8 +466,9 @@ equivalente de API: con la suscripción no se cobran, y lo que limita es su cupo
 | `flowrunner learn <run> [--fondo]`             | aprender ya; `--fondo`: aparte, con aviso     |
 | `flowrunner stats [proyecto]`                  | en qué fase se va el tiempo y el costo        |
 | `flowrunner stats --runs [proyecto]`           | tiempo, costo, rechazos y graft de cada run   |
-| `flowrunner doctor`                            | qué le falta a esta máquina                   |
-| `flowrunner self-update`                       | llevar el flowrunner que corre a `main`       |
+| `flowrunner doctor`                            | qué le falta a esta máquina, y su versión     |
+| `flowrunner self-update [--fondo]`             | llevar el flowrunner que corre a `main`       |
+| `flowrunner tareas`                            | en qué quedaron las tareas de fondo           |
 
 `run` puede ser el id completo o la clave de la feature, como `PIZ-1`. Casi nunca hace falta escribirlos:
 la skill de Claude Code los usa por vos.

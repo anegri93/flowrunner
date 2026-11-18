@@ -89,8 +89,8 @@ async function commonDir(dir: string, env: NodeJS.ProcessEnv): Promise<string | 
   }
 }
 
-export async function selfUpdate(env: NodeJS.ProcessEnv): Promise<SelfUpdate> {
-  const home = flowrunnerHome(env);
+/** Actualizar con un run corriendo le cambiaría el código a mitad de camino: se rechaza antes. */
+export function sinProcesosVivos(home: string): void {
   const vivos = procesosVivos(home);
   if (vivos.length > 0) {
     throw new UserError(
@@ -98,6 +98,11 @@ export async function selfUpdate(env: NodeJS.ProcessEnv): Promise<SelfUpdate> {
       "esperá a que terminen o corré flowrunner status",
     );
   }
+}
+
+export async function selfUpdate(env: NodeJS.ProcessEnv): Promise<SelfUpdate> {
+  const home = flowrunnerHome(env);
+  sinProcesosVivos(home);
   // Con el lock del tick: uno que lance launchd mientras dura el install correría la app a medio
   // actualizar, y podría retomar o despachar runs con ese código. Ese tick sale sin hacer nada.
   mkdirSync(home, { recursive: true });

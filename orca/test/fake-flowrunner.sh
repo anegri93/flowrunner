@@ -22,6 +22,11 @@ case "$1" in
   prioritize) printf '{"ok":true,"id":"%s","accion":"priorizado"}\n' "$2" ;;
   abort) printf '{"ok":true,"id":"%s","accion":"abortado; las ramas quedan"}\n' "$2" ;;
   learn) printf '{"ok":true,"id":"%s","resultado":"la PR sigue abierta"}\n' "$2" ;;
+  # doctor sale 1 si falta algo, con su JSON igual.
+  doctor) printf '{"ok":false,"checks":[{"nombre":"git","ok":true,"arreglo":"instalá git"},{"nombre":"gh con sesión","ok":false,"arreglo":"corré gh auth login"}],"version":{"sha":"1a2b3c4","main":"9f8e7d6","atras":3}}\n'; exit 1 ;;
+  tareas) if [ -n "$FAKE_TAREAS" ]; then cat "$FAKE_TAREAS"; else printf '{"ok":true,"tareas":[]}\n'; fi ;;
+  self-update) printf '{"ok":true,"tarea":"self-update","resultado":"actualizando flowrunner a origin/main"}\n' ;;
+  orca) printf '{"ok":true,"tarea":"orca-install","resultado":"cargando el plugin en Orca"}\n' ;;
   resume) printf '{"ok":false,"error":{"message":"el run %s está en_curso, no detenido","next":"flowrunner status %s"}}\n' "$2" "$2"; exit 1 ;;
   *) echo "comando desconocido: $1" >&2; exit 1 ;;
 esac

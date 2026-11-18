@@ -1,4 +1,5 @@
 // El contrato entre el panel y el worker, declarado una vez: lo leen src/frame.ts y src/worker.ts.
+import type { DoctorSnapshot, Mantenimiento, TareasSnapshot } from "./doctor";
 import type { Decision, Run } from "./runs";
 
 export interface Snapshot {
@@ -48,5 +49,11 @@ declare module "orca" {
      * responder a un run detenido: que una sub-task lo arregle, arreglarlo a mano o seguir igual.
      */
     "flowrunner.decidir": { input: { run: string; decision: Decision }; output: Outcome };
+    /** Lo que dice `flowrunner doctor` de esta máquina, y las tareas de fondo (ADR 0039). */
+    "flowrunner.doctor": { input: undefined; output: DoctorSnapshot };
+    /** Solo las tareas de fondo: barato, para seguir una que corre. */
+    "flowrunner.tareas": { input: undefined; output: TareasSnapshot };
+    /** Lanza un mantenimiento en segundo plano: actualizar flowrunner o cargar el plugin. */
+    "flowrunner.mantener": { input: { mantenimiento: Mantenimiento }; output: Outcome };
   }
 }

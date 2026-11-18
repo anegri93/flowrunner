@@ -9,7 +9,8 @@
 // Cada control es un <button> con su acción en `data-accion` (JSON): `frame.ts` la lee al tocarlo y
 // se la pasa al panel. Todo texto que viene de flowrunner pasa por `esc`.
 import { indicador, indicadorDeEtapa, indicadorDeTarea, INDICADORES_CSS } from "./indicadores";
-import type { Openable, Snapshot } from "./protocol";
+import { TAREA_DE, type Doctor, type Mantenimiento, type Tarea } from "./doctor";
+import type { Openable, Outcome, Snapshot } from "./protocol";
 import {
   activity,
   ahoraOf,
@@ -73,7 +74,39 @@ export type Accion =
   | { readonly t: "menu"; readonly run: string }
   | { readonly t: "cerrarMenu" }
   /** El motivo largo de un run detenido, entero o en dos líneas. */
-  | { readonly t: "motivo"; readonly run: string };
+  | { readonly t: "motivo"; readonly run: string }
+  /** Algo del doctor: la vista aparte de la máquina, las actualizaciones y el cerebro (ADR 0039). */
+  | { readonly t: "doctor"; readonly a: AccionDoctor };
+
+export type AccionDoctor =
+  | { readonly t: "abrir" }
+  | { readonly t: "cerrar" }
+  | { readonly t: "releer" }
+  /** Un mantenimiento pide confirmación: actualizar cambia el código con que siguen los runs. */
+  | { readonly t: "preguntar"; readonly m: Mantenimiento }
+  | { readonly t: "cancelar" }
+  | { readonly t: "mantener"; readonly m: Mantenimiento };
+
+/** La vista del doctor, abierta en lugar de los runs. */
+export interface EstadoDoctor {
+  /** Undefined mientras se lee la primera vez. */
+  readonly info: Doctor | undefined;
+  readonly tareas: readonly Tarea[];
+  readonly error: string | null;
+  readonly confirmar: Mantenimiento | null;
+  readonly enviando: boolean;
+  /** Lo que contestó flowrunner al lanzar un mantenimiento. */
+  readonly dicho: Outcome | null;
+}
+
+export const DOCTOR_INICIAL: EstadoDoctor = {
+  info: undefined,
+  tareas: [],
+  error: null,
+  confirmar: null,
+  enviando: false,
+  dicho: null,
+};
 
 /** Todo lo que se ve. Lo arma y lo cambia `Panel` (estado.ts). */
 export interface Estado {
@@ -99,6 +132,8 @@ export interface Estado {
   readonly menu: string | null;
   /** Los runs con el motivo entero a la vista; no se guarda. */
   readonly motivos: Readonly<Record<string, boolean>>;
+  /** El doctor abierto en lugar de los runs; null, los runs. No se guarda. */
+  readonly doctor: EstadoDoctor | null;
   /** Para la fase de las animaciones: `Date.now()` al dibujar. */
   readonly ahora: number;
 }
@@ -118,6 +153,7 @@ export const ESTADO_INICIAL: Estado = {
   avisoAbortar: null,
   menu: null,
   motivos: {},
+  doctor: null,
   ahora: 0,
 };
 
@@ -653,11 +689,113 @@ function cerrados(e: Estado, runs: readonly Run[]): string {
   return `<div class="sep"></div><div class="fila entre">${texto(`CERRADOS · ${String(runs.length)}`, "rotulo")}${boton({ t: "cerrados" }, flecha(open), { clase: "icono", label: open ? "Ocultar los runs cerrados" : "Ver los runs cerrados" })}</div>${open ? `<div class="pila">${runs.map((r) => cerrado(e, r)).join("")}</div>` : ""}`;
 }
 
+// --- Doctor --------------------------------------------------------------------------------
+
+const ICONO_DOCTOR = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 8.5h3l1.5-3 3 6 1.5-3H14"/></svg>`;
+
+const doctorAccion = (a: AccionDoctor): Accion => ({ t: "doctor", a });
+
+/** Qué hace cada mantenimiento, para su botón y su confirmación. */
+const MANTENIMIENTO: Record<
+  Mantenimiento["accion"],
+  { readonly boton: string; readonly pregunta: string; readonly detalle: string }
+> = {
+  actualizar: {
+    boton: "Actualizar flowrunner",
+    pregunta: "¿Actualizar flowrunner a origin/main?",
+    detalle:
+      "Con un run corriendo no actualiza. Los que esperan aprobación, detenidos o en cola siguen con el código nuevo.",
+  },
+  plugin: {
+    boton: "Actualizar el plugin de Orca",
+    pregunta: "¿Volver a cargar el plugin de Orca?",
+    detalle:
+      "Orca puede pedir aprobarlo: si lo pide, te dejo el comando para correr en la terminal.",
+  },
+};
+
+function tareaFila(t: Tarea, ahora: number): string {
+  const tone = t.estado === "corriendo" ? "accent" : t.estado === "ok" ? "success" : "danger";
+  const marca =
+    t.estado === "corriendo"
+      ? indicador("tarea-corriendo", "accent", ahora)
+      : texto(t.estado === "ok" ? "✓" : "✗", "fuerte", tone);
+  return `<div class="pila"><div class="fila">${marca}${texto(t.nombre, "fuerte chico")}${texto(t.estado, "chico", tone)}</div>${texto(t.mensaje, "chico motivo entero")}${
+    t.siguiente === null
+      ? ""
+      : `${texto("En la terminal:", "chico apagado")}<code class="chico">${esc(t.siguiente)}</code>`
+  }</div>`;
+}
+
+function versionTexto(d: Doctor): string {
+  const v = d.version;
+  if (v === undefined || v.sha === null) return texto("Versión: sin datos", "chico apagado");
+  if (v.atras === null || v.main === null) return texto(`Versión ${v.sha}`, "chico apagado");
+  if (v.atras === 0)
+    return texto(`Versión ${v.sha}: al día con origin/main del último fetch`, "chico", "success");
+  return texto(
+    `Versión ${v.sha}: ${String(v.atras)} ${v.atras === 1 ? "commit" : "commits"} atrás de origin/main (${v.main}, del último fetch)`,
+    "chico",
+    "warning",
+  );
+}
+
+function mantenimientos(d: EstadoDoctor): string {
+  if (d.enviando) return texto("Enviando…", "chico apagado");
+  if (d.confirmar !== null) {
+    const m = MANTENIMIENTO[d.confirmar.accion];
+    return `<div class="pila">${texto(m.pregunta, "fuerte")}${texto(m.detalle, "chico apagado")}<div class="botones">${boton(doctorAccion({ t: "mantener", m: d.confirmar }), "Sí, confirmar", { clase: "btn solid success" })}${boton(doctorAccion({ t: "cancelar" }), "Cancelar", { clase: "btn ghost" })}</div></div>`;
+  }
+  const corre = (m: Mantenimiento) =>
+    d.tareas.some((t) => t.nombre === TAREA_DE[m.accion] && t.estado === "corriendo");
+  const botones = (["actualizar", "plugin"] as const)
+    .map((accion) =>
+      boton(doctorAccion({ t: "preguntar", m: { accion } }), MANTENIMIENTO[accion].boton, {
+        disabled: corre({ accion }),
+      }),
+    )
+    .join("");
+  const dicho =
+    d.dicho === null
+      ? ""
+      : texto(d.dicho.mensaje, "nota motivo entero", d.dicho.ok ? "success" : "danger");
+  return `<div class="pila"><div class="botones">${botones}</div>${dicho}</div>`;
+}
+
+/** La vista del doctor: la máquina, la versión, las actualizaciones y en qué quedaron. */
+function vistaDoctor(d: EstadoDoctor, ahora: number): string {
+  const cabecera = `<div class="fila entre">${texto("DOCTOR", "rotulo")}${boton(doctorAccion({ t: "cerrar" }), "Volver a los runs", { clase: "btn ghost" })}</div>`;
+  if (d.info === undefined && d.error === null)
+    return `${cabecera}<div class="fila">${indicador("preparar", "accent", ahora)}${texto("Revisando esta máquina…", "apagado")}</div>`;
+  const error =
+    d.error === null ? "" : texto(`No se pudo leer flowrunner: ${d.error}`, "chico", "danger");
+  const checks =
+    d.info === undefined
+      ? ""
+      : `<div class="pila">${texto(d.info.ok ? "Esta máquina está lista" : "A esta máquina le falta algo", "fuerte", d.info.ok ? "success" : "warning")}${d.info.checks
+          .map((c) =>
+            c.ok
+              ? `<div class="fila">${texto("✓", "", "success")}${texto(c.nombre, "chico")}</div>`
+              : `<div class="pila"><div class="fila">${texto("✗", "", "danger")}${texto(c.nombre, "chico fuerte")}</div>${texto(c.arreglo, "chico apagado motivo entero")}</div>`,
+          )
+          .join("")}${versionTexto(d.info)}</div>`;
+  const tareas =
+    d.tareas.length === 0
+      ? ""
+      : `<div class="sep"></div><div class="pila">${texto("TAREAS", "rotulo")}${d.tareas.map((t) => tareaFila(t, ahora)).join("")}</div>`;
+  return `${cabecera}${error}${checks}<div class="sep"></div>${mantenimientos(d)}${tareas}<div class="botones">${boton(doctorAccion({ t: "releer" }), "Revisar de nuevo", { clase: "btn ghost" })}</div>`;
+}
+
 /** La pestaña entera. Antes de la primera lectura, la nave en camino. */
 export function vista(e: Estado): string {
+  if (e.doctor !== null) return `<div class="panel">${vistaDoctor(e.doctor, e.ahora)}</div>`;
+  const doctor = boton(doctorAccion({ t: "abrir" }), `${ICONO_DOCTOR} Doctor`, {
+    clase: "btn ghost",
+    label: "Doctor: esta máquina, actualizar flowrunner y el cerebro",
+  });
   const snap = e.snapshot;
   if (snap === null) {
-    return `<div class="leyendo"><img src="../assets/nave.png" alt="" width="96" height="96"><div class="fila">${indicador("preparar", "accent", e.ahora)}${texto("Leyendo los runs…", "apagado")}</div></div>`;
+    return `<div class="leyendo"><img src="../assets/nave.png" alt="" width="96" height="96"><div class="fila">${indicador("preparar", "accent", e.ahora)}${texto("Leyendo los runs…", "apagado")}</div>${doctor}</div>`;
   }
   const runs = sortRuns(snap.runs);
   const others = snap.otros ?? 0;
@@ -665,7 +803,7 @@ export function vista(e: Estado): string {
     others === 0
       ? null
       : `${String(others)} ${others === 1 ? "run activo" : "runs activos"} en otros proyectos: cambiá de proyecto en Orca para ${others === 1 ? "verlo" : "verlos"}.`;
-  const proyecto = snap.proyecto === undefined ? "" : texto(snap.proyecto, "chico apagado");
+  const proyecto = `<div class="fila entre">${snap.proyecto === undefined ? "<span></span>" : texto(snap.proyecto, "chico apagado")}${doctor}</div>`;
   const error =
     snap.error === undefined
       ? ""

@@ -5,6 +5,7 @@ import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { userInfo } from "node:os";
 import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import type { OrcaWorkerApi } from "orca/worker";
+import { mantenimientoArgs, parseDoctor, parseTareas, type Tarea } from "./doctor";
 import type { Openable, Outcome, Snapshot } from "./protocol";
 import {
   isClosed,
@@ -18,6 +19,8 @@ import {
 } from "./runs";
 
 const TIMEOUT_MS = 20_000;
+/** doctor pregunta a gh, a Claude Code y a graft, cada uno con su tope: tarda más que un comando. */
+const DOCTOR_TIMEOUT_MS = 90_000;
 /** El CLI de Orca, que abre un archivo como pestaña: ningún método del host abre un archivo de afuera. */
 const orcaCli = () => process.env.ORCA_CLI ?? "/Applications/Orca.app/Contents/Resources/bin/orca";
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -63,13 +66,13 @@ interface Proc {
   readonly stderr: string;
 }
 
-function run(script: string): Promise<Proc> {
+function run(script: string, timeout = TIMEOUT_MS): Promise<Proc> {
   const env = childEnv(process.env);
   return new Promise((resolve) => {
     execFile(
       env.SHELL ?? "/bin/zsh",
       ["-lc", script],
-      { timeout: TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024, env },
+      { timeout, maxBuffer: 16 * 1024 * 1024, env },
       (error, stdout, stderr) => {
         const code = error === null ? 0 : typeof error.code === "number" ? error.code : 1;
         resolve({ code, stdout, stderr: stderr || (error?.message ?? "") });
@@ -440,6 +443,39 @@ export default function activate(orca: OrcaWorkerApi): void {
         `el plan de ${run.clave} cambió desde que lo abriste: abrilo de nuevo antes de aprobar`,
       );
   }
+
+  const tareas = async (): Promise<Tarea[]> =>
+    parseTareas(await ok(`${await command(orca)} tareas --json`));
+
+  orca.panels.handle("flowrunner.doctor", async () => {
+    try {
+      // doctor sale 1 cuando falta algo: su JSON vale igual, y es justo lo que hay que mostrar.
+      const proc = await run(`${await command(orca)} doctor --json`, DOCTOR_TIMEOUT_MS);
+      const doctor = parseDoctor(proc.stdout);
+      return { doctor, tareas: await tareas() };
+    } catch (error) {
+      return { tareas: [], error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  orca.panels.handle("flowrunner.tareas", async () => {
+    try {
+      return { tareas: await tareas() };
+    } catch (error) {
+      return { tareas: [], error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  orca.panels.handle("flowrunner.mantener", async ({ mantenimiento }) => {
+    let args: string;
+    try {
+      args = mantenimientoArgs(mantenimiento);
+    } catch (error) {
+      return { ok: false, mensaje: error instanceof Error ? error.message : String(error) };
+    }
+    orca.log(`mantenimiento: ${args}`);
+    return outcomeOf(await run(`${await command(orca)} ${args} --json`));
+  });
 
   orca.panels.handle("flowrunner.decidir", async ({ run: id, decision }) => {
     let args: string;

@@ -1,12 +1,13 @@
 // Lo que `flowrunner watch` lee del disco: el log, el plan, el título y los transcripts de cada run.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { stateOf, TERMINAL } from "../engine/engine.ts";
+import { detencionDe, stateOf, TERMINAL } from "../engine/engine.ts";
 import { transcriptSteps, type Step } from "../report/transcript.ts";
 import { loadRepoConfig } from "../config/load.ts";
 import { DEFAULT_MODELS } from "../config/schemas.ts";
 import { cambioExistenteSchema, type CambioExistente } from "../gates/plan.ts";
 import type { Phase } from "../store/events.ts";
+import { estadoExplicacion } from "../store/explicaciones.ts";
 import { readLog } from "../store/run-log.ts";
 import { listRunIds, runPaths } from "../store/runs.ts";
 import { runTree, tidyStep, type RunTree, type SessionFile } from "./tree.ts";
@@ -78,7 +79,9 @@ export function loadTree(home: string, id: string, now: number): RunTree {
   const { dir } = runPaths(home, id);
   const events = readLog(dir).events;
   const created = events.find((e) => e.tipo === "run_creado");
+  const explicacion = estadoExplicacion({ dir }, detencionDe(events));
   return runTree({
+    ...(explicacion === undefined ? {} : { explicacion }),
     events,
     esfuerzos: readEfforts(created?.tipo === "run_creado" ? created.repo : undefined),
     tasks: readTasks(dir),

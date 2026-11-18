@@ -21,6 +21,9 @@ case "$1" in
   pause) printf '{"ok":true,"id":"%s","accion":"se pausa al terminar lo que está haciendo"}\n' "$2" ;;
   prioritize) printf '{"ok":true,"id":"%s","accion":"priorizado"}\n' "$2" ;;
   abort) printf '{"ok":true,"id":"%s","accion":"abortado; las ramas quedan"}\n' "$2" ;;
+  explain)
+    if [ -n "$FAKE_EXPLICANDO" ]; then printf '{"ok":true,"id":"%s","estado":"explicando","resultado":"explicando: te aviso cuando esté"}\n' "$2"
+    else printf '{"ok":true,"id":"%s","estado":"lista","archivo":"/x.md","texto":"# Por qué se detuvo\\n\\nfalta pipefail\\n"}\n' "$2"; fi ;;
   learn) printf '{"ok":true,"id":"%s","resultado":"la PR sigue abierta"}\n' "$2" ;;
   resume) printf '{"ok":false,"error":{"message":"el run %s está en_curso, no detenido","next":"flowrunner status %s"}}\n' "$2" "$2"; exit 1 ;;
   *) echo "comando desconocido: $1" >&2; exit 1 ;;

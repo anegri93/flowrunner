@@ -283,6 +283,34 @@ test("abrir una etapa pide su detalle a flowrunner y lo abre como pestaña en el
   }
 });
 
+// Si regresiona, la explicación de una detención no se abre, o el panel espera los minutos que tarda
+// escribirla y Orca corta el comando a los 20 s (ADR 0037).
+test("abrir la explicación corre explain --fondo: lista, la abre como pestaña; si se escribe, lo dice sin abrir", async () => {
+  const { worker, calls, repo } = await fakeWorker();
+  const id = "VF-2-20261109-001527";
+  try {
+    assert.deepEqual(
+      await worker.request("flowrunner.abrir", { run: id, que: { tipo: "explicacion" } }),
+      { ok: true, mensaje: "abierto" },
+    );
+    const file = join(repo, ".git", "flowrunner", id, "explicacion.md");
+    assert.equal(readFileSync(file, "utf8"), "# Por qué se detuvo\n\nfalta pipefail\n");
+    assert.ok(calls().includes(`explain ${id} --fondo --json`));
+    assert.ok(calls().includes(`orca file open ${file} --worktree path:${repo} --focus`));
+
+    process.env.FAKE_EXPLICANDO = "1";
+    const before = calls().filter((c) => c.startsWith("orca file open")).length;
+    assert.deepEqual(
+      await worker.request("flowrunner.abrir", { run: id, que: { tipo: "explicacion" } }),
+      { ok: true, mensaje: "explicando: te aviso cuando esté", explicando: true },
+    );
+    assert.equal(calls().filter((c) => c.startsWith("orca file open")).length, before);
+  } finally {
+    delete process.env.FAKE_EXPLICANDO;
+    await worker.deactivate();
+  }
+});
+
 // Si regresiona, pausar o priorizar desde el panel no llega a flowrunner, o un --para cualquiera
 // llega al shell.
 test("pausar y priorizar corren pause y prioritize con --origen orca; un --para inválido se rechaza", async () => {

@@ -20,6 +20,8 @@ export interface Outcome {
   readonly ok: boolean;
   /** Lo que dijo flowrunner: qué hizo, o por qué no y cómo seguir. */
   readonly mensaje: string;
+  /** Abrir la explicación la empezó a escribir: el panel la abre cuando watch la ve lista. */
+  readonly explicando?: true;
 }
 
 /**
@@ -31,7 +33,9 @@ export type Openable =
   | { readonly tipo: "unidad"; readonly unidad: string }
   | { readonly tipo: "etapa"; readonly fase: string }
   | { readonly tipo: "plan" }
-  | { readonly tipo: "informe" };
+  | { readonly tipo: "informe" }
+  /** Por qué se detuvo el run y qué hace cada respuesta (ADR 0037); si no está, se empieza a escribir. */
+  | { readonly tipo: "explicacion" };
 
 declare module "orca" {
   interface PluginRequests {

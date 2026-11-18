@@ -171,6 +171,39 @@ describe("stats por run", () => {
     expect(statsPorRun(home).runs[0]?.activoMin).toBe(2);
   });
 
+  // Si regresiona, lo que costó explicar una detención no se ve, o infla el costo de una fase.
+  test("las explicaciones se cuentan aparte del costo del run y de sus fases (ADR 0037)", () => {
+    const home = tempDir("stats-");
+    runAt(home, T0, [
+      [0, inicia("verificar")],
+      [0, uso("verificar", 1)],
+      [MIN, termina("verificar", { tipo: "falla", clase: "entorno", motivo: "x" })],
+      [
+        0,
+        {
+          tipo: "explicacion",
+          fase: "verificar",
+          detencion: 4,
+          sesion: "explicar-1",
+          modelo: "m",
+          costo_usd: 0.25,
+          tokens_entrada: 1,
+          tokens_salida: 1,
+          duracion_ms: 1,
+        },
+      ],
+    ]);
+    const result = statsPorRun(home);
+    expect(result.runs[0]).toMatchObject({
+      costoUsd: 1,
+      costoPorFase: { verificar: 1 },
+      costoExplicarUsd: 0.25,
+    });
+    expect(describeStatsPorRun(result)).toContain(
+      "explicaciones de detenciones: US$ 0.25, aparte de la columna US$",
+    );
+  });
+
   // Si regresiona, un proceso cortado en el medio no suma lo que llevaba trabajado.
   test("una acción sin terminar cuenta hasta el último evento", () => {
     const home = tempDir("stats-");
@@ -348,6 +381,7 @@ describe("stats por run", () => {
       planesPorRun: 0,
       rechazosBashPorRun: 0,
       derechos: 0,
+      explicarUsd: 0,
     });
     const home = tempDir("stats-");
     sencillo(home, T0, 10, 1);
@@ -370,6 +404,7 @@ describe("stats por run", () => {
       planesPorRun: 1,
       rechazosBashPorRun: 2 / 3,
       derechos: 2,
+      explicarUsd: 0,
     });
     sencillo(home, T0 + 3 * MIN, 1, 2);
     expect(statsPorRun(home).resumen).toMatchObject({

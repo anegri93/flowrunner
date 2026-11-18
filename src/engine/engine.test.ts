@@ -8,7 +8,14 @@ import {
   type Phase,
   type RunEvent,
 } from "../store/events.ts";
-import { correAutofixSolo, MAX_ATTEMPTS, nextAction, stateOf, type RunState } from "./engine.ts";
+import {
+  correAutofixSolo,
+  detencionDe,
+  MAX_ATTEMPTS,
+  nextAction,
+  stateOf,
+  type RunState,
+} from "./engine.ts";
 import { TOKEN_REJECTED } from "./motivos.ts";
 
 const AT = "2026-11-07T10:00:00.000Z";
@@ -1310,5 +1317,43 @@ describe("un bloqueante de revisar o probar va directo a la sub-task (ADR 0030)"
     expect(old.status).toBe("detenido");
     expect(correAutofixSolo(old)).toBe(true);
     expect(commands(old)).toContain(`flowrunner fix ${R} --auto`);
+  });
+});
+
+describe("detencionDe (ADR 0037)", () => {
+  const stop = done("preparar", { tipo: "falla", clase: "entorno", motivo: "base roja" });
+  const explicacion = ev({
+    tipo: "explicacion",
+    fase: "preparar",
+    detencion: 2,
+    sesion: "explicar-1",
+    modelo: "claude-sonnet-5-5",
+    costo_usd: 30,
+    tokens_entrada: 10,
+    tokens_salida: 10,
+    duracion_ms: 1000,
+  });
+
+  // Si regresiona, la explicación de una detención se pierde, o se reusa para otra.
+  test("es la posición del evento que detuvo el run y no cambia con el uso de su explicación", () => {
+    const events = [created, ...stop];
+    expect(detencionDe(events)).toBe(2);
+    expect(detencionDe([...events, explicacion])).toBe(2);
+  });
+
+  test("una detención nueva con el mismo motivo tiene otro número", () => {
+    expect(detencionDe([created, ...stop, ev({ tipo: "reanudado" }), ...stop])).toBe(5);
+  });
+
+  test("sin detención no hay número", () => {
+    expect(detencionDe([created, ...ok("preparar")])).toBeUndefined();
+    expect(detencionDe([created, ...stop, ev({ tipo: "reanudado" })])).toBeUndefined();
+  });
+
+  // Si regresiona, pedir una explicación encarece el run o lo frena por su tope (USD 10 acá).
+  test("el uso de una explicación no suma al costo del run ni lo detiene por presupuesto", () => {
+    const resumed = stateOf([created, ...stop, ev({ tipo: "reanudado" }), explicacion]);
+    expect(resumed.costoUsd).toBe(0);
+    expect(resumed.status).toBe("en_curso");
   });
 });

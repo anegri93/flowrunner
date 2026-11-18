@@ -35,6 +35,11 @@ como `flowrunner watch`, pensada para el ancho angosto de la barra:
   detenido o rehacerlo desde la fase que sugiere el motivo, y «Aprender ahora» en un run con la PR
   abierta, para no esperar el chequeo de cada 10 minutos después de mergear. Aprobar, reanudar y
   rehacer piden confirmación.
+- «Explicar», en un run detenido: antes de decidir, qué pasó, por qué no siguió solo, qué hace cada
+  respuesta y cuál conviene (ADR 0037). Corre `explain --fondo`, porque escribirla lleva minutos; la
+  tarjeta dice «Explicando por qué se detuvo…» y, cuando está, la abre sola como pestaña. Después el
+  botón es «Explicación» y la abre sin gastar otra sesión; si no se pudo, la tarjeta dice por qué y
+  ofrece «Explicar de nuevo».
 - Aprobar se habilita después de abrir el plan (el botón Plan o el link de la etapa Aprobar). Un plan
   corregido se vuelve a abrir. Abrirlo con `flowrunner plan` o desde Claude no cuenta, y el panel lo
   recuerda aunque lo recargues. Si el plan cambió desde que lo abriste, el panel no lo aprueba y te
@@ -60,7 +65,7 @@ la nave en camino en vez de los runs del anterior. Para saber cuál está enfoca
 `workspace:read`; sin él, o sin un proyecto enfocado, muestra todos.
 
 - `src/worker.ts` corre el CLI de flowrunner en un shell de login, para tener tu PATH: `watch`,
-  `report --sesion`, `plan`, y cada decisión como un comando fijo (`approve`, `changes`, `resume`,
+  `report --sesion`, `plan`, `explain --fondo`, y cada decisión como un comando fijo (`approve`, `changes`, `resume`,
   `rerun --desde`, `learn`, `abort`). Valida el id del run, la fase y el motivo antes de llegar al shell.
 - La pestaña es un frame (`sandboxed-ui`), no un panel de componentes: los componentes de Orca no
   dibujan SVG propio y rechazan las imágenes animadas, y los indicadores son SVG con animación CSS.

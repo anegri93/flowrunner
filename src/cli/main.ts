@@ -10,6 +10,7 @@ import { approveRun, describePlan, requestChanges, showPlan } from "./approval.t
 import { showReport, showSession, showUnit } from "./report.ts";
 import { showPhase } from "./etapa.ts";
 import { learnAndNotify, learnInBackground, learnOne, tick } from "./tick.ts";
+import { explainAndNotify, explainInBackground, explainRun } from "./explain.ts";
 import { describeDoctor, doctor } from "./doctor.ts";
 import { installLaunchd, plistPath, uninstallLaunchd } from "./launchd.ts";
 import { installSkill } from "./skill.ts";
@@ -71,6 +72,8 @@ const USAGE = `uso: flowrunner <comando> [--json]
                                  con --para, ese run de la cola entra antes; sigue con resume
   prioritize <run>               un run en cola sale primero
                                  pause y prioritize con [--origen terminal|claude|orca]
+  explain <run> [--fondo]        explica por qué el run se detuvo y qué hace cada respuesta; con
+                                 --fondo, en un proceso aparte que avisa al terminar
   abort <run>                    cancela un run y borra sus worktrees; las ramas quedan
   plan <run>                     muestra el plan que espera aprobación
   approve <run> [--acepto-cambios] [--origen terminal|claude|orca]
@@ -354,6 +357,20 @@ export async function main(
         print(prioritized, `run ${prioritized.id} ${prioritized.accion}`);
         return 0;
       }
+      case "explain": {
+        const id = runArg(home, first);
+        const explained =
+          values.fondo === true
+            ? explainInBackground(home, id, env)
+            : await explainRun(home, id, env);
+        print(
+          explained,
+          explained.estado === "lista"
+            ? explained.texto
+            : `${explained.id}: ${explained.resultado}`,
+        );
+        return 0;
+      }
       case "abort": {
         const aborted = abortRun(home, runArg(home, first), env);
         print(aborted, `run ${aborted.id} ${aborted.accion}`);
@@ -524,6 +541,11 @@ export async function main(
       case "_learn": {
         const id = runArg(home, first);
         io.out(`aprender ${id}: ${await learnAndNotify(home, id, env)}`);
+        return 0;
+      }
+      case "_explain": {
+        const done = await explainAndNotify(home, runArg(home, first), env);
+        io.out(`explicar ${done.id}: ${done.estado}`);
         return 0;
       }
       case "_run": {

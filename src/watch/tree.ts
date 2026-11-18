@@ -291,15 +291,34 @@ export function runTree(input: TreeInput): RunTree {
       return { owner, node: { ...node, corriendo: node.corriendo && !terminal, esfuerzo } };
     });
 
-  /** Un `rehacer` desde esta fase o una anterior deja lo que esa fase hizo antes en otra corrida. */
-  const redoesFrom = (e: RunEvent, index: number) =>
-    e.tipo === "rehacer" && PHASES.indexOf(e.desde) <= index;
+  /**
+   * Desde dónde se rehace el run: un `rehacer`, o aprender que vuelve a trabajar con tu feedback sobre
+   * la PR (ADR 0038). Lo que hizo una fase desde esa en adelante queda en otra corrida.
+   */
+  const redoDesde = (e: RunEvent): Phase | undefined =>
+    e.tipo === "rehacer"
+      ? e.desde
+      : e.tipo === "accion_terminada" && e.resultado.tipo === "reentrar"
+        ? e.resultado.desde
+        : undefined;
+  const redoesFrom = (e: RunEvent, index: number) => {
+    const desde = redoDesde(e);
+    return desde !== undefined && PHASES.indexOf(desde) <= index;
+  };
   const IMPLEMENTAR = PHASES.indexOf("implementar");
+  // Volver a implementar con tu feedback rehace solo algunas sub-tasks: las demás siguen como estaban.
+  const replans = (e: RunEvent) =>
+    redoesFrom(e, IMPLEMENTAR) &&
+    !(
+      e.tipo === "accion_terminada" &&
+      e.resultado.tipo === "reentrar" &&
+      e.resultado.desde === "implementar"
+    );
 
   // Las sub-tasks arrancan de cero si el run se rehace desde implementar o antes: el plan es otro.
   const unitStates = new Map<string, UnitState>();
   for (const e of events) {
-    if (redoesFrom(e, IMPLEMENTAR)) unitStates.clear();
+    if (replans(e)) unitStates.clear();
     // Cortada por la red no es fallida: el engine la reintenta, o espera tu `resume`.
     else if (e.tipo === "unidad")
       unitStates.set(e.unidad, e.corte_de_red === true ? "cortada" : UNIT_STATE[e.estado]);
@@ -310,7 +329,7 @@ export function runTree(input: TreeInput): RunTree {
   for (const e of events) if (e.tipo === "accion_iniciada") lastStart.set(e.fase, Date.parse(e.at));
   const everIntegrated = new Set<string>();
   for (const e of events) {
-    if (redoesFrom(e, IMPLEMENTAR)) everIntegrated.clear();
+    if (replans(e)) everIntegrated.clear();
     else if (e.tipo === "unidad" && e.estado === "integrada") everIntegrated.add(e.unidad);
   }
 
@@ -347,13 +366,11 @@ export function runTree(input: TreeInput): RunTree {
     const failed = r?.tipo === "falla" || r?.tipo === "pregunta";
     // Lo que terminó antes de un `rehacer` desde esta fase o una anterior es de otra corrida: la
     // fase vuelve a estar pendiente, no fallada ni hecha (VF-6).
-    const redo =
+    const redoEvent =
       ended === undefined
         ? undefined
-        : events.find(
-            (e): e is Extract<RunEvent, { tipo: "rehacer" }> =>
-              redoesFrom(e, index) && Date.parse(e.at) >= ended.at,
-          );
+        : events.find((e) => redoesFrom(e, index) && Date.parse(e.at) >= ended.at);
+    const redo = redoEvent === undefined ? undefined : { desde: redoDesde(redoEvent) };
     // Una falla o una vuelta que el run dejó atrás: una fase posterior corrió después.
     const overtaken =
       ended !== undefined && (failed || r?.tipo === "vuelve")
@@ -375,7 +392,9 @@ export function runTree(input: TreeInput): RunTree {
               ? "falla"
               : r.tipo === "ok" && r.salteada !== undefined
                 ? "salteada"
-                : r.tipo;
+                : r.tipo === "reentrar"
+                  ? "ok"
+                  : r.tipo;
     const estado: PhaseState =
       redo !== undefined ? "pendiente" : overtaken === undefined ? raw : "ok";
     const verbo = failed ? "falló" : "volvió";

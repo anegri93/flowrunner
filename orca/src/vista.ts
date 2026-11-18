@@ -236,6 +236,12 @@ export function textFor(
         decision: (instruccion) => ({ accion: "arreglar", unidad, instruccion }),
       };
     }
+    case "feedback":
+      return {
+        label: "Qué no te gustó de la PR",
+        placeholder: "Qué cambiar; flowrunner decide desde dónde rehacer",
+        decision: (texto) => ({ accion: "feedback", texto }),
+      };
     // Saltear probar, sola o al aprobar, pide el motivo: queda en la PR (ADR 0036).
     case "saltearProbar":
       return {
@@ -374,6 +380,9 @@ function decisiones(e: Estado, run: Run): string {
     ex.boton,
     offered.includes("aprender")
       ? boton({ t: "decidir", run: run.id, decision: { accion: "aprender" } }, "Aprender ahora")
+      : "",
+    offered.includes("feedback")
+      ? boton(ask({ accion: "feedback", texto: "" }), "Rehacer con feedback…")
       : "",
     offered.includes("aprobar")
       ? boton(ask({ accion: "aprobar", plan: planVersion(run) }), "Aprobar", {

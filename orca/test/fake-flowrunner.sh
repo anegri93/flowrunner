@@ -21,6 +21,7 @@ case "$1" in
   pause) printf '{"ok":true,"id":"%s","accion":"se pausa al terminar lo que está haciendo"}\n' "$2" ;;
   prioritize) printf '{"ok":true,"id":"%s","accion":"priorizado"}\n' "$2" ;;
   abort) printf '{"ok":true,"id":"%s","accion":"abortado; las ramas quedan"}\n' "$2" ;;
+  feedback) printf '{"ok":true,"id":"%s","accion":"feedback recibido: evaluando desde dónde rehacer"}\n' "$2" ;;
   explain)
     if [ -n "$FAKE_EXPLICANDO" ]; then printf '{"ok":true,"id":"%s","estado":"explicando","resultado":"explicando: te aviso cuando esté"}\n' "$2"
     else printf '{"ok":true,"id":"%s","estado":"lista","archivo":"/x.md","texto":"# Por qué se detuvo\\n\\nfalta pipefail\\n"}\n' "$2"; fi ;;

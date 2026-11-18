@@ -40,6 +40,10 @@ como `flowrunner watch`, pensada para el ancho angosto de la barra:
   tarjeta dice «Explicando por qué se detuvo…» y, cuando está, la abre sola como pestaña. Después el
   botón es «Explicación» y la abre sin gastar otra sesión; si no se pudo, la tarjeta dice por qué y
   ofrece «Explicar de nuevo».
+- «Rehacer con feedback…», al lado de «Aprender ahora» mientras la PR está abierta: pide en línea qué
+  no te gustó y lo manda con `flowrunner feedback … --origen orca`. flowrunner decide desde dónde
+  rehacer, y el recorrido lo muestra: «Diste feedback sobre la PR» con tu texto, y aprender «con tu
+  feedback», con desde dónde, las sub-tasks y por qué (ADR 0038).
 - Aprobar se habilita después de abrir el plan (el botón Plan o el link de la etapa Aprobar). Un plan
   corregido se vuelve a abrir. Abrirlo con `flowrunner plan` o desde Claude no cuenta, y el panel lo
   recuerda aunque lo recargues. Si el plan cambió desde que lo abriste, el panel no lo aprueba y te
@@ -82,7 +86,7 @@ la nave en camino en vez de los runs del anterior. Para saber cuál está enfoca
 
 - `src/worker.ts` corre el CLI de flowrunner en un shell de login, para tener tu PATH: `watch`,
   `report --sesion`, `plan`, `explain --fondo`, y cada decisión como un comando fijo (`approve`, `changes`, `resume`,
-  `rerun --desde`, `learn`, `abort`, `skip-probar`). Valida el id del run, la fase y el motivo antes de llegar al shell.
+  `rerun --desde`, `learn`, `feedback`, `abort`, `skip-probar`). Valida el id del run, la fase y el motivo antes de llegar al shell.
   El doctor también: `doctor --json`, `tareas --json` y cada mantenimiento con `--fondo`
   (`src/doctor.ts`).
 - La pestaña es un frame (`sandboxed-ui`), no un panel de componentes: los componentes de Orca no

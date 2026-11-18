@@ -66,6 +66,8 @@ function outcomeText(o: Outcome): string {
       return "pausado por vos entre sub-tasks";
     case "pregunta":
       return `se detuvo a preguntar${o.unidades === undefined ? "" : ` por ${o.unidades.join(", ")}`}: ${plain(o.motivo)}`;
+    case "reentrar":
+      return `con tu feedback, rehace desde ${o.desde}${o.unidades === undefined ? "" : ` con ${o.unidades.join(", ")}`}: ${plain(o.por_que)}`;
   }
 }
 

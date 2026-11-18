@@ -365,8 +365,14 @@ export class Panel {
     try {
       const answer = await this.#api.decidir(run, decision);
       if (answer.ok) this.#set({ borrador: "" });
-      // Lo que dice al aprender, y si Autofix commiteó algo, se muestran aunque salga.
-      if (!answer.ok || decision.accion === "aprender" || decision.accion === "autofix")
+      // Lo que dice al aprender, si Autofix commiteó algo o qué hace con tu feedback, se muestran
+      // aunque salga.
+      if (
+        !answer.ok ||
+        decision.accion === "aprender" ||
+        decision.accion === "autofix" ||
+        decision.accion === "feedback"
+      )
         this.#set({ dicho: { run, ...answer } });
     } catch (error) {
       this.#set({ dicho: { run, ok: false, mensaje: message(error) } });

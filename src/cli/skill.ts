@@ -19,6 +19,8 @@ export const ASK_RULES = [
   // Responder la pregunta de un run detenido también (ADR 0023).
   "Bash(flowrunner fix:*)",
   "Bash(flowrunner accept:*)",
+  // Rehacer una PR con feedback también: el run vuelve a trabajar y la PR cambia (ADR 0038).
+  "Bash(flowrunner feedback:*)",
   // Abrir una PR sobre el cerebro con las decisiones de una auditoría es de la persona (ADR 0040).
   "Bash(flowrunner brain apply:*)",
 ] as const;

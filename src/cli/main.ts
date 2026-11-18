@@ -9,7 +9,7 @@ import { addProject, initRepoBrain } from "./project.ts";
 import { approveRun, describePlan, requestChanges, showPlan } from "./approval.ts";
 import { showReport, showSession, showUnit } from "./report.ts";
 import { showPhase } from "./etapa.ts";
-import { learnAndNotify, learnInBackground, learnOne, tick } from "./tick.ts";
+import { feedbackRun, learnAndNotify, learnInBackground, learnOne, tick } from "./tick.ts";
 import { explainAndNotify, explainInBackground, explainRun } from "./explain.ts";
 import { describeDoctor, doctor } from "./doctor.ts";
 import { installLaunchd, plistPath, uninstallLaunchd } from "./launchd.ts";
@@ -103,6 +103,9 @@ const USAGE = `uso: flowrunner <comando> [--json]
   tick                           lo que corre launchd: retoma pausados y aprende de PRs mergeadas
   learn <run> [--fondo]          revisa la PR de un run y aprende en el momento; con --fondo,
                                  en un proceso aparte que avisa al terminar
+  feedback <run> "<qué no te gustó>" [--origen terminal|claude|orca]
+                                 con la PR abierta: evalúa tu feedback y rehace el run desde
+                                 implementar o planificar, sobre la misma PR
   doctor                         qué le falta a esta máquina para correr runs, y su versión
   self-update [--fondo]          mueve el flowrunner que corre runs a origin/main; con --fondo,
                                  en un proceso aparte que deja su estado en tareas
@@ -513,6 +516,17 @@ export async function main(
       case "tick": {
         const done = await tick(home, env, new Date());
         print(done, done.acciones.join("\n") || "nada que hacer");
+        return 0;
+      }
+      case "feedback": {
+        const sent = feedbackRun(
+          home,
+          runArg(home, first),
+          rest.join(" "),
+          parseOrigen(values.origen),
+          env,
+        );
+        print(sent, `run ${sent.id} ${sent.accion}`);
         return 0;
       }
       case "learn": {

@@ -90,7 +90,7 @@ export interface PasoEtapa {
   readonly inicio: string;
   readonly segundos?: number;
   readonly costoUsd: number;
-  /** ok, salteada, vuelve, falla, pregunta, pausa, espera, corriendo o cortada. */
+  /** ok, salteada, vuelve, falla, pregunta, reentra, pausa, espera, corriendo o cortada. */
   readonly resultado: string;
   readonly motivo?: string;
   readonly unidades: readonly string[];
@@ -427,7 +427,8 @@ export const pasoSessions = (p: PasoEtapa): Session[] => [
 ];
 
 /** El estado de fase que corresponde al resultado de una corrida, para su indicador y su texto. */
-const ESTADO_DE: Record<string, string> = { pregunta: "falla" };
+/** Aprender que rehace el run con tu feedback (ADR 0038) se dibuja como una vuelta atrás. */
+const ESTADO_DE: Record<string, string> = { pregunta: "falla", reentra: "vuelve" };
 
 export interface PasoView {
   /** El estado de fase que dibuja su indicador: ok, vuelve, falla, corriendo, espera… */
@@ -449,6 +450,7 @@ const TUYO: Record<string, string> = {
   "pediste un arreglo": "Pediste un arreglo",
   aceptaste: "Aceptaste seguir",
   "aceptaste sin probar": "Aceptaste sin probar",
+  "diste feedback": "Diste feedback sobre la PR",
   rehiciste: "Rehiciste el run",
   reanudaste: "Reanudaste el run",
   abortaste: "Abortaste el run",
@@ -506,11 +508,13 @@ export function pasoView(p: Paso, run: Run): PasoView {
         texto:
           p.resultado === "pregunta"
             ? "se detuvo"
-            : p.fase === "entregar" && p.pr !== undefined && estado === "ok"
-              ? `PR #${String(p.pr)}`
-              : estado === "ok"
-                ? undefined
-                : label.texto,
+            : p.resultado === "reentra"
+              ? "con tu feedback"
+              : p.fase === "entregar" && p.pr !== undefined && estado === "ok"
+                ? `PR #${String(p.pr)}`
+                : estado === "ok"
+                  ? undefined
+                  : label.texto,
         tone: label.tone,
         nota:
           red || estado === "salteada"
@@ -783,6 +787,8 @@ export type Decision =
   | { readonly accion: "reanudar" }
   | { readonly accion: "rehacer"; readonly desde: PhaseName }
   | { readonly accion: "aprender" }
+  /** La PR abierta no te gusta: flowrunner evalúa tu feedback y rehace desde donde haga falta. */
+  | { readonly accion: "feedback"; readonly texto: string }
   | { readonly accion: "abortar" }
   /** Que esa sub-task corrija lo que la persona escribe, sobre el código que ya está. */
   | { readonly accion: "arreglar"; readonly unidad: string; readonly instruccion: string }
@@ -864,8 +870,9 @@ export function decisionsFor(run: Run): Decision["accion"][] {
     case "pausado":
       return ["reanudar"];
     // Aprender corre en el chequeo cada 10 minutos; con la PR recién mergeada, no hace falta esperarlo.
+    // Con la PR abierta, tu feedback la rehace en vez de mergearla (ADR 0038).
     case "entregado":
-      return ["aprender"];
+      return run.prMergeada === true ? ["aprender"] : ["aprender", "feedback"];
     default:
       return [];
   }

@@ -11,6 +11,8 @@ export type PasoResultado =
   | "vuelve"
   | "falla"
   | "pregunta"
+  /** Aprender evaluó tu feedback sobre la PR y el run vuelve a trabajar (ADR 0038). */
+  | "reentra"
   | "pausa"
   | "espera"
   | "corriendo"
@@ -23,6 +25,7 @@ export type TuyoQue =
   | "pediste un arreglo"
   | "aceptaste"
   | "aceptaste sin probar"
+  | "diste feedback"
   | "rehiciste"
   | "reanudaste"
   | "pausaste"
@@ -199,8 +202,14 @@ export function recorridoOf(input: RecorridoInput): {
               : "salteada"
             : r.tipo === "limite"
               ? "pausa"
-              : r.tipo;
+              : r.tipo === "reentrar"
+                ? "reentra"
+                : r.tipo;
         if (r.tipo === "ok" && r.salteada !== undefined) paso.motivo = r.salteada;
+        if (r.tipo === "reentrar") {
+          paso.motivo = `rehace desde ${r.desde}: ${r.por_que}`;
+          paso.unidades = r.unidades ?? [];
+        }
         if (r.tipo === "falla" || r.tipo === "vuelve" || r.tipo === "pregunta")
           paso.motivo = r.motivo;
         if (r.tipo === "vuelve" || r.tipo === "pregunta") paso.unidades = r.unidades ?? [];
@@ -285,6 +294,10 @@ export function recorridoOf(input: RecorridoInput): {
         return;
       case "sin_probar_aceptado":
         mine(clave, e.at, "aceptaste sin probar", e.motivo);
+        return;
+      case "feedback_pedido":
+        mine(clave, e.at, "diste feedback", e.texto);
+        closeVuelta();
         return;
       case "rehacer":
         mine(clave, e.at, "rehiciste", `desde ${e.desde}`);

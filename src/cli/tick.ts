@@ -44,6 +44,13 @@ export async function learnRun(home: string, id: string, env: NodeJS.ProcessEnv)
       notifyMac(t, b, env);
     });
     const final = await runUntilStop(run, phases, deps, { tick: true });
+    // Aprender lo puso a trabajar otra vez, por un choque con la base (ADR 0041): sigue en su proceso.
+    if (final.status === "en_curso") {
+      const lanzado = lanzarOEncolar(home, id, env);
+      return lanzado.tipo === "lanzado"
+        ? `volvió a trabajar desde ${final.fase}`
+        : `volvió a trabajar desde ${final.fase}, en cola (${String(lanzado.posicion)}.º)`;
+    }
     // Al cerrarse, el informe final suma lo que pasó después de la entrega: el merge y lo aprendido.
     if (final.status !== "entregado") writeReport(run, readLog(run.dir).events);
     return final.status === "entregado"

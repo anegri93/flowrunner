@@ -358,6 +358,11 @@ function onOutcome(state: RunState, fase: Phase, outcome: Outcome): RunState {
         ? { ...state, status: "esperando_aprobacion" }
         : { ...state, status: "entregado", feedback: undefined };
     case "reentrar": {
+      // Un choque con la base resuelto con un merge (ADR 0041): el código cambió y vuelve a verificar.
+      if (outcome.desde === "verificar")
+        return fase === "entregar" || fase === "aprender"
+          ? enter(state, "verificar")
+          : halt(state, `${fase} pidió volver a verificar, y solo entregar y aprender pueden`);
       if (fase !== "aprender" || state.feedback === undefined)
         return halt(state, `${fase} pidió rehacer el run, y solo aprender puede, con tu feedback`);
       if (outcome.desde === "planificar")

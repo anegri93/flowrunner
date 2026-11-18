@@ -1404,6 +1404,31 @@ describe("el feedback sobre la PR abierta (ADR 0038)", () => {
     expect(sinFeedback.halt?.motivo).toMatch(/solo aprender puede, con tu feedback/);
   });
 
+  // Si regresiona, un choque con la base resuelto con un merge se entrega sin volver a pasar por los
+  // criterios, la revisión y probar; o una fase cualquiera salta el run a verificar.
+  test("entregar y aprender reentran en verificar por un choque con la base, sin feedback (ADR 0041)", () => {
+    const choque = {
+      tipo: "reentrar",
+      desde: "verificar",
+      instruccion: "la base chocó en src/x.js",
+      por_que: "la base chocó en src/x.js",
+    } as const;
+    const enEntrega = state(
+      upTo("preparar", "planificar", "aprobar", "implementar", "verificar", "revisar", "probar"),
+      done("entregar", choque),
+    );
+    expect(enEntrega).toMatchObject({ status: "en_curso", fase: "verificar" });
+    expect(state(...entregado, evaluado(choque))).toMatchObject({
+      status: "en_curso",
+      fase: "verificar",
+    });
+    const desdeRevisar = state(
+      upTo("preparar", "planificar", "aprobar", "implementar", "verificar"),
+      done("revisar", choque),
+    );
+    expect(desdeRevisar.status).toBe("detenido");
+  });
+
   // Si regresiona, un feedback que cambia la feature se ejecuta sin preguntar, o replanificar lo pierde.
   test("si el feedback cambia la feature, se detiene, y replanificar lleva el feedback", () => {
     const halted = state(

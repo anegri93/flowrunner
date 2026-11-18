@@ -522,7 +522,12 @@ function feedbackGiven(events: readonly RunEvent[]): string[] {
   const lines: string[] = [];
   for (const e of events) {
     if (e.tipo === "feedback_pedido") lines.push(`- ${quote(e.texto)}`);
-    if (e.tipo === "accion_terminada" && e.fase === "aprender" && e.resultado.tipo === "reentrar") {
+    if (
+      e.tipo === "accion_terminada" &&
+      e.fase === "aprender" &&
+      e.resultado.tipo === "reentrar" &&
+      e.resultado.desde !== "verificar"
+    ) {
       const r = e.resultado;
       const con = r.unidades === undefined ? "" : ` con ${r.unidades.join(", ")}`;
       lines.push(`  - Se rehízo desde ${r.desde}${con}: ${plain(r.por_que)}`);

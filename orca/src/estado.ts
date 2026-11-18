@@ -99,6 +99,13 @@ export class Panel {
   /** La próxima lectura es por un cambio de proyecto: alcanza con la lectura reciente del worker. */
   #reciente = false;
   #workspace: string | undefined;
+  /**
+   * Las explicaciones que la persona pidió y todavía se escriben: se abren solas cuando una lectura las
+   * ve listas (ADR 0037). Duran lo que el panel; las de otra sesión se abren con su botón.
+   */
+  readonly #explicando = new Map<string, number>();
+  /** Cuántas lecturas de los runs arrancaron: dice si una salió antes de un pedido de explicación. */
+  #lecturas = 0;
   readonly #api: Api;
   readonly #changed: () => void;
 
@@ -262,14 +269,25 @@ export class Panel {
     if (this.#reading) return;
     this.#reading = true;
     const asked = this.#generation;
+    const lectura = ++this.#lecturas;
     const reciente = this.#reciente;
     this.#reciente = false;
     try {
       const next = await this.#api.runs(reciente);
       if (asked !== this.#generation) return;
       const prev = this.#e.snapshot;
-      if (next.error === undefined)
+      if (next.error === undefined) {
         for (const id of closedSince(prev, next)) void this.#open(id, { tipo: "informe" });
+        for (const [id, pedida] of [...this.#explicando]) {
+          // Una lectura que salió antes del pedido no sabe todavía que se está escribiendo.
+          if (lectura <= pedida) continue;
+          const run = next.runs.find((r) => r.id === id);
+          if (run?.explicacion?.estado === "explicando") continue;
+          // Lista, se abre; si falló o el run ya no está detenido, deja de esperarla.
+          this.#explicando.delete(id);
+          if (run?.explicacion?.estado === "lista") void this.#open(id, { tipo: "explicacion" });
+        }
+      }
       const shown =
         next.error !== undefined && prev !== null ? { ...prev, error: next.error } : next;
       const same =
@@ -323,6 +341,12 @@ export class Panel {
       const answer = await this.#api.abrir(run, que);
       if (!answer.ok) {
         this.#set({ aviso: { run, texto: answer.mensaje } });
+        return;
+      }
+      if (answer.explicando === true) {
+        // Se está escribiendo: la tarjeta lo dice con la próxima lectura, y al terminar se abre sola.
+        this.#explicando.set(run, this.#lecturas);
+        await this.refresh();
         return;
       }
       const shown = this.#run(run);

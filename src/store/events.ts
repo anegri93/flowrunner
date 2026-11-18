@@ -245,6 +245,23 @@ export const eventSchema = z.discriminatedUnion("tipo", [
     motivo: z.string().min(1),
     origen: origenSchema,
   }),
+  /**
+   * La sesión que le explicó a la persona una detención (ADR 0037). Lleva su uso aparte del de las
+   * fases: la pidió la persona, no avanza el run, y no cuenta para el tope ni para el costo de la fase.
+   * `detencion`, la posición en el log del evento que dejó el run detenido.
+   */
+  z.strictObject({
+    tipo: z.literal("explicacion"),
+    at,
+    fase: phaseSchema,
+    detencion: z.int().nonnegative(),
+    sesion: z.string(),
+    modelo: z.string(),
+    costo_usd: z.number().nonnegative(),
+    tokens_entrada: z.int().nonnegative(),
+    tokens_salida: z.int().nonnegative(),
+    duracion_ms: z.int().nonnegative(),
+  }),
   z.strictObject({ tipo: z.literal("rehacer"), at, desde: phaseSchema }),
   z.strictObject({ tipo: z.literal("abortado"), at }),
   z.strictObject({ tipo: z.literal("pr"), at, url: z.string(), numero: z.int() }),

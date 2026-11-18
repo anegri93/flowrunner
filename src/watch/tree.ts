@@ -12,6 +12,7 @@ import type { Step } from "../report/transcript.ts";
 import { contextWindow, estimateCost, promptTokens, type Usage } from "./pricing.ts";
 import { PHASES, type Phase, type RunEvent } from "../store/events.ts";
 import type { CambioExistente } from "../gates/plan.ts";
+import type { EstadoExplicacion } from "../store/explicaciones.ts";
 import { recorridoOf, type Paso, type Vuelta } from "./recorrido.ts";
 
 export interface SessionFile {
@@ -103,6 +104,8 @@ export interface RunTree {
   readonly opciones: readonly Opcion[] | undefined;
   /** Las sub-tasks a las que un run detenido atribuye el problema. */
   readonly unidades: readonly string[] | undefined;
+  /** La explicación de la detención actual, si se pidió (ADR 0037); undefined si no está detenido. */
+  readonly explicacion: EstadoExplicacion | undefined;
   /** Lo que hoy existe y el plan cambia: aprobarlo pide aceptarlo. Vacío sin plan o sin cambios. */
   readonly cambiaLoExistente: readonly CambioExistente[];
   /** El motivo con que la persona pidió saltear probar, mientras probar no corrió (ADR 0036). */
@@ -123,6 +126,8 @@ export interface TreeInput {
   readonly cambiaLoExistente?: readonly CambioExistente[];
   /** El esfuerzo de cada fase según la config del repo. */
   readonly esfuerzos?: Partial<Record<Phase, string>>;
+  /** Cómo está la explicación de la detención actual, leída de la carpeta del run. */
+  readonly explicacion?: EstadoExplicacion;
   readonly now: number;
 }
 
@@ -464,6 +469,7 @@ export function runTree(input: TreeInput): RunTree {
     siguiente,
     opciones: state.status === "detenido" ? state.halt?.opciones : undefined,
     unidades: state.status === "detenido" ? state.halt?.unidades : undefined,
+    explicacion: state.status === "detenido" ? input.explicacion : undefined,
     cambiaLoExistente: input.cambiaLoExistente ?? [],
     // Después de probar la marca ya no dice nada: lo que pasó lo cuenta la etapa salteada.
     saltearProbar: probarNoArranco(state) ? state.probarSalteado : undefined,

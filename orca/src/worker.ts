@@ -90,6 +90,9 @@ function run(script: string, timeout = TIMEOUT_MS): Promise<Proc> {
   });
 }
 
+/** `run` con otro nombre, para donde un run de flowrunner ya se llama `run`. */
+const shell = run;
+
 const lastLines = (text: string) => text.trim().split("\n").slice(-3).join("\n");
 
 async function ok(script: string): Promise<string> {
@@ -403,7 +406,26 @@ export default function activate(orca: OrcaWorkerApi): void {
       const dir = await viewDir(run.repo, run.id);
       mkdirSync(dir, { recursive: true });
       let file: string;
-      if (what.tipo === "pasos") {
+      if (what.tipo === "explicacion") {
+        // Escribirla lleva minutos y cada comando se corta a los 20 s: `--fondo` la devuelve si ya
+        // está y, si no, la escribe aparte. El panel la abre cuando watch la ve lista (ADR 0037).
+        const proc = await shell(`${flowrunner} explain ${quote(run.id)} --fondo --json`);
+        if (proc.code !== 0) return outcomeOf(proc);
+        const data = JSON.parse(proc.stdout) as {
+          estado?: unknown;
+          texto?: unknown;
+          resultado?: unknown;
+        };
+        if (data.estado !== "lista") {
+          return {
+            ok: true,
+            mensaje: typeof data.resultado === "string" ? data.resultado : "explicando",
+            explicando: true,
+          };
+        }
+        file = join(dir, "explicacion.md");
+        writeFileSync(file, typeof data.texto === "string" ? data.texto : "");
+      } else if (what.tipo === "pasos") {
         const data = JSON.parse(
           await ok(`${flowrunner} report ${quote(run.id)} --sesion ${quote(what.sesion)} --json`),
         ) as { texto?: unknown };

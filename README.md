@@ -326,7 +326,17 @@ hacer en su lugar.
 ## Qué pasa cuando algo falla
 
 Cuando algo sale mal, el run se detiene y te pregunta. `flowrunner status <run>`, el aviso, watch y el
-panel de Orca dicen el motivo, a qué sub-task se atribuye y tus respuestas, como comandos:
+panel de Orca dicen el motivo, a qué sub-task se atribuye y tus respuestas, como comandos.
+
+Si el motivo no te alcanza para decidir, `flowrunner explain <run>`, o «Explicar» en el panel de Orca,
+te lo explica en limpio: qué pasó, por qué el run no siguió solo, qué hace y qué riesgo tiene cada
+respuesta, y cuál conviene y por qué (ADR 0037). Lo escribe una sesión de solo lectura, Sonnet por
+defecto (`models.explicar`), que lee el detalle de la etapa, el diff de las sub-tasks señaladas y el
+código. Solo habla de las respuestas que el run ofrece, con su comando tal cual, y no decide nada:
+elegís vos. Hay una por detención: pedirla de nuevo no gasta otra sesión, y su costo no suma al del run
+ni a su tope; `stats --runs` lo muestra aparte.
+
+Las respuestas:
 
 - `flowrunner fix <run> --unidad ST-n '<arreglo>'`: cuando la revisión sabe cómo resolverlo, cada
   arreglo que propone viene escrito, de 1 a 3 por bloqueante, como «Subí `engines.node` a `>=24` en
@@ -451,7 +461,7 @@ la que trabaja tiene una animación propia de su etapa. Desde
 ahí decidís lo que el run espera: aprobar o pedir cambios al plan, reanudar o rehacer un run detenido,
 o responder su pregunta: un arreglo ya escrito, que se manda con un toque, «Arreglar ST-n» con lo que
 tiene que corregir, «Autofix» o «Seguir igual» con tu motivo. Arreglarlo a mano queda en la terminal
-(`fix --yo`).
+(`fix --yo`). «Explicar» te dice antes qué pasó y qué hace cada respuesta, y lo abre como pestaña.
 Aprobar se habilita después de abrir el plan (el botón Plan o el link de la etapa Aprobar). Un plan
 corregido se vuelve a abrir.
 Su menú ⋯ abre el plan, el informe y la PR, y al final «Abortar el run…» lo corta en cualquier etapa.
@@ -502,6 +512,7 @@ equivalente de API: con la suscripción no se cobran, y lo que limita es su cupo
 | `flowrunner accept-untested <run> "<por qué>"` | entregar con criterios sin probar             |
 | `flowrunner skip-probar <run> "<por qué>"`     | saltear probar antes de que arranque          |
 | `flowrunner skip-probar <run> --deshacer`      | volver a probar normal                        |
+| `flowrunner explain <run> [--fondo]`           | por qué se detuvo y qué hace cada respuesta   |
 | `flowrunner abort <run>`                       | cancelar un run                               |
 | `flowrunner learn <run> [--fondo]`             | aprender ya; `--fondo`: aparte, con aviso     |
 | `flowrunner stats [proyecto]`                  | en qué fase se va el tiempo y el costo        |

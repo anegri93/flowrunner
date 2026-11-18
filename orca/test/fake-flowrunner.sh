@@ -21,6 +21,9 @@ case "$1" in
   pause) printf '{"ok":true,"id":"%s","accion":"se pausa al terminar lo que está haciendo"}\n' "$2" ;;
   prioritize) printf '{"ok":true,"id":"%s","accion":"priorizado"}\n' "$2" ;;
   abort) printf '{"ok":true,"id":"%s","accion":"abortado; las ramas quedan"}\n' "$2" ;;
+  explain)
+    if [ -n "$FAKE_EXPLICANDO" ]; then printf '{"ok":true,"id":"%s","estado":"explicando","resultado":"explicando: te aviso cuando esté"}\n' "$2"
+    else printf '{"ok":true,"id":"%s","estado":"lista","archivo":"/x.md","texto":"# Por qué se detuvo\\n\\nfalta pipefail\\n"}\n' "$2"; fi ;;
   learn) printf '{"ok":true,"id":"%s","resultado":"la PR sigue abierta"}\n' "$2" ;;
   # doctor sale 1 si falta algo, con su JSON igual.
   doctor) printf '{"ok":false,"checks":[{"nombre":"git","ok":true,"arreglo":"instalá git"},{"nombre":"gh con sesión","ok":false,"arreglo":"corré gh auth login"}],"version":{"sha":"1a2b3c4","main":"9f8e7d6","atras":3}}\n'; exit 1 ;;

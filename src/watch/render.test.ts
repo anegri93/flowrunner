@@ -47,6 +47,7 @@ const tree: RunTree = {
   siguiente: undefined,
   opciones: undefined,
   unidades: undefined,
+  explicacion: undefined,
   cambiaLoExistente: [],
   saltearProbar: undefined,
   puedeSaltearProbar: false,

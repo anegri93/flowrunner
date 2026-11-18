@@ -65,7 +65,7 @@ export const BIN = join(import.meta.dirname, "..", "..", "bin", "flowrunner.js")
 export function spawnRunProcess(
   run: RunPaths,
   env: NodeJS.ProcessEnv,
-  comando: "_run" | "_learn" = "_run",
+  comando: "_run" | "_learn" | "_explain" = "_run",
 ): number {
   const log = openSync(join(run.dir, "run.log"), "a");
   const child = spawn(

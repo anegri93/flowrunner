@@ -65,6 +65,11 @@ export interface Run {
   readonly opciones?: readonly Opcion[];
   /** Las sub-tasks a las que un run detenido atribuye el problema. */
   readonly unidades?: readonly string[];
+  /**
+   * La explicación de la detención actual (ADR 0037): falta si nadie la pidió, o con un flowrunner
+   * anterior, que tampoco tiene `explain`.
+   */
+  readonly explicacion?: Explicacion;
   /** Lo que hoy existe y el plan cambia. Con algo acá, aprobar pide aceptarlo. */
   readonly cambiaLoExistente?: readonly ExistingChange[];
   /** El motivo con que pediste saltear probar, mientras no corrió (ADR 0036). */
@@ -155,6 +160,11 @@ export interface ExistingChange {
 export const existingChanges = (run: Run): readonly ExistingChange[] => run.cambiaLoExistente ?? [];
 
 export const describeExisting = (c: ExistingChange) => `${c.que} (${c.donde}) ← ${c.criterio}`;
+
+export type Explicacion =
+  | { readonly estado: "lista" }
+  | { readonly estado: "explicando" }
+  | { readonly estado: "fallo"; readonly motivo: string };
 
 export type Tone = "neutral" | "accent" | "success" | "warning" | "danger";
 

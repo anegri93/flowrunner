@@ -279,6 +279,34 @@ export function pendingFor(e: Estado, run: Run): Decision | undefined {
 const enviando = (etiqueta: string, ahora: number) =>
   `<div class="fila">${indicador("tarea-corriendo", "accent", ahora)}${texto(etiqueta, "chico")}</div>`;
 
+/**
+ * La explicación de un run detenido (ADR 0037): el botón que la pide o la abre, y una línea mientras
+ * se escribe o si no se pudo. Un flowrunner anterior no la informa, y el botón la pide igual: su
+ * `explain` desconocido vuelve como aviso.
+ */
+function explicar(e: Estado, run: Run): { boton: string; linea: string } {
+  if (run.status !== "detenido") return { boton: "", linea: "" };
+  const abrir: Accion = { t: "abrir", run: run.id, que: { tipo: "explicacion" } };
+  const x = run.explicacion;
+  if (x?.estado === "explicando")
+    return { boton: "", linea: enviando("Explicando por qué se detuvo…", e.ahora) };
+  if (x?.estado === "lista")
+    return { boton: boton(abrir, "Explicación", { clase: "btn ghost" }), linea: "" };
+  if (x?.estado === "fallo") {
+    return {
+      boton: boton(abrir, "Explicar de nuevo", { clase: "btn ghost" }),
+      linea: texto(`No se pudo explicar: ${x.motivo}`, "chico", "danger"),
+    };
+  }
+  return {
+    boton: boton(abrir, "Explicar", {
+      clase: "btn ghost",
+      label: "Qué pasó, qué hace cada respuesta y cuál conviene",
+    }),
+    linea: "",
+  };
+}
+
 function decisiones(e: Estado, run: Run): string {
   const offered = decisionsFor(run);
   const mine = pendingFor(e, run);
@@ -341,7 +369,9 @@ function decisiones(e: Estado, run: Run): string {
         ),
       )
     : [];
+  const ex = explicar(e, run);
   const botones = [
+    ex.boton,
     offered.includes("aprender")
       ? boton({ t: "decidir", run: run.id, decision: { accion: "aprender" } }, "Aprender ahora")
       : "",
@@ -390,7 +420,7 @@ function decisiones(e: Estado, run: Run): string {
       : ""
   }${
     suggested.length === 0 ? "" : `<div class="pila">${suggested.join("")}</div>`
-  }<div class="botones">${botones}</div>${
+  }${ex.linea}<div class="botones">${botones}</div>${
     offered.includes("aprobar") && !seen
       ? texto("Abrí el plan para poder aprobar.", "chico apagado")
       : ""

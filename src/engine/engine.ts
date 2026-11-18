@@ -670,8 +670,26 @@ export function reduce(state: RunState, event: RunEvent): RunState {
     case "lecciones":
     case "lecciones_propuestas":
     case "pr":
+    case "explicacion":
       return state;
   }
+}
+
+/**
+ * La detención actual del run, como la posición en el log del evento que la dejó: la clave de su
+ * explicación (ADR 0037). Una detención que sigue igual (eventos que no la cambian, como el uso de una
+ * explicación) conserva su número; una nueva, aunque diga lo mismo, tiene otro. Undefined si el run no
+ * está detenido.
+ */
+export function detencionDe(events: readonly RunEvent[]): number | undefined {
+  let state = initialState();
+  let at: number | undefined;
+  events.forEach((event, index) => {
+    const next = reduce(state, event);
+    if (next.halt !== state.halt) at = next.halt === undefined ? undefined : index;
+    state = next;
+  });
+  return state.status === "detenido" ? at : undefined;
 }
 
 /**

@@ -142,7 +142,9 @@ test("una tarea que lleva más que su tope corriendo se ve como cortada aunque e
 test("mientras otro proceso lanza la misma tarea, no se lanza otra", () => {
   const h = home();
   writeFileSync(join(h, "tareas", "auditar-acme.lanzando"), String(process.ppid));
-  const r = lanzarTarea(h, "auditar-acme", [], "auditando", ENV, NOW);
+  // Con el home del test: si regresiona y lanza, el proceso escribe acá y no en el ~/.flowrunner de
+  // quien corre los tests, como pasó al escribirlo.
+  const r = lanzarTarea(h, "auditar-acme", [], "auditando", { ...ENV, FLOWRUNNER_HOME: h }, NOW);
   expect(r.resultado).toMatch(/ya está corriendo/);
   expect(leerTarea(h, "auditar-acme", NOW)).toBeUndefined();
 });

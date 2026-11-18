@@ -126,6 +126,15 @@ export function decisionArgs(id: string, decision: Decision): string {
     // Aprender lleva minutos y cada comando se corta a los 20 s: corre aparte y avisa al terminar.
     case "aprender":
       return `learn ${quote(id)} --fondo`;
+    // Tu feedback sobre la PR abierta dice que vino de Orca, como las otras decisiones (ADR 0038).
+    case "feedback": {
+      const texto = personText(
+        decision.texto,
+        "falta el feedback: qué no te gustó de la PR",
+        "el feedback es demasiado largo",
+      );
+      return `feedback ${quote(id)} ${quote(texto)} --origen orca`;
+    }
     case "abortar":
       return `abort ${quote(id)}`;
     // Pausar y priorizar dicen que vinieron de Orca, como las demás decisiones de la persona.

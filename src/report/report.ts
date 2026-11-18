@@ -142,8 +142,12 @@ interface Decided {
   readonly que: string;
   /** `flowrunner` solo en un Autofix que corrió sin la persona (ADR 0028). */
   readonly origen: OrigenAutofix | undefined;
-  /** Aprobar y pedir cambios se miden desde que el plan esperó; lo demás, desde que el run se detuvo. */
+  /**
+   * Aprobar y pedir cambios se miden desde que el plan esperó; el feedback, desde que se abrió la PR;
+   * lo demás, desde que el run se detuvo.
+   */
   readonly alPlan: boolean;
+  readonly alPr?: true;
   readonly cola: string;
 }
 
@@ -181,6 +185,14 @@ function decided(e: RunEvent): Decided | undefined {
         alPlan: false,
         cola: e.sha === null ? "" : `: formato y lint en ${e.sha.slice(0, 7)}`,
       };
+    case "feedback_pedido":
+      return {
+        que: "diste feedback sobre la PR",
+        origen: e.origen,
+        alPlan: false,
+        alPr: true,
+        cola: `: ${quote(e.texto)}`,
+      };
     case "aceptado":
       return {
         que: `aceptaste seguir con ${e.fase} en rojo`,
@@ -203,9 +215,11 @@ function personDecisions(events: readonly RunEvent[]): string[] {
   const lines: string[] = [];
   let planWaiting: string | undefined;
   let stopped: string | undefined;
+  let delivered: string | undefined;
   replay(events, (e, before, after) => {
     if (e.tipo === "accion_terminada") {
       if (e.fase === "aprobar" && e.resultado.tipo === "espera") planWaiting = e.at;
+      if (e.fase === "entregar" && e.resultado.tipo === "ok") delivered = e.at;
       if (after.status === "detenido") stopped = e.at;
       return;
     }
@@ -216,7 +230,7 @@ function personDecisions(events: readonly RunEvent[]): string[] {
       lines.push(`- ${hour(e.at)} · ${decision.que}, sin esperarte${decision.cola}`);
       return;
     }
-    const since = decision.alPlan ? planWaiting : stopped;
+    const since = decision.alPlan ? planWaiting : decision.alPr === true ? delivered : stopped;
     const origen =
       decision.origen === undefined ? "desde un origen desconocido" : `desde ${decision.origen}`;
     const demora =
@@ -479,6 +493,23 @@ function existingChanges(events: readonly RunEvent[], run: RunPaths): string[] {
 }
 
 /** El cuerpo de la PR: el plan, los criterios y las decisiones, sin el detalle de costos. */
+/**
+ * Lo que no te gustó de la PR y desde dónde se rehízo (ADR 0038): quien la revise ve por qué cambió
+ * desde la versión anterior.
+ */
+function feedbackGiven(events: readonly RunEvent[]): string[] {
+  const lines: string[] = [];
+  for (const e of events) {
+    if (e.tipo === "feedback_pedido") lines.push(`- ${quote(e.texto)}`);
+    if (e.tipo === "accion_terminada" && e.fase === "aprender" && e.resultado.tipo === "reentrar") {
+      const r = e.resultado;
+      const con = r.unidades === undefined ? "" : ` con ${r.unidades.join(", ")}`;
+      lines.push(`  - Se rehízo desde ${r.desde}${con}: ${plain(r.por_que)}`);
+    }
+  }
+  return lines.length === 0 ? [] : ["", "## Feedback de la persona", "", ...lines];
+}
+
 export function prBody(events: readonly RunEvent[], run: RunPaths): string {
   const planFile = join(run.dir, "plan.md");
   const plan = existsSync(planFile) ? readFileSync(planFile, "utf8").trim() : "";
@@ -496,6 +527,7 @@ export function prBody(events: readonly RunEvent[], run: RunPaths): string {
     "## Criterios",
     "",
     criteria,
+    ...feedbackGiven(events),
     ...tested(events, run, false),
     ...howToTest(run),
     "",

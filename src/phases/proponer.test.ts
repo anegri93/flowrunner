@@ -33,6 +33,19 @@ describe("frictions", () => {
     ]);
   });
 
+  // Si regresiona, lo que no te gustó de la PR no llega nunca al cerebro: no hay merge del que aprender.
+  test("tu feedback sobre la PR es una fricción, con su propio origen", () => {
+    expect(
+      frictions([
+        { tipo: "feedback_pedido", at: AT, texto: "separar con ;", origen: "orca" },
+        vuelve("revisar", "falta el encabezado"),
+      ]),
+    ).toEqual([
+      { origen: "tu feedback sobre la PR 1", texto: "separar con ;" },
+      { origen: "revisar, vuelta 1", texto: "falta el encabezado" },
+    ]);
+  });
+
   test("un run sin vueltas ni cambios al plan no tiene fricción", () => {
     expect(frictions([{ tipo: "aprobado", at: AT }])).toEqual([]);
   });

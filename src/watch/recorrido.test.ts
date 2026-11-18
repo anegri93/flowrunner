@@ -199,6 +199,45 @@ describe("recorridoOf", () => {
     expect(merged.at(-1)).toMatchObject({ inicio: at(2110), segundos: 5, chequeos: 3 });
   });
 
+  // Si regresiona, la historia no dice que la PR se rehízo por tu feedback, ni desde dónde ni por qué.
+  test("tu feedback sobre la PR es un paso tuyo, y aprender dice desde dónde rehace y por qué", () => {
+    const r = build(
+      [
+        ...piz9,
+        start(2110, "aprender"),
+        { tipo: "accion_terminada", at: at(2111), fase: "aprender", resultado: { tipo: "espera" } },
+        { tipo: "feedback_pedido", at: at(2200), texto: "separá con ;", origen: "orca" },
+        start(2201, "aprender"),
+        {
+          tipo: "accion_terminada",
+          at: at(2260),
+          fase: "aprender",
+          resultado: {
+            tipo: "reentrar",
+            desde: "implementar",
+            unidades: ["ST-2"],
+            instruccion: "x",
+            por_que: "el separador vive en ST-2",
+          },
+        },
+        start(2261, "implementar"),
+      ],
+      "en_curso",
+    ).recorrido;
+    expect(r.map(brief).slice(-5)).toEqual([
+      "aprender espera",
+      "tú: diste feedback",
+      "aprender reentra",
+      "implementar corriendo",
+      "pendiente: verificar, revisar, probar, entregar, aprender",
+    ]);
+    expect(r.at(-3)).toMatchObject({
+      motivo: "rehace desde implementar: el separador vive en ST-2",
+      unidades: ["ST-2"],
+    });
+    expect(r.at(-4)).toMatchObject({ detalle: "separá con ;" });
+  });
+
   // Si regresiona, pausar o priorizar un run no queda en su historia.
   test("pausar y priorizar son pasos tuyos", () => {
     const upTo = piz9.slice(

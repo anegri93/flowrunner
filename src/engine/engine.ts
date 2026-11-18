@@ -140,6 +140,13 @@ export interface RunState {
    * (ADR 0030). Lo congela `run_creado`: un run anterior sigue como antes.
    */
   readonly vueltaDirecta: boolean;
+  /**
+   * El feedback de la persona sobre la PR abierta que aprender tiene que evaluar (ADR 0038). Se gasta
+   * cuando el run vuelve a trabajar, o cuando aprender ve que la PR ya no está abierta.
+   */
+  readonly feedback: string | undefined;
+  /** La PR se mergeó o se cerró: ya no se puede rehacer con feedback. */
+  readonly prCerrada: boolean;
 }
 
 export type Action =
@@ -299,6 +306,10 @@ function halt(
   };
 }
 
+/** Lo que recibe planificar cuando se replanifica con el feedback de la persona sobre la PR. */
+export const feedbackInstruction = (feedback: string): string =>
+  `La persona vio la PR y no la mergea. Su feedback:\n\n${feedback}`;
+
 /**
  * La instrucción de una vuelta que nadie eligió (las automáticas y la que sigue a Autofix): el motivo y,
  * si la fase los propuso, sus arreglos. Sin arreglos es el motivo, como antes (ADR 0028).
@@ -333,14 +344,31 @@ function onOutcome(state: RunState, fase: Phase, outcome: Outcome): RunState {
   switch (outcome.tipo) {
     case "ok": {
       if (fase === "entregar") return { ...enter(state, "aprender"), status: "entregado" };
-      if (fase === "aprender") return { ...state, status: "cerrado" };
+      if (fase === "aprender") return { ...state, status: "cerrado", feedback: undefined };
       const next = NEXT[fase];
       return next === undefined ? { ...state, status: "cerrado" } : enter(state, next);
     }
     case "espera":
       return fase === "aprobar"
         ? { ...state, status: "esperando_aprobacion" }
-        : { ...state, status: "entregado" };
+        : { ...state, status: "entregado", feedback: undefined };
+    case "reentrar": {
+      if (fase !== "aprender" || state.feedback === undefined)
+        return halt(state, `${fase} pidió rehacer el run, y solo aprender puede, con tu feedback`);
+      if (outcome.desde === "planificar")
+        return enter(state, "planificar", {
+          instruccion: outcome.instruccion,
+          feedback: undefined,
+        });
+      // Implementar sin sub-tasks correría el plan entero sobre lo que ya está: eso es replanificar.
+      if (outcome.unidades === undefined)
+        return halt(state, "aprender pidió rehacer implementar sin decir qué sub-tasks");
+      return enter(state, "implementar", {
+        unidades: outcome.unidades,
+        instruccion: outcome.instruccion,
+        feedback: undefined,
+      });
+    }
     case "limite":
       return { ...state, status: "pausado_por_limite", pausaHasta: outcome.hasta };
     case "pausa":
@@ -388,6 +416,13 @@ function onOutcome(state: RunState, fase: Phase, outcome: Outcome): RunState {
     }
     // La fase sabe que reintentar solo no sirve: pregunta sin gastar intentos ni vueltas.
     case "pregunta":
+      // El feedback cambia lo que pide la feature: replanificar lo lleva como instrucción (`rehacer`).
+      if (fase === "aprender" && state.feedback !== undefined)
+        return halt(
+          state,
+          `${fase}: ${outcome.motivo}`,
+          `flowrunner rerun ${state.runId} --desde planificar`,
+        );
       return halt(state, `${fase}: ${outcome.motivo}`, undefined, outcome.unidades);
     case "falla": {
       // Reintentar no ayuda: lo que faltó para probar (una falla que simular, un dato) no lo arregla
@@ -470,6 +505,8 @@ export function initialState(): RunState {
     autofixCorrio: false,
     directaCorrio: false,
     vueltaDirecta: false,
+    feedback: undefined,
+    prCerrada: false,
   };
 }
 
@@ -620,15 +657,38 @@ export function reduce(state: RunState, event: RunEvent): RunState {
         next !== undefined;
       return applies ? enter(state, next, RESPONDIO_LA_PERSONA) : state;
     }
-    case "rehacer":
+    case "rehacer": {
+      // Un feedback pendiente va como instrucción si se replanifica, se vuelve a evaluar si se rehace
+      // aprender, y se pierde desde cualquier otra fase: la persona eligió no usarlo (ADR 0038).
+      const feedback = event.desde === "aprender" ? state.feedback : undefined;
+      const instruccion =
+        event.desde === "planificar" && state.feedback !== undefined
+          ? feedbackInstruction(state.feedback)
+          : undefined;
       return enter(
         { ...state, vueltas: NO_ROUNDS, autofix: false, ...RESPONDIO_LA_PERSONA },
         event.desde,
+        { feedback, ...(instruccion === undefined ? {} : { instruccion }) },
       );
+    }
+    case "feedback_pedido":
+      // Solo con la PR abierta: un run que todavía trabaja tiene otras respuestas, y una PR mergeada
+      // o cerrada ya no se actualiza. Vuelve a empezar la cuenta de vueltas, como una respuesta tuya.
+      return state.status === "entregado" && !state.prCerrada
+        ? enter(
+            { ...state, vueltas: NO_ROUNDS, autofix: false, ...RESPONDIO_LA_PERSONA },
+            "aprender",
+            {
+              feedback: event.texto,
+            },
+          )
+        : state;
     case "abortado":
       return { ...state, status: "abortado" };
     case "pr_cerrada":
-      return event.mergeada ? state : { ...state, status: "cerrado" };
+      return event.mergeada
+        ? { ...state, prCerrada: true }
+        : { ...state, status: "cerrado", prCerrada: true };
     case "rechazo":
     case "decision":
     case "aviso":

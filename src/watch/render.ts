@@ -364,6 +364,8 @@ function etapaRow(
       return { kind: "failed", status: "falló", note: redNote(p) };
     case "pregunta":
       return { kind: "failed", status: "se detuvo", note: redNote(p) };
+    case "reentra":
+      return { kind: "back", status: "con tu feedback", note: redNote(p) };
     case "pausa":
       return { kind: "waiting", status: "en pausa", note: "límite de la suscripción" };
     case "espera":

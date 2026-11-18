@@ -180,6 +180,12 @@ export function textFor(
         decision: (instruccion) => ({ accion: "arreglar", unidad, instruccion }),
       };
     }
+    case "feedback":
+      return {
+        label: "Qué no te gustó de la PR",
+        placeholder: "Qué cambiar; flowrunner decide desde dónde rehacer",
+        decision: (texto) => ({ accion: "feedback", texto }),
+      };
     case "aceptar":
       return {
         label: "Por qué seguir así; queda en la PR",
@@ -268,6 +274,9 @@ function decisiones(e: Estado, run: Run): string {
   const botones = [
     offered.includes("aprender")
       ? boton({ t: "decidir", run: run.id, decision: { accion: "aprender" } }, "Aprender ahora")
+      : "",
+    offered.includes("feedback")
+      ? boton(ask({ accion: "feedback", texto: "" }), "Rehacer con feedback…")
       : "",
     offered.includes("aprobar")
       ? boton(ask({ accion: "aprobar", plan: planVersion(run) }), "Aprobar", {

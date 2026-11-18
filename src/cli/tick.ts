@@ -5,12 +5,18 @@ import { notifyMac } from "../notify/notify.ts";
 import { productionRuntime } from "../runner/production.ts";
 import { runUntilStop } from "../runner/runner.ts";
 import { isAlive, tryLock } from "../store/lock.ts";
-import type { RunEvent } from "../store/events.ts";
+import type { Origen, RunEvent } from "../store/events.ts";
 import { writeReport } from "../report/report.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
 import { listRunIds, loadState, runPaths } from "../store/runs.ts";
 import { UserError } from "./output.ts";
-import { avisarCambio, despacharCola, lanzarOEncolar, spawnRunProcess } from "./runs.ts";
+import {
+  avisarCambio,
+  despacharCola,
+  lanzamiento,
+  lanzarOEncolar,
+  spawnRunProcess,
+} from "./runs.ts";
 
 /**
  * Por qué un run entregado sigue esperando: tu merge, o, con la PR ya mergeada, que otro run del
@@ -125,4 +131,55 @@ export async function learnAndNotify(home: string, id: string, env: NodeJS.Proce
     notifyMac("flowrunner", `${clave}: no pude aprender. El detalle está en run.log`, env);
     throw error;
   }
+}
+
+/**
+ * `feedback`: a la persona no le gustó la PR abierta y no la quiere mergear (ADR 0038). El run vuelve a
+ * aprender, que evalúa el feedback y decide desde dónde rehacer. Con el candado de aprender: un tick
+ * que está mirando la PR en ese momento terminaría con «la PR sigue abierta» y se tragaría el feedback.
+ */
+export function feedbackRun(
+  home: string,
+  id: string,
+  texto: string,
+  origen: Origen,
+  env: NodeJS.ProcessEnv,
+) {
+  if (texto.trim() === "")
+    throw new UserError(
+      "falta el feedback: qué no te gustó de la PR",
+      `flowrunner feedback ${id} "<qué no te gustó>"`,
+    );
+  let state;
+  try {
+    state = loadState(home, id);
+  } catch {
+    throw new UserError(`no existe el run ${id}`, "flowrunner status");
+  }
+  if (state.status !== "entregado" || state.prCerrada) {
+    throw new UserError(
+      state.status === "entregado"
+        ? `la PR de ${id} ya se mergeó: el feedback va en una feature nueva`
+        : `el run ${id} está ${state.status} en ${state.fase}: el feedback es para un run con la PR abierta`,
+      `flowrunner status ${id}`,
+    );
+  }
+  const run = runPaths(home, id);
+  const lock = aprenderLock(run.dir);
+  if (!tryLock(lock))
+    throw new UserError(
+      `flowrunner está mirando la PR de ${id} en este momento: probá de nuevo en un minuto`,
+      `flowrunner feedback ${id} "<qué no te gustó>"`,
+    );
+  try {
+    appendEvent(run.dir, { tipo: "feedback_pedido", texto: texto.trim(), origen });
+  } finally {
+    rmSync(lock, { force: true });
+  }
+  return lanzamiento(
+    id,
+    "feedback recibido: evaluando desde dónde rehacer",
+    "feedback recibido",
+    lanzarOEncolar(home, id, env),
+  );
 }

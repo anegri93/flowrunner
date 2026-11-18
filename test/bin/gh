@@ -73,6 +73,13 @@ if (a === "pr" && b === "view") {
   console.log(JSON.stringify(pick(pr, flag("--json"))));
   process.exit(0);
 }
+if (a === "pr" && b === "edit") {
+  const pr = s.prs.find((p) => String(p.number) === c);
+  if (!pr) process.exit(1);
+  if (flag("--body-file")) pr.body = fs.readFileSync(flag("--body-file"), "utf8");
+  save(s);
+  process.exit(0);
+}
 if (a === "pr" && b === "merge") {
   const pr = s.prs.find((p) => String(p.number) === c);
   if (!pr) process.exit(1);

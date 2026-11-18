@@ -258,6 +258,62 @@ describe("runTree", () => {
     expect(tree.fases.find((f) => f.fase === "implementar")?.unidades[0]?.estado).toBe("pendiente");
   });
 
+  // Si regresiona, la barra de un run rehecho con tu feedback muestra verificar, revisar y entregar
+  // listos mientras implementar todavía corre, y las sub-tasks que no se rehacen como pendientes.
+  test("rehacer con tu feedback desde implementar deja pendientes las que siguen, y las otras sub-tasks como estaban", () => {
+    const fin = (s: number, fase: "verificar" | "revisar" | "probar" | "entregar"): RunEvent[] => [
+      { tipo: "accion_iniciada", at: at(s), fase },
+      { tipo: "accion_terminada", at: at(s + 5), fase, resultado: { tipo: "ok" } },
+    ];
+    const integrada = (s: number, unidad: string): RunEvent => ({
+      tipo: "unidad",
+      at: at(s),
+      fase: "implementar",
+      unidad,
+      estado: "integrada",
+      sha: unidad,
+    });
+    const tree = runTree({
+      events: [
+        ...base,
+        { tipo: "accion_terminada", at: at(161), fase: "aprobar", resultado: { tipo: "ok" } },
+        { tipo: "accion_iniciada", at: at(200), fase: "implementar" },
+        integrada(210, "ST-1"),
+        integrada(220, "ST-2"),
+        { tipo: "accion_terminada", at: at(300), fase: "implementar", resultado: { tipo: "ok" } },
+        ...fin(300, "verificar"),
+        ...fin(310, "revisar"),
+        ...fin(320, "probar"),
+        ...fin(330, "entregar"),
+        { tipo: "feedback_pedido", at: at(400), texto: "separá con ;", origen: "orca" },
+        { tipo: "accion_iniciada", at: at(400), fase: "aprender" },
+        {
+          tipo: "accion_terminada",
+          at: at(450),
+          fase: "aprender",
+          resultado: {
+            tipo: "reentrar",
+            desde: "implementar",
+            unidades: ["ST-2"],
+            instruccion: "x",
+            por_que: "y",
+          },
+        },
+        { tipo: "accion_iniciada", at: at(451), fase: "implementar" },
+      ],
+      tasks,
+      titulo: "x",
+      sessions: new Map(),
+      now: T0 + 600_000,
+    });
+    const estado = (fase: string) => tree.fases.find((f) => f.fase === fase)?.estado;
+    expect(estado("implementar")).toBe("corriendo");
+    for (const fase of ["verificar", "revisar", "probar", "entregar", "aprender"])
+      expect(estado(fase)).toBe("pendiente");
+    const unidades = tree.fases.find((f) => f.fase === "implementar")?.unidades;
+    expect(unidades?.find((u) => u.id === "ST-1")?.estado).toBe("integrada");
+  });
+
   // Si regresiona, un plan ya aprobado sigue apareciendo como si te esperara.
   test("aprobar queda hecho cuando la persona aprueba después de la espera", () => {
     const tree = runTree({

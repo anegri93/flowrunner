@@ -24,7 +24,10 @@ export interface Friction {
   readonly texto: string;
 }
 
-/** Lo que el run tuvo que corregir: las vueltas de verificar y revisar y los cambios al plan. */
+/**
+ * Lo que el run tuvo que corregir: las vueltas de verificar y revisar, los cambios al plan y tu
+ * feedback sobre la PR.
+ */
 export function frictions(events: readonly RunEvent[]): Friction[] {
   const counts = new Map<string, number>();
   const next = (key: string) => {
@@ -33,6 +36,10 @@ export function frictions(events: readonly RunEvent[]): Friction[] {
     return n;
   };
   return events.flatMap((e): Friction[] => {
+    // Tu feedback sobre la PR es una corrección: lo que el run entregó no era lo que pedías (ADR 0038).
+    if (e.tipo === "feedback_pedido") {
+      return [{ origen: `tu feedback sobre la PR ${String(next("feedback"))}`, texto: e.texto }];
+    }
     if (e.tipo === "cambios_pedidos") {
       return [{ origen: `aprobar, cambios pedidos ${String(next("aprobar"))}`, texto: e.motivo }];
     }

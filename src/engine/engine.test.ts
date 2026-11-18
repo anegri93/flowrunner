@@ -1312,3 +1312,140 @@ describe("un bloqueante de revisar o probar va directo a la sub-task (ADR 0030)"
     expect(commands(old)).toContain(`flowrunner fix ${R} --auto`);
   });
 });
+
+describe("el feedback sobre la PR abierta (ADR 0038)", () => {
+  const R = "R1";
+  const commands = (s: RunState) => s.halt?.opciones.map((o) => o.comando);
+  const entregado = [
+    upTo("preparar", "planificar", "aprobar", "implementar", "verificar", "revisar"),
+    ok("probar"),
+    ok("entregar"),
+  ];
+  const feedback = (texto = "el CSV tiene que separar con punto y coma") => [
+    ev({ tipo: "feedback_pedido", texto, origen: "orca" }),
+  ];
+  const evaluado = (resultado: Outcome) => done("aprender", resultado);
+
+  // Si regresiona, el feedback no hace nada: el run sigue esperando un merge que la persona no quiere.
+  test("con la PR abierta, el feedback lleva el run a aprender, que lo evalúa sin esperar a tick", () => {
+    const s = state(...entregado, feedback());
+    expect(s).toMatchObject({ status: "en_curso", fase: "aprender" });
+    expect(s.feedback).toBe("el CSV tiene que separar con punto y coma");
+    expect(nextAction(s)).toMatchObject({ tipo: "fase", fase: "aprender" });
+  });
+
+  // Si regresiona, el feedback pisa un run que trabaja, o rehace una PR que ya se mergeó.
+  test("fuera de un run entregado con la PR abierta, el feedback no hace nada", () => {
+    const trabajando = state(upTo("preparar", "planificar"), feedback());
+    expect(trabajando).toMatchObject({ status: "en_curso", fase: "aprobar", feedback: undefined });
+    const mergeada = state(...entregado, [ev({ tipo: "pr_cerrada", mergeada: true })], feedback());
+    expect(mergeada).toMatchObject({ status: "entregado", feedback: undefined });
+  });
+
+  // Si regresiona, la decisión de aprender se pierde y el run se cierra en vez de rehacerse.
+  test("aprender que reentra en implementar corre solo esas sub-tasks con la instrucción", () => {
+    const s = state(
+      ...entregado,
+      feedback(),
+      evaluado({
+        tipo: "reentrar",
+        desde: "implementar",
+        unidades: ["ST-2"],
+        instruccion: "ST-2: separar con ;",
+        por_que: "es el formato del CSV",
+      }),
+    );
+    expect(s).toMatchObject({ status: "en_curso", fase: "implementar", feedback: undefined });
+    expect(nextAction(s)).toMatchObject({ unidades: ["ST-2"], instruccion: "ST-2: separar con ;" });
+  });
+
+  test("aprender que reentra en planificar replanifica con el feedback y vuelve a pedir aprobación", () => {
+    const reentra = evaluado({
+      tipo: "reentrar",
+      desde: "planificar",
+      instruccion: "otro enfoque",
+      por_que: "el diseño no sirve",
+    });
+    const s = state(...entregado, feedback(), reentra);
+    expect(s).toMatchObject({
+      status: "en_curso",
+      fase: "planificar",
+      instruccion: "otro enfoque",
+    });
+    const planned = state(
+      ...entregado,
+      feedback(),
+      reentra,
+      ok("planificar"),
+      done("aprobar", { tipo: "espera" }),
+    );
+    expect(planned.status).toBe("esperando_aprobacion");
+  });
+
+  // Si regresiona, una fase cualquiera podría saltar el run a otra sin que la persona lo pida.
+  test("reentrar solo vale en aprender y con un feedback pendiente", () => {
+    const desdeRevisar = state(
+      upTo("preparar", "planificar", "aprobar", "implementar", "verificar"),
+      done("revisar", { tipo: "reentrar", desde: "planificar", instruccion: "x", por_que: "y" }),
+    );
+    expect(desdeRevisar.status).toBe("detenido");
+    const sinFeedback = state(
+      ...entregado,
+      evaluado({ tipo: "reentrar", desde: "planificar", instruccion: "x", por_que: "y" }),
+    );
+    expect(sinFeedback).toMatchObject({ status: "detenido", fase: "aprender" });
+    expect(sinFeedback.halt?.motivo).toMatch(/solo aprender puede, con tu feedback/);
+  });
+
+  // Si regresiona, un feedback que cambia la feature se ejecuta sin preguntar, o replanificar lo pierde.
+  test("si el feedback cambia la feature, se detiene, y replanificar lleva el feedback", () => {
+    const halted = state(
+      ...entregado,
+      feedback("en realidad quiero un Excel"),
+      evaluado({ tipo: "pregunta", motivo: "tu feedback cambia lo que pide la feature" }),
+    );
+    expect(halted.status).toBe("detenido");
+    expect(commands(halted)).toEqual([
+      `flowrunner rerun ${R} --desde planificar`,
+      `flowrunner abort ${R}`,
+    ]);
+    const replan = state(
+      ...entregado,
+      feedback("en realidad quiero un Excel"),
+      evaluado({ tipo: "pregunta", motivo: "cambia la feature" }),
+      [ev({ tipo: "rehacer", desde: "planificar" })],
+    );
+    expect(replan).toMatchObject({ status: "en_curso", fase: "planificar", feedback: undefined });
+    expect(replan.instruccion).toContain("en realidad quiero un Excel");
+  });
+
+  // Si regresiona, un feedback que llegó con la PR ya mergeada deja el run trabado en aprender.
+  test("si la PR se mergeó antes de evaluar, aprender sigue como siempre y el feedback se descarta", () => {
+    const s = state(...entregado, feedback(), evaluado({ tipo: "ok" }));
+    expect(s).toMatchObject({ status: "cerrado", feedback: undefined });
+  });
+
+  // Si regresiona, la PR rehecha no vuelve a esperar el merge, o un segundo feedback no vale.
+  test("el run rehecho vuelve a entregar y a esperar el merge, y otro feedback vuelve a valer", () => {
+    const rehecho = [
+      ...entregado,
+      feedback(),
+      evaluado({
+        tipo: "reentrar",
+        desde: "implementar",
+        unidades: ["ST-1"],
+        instruccion: "x",
+        por_que: "y",
+      }),
+      ok("implementar"),
+      ok("verificar"),
+      ok("revisar"),
+      ok("probar"),
+      ok("entregar"),
+    ];
+    const s = state(...rehecho);
+    expect(s).toMatchObject({ status: "entregado", fase: "aprender" });
+    expect(nextAction(s, { tick: true })).toMatchObject({ fase: "aprender" });
+    expect(state(...rehecho, feedback("otra cosa")).feedback).toBe("otra cosa");
+  });
+});

@@ -74,6 +74,16 @@ export async function createPr(
   return created;
 }
 
+/** Reescribe la descripción de una PR abierta, como cuando el run se rehízo con tu feedback. */
+export async function editPrBody(
+  cwd: string,
+  number: number,
+  bodyFile: string,
+  env: NodeJS.ProcessEnv,
+): Promise<void> {
+  await gh(cwd, ["pr", "edit", String(number), "--body-file", bodyFile], env);
+}
+
 const login = z.object({ login: z.string() });
 /** La salida de `gh pr view`, validada: es un borde del sistema. */
 export const prDetailSchema = z.object({

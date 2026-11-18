@@ -689,6 +689,28 @@ test("Aprender ahora, en un run con la PR abierta, aprende sin esperar y muestra
   assert.ok(sees(panel, "la PR sigue abierta"));
 });
 
+// Si regresiona, una PR que no te gusta solo se puede mergear o abortar (ADR 0038).
+test("Rehacer con feedback manda lo que escribiste, en un run con la PR abierta, y muestra qué hace", async () => {
+  const sent: { run: string; decision: Decision }[] = [];
+  const panel = await abrirPanel(
+    fakeApi({
+      decidir: (input) => {
+        sent.push(input);
+        return { ok: true, mensaje: "feedback recibido: evaluando desde dónde rehacer" };
+      },
+    }),
+  );
+  await press(panel, "Rehacer con feedback…");
+  await type(panel, "Qué no te gustó de la PR", "separá con punto y coma");
+  assert.deepEqual(sent, [
+    {
+      run: "VF-1-20261108-211454",
+      decision: { accion: "feedback", texto: "separá con punto y coma" },
+    },
+  ]);
+  assert.ok(sees(panel, "feedback recibido: evaluando desde dónde rehacer"));
+});
+
 // Si regresiona, el run desaparece del panel al cerrarse y la persona no ve cómo terminó.
 test("cuando un run con la PR abierta se cierra, su informe se abre solo, una vez", async () => {
   let current = runs;

@@ -63,6 +63,19 @@ export const outcomeSchema = z.discriminatedUnion("tipo", [
     motivo: z.string().min(1),
     unidades: z.array(z.string().min(1)).min(1).optional(),
   }),
+  /**
+   * Aprender evaluó el feedback de la persona sobre la PR abierta y el run vuelve a trabajar desde ahí
+   * (ADR 0038): a planificar, que pasa otra vez por la aprobación, o a implementar, con las sub-tasks
+   * que tienen que cambiar. Solo aprender lo devuelve, y solo con un feedback pendiente.
+   */
+  z.strictObject({
+    tipo: z.literal("reentrar"),
+    desde: z.enum(["planificar", "implementar"]),
+    instruccion: z.string().min(1),
+    unidades: z.array(z.string().min(1)).min(1).optional(),
+    /** Por qué desde ahí, en palabras para la persona: lo muestran watch, Orca y el informe. */
+    por_que: z.string().min(1),
+  }),
 ]);
 export type Outcome = z.infer<typeof outcomeSchema>;
 
@@ -192,6 +205,16 @@ export const eventSchema = z.discriminatedUnion("tipo", [
   }),
   /** La persona le dio prioridad a este run en la cola: sale antes que los demás, una vez. */
   z.strictObject({ tipo: z.literal("priorizado"), at, origen: origenSchema.optional() }),
+  /**
+   * A la persona no le gustó la PR abierta y no la quiere mergear: aprender evalúa su feedback y decide
+   * desde dónde rehacer (ADR 0038).
+   */
+  z.strictObject({
+    tipo: z.literal("feedback_pedido"),
+    at,
+    texto: z.string().min(1),
+    origen: origenSchema,
+  }),
   /** La persona decidió entregar aunque probar dejó criterios sin probar, y dijo por qué. */
   z.strictObject({ tipo: z.literal("sin_probar_aceptado"), at, motivo: z.string().min(1) }),
   /** La persona eligió una respuesta de la pregunta: que esas sub-tasks lo corrijan (ADR 0023). */

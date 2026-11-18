@@ -345,6 +345,17 @@ test("cada decisión corre su comando fijo, con el motivo tal cual, y devuelve l
       decision: { accion: "aprender" },
     });
     assert.deepEqual(learned, { ok: true, mensaje: "la PR sigue abierta" });
+    const feedback = "usá ';' y no $(rm -rf)";
+    await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "feedback", texto: feedback },
+    });
+    // Sin texto no llega al shell.
+    const sinTexto = await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "feedback", texto: "  " },
+    });
+    assert.equal(sinTexto.ok, false);
     await worker.request("flowrunner.decidir", {
       run: id,
       decision: { accion: "aprobar", aceptoCambios: true, plan },
@@ -364,6 +375,7 @@ test("cada decisión corre su comando fijo, con el motivo tal cual, y devuelve l
       `changes ${id} ${motivo} --origen orca --json`,
       `resume ${id} --json`,
       `learn ${id} --fondo --json`,
+      `feedback ${id} ${feedback} --origen orca --json`,
       `approve ${id} --acepto-cambios --origen orca --json`,
       `approve ${id} --origen orca --json`,
       `abort ${id} --json`,

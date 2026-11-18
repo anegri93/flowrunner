@@ -148,6 +148,12 @@ Homebrew; si no está instalada, verify no corre y el run se detiene diciendo c�
 5. flowrunner implementa, verifica, revisa y abre la PR.
 6. Revisá la PR, corregí lo que haga falta y mergeala. En el próximo chequeo, que corre cada 10 minutos,
    flowrunner aprende de tus correcciones y cierra el run.
+7. Si la PR no te gusta y no la querés mergear, decí qué no te gustó: «Rehacer con feedback…» en Orca,
+   pedíselo a Claude, o `flowrunner feedback <run> "<qué cambiar>"`. Una sesión de solo lectura decide
+   desde dónde rehacer: implementar, con solo las sub-tasks que cambian; planificar, que te vuelve a
+   pedir aprobar el plan; o, si tu feedback cambia lo que pide la feature, se detiene y te pregunta. El
+   recorrido y `status` dicen desde dónde y por qué. El run vuelve a entregar en la misma PR, con su
+   descripción al día, y lo que hayas empujado a la rama se conserva (ADR 0038).
 
 ### Avisos
 
@@ -385,7 +391,8 @@ Aprende de dos fuentes, y en las dos decidís vos:
   Si una lección que ya estaba cubría el error y no lo evitó, no se escribe otra: queda anotada debajo de
   esa lección (`No alcanzó:`), para saber cuáles hay que reescribir.
 - **Tus correcciones a la PR.** Después del merge, tus commits (no los merges) y tus comentarios se vuelven
-  lecciones.
+  lecciones. Tu feedback con `flowrunner feedback`, que rehace la PR sin mergearla, también cuenta: la
+  entrega siguiente lo propone como lección, como una vuelta.
 
 Las dos llegan a `lecciones.md` por una PR chica con auto-merge, después del merge y de a una por vez:
 así dos features no eligen el mismo número de lección.
@@ -457,6 +464,7 @@ equivalente de API: con la suscripción no se cobran, y lo que limita es su cupo
 | `flowrunner accept-untested <run> "<por qué>"` | entregar con criterios sin probar             |
 | `flowrunner abort <run>`                       | cancelar un run                               |
 | `flowrunner learn <run> [--fondo]`             | aprender ya; `--fondo`: aparte, con aviso     |
+| `flowrunner feedback <run> "<qué cambiar>"`    | rehacer la PR abierta con tu feedback         |
 | `flowrunner stats [proyecto]`                  | en qué fase se va el tiempo y el costo        |
 | `flowrunner stats --runs [proyecto]`           | tiempo, costo, rechazos y graft de cada run   |
 | `flowrunner doctor`                            | qué le falta a esta máquina                   |

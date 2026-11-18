@@ -24,9 +24,29 @@ export type EstadoExplicacion =
   | { readonly estado: "explicando" }
   | { readonly estado: "fallo"; readonly motivo: string };
 
+/**
+ * Un archivo que puede desaparecer en cualquier momento (el candado, el error): si no está, undefined.
+ * Así un `watch --json` que lee justo cuando el proceso lo borra no falla entero.
+ */
+function leer(file: string): string | undefined {
+  try {
+    return readFileSync(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+/** El pid del candado, si existe y es de un proceso vivo. */
+export function pidDelCandado(lock: string): number | undefined {
+  const text = leer(lock);
+  if (text === undefined) return undefined;
+  const pid = Number(text);
+  return isAlive(pid) ? pid : undefined;
+}
+
 /** El candado tiene el pid de quien la escribe: uno muerto no la está escribiendo. */
-export const explicando = (lock: string): boolean =>
-  existsSync(lock) && isAlive(Number(readFileSync(lock, "utf8")));
+export const explicando = (lock: string): boolean => pidDelCandado(lock) !== undefined;
 
 export function estadoExplicacion(
   run: Pick<RunPaths, "dir">,
@@ -36,6 +56,7 @@ export function estadoExplicacion(
   const p = explicacionPaths(run, detencion);
   if (existsSync(p.md)) return { estado: "lista" };
   if (explicando(p.lock)) return { estado: "explicando" };
-  if (existsSync(p.error)) return { estado: "fallo", motivo: readFileSync(p.error, "utf8").trim() };
+  const error = leer(p.error);
+  if (error !== undefined) return { estado: "fallo", motivo: error.trim() };
   return undefined;
 }

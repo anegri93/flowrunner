@@ -1,7 +1,15 @@
 // `flowrunner explain <run>`: una sesión de solo lectura que le explica a la persona por qué el run se
 // detuvo y qué hace cada respuesta que ofrece, antes de que elija (ADR 0037). No decide ni escribe en
 // el log nada que cambie el run: deja un Markdown por detención y su uso en un evento propio.
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { runSession } from "../agent/session.ts";
@@ -15,8 +23,7 @@ import { featureText, render } from "../prompts/render.ts";
 import { productionRuntime } from "../runner/production.ts";
 import type { Deps, RunPaths } from "../runner/types.ts";
 import type { NewEvent, Phase } from "../store/events.ts";
-import { explicacionPaths, explicando } from "../store/explicaciones.ts";
-import { tryLock } from "../store/lock.ts";
+import { explicacionPaths, explicando, pidDelCandado } from "../store/explicaciones.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
 import { runPaths } from "../store/runs.ts";
 import { tripwireHook } from "../tripwires/hook.ts";
@@ -51,9 +58,53 @@ const recortar = (text: string, max = MAX_PIEZA) =>
     ? `${text.slice(0, max)}\n… (sigue: ${String(text.length - max)} caracteres más)`
     : text;
 
+/** La racha de backticks más larga de un texto: un código o un bloque necesita una más larga. */
+const masLarga = (text: string) =>
+  Math.max(0, ...[...text.matchAll(/`+/g)].map((m) => m[0].length));
+
+/** Un texto como código en línea que no se corta aunque tenga backticks (CommonMark). */
+function codigo(text: string): string {
+  const fence = "`".repeat(masLarga(text) + 1);
+  const pad = text.startsWith("`") || text.endsWith("`") ? " " : "";
+  return `${fence}${pad}${text}${pad}${fence}`;
+}
+
+/** Un bloque de código que no se corta aunque el texto traiga ``` adentro. */
+const bloque = (lang: string, text: string) => {
+  const fence = "`".repeat(Math.max(3, masLarga(text) + 1));
+  return [`${fence}${lang}`, text, fence];
+};
+
 /** Las respuestas del halt, numeradas: el modelo las nombra por número y nunca copia un comando. */
 export function numberedOptions(halt: Halt): string {
-  return halt.opciones.map((o, i) => `${String(i + 1)}. \`${o.comando}\`: ${o.que}`).join("\n");
+  return halt.opciones.map((o, i) => `${String(i + 1)}. ${codigo(o.comando)}: ${o.que}`).join("\n");
+}
+
+/** Las herramientas de la sesión que explica: solo lectura (ADR 0037). */
+export const HERRAMIENTAS_EXPLICAR = ["Read", "Grep", "Glob"] as const;
+
+/** La política de la sesión que explica: lee dentro de `root` y no escribe, ni corre comandos. */
+export function politicaExplicar(root: string, fase: Phase) {
+  return {
+    scope: {
+      root,
+      owner: fase,
+      writable: [],
+      writeGlobs: [],
+      locked: [],
+      harness: [],
+      lockfiles: [],
+      manifests: [],
+      depsDeclared: false,
+      testGlobs: [],
+      comandos: { ampliables: [], exactos: [], fixers: [] },
+    },
+    fase,
+    write: false,
+    bash: false,
+    agents: false,
+    graft: false,
+  } as const;
 }
 
 /**
@@ -104,9 +155,7 @@ export function explicacionMarkdown(input: {
     return [
       `### ${String(numero)}. ${o.que}${recomendada ? " · recomendada" : ""}`,
       "",
-      "```sh",
-      o.comando,
-      "```",
+      ...bloque("sh", o.comando),
       "",
       dicha?.que_hace ?? o.que,
       ...(dicha === undefined || dicha.riesgos.trim() === ""
@@ -137,9 +186,7 @@ export function explicacionMarkdown(input: {
     "",
     "## El motivo, tal cual",
     "",
-    "```text",
-    halt.motivo,
-    "```",
+    ...bloque("text", halt.motivo),
     "",
     `---`,
     "",
@@ -241,30 +288,8 @@ async function writeExplanation(
       }),
       cwd,
       model,
-      tools: ["Read", "Grep", "Glob"],
-      hook: tripwireHook(
-        {
-          scope: {
-            root: realpathSync(cwd),
-            owner: state.fase,
-            writable: [],
-            writeGlobs: [],
-            locked: [],
-            harness: [],
-            lockfiles: [],
-            manifests: [],
-            depsDeclared: false,
-            testGlobs: [],
-            comandos: { ampliables: [], exactos: [], fixers: [] },
-          },
-          fase: state.fase,
-          write: false,
-          bash: false,
-          agents: false,
-          graft: false,
-        },
-        emit,
-      ),
+      tools: [...HERRAMIENTAS_EXPLICAR],
+      hook: tripwireHook(politicaExplicar(realpathSync(cwd), state.fase), emit),
       schema: explicacionSchema,
       timeoutMs: EXPLICAR_TIMEOUT_MS,
       maxTurns: MAX_TURNS,
@@ -276,8 +301,10 @@ async function writeExplanation(
   if (result.tipo === "falla") return { ok: false, motivo: result.motivo };
   const invalid = checkExplicacion(result.output, halt);
   if (invalid !== undefined) return { ok: false, motivo: invalid };
+  // Atómico: un `.md` a medio escribir se vería «lista» para siempre en esta detención.
+  const md = explicacionPaths(run, detencion).md;
   writeFileSync(
-    explicacionPaths(run, detencion).md,
+    `${md}.tmp`,
     explicacionMarkdown({
       clave: state.clave,
       fase: state.fase,
@@ -287,7 +314,38 @@ async function writeExplanation(
       at: deps.now(),
     }),
   );
+  renameSync(`${md}.tmp`, md);
   return { ok: true };
+}
+
+/**
+ * Reserva el candado de forma exclusiva (`wx`), con el pid de este proceso: dos `--fondo` casi juntos
+ * no lanzan dos sesiones. Uno de un proceso muerto se limpia y se reintenta una vez.
+ */
+function reservarCandado(lock: string): boolean {
+  for (let intento = 0; intento < 2; intento++) {
+    try {
+      writeFileSync(lock, String(process.pid), { flag: "wx" });
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (explicando(lock)) return false;
+      rmSync(lock, { force: true });
+    }
+  }
+  return false;
+}
+
+/**
+ * El proceso que escribe toma el candado: el suyo, el que le reservó su padre (`--fondo`) o uno de un
+ * proceso muerto. Si otro vivo lo tiene, no.
+ */
+function tomarCandado(lock: string): boolean {
+  if (reservarCandado(lock)) return true;
+  const pid = pidDelCandado(lock);
+  if (pid !== undefined && pid !== process.pid && pid !== process.ppid) return false;
+  writeFileSync(lock, String(process.pid));
+  return true;
 }
 
 /** El run detenido y su detención, o por qué no se explica. */
@@ -332,14 +390,21 @@ export async function explainRun(
   const p = explicacionPaths(run, detencion);
   if (existsSync(p.md)) return lista(id, p.md);
   mkdirSync(p.dir, { recursive: true });
-  if (!tryLock(p.lock))
+  if (!tomarCandado(p.lock))
     return { ok: true, id, estado: "explicando", resultado: "otro proceso la está escribiendo" };
   try {
     rmSync(p.error, { force: true });
-    const { deps } = await productionRuntime(env, (t, b) => {
-      notifyMac(t, b, env);
-    });
-    const done = await writeExplanation(run, state, halt, detencion, deps);
+    let done: Awaited<ReturnType<typeof writeExplanation>>;
+    try {
+      const { deps } = await productionRuntime(env, (t, b) => {
+        notifyMac(t, b, env);
+      });
+      done = await writeExplanation(run, state, halt, detencion, deps);
+    } catch (error) {
+      // Cualquier error deja su motivo: sin él, el panel vuelve a «Explicar» sin decir por qué.
+      writeFileSync(p.error, `${error instanceof Error ? error.message : String(error)}\n`);
+      throw error;
+    }
     if (!done.ok) {
       writeFileSync(p.error, `${done.motivo}\n`);
       throw new UserError(`no se pudo explicar ${id}: ${done.motivo}`, `flowrunner explain ${id}`);
@@ -359,7 +424,7 @@ export function explainInBackground(home: string, id: string, env: NodeJS.Proces
   const p = explicacionPaths(run, detencion);
   if (existsSync(p.md)) return lista(id, p.md);
   mkdirSync(p.dir, { recursive: true });
-  if (explicando(p.lock))
+  if (!reservarCandado(p.lock))
     return { ok: true, id, estado: "explicando", resultado: "la estoy escribiendo" };
   rmSync(p.error, { force: true });
   // El candado lleva el pid del proceso nuevo desde ya: el panel lo ve «explicando» sin esperar a

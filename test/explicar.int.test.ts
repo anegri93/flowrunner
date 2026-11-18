@@ -1,6 +1,6 @@
 // `flowrunner explain` (ADR 0037), con el CLI real, las fases falsas y el SDK simulado: FAKE_VUELVE
 // detiene el run en verificar con una pregunta.
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { readLog } from "../src/store/run-log.ts";
@@ -86,6 +86,23 @@ describe("explicar una detención", () => {
     expect(readdirSync(join(w.dir(id), "explicaciones")).some((f) => f.endsWith(".md"))).toBe(
       false,
     );
+  });
+
+  // Si regresiona, un error inesperado (el repo se movió, el disco) deja el pedido sin rastro: el
+  // panel vuelve a «Explicar» sin decir por qué (revisión de la PR).
+  test("si explicar tira un error, queda el motivo y watch dice que falló", async () => {
+    const { w, id } = await stopped();
+    rmSync(w.state(id).repo, { recursive: true, force: true });
+    const result = runCli(["explain", id, "--json"], w.env);
+    expect(result.status).not.toBe(0);
+    const dir = join(w.dir(id), "explicaciones");
+    const error = readdirSync(dir).find((f) => f.endsWith(".error"));
+    expect(error).toBeDefined();
+    expect(readFileSync(join(dir, error ?? ""), "utf8")).toMatch(/ENOENT|no such file/);
+    const watch = JSON.parse(runCli(["watch", "--json"], w.env).stdout) as {
+      runs: { id: string; explicacion?: { estado: string } }[];
+    };
+    expect(watch.runs.find((r) => r.id === id)?.explicacion).toMatchObject({ estado: "fallo" });
   });
 
   // Si regresiona, Orca muestra «explicando» para siempre o espera 20 s y corta el comando.

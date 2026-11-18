@@ -3,7 +3,9 @@ import type { Halt } from "../engine/engine.ts";
 import {
   checkExplicacion,
   explicacionMarkdown,
+  HERRAMIENTAS_EXPLICAR,
   numberedOptions,
+  politicaExplicar,
   type Explicacion,
 } from "./explain.ts";
 
@@ -35,10 +37,33 @@ const explicacion: Explicacion = {
 };
 
 describe("explicar una detención", () => {
-  // Si regresiona, el modelo copia mal un comando con comillas y la persona corre otra cosa.
-  test("las respuestas van numeradas con su comando tal cual", () => {
+  // Si regresiona, la sesión que explica puede escribir en la copia de la feature o correr comandos:
+  // explicar tiene que ser de solo lectura (ADR 0037).
+  test("la sesión solo lee: Read, Grep y Glob, sin escribir, sin Bash ni subagentes", () => {
+    expect([...HERRAMIENTAS_EXPLICAR]).toEqual(["Read", "Grep", "Glob"]);
+    const politica = politicaExplicar("/r", "verificar");
+    expect(politica).toMatchObject({ write: false, bash: false, agents: false });
+    expect(politica.scope).toMatchObject({ root: "/r", writable: [], writeGlobs: [] });
+  });
+
+  // Si regresiona, un motivo con ``` corta su bloque y lo que sigue se lee como Markdown.
+  test("un motivo o un comando con backticks no corta su bloque", () => {
+    const md = explicacionMarkdown({
+      clave: "SHOP-1",
+      fase: "revisar",
+      halt: { ...halt, motivo: "revisar:\n```js\nconsole.log(1)\n```" },
+      explicacion,
+      modelo: "m",
+      at: new Date("2026-11-17T10:00:00.000Z"),
+    });
+    expect(md).toContain("````text\nrevisar:\n```js\nconsole.log(1)\n```\n````");
+  });
+
+  // Si regresiona, un comando con backticks, como el de un arreglo escrito, le llega al modelo cortado
+  // en dos códigos: lee otra respuesta que la que el run ofrece.
+  test("las respuestas van numeradas con su comando entero, en un código que no se corta", () => {
     expect(numberedOptions(halt).split("\n")).toEqual([
-      "1. `flowrunner fix R1 --unidad ST-1 'Agregá `set -o pipefail`'`: que ST-1 lo corrija así: Agregá `set -o pipefail`",
+      "1. ``flowrunner fix R1 --unidad ST-1 'Agregá `set -o pipefail`'``: que ST-1 lo corrija así: Agregá `set -o pipefail`",
       '2. `flowrunner accept R1 "<por qué>"`: seguir a probar igual',
       "3. `flowrunner abort R1`: cortar el run; la rama queda",
     ]);

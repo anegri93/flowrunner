@@ -1141,6 +1141,48 @@ test("Explicar dice que está explicando y, cuando está lista, la abre sola, un
   assert.ok(find(panel, "Explicación"));
 });
 
+// Si regresiona, una lectura de los runs que salió antes de tocar Explicar, y llega después, borra el
+// pedido: la explicación ya no se abre sola (revisión de la PR).
+test("una lectura que empezó antes de pedir la explicación no cancela que se abra sola", async () => {
+  let current = detenido();
+  let lenta = false;
+  let soltar: (() => void) | undefined;
+  const opened: { run: string; que: Openable }[] = [];
+  const panel = await abrirPanel(
+    fakeApi({
+      runs: () => {
+        const snap: Snapshot = { runs: current, at: 0 };
+        if (!lenta) return snap;
+        lenta = false;
+        return new Promise<Snapshot>((resolve) => {
+          soltar = () => {
+            resolve(snap);
+          };
+        }) as unknown as Snapshot;
+      },
+      abrir: (input) => {
+        opened.push(input);
+        if (opened.length === 1) {
+          current = detenido({ estado: "explicando" });
+          return { ok: true, mensaje: "explicando: te aviso cuando esté", explicando: true };
+        }
+        return { ok: true, mensaje: "abierto" };
+      },
+    }),
+  );
+  lenta = true;
+  const vieja = panel.refresh();
+  await press(panel, "Explicar");
+  soltar?.();
+  await vieja;
+  current = detenido({ estado: "lista" });
+  await panel.refresh();
+  assert.deepEqual(
+    opened.map((o) => o.que.tipo),
+    ["explicacion", "explicacion"],
+  );
+});
+
 // Si regresiona, una explicación que no se pudo escribir queda «explicando» o sin motivo.
 test("si no se pudo explicar lo dice, y se puede pedir de nuevo", async () => {
   const panel = await abrirPanel(

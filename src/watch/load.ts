@@ -8,6 +8,7 @@ import { DEFAULT_MODELS } from "../config/schemas.ts";
 import { cambioExistenteSchema, type CambioExistente } from "../gates/plan.ts";
 import type { Phase } from "../store/events.ts";
 import { estadoExplicacion } from "../store/explicaciones.ts";
+import { leerServicio, type EstadoServicio } from "../store/servicio.ts";
 import { readLog } from "../store/run-log.ts";
 import { listRunIds, runPaths } from "../store/runs.ts";
 import { runTree, tidyStep, type RunTree, type SessionFile } from "./tree.ts";
@@ -65,14 +66,26 @@ function readExisting(dir: string): CambioExistente[] {
   }
 }
 
-function readEfforts(repo: string | undefined): Partial<Record<Phase, string>> {
+/** El esfuerzo de cada fase con agente y si el repo dice cómo levantar el entorno (`probar`). */
+function readConfig(repo: string | undefined): {
+  esfuerzos: Partial<Record<Phase, string>>;
+  conProbar: boolean;
+} {
   let models: Record<string, { effort: string }> = DEFAULT_MODELS;
+  let conProbar = false;
   try {
-    if (repo !== undefined) models = loadRepoConfig(repo).models;
+    if (repo !== undefined) {
+      const config = loadRepoConfig(repo);
+      models = config.models;
+      conProbar = config.probar !== undefined;
+    }
   } catch {
     // la config todavía no está en el checkout de la persona: quedan los defaults
   }
-  return Object.fromEntries(Object.entries(models).map(([fase, m]) => [fase, m.effort]));
+  return {
+    esfuerzos: Object.fromEntries(Object.entries(models).map(([fase, m]) => [fase, m.effort])),
+    conProbar,
+  };
 }
 
 export function loadTree(home: string, id: string, now: number): RunTree {
@@ -80,10 +93,22 @@ export function loadTree(home: string, id: string, now: number): RunTree {
   const events = readLog(dir).events;
   const created = events.find((e) => e.tipo === "run_creado");
   const explicacion = estadoExplicacion({ dir }, detencionDe(events));
+  const { esfuerzos, conProbar } = readConfig(
+    created?.tipo === "run_creado" ? created.repo : undefined,
+  );
+  const leido = leerServicio({ dir }, new Date(now));
+  // Sin `probar` en la config no hay qué levantar: el panel no ofrece el botón.
+  const servicio: EstadoServicio | undefined =
+    leido === undefined
+      ? conProbar
+        ? { estado: "parado", urls: {}, mensaje: "" }
+        : undefined
+      : { estado: leido.estado, urls: leido.urls, mensaje: leido.mensaje };
   return runTree({
     ...(explicacion === undefined ? {} : { explicacion }),
+    ...(servicio === undefined ? {} : { servicio }),
     events,
-    esfuerzos: readEfforts(created?.tipo === "run_creado" ? created.repo : undefined),
+    esfuerzos,
     tasks: readTasks(dir),
     cambiaLoExistente: readExisting(dir),
     titulo: readTitle(dir),

@@ -393,6 +393,11 @@ test("cada decisión corre su comando fijo, con el motivo tal cual, y devuelve l
       run: id,
       decision: { accion: "aprobar", aceptoCambios: "--force" as unknown as true, plan },
     });
+    await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "levantarServicio" },
+    });
+    await worker.request("flowrunner.decidir", { run: id, decision: { accion: "pararServicio" } });
     assert.deepEqual(
       await worker.request("flowrunner.decidir", { run: id, decision: { accion: "abortar" } }),
       { ok: true, mensaje: "abortado; las ramas quedan" },
@@ -406,6 +411,8 @@ test("cada decisión corre su comando fijo, con el motivo tal cual, y devuelve l
       `feedback ${id} ${feedback} --origen orca --json`,
       `approve ${id} --acepto-cambios --origen orca --json`,
       `approve ${id} --origen orca --json`,
+      `servicio ${id} levantar --json`,
+      `servicio ${id} parar --json`,
       `abort ${id} --json`,
     ]);
   } finally {

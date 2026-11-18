@@ -164,6 +164,11 @@ export function decisionArgs(id: string, decision: Decision): string {
       );
       return `feedback ${quote(id)} ${quote(texto)} --origen orca`;
     }
+    // Levanta en un proceso aparte que avisa cuando responde: esperar el entorno pasa los 20 s.
+    case "levantarServicio":
+      return `servicio ${quote(id)} levantar`;
+    case "pararServicio":
+      return `servicio ${quote(id)} parar`;
     case "abortar":
       return `abort ${quote(id)}`;
     // Pausar y priorizar dicen que vinieron de Orca, como las demás decisiones de la persona.

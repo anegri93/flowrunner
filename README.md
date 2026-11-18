@@ -166,6 +166,12 @@ Homebrew; si no está instalada, verify no corre y el run se detiene diciendo c�
    archivos y el run vuelve a verificar, revisar y probar antes de entregar en la misma PR. Si el
    choque está en un test bloqueado, o la sesión deja marcas de conflicto, deshace el merge y te
    pregunta (ADR 0041).
+9. Para probar la feature a mano antes de mergear, «Levantar servicio» en Orca, o `flowrunner servicio
+<run> levantar`, levanta el entorno con el `probar.levantar` del repo desde el worktree de la
+   feature. Cuando responde, el panel muestra sus URLs. «Parar servicio», o `servicio <run> parar`, lo
+   baja; si te olvidás, se baja solo cuando el run se mergea, se aborta o vuelve a trabajar. Mientras
+   está arriba tiene el turno del entorno del proyecto, y los otros runs esperan para verificar y
+   probar (ADR 0042).
 
 ### Avisos
 

@@ -70,6 +70,11 @@ export interface Run {
    * anterior, que tampoco tiene `explain`.
    */
   readonly explicacion?: Explicacion;
+  /**
+   * El servicio de la feature para probarla a mano con la PR abierta (ADR 0042). Falta sin `probar`
+   * en la config del repo, o con un flowrunner anterior.
+   */
+  readonly servicio?: Servicio;
   /** Lo que hoy existe y el plan cambia. Con algo acá, aprobar pide aceptarlo. */
   readonly cambiaLoExistente?: readonly ExistingChange[];
   /** El motivo con que pediste saltear probar, mientras no corrió (ADR 0036). */
@@ -165,6 +170,14 @@ export type Explicacion =
   | { readonly estado: "lista" }
   | { readonly estado: "explicando" }
   | { readonly estado: "fallo"; readonly motivo: string };
+
+export interface Servicio {
+  /** levantando, arriba, parando, parado o falla. */
+  readonly estado: string;
+  /** Dónde responde la feature, por nombre: `{ web: "http://localhost:3000" }`. */
+  readonly urls: Readonly<Record<string, string>>;
+  readonly mensaje: string;
+}
 
 export type Tone = "neutral" | "accent" | "success" | "warning" | "danger";
 
@@ -805,7 +818,10 @@ export type Decision =
   | { readonly accion: "priorizar" }
   /** Saltear probar cuando el run llegue, con tu motivo; o deshacerlo (ADR 0036). */
   | { readonly accion: "saltearProbar"; readonly motivo: string }
-  | { readonly accion: "volverAProbar" };
+  | { readonly accion: "volverAProbar" }
+  /** Levantar o bajar el servicio de la feature para probarla a mano (ADR 0042). */
+  | { readonly accion: "levantarServicio" }
+  | { readonly accion: "pararServicio" };
 
 /** Los otros runs de su proyecto que esperan en la cola: a quién le puede dejar su lugar. */
 export const enColaJunto = (run: Run, runs: readonly Run[]): Run[] =>
@@ -859,6 +875,20 @@ function stoppedDecisions(run: Run): Decision["accion"][] {
   return out;
 }
 
+/** Levantar el servicio si está abajo, pararlo si está arriba; mientras cambia, ninguna. */
+function servicioDecisions(run: Run): Decision["accion"][] {
+  switch (run.servicio?.estado) {
+    case "parado":
+    case "falla":
+      return ["levantarServicio"];
+    case "arriba":
+    case "levantando":
+      return ["pararServicio"];
+    default:
+      return [];
+  }
+}
+
 /** Las decisiones de la etapa actual que tiene sentido ofrecer según el estado del run. */
 export function decisionsFor(run: Run): Decision["accion"][] {
   switch (run.status) {
@@ -872,7 +902,9 @@ export function decisionsFor(run: Run): Decision["accion"][] {
     // Aprender corre en el chequeo cada 10 minutos; con la PR recién mergeada, no hace falta esperarlo.
     // Con la PR abierta, tu feedback la rehace en vez de mergearla (ADR 0038).
     case "entregado":
-      return run.prMergeada === true ? ["aprender"] : ["aprender", "feedback"];
+      return run.prMergeada === true
+        ? ["aprender"]
+        : ["aprender", "feedback", ...servicioDecisions(run)];
     default:
       return [];
   }

@@ -371,7 +371,9 @@ export class Panel {
         !answer.ok ||
         decision.accion === "aprender" ||
         decision.accion === "autofix" ||
-        decision.accion === "feedback"
+        decision.accion === "feedback" ||
+        decision.accion === "levantarServicio" ||
+        decision.accion === "pararServicio"
       )
         this.#set({ dicho: { run, ...answer } });
     } catch (error) {

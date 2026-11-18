@@ -206,6 +206,17 @@ export const eventSchema = z.discriminatedUnion("tipo", [
   /** La persona le dio prioridad a este run en la cola: sale antes que los demás, una vez. */
   z.strictObject({ tipo: z.literal("priorizado"), at, origen: origenSchema.optional() }),
   /**
+   * La persona pidió saltear probar antes de que arranque, y dijo por qué (ADR 0036). Solo vale
+   * mientras probar no corrió; `probar_restaurado` lo deshace.
+   */
+  z.strictObject({
+    tipo: z.literal("probar_salteado"),
+    at,
+    motivo: z.string().min(1),
+    origen: origenSchema,
+  }),
+  z.strictObject({ tipo: z.literal("probar_restaurado"), at, origen: origenSchema }),
+  /**
    * A la persona no le gustó la PR abierta y no la quiere mergear: aprender evalúa su feedback y decide
    * desde dónde rehacer (ADR 0038).
    */
@@ -256,6 +267,23 @@ export const eventSchema = z.discriminatedUnion("tipo", [
     fase: phaseSchema,
     motivo: z.string().min(1),
     origen: origenSchema,
+  }),
+  /**
+   * La sesión que le explicó a la persona una detención (ADR 0037). Lleva su uso aparte del de las
+   * fases: la pidió la persona, no avanza el run, y no cuenta para el tope ni para el costo de la fase.
+   * `detencion`, la posición en el log del evento que dejó el run detenido.
+   */
+  z.strictObject({
+    tipo: z.literal("explicacion"),
+    at,
+    fase: phaseSchema,
+    detencion: z.int().nonnegative(),
+    sesion: z.string(),
+    modelo: z.string(),
+    costo_usd: z.number().nonnegative(),
+    tokens_entrada: z.int().nonnegative(),
+    tokens_salida: z.int().nonnegative(),
+    duracion_ms: z.int().nonnegative(),
   }),
   z.strictObject({ tipo: z.literal("rehacer"), at, desde: phaseSchema }),
   z.strictObject({ tipo: z.literal("abortado"), at }),

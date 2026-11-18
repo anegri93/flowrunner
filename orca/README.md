@@ -35,6 +35,11 @@ como `flowrunner watch`, pensada para el ancho angosto de la barra:
   detenido o rehacerlo desde la fase que sugiere el motivo, y «Aprender ahora» en un run con la PR
   abierta, para no esperar el chequeo de cada 10 minutos después de mergear. Aprobar, reanudar y
   rehacer piden confirmación.
+- «Explicar», en un run detenido: antes de decidir, qué pasó, por qué no siguió solo, qué hace cada
+  respuesta y cuál conviene (ADR 0037). Corre `explain --fondo`, porque escribirla lleva minutos; la
+  tarjeta dice «Explicando por qué se detuvo…» y, cuando está, la abre sola como pestaña. Después el
+  botón es «Explicación» y la abre sin gastar otra sesión; si no se pudo, la tarjeta dice por qué y
+  ofrece «Explicar de nuevo».
 - «Rehacer con feedback…», al lado de «Aprender ahora» mientras la PR está abierta: pide en línea qué
   no te gustó y lo manda con `flowrunner feedback … --origen orca`. flowrunner decide desde dónde
   rehacer, y el recorrido lo muestra: «Diste feedback sobre la PR» con tu texto, y aprender «con tu
@@ -50,12 +55,28 @@ como `flowrunner watch`, pensada para el ancho angosto de la barra:
 - Si el plan cambia lo que ya existe, la tarjeta lo avisa y la pestaña del plan lo pone arriba de
   todo. Aprobar muestra cada cambio, con dónde está y qué criterio lo pide, y el botón pasa a ser
   «Acepto los cambios y apruebo», que aprueba con `--acepto-cambios`. Si alguno no va, pedí cambios.
+- «Saltear probar…», en el menú ⋯ de un run que todavía no llegó a probar, pide tu motivo en línea y
+  marca el run para que probar se saltee cuando llegue; la tarjeta dice «Probar se va a saltear» con
+  el motivo, y el menú pasa a ofrecer «Volver a probar». Al lado de «Aprobar», «Aprobar sin probar…»
+  pide el motivo y después confirma como Aprobar, también con «Acepto los cambios y apruebo». El motivo
+  queda en el informe y en la PR (ADR 0036).
 - «Pausar», en el menú ⋯ de un run que trabaja o está en cola: termina lo que está haciendo y suelta
   su lugar, sin perder nada; sigue con «Reanudar». Si en la cola de su repo hay más de un run, la
   tarjeta pregunta para quién es el lugar; con uno solo, se lo da a ese. «Priorizar», en un run en
   cola, lo pone primero.
 - Al final del menú ⋯ de cada run vivo, separado y en rojo, «Abortar el run…»: corta lo que corre, en
   cualquier etapa, y borra sus worktrees; la rama y la PR quedan. Pide confirmación.
+- «Doctor», arriba a la derecha, abre en lugar de los runs lo que dice `flowrunner doctor`: los
+  chequeos que fallan con su arreglo y la versión, con cuántos commits le faltan para el
+  `origin/main` del último fetch. «Actualizar flowrunner» y «Actualizar el plugin de Orca» piden
+  confirmación y corren aparte (`self-update --fondo`, `orca install --fondo`): el panel muestra la
+  tarea mientras corre y en qué quedó, y vuelve a leer el doctor cuando termina. Si Orca pide aprobar
+  el plugin, muestra el `--approve` para la terminal. «Volver a los runs» la cierra (ADR 0039).
+  Debajo, el cerebro del proyecto enfocado: «Auditar el cerebro» pide confirmación, porque es una
+  sesión de Claude, y corre aparte (`brain audit --fondo`). La última auditoría muestra su resumen,
+  los hallazgos y las decisiones: tocar una la elige, «Abrir PR con las elegidas» corre `brain apply`
+  con esas, y «Ver el informe» lo abre como pestaña. Las que no se pueden aplicar dicen por qué, y las
+  ya aplicadas, en qué PR están (ADR 0040).
 
 Se refresca cada 3 segundos mientras la pestaña se ve, y sigue al proyecto que tenés enfocado en Orca,
 como el explorador y los agentes: muestra los runs de ese proyecto, incluidos los de sus worktrees,
@@ -64,8 +85,10 @@ la nave en camino en vez de los runs del anterior. Para saber cuál está enfoca
 `workspace:read`; sin él, o sin un proyecto enfocado, muestra todos.
 
 - `src/worker.ts` corre el CLI de flowrunner en un shell de login, para tener tu PATH: `watch`,
-  `report --sesion`, `plan`, y cada decisión como un comando fijo (`approve`, `changes`, `resume`,
-  `rerun --desde`, `learn`, `feedback`, `abort`). Valida el id del run, la fase y el motivo antes de llegar al shell.
+  `report --sesion`, `plan`, `explain --fondo`, y cada decisión como un comando fijo (`approve`, `changes`, `resume`,
+  `rerun --desde`, `learn`, `feedback`, `abort`, `skip-probar`). Valida el id del run, la fase y el motivo antes de llegar al shell.
+  El doctor también: `doctor --json`, `tareas --json` y cada mantenimiento con `--fondo`
+  (`src/doctor.ts`).
 - La pestaña es un frame (`sandboxed-ui`), no un panel de componentes: los componentes de Orca no
   dibujan SVG propio y rechazan las imágenes animadas, y los indicadores son SVG con animación CSS.
   `panel/index.html` carga `src/frame.ts`, lo único con DOM: lee los runs, escucha los clics y

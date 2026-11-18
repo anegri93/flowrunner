@@ -14,11 +14,15 @@ export const ASK_RULES = [
   "Bash(flowrunner changes:*)",
   // Entregar con criterios sin probar es de la persona, como aprobar (ADR 0017).
   "Bash(flowrunner accept-untested:*)",
+  // Saltear probar antes de que arranque, también: es la misma decisión, más temprano (ADR 0036).
+  "Bash(flowrunner skip-probar:*)",
   // Responder la pregunta de un run detenido también (ADR 0023).
   "Bash(flowrunner fix:*)",
   "Bash(flowrunner accept:*)",
   // Rehacer una PR con feedback también: el run vuelve a trabajar y la PR cambia (ADR 0038).
   "Bash(flowrunner feedback:*)",
+  // Abrir una PR sobre el cerebro con las decisiones de una auditoría es de la persona (ADR 0040).
+  "Bash(flowrunner brain apply:*)",
 ] as const;
 /** El hook SessionStart: con la ruta del bin, para no depender del PATH con que arranca Claude Code. */
 export const SESSION_HOOK = `${shellQuote(BIN)} hook session-start`;

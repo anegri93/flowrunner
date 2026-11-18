@@ -108,6 +108,8 @@ export interface RunStats {
   readonly activoMin: number;
   readonly costoUsd: number;
   readonly costoPorFase: Partial<Record<Phase, number>>;
+  /** Lo que costaron las explicaciones que pidió la persona (ADR 0037): aparte, no es de ninguna fase. */
+  readonly costoExplicarUsd: number;
   readonly planes: number;
   readonly rechazosBash: number;
   readonly rechazosEscritura: number;
@@ -140,6 +142,7 @@ export function runStats(dir: string, events: readonly RunEvent[]): RunStats {
   let openedAt: number | undefined;
   let costoUsd = 0;
   const costoPorFase: Partial<Record<Phase, number>> = {};
+  let costoExplicarUsd = 0;
   let planes = 0;
   let rechazosBash = 0;
   let rechazosEscritura = 0;
@@ -169,6 +172,8 @@ export function runStats(dir: string, events: readonly RunEvent[]): RunStats {
     } else if (e.tipo === "uso") {
       costoUsd += e.costo_usd;
       costoPorFase[e.fase] = (costoPorFase[e.fase] ?? 0) + e.costo_usd;
+    } else if (e.tipo === "explicacion") {
+      costoExplicarUsd += e.costo_usd;
     } else if (e.tipo === "rechazo") {
       if (e.herramienta === "Bash") rechazosBash++;
       else if (WRITE_TOOLS.has(e.herramienta)) rechazosEscritura++;
@@ -184,6 +189,7 @@ export function runStats(dir: string, events: readonly RunEvent[]): RunStats {
     activoMin: activeMs / 60_000,
     costoUsd,
     costoPorFase,
+    costoExplicarUsd,
     planes,
     rechazosBash,
     rechazosEscritura,
@@ -288,6 +294,7 @@ export function statsPorRun(home: string, project?: string) {
       planesPorRun: perRun(sum((r) => r.planes)),
       rechazosBashPorRun: perRun(sum((r) => r.rechazosBash)),
       derechos: runs.filter((r) => r.derecho).length,
+      explicarUsd: sum((r) => r.costoExplicarUsd),
     },
   };
 }
@@ -321,5 +328,8 @@ export function describeStatsPorRun(s: ReturnType<typeof statsPorRun>): string {
     `rechazos de Bash por run: ${r.rechazosBashPorRun.toFixed(1)} (la columna rechazos es Bash/escritura)`,
     "la columna graft es, en planificar, llamadas a graft/intentos de leer un archivo entero",
     `derechos: ${String(r.derechos)} de ${String(r.runs)} runs`,
+    ...(r.explicarUsd > 0
+      ? [`explicaciones de detenciones: US$ ${r.explicarUsd.toFixed(2)}, aparte de la columna US$`]
+      : []),
   ].join("\n");
 }

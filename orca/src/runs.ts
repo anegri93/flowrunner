@@ -65,8 +65,17 @@ export interface Run {
   readonly opciones?: readonly Opcion[];
   /** Las sub-tasks a las que un run detenido atribuye el problema. */
   readonly unidades?: readonly string[];
+  /**
+   * La explicación de la detención actual (ADR 0037): falta si nadie la pidió, o con un flowrunner
+   * anterior, que tampoco tiene `explain`.
+   */
+  readonly explicacion?: Explicacion;
   /** Lo que hoy existe y el plan cambia. Con algo acá, aprobar pide aceptarlo. */
   readonly cambiaLoExistente?: readonly ExistingChange[];
+  /** El motivo con que pediste saltear probar, mientras no corrió (ADR 0036). */
+  readonly saltearProbar?: string;
+  /** Probar todavía no arrancó: se puede pedir saltearla. Falta con un flowrunner anterior. */
+  readonly puedeSaltearProbar?: boolean;
   readonly fases: readonly Phase[];
   /** Lo que pasó, en orden, con las vueltas agrupadas; un flowrunner anterior no lo manda. */
   readonly recorrido?: readonly Paso[];
@@ -151,6 +160,11 @@ export interface ExistingChange {
 export const existingChanges = (run: Run): readonly ExistingChange[] => run.cambiaLoExistente ?? [];
 
 export const describeExisting = (c: ExistingChange) => `${c.que} (${c.donde}) ← ${c.criterio}`;
+
+export type Explicacion =
+  | { readonly estado: "lista" }
+  | { readonly estado: "explicando" }
+  | { readonly estado: "fallo"; readonly motivo: string };
 
 export type Tone = "neutral" | "accent" | "success" | "warning" | "danger";
 
@@ -762,7 +776,13 @@ export type Decision =
    * `plan`: la versión del plan que la persona abrió (`planVersion`); el worker no aprueba si cambió.
    * `aceptoCambios`: la persona vio lo que el plan cambia de lo existente y lo acepta.
    */
-  | { readonly accion: "aprobar"; readonly plan: string; readonly aceptoCambios?: true }
+  | {
+      readonly accion: "aprobar";
+      readonly plan: string;
+      readonly aceptoCambios?: true;
+      /** Aprobar y saltear probar, con este motivo (ADR 0036). Vacío, el panel todavía lo pide. */
+      readonly sinProbar?: string;
+    }
   | { readonly accion: "cambios"; readonly motivo: string }
   | { readonly accion: "reanudar" }
   | { readonly accion: "rehacer"; readonly desde: PhaseName }
@@ -782,7 +802,10 @@ export type Decision =
   /** Pausar al terminar lo que hace; `para`, el run en cola que entra en su lugar. */
   | { readonly accion: "pausar"; readonly para?: string }
   /** Que el run en cola salga primero. */
-  | { readonly accion: "priorizar" };
+  | { readonly accion: "priorizar" }
+  /** Saltear probar cuando el run llegue, con tu motivo; o deshacerlo (ADR 0036). */
+  | { readonly accion: "saltearProbar"; readonly motivo: string }
+  | { readonly accion: "volverAProbar" };
 
 /** Los otros runs de su proyecto que esperan en la cola: a quién le puede dejar su lugar. */
 export const enColaJunto = (run: Run, runs: readonly Run[]): Run[] =>
@@ -791,6 +814,10 @@ export const enColaJunto = (run: Run, runs: readonly Run[]): Run[] =>
 /** Se puede pausar un run que trabaja, si todavía no lo pediste, o uno en cola. */
 export const canPause = (run: Run) =>
   (run.status === "en_curso" && run.pausaPedida !== true) || run.status === "en_cola";
+
+/** Probar todavía no arrancó y no está marcada: se puede pedir saltearla (ADR 0036). */
+export const canSkipProbar = (run: Run) =>
+  run.puedeSaltearProbar === true && run.saltearProbar === undefined;
 
 /** Un run vivo se puede abortar, en cualquier etapa: todos menos los cerrados y los abortados. */
 export const canAbort = (run: Run) => run.status !== "cerrado" && run.status !== "abortado";

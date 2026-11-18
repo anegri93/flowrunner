@@ -3,7 +3,13 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { initialState, reduce, stateOf, type RunState } from "../engine/engine.ts";
+import {
+  initialState,
+  reduce,
+  SALTEADA_POR_LA_PERSONA,
+  stateOf,
+  type RunState,
+} from "../engine/engine.ts";
 import { AVISO_TEST_EXISTENTE } from "../gates/existente.ts";
 import type { CambioExistente } from "../gates/plan.ts";
 import { currentTestDir, readTests } from "../phases/probar.ts";
@@ -357,7 +363,22 @@ export function testResults(dir: string, paths: boolean): string[] {
 
 function tested(events: readonly RunEvent[], run: RunPaths, paths: boolean): string[] {
   const dir = currentTestDir(run, events);
-  if (dir === undefined) return [];
+  if (dir === undefined) {
+    // Salteada a pedido de la persona: no hay pruebas, y quien revisa la PR tiene que saber por qué.
+    const last = events.findLast((e) => e.tipo === "accion_terminada" && e.fase === "probar");
+    const salteada =
+      last?.tipo === "accion_terminada" && last.resultado.tipo === "ok"
+        ? last.resultado.salteada
+        : undefined;
+    if (salteada?.startsWith(SALTEADA_POR_LA_PERSONA) !== true) return [];
+    const motivo = salteada.slice(SALTEADA_POR_LA_PERSONA.length);
+    return [
+      "",
+      "## Pruebas en el entorno",
+      "",
+      `> ⚠️ No se probó en el entorno, por decisión de la persona: ${plain(motivo)}`,
+    ];
+  }
   // La última decisión manda: si el run se detuvo dos veces, vale el motivo de la que lo dejó seguir.
   // `accept` en probar dice lo mismo que `accept-untested` (ADR 0023).
   const taken = new Set(applied(events));

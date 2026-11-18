@@ -63,6 +63,21 @@ describe("runUntilStop", () => {
     expect(events.filter((e) => e.tipo === "accion_terminada")).toHaveLength(8);
   });
 
+  // Si regresiona, probar levanta el entorno aunque la persona pidió saltearla (ADR 0036).
+  test("con probar salteado a pedido, probar no corre y queda salteada con el motivo", async () => {
+    const run = newRun();
+    appendEvent(run.dir, { tipo: "probar_salteado", motivo: "solo docs", origen: "terminal" });
+    const state = await runUntilStop(run, recordingPhases(run), deps);
+    expect(state.status).toBe("entregado");
+    expect(executions(run)).not.toContain("probar");
+    expect(executions(run)).toContain("entregar");
+    const { events } = readLog(run.dir);
+    const probar = events.findLast((e) => e.tipo === "accion_terminada" && e.fase === "probar");
+    expect(probar).toMatchObject({
+      resultado: { tipo: "ok", salteada: "la salteó la persona: solo docs" },
+    });
+  });
+
   // Si regresiona, un corte en medio de una fase deja su trabajo a medias para siempre.
   test("un corte entre iniciada y terminada rehace esa acción y solo esa", async () => {
     const run = newRun();

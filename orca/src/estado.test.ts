@@ -58,6 +58,11 @@ function fakeApi(f: Fake): Api & {
       return Promise.resolve();
     },
     externo: () => Promise.resolve(),
+    doctor: unknown("flowrunner.doctor"),
+    tareas: unknown("flowrunner.tareas"),
+    mantener: unknown("flowrunner.mantener"),
+    cerebro: unknown("flowrunner.cerebro"),
+    informeCerebro: unknown("flowrunner.informeCerebro"),
     ahora: () => 0,
   };
 }
@@ -1100,4 +1105,195 @@ test("en cola, el menú ofrece Priorizar y Pausar; con la pausa pedida, Pausar y
   assert.ok(find(panel, "Pausar"));
   await press(panel, "Priorizar");
   assert.deepEqual(sent, [{ run: "VF-7-20261112-000000", decision: { accion: "priorizar" } }]);
+});
+
+// Si regresiona, la persona no puede saltear probar desde el panel, o se le ofrece cuando probar ya
+// arrancó y flowrunner lo rechaza (ADR 0036).
+test("el menú ⋯ ofrece «Saltear probar…» solo antes de probar: pide el motivo y lo manda; marcado, «Volver a probar»", async () => {
+  const sent: { run: string; decision: Decision }[] = [];
+  let lista = runs.map((r): Run => ({ ...r, puedeSaltearProbar: r.id === PIZ3 }));
+  const panel = await abrirPanel(
+    fakeApi({
+      runs: () => ({ runs: lista, at: 0 }),
+      decidir: (input) => {
+        sent.push(input);
+        return { ok: true, mensaje: "hecho" };
+      },
+    }),
+  );
+  await press(panel, { label: "Más de VF-2" });
+  assert.equal(find(panel, "Saltear probar…"), undefined);
+  await press(panel, { label: "Más de PIZ-3" });
+  await press(panel, "Saltear probar…");
+  await type(panel, "Por qué saltear probar; queda en la PR", "solo toca docs");
+  assert.deepEqual(sent, [
+    { run: PIZ3, decision: { accion: "saltearProbar", motivo: "solo toca docs" } },
+  ]);
+
+  lista = lista.map((r) => (r.id === PIZ3 ? { ...r, saltearProbar: "solo toca docs" } : r));
+  await panel.refresh();
+  assert.ok(sees(panel, "Probar se va a saltear: solo toca docs"));
+  await press(panel, { label: "Más de PIZ-3" });
+  assert.equal(find(panel, "Saltear probar…"), undefined);
+  await press(panel, "Volver a probar");
+  assert.deepEqual(sent[1], { run: PIZ3, decision: { accion: "volverAProbar" } });
+});
+
+// Si regresiona, aprobar sin probar se manda sin confirmar, sin motivo, o pierde los cambios aceptados.
+test("«Aprobar sin probar…» pide el motivo y después confirma como Aprobar, también aceptando cambios", async () => {
+  const sent: { run: string; decision: Decision }[] = [];
+  const cambio = { que: "el alta rechaza otro dominio", donde: "a.ts:42", criterio: "AC-1" };
+  let lista = runs.map((r): Run => (r.id === PIZ3 ? { ...r, puedeSaltearProbar: true } : r));
+  const panel = await abrirPanel(
+    fakeApi({
+      runs: () => ({ runs: lista, at: 0 }),
+      abrir: () => ({ ok: true, mensaje: "abierto" }),
+      decidir: (input) => {
+        sent.push(input);
+        return { ok: true, mensaje: "hecho" };
+      },
+    }),
+  );
+  assert.equal(find(panel, "Aprobar sin probar…")?.disabled, true);
+  await press(panel, { texto: "Plan", link: false });
+  await press(panel, "Aprobar sin probar…");
+  await type(panel, "Por qué saltear probar; queda en la PR", "sin entorno");
+  assert.deepEqual(sent, []);
+  assert.ok(sees(panel, "¿Aprobar el plan sin probar?"));
+  await press(panel, "Sí, confirmar");
+  assert.deepEqual(sent, [
+    { run: PIZ3, decision: { accion: "aprobar", plan: `${PIZ3}#1`, sinProbar: "sin entorno" } },
+  ]);
+
+  lista = lista.map((r) => (r.id === PIZ3 ? { ...r, cambiaLoExistente: [cambio] } : r));
+  await panel.refresh();
+  await press(panel, "Aprobar sin probar…");
+  await type(panel, "Por qué saltear probar; queda en la PR", "sin entorno");
+  await press(panel, "Acepto los cambios y apruebo");
+  assert.deepEqual(sent[1], {
+    run: PIZ3,
+    decision: {
+      accion: "aprobar",
+      plan: `${PIZ3}#1`,
+      aceptoCambios: true,
+      sinProbar: "sin entorno",
+    },
+  });
+});
+
+// --- Explicar una detención (ADR 0037) --------------------------------------------------------
+
+/** VF-2 detenido en verificar, con la explicación como diga `explicacion`. */
+const detenido = (explicacion?: Run["explicacion"]) =>
+  runs.map((r): Run =>
+    r.id === VF2
+      ? {
+          ...r,
+          status: "detenido",
+          motivo: "verificar: AC-2 sigue en rojo",
+          opciones: [
+            { comando: `flowrunner resume ${VF2}`, que: "retomar en verificar" },
+            { comando: `flowrunner abort ${VF2}`, que: "cortar el run" },
+          ],
+          ...(explicacion === undefined ? {} : { explicacion }),
+        }
+      : r,
+  );
+
+// Si regresiona, la persona tiene que decidir sin poder pedir que le expliquen la detención, o el
+// botón aparece en un run que no espera ninguna respuesta.
+test("un run detenido ofrece Explicar; uno que no está detenido, no", async () => {
+  const panel = await abrirPanel(fakeApi({ runs: () => ({ runs: detenido(), at: 0 }) }));
+  const explicar = find(panel, "Explicar");
+  assert.deepEqual(explicar?.accion, { t: "abrir", run: VF2, que: { tipo: "explicacion" } });
+  assert.equal(findAll(panel, "Explicar").length, 1);
+  const quieto = await abrirPanel(fakeApi({}));
+  assert.equal(find(quieto, "Explicar"), undefined);
+});
+
+// Si regresiona, tocar Explicar no dice que está trabajando, o la explicación lista no se abre sola y
+// la persona no se entera de que terminó.
+test("Explicar dice que está explicando y, cuando está lista, la abre sola, una vez", async () => {
+  let current = detenido();
+  const opened: { run: string; que: Openable }[] = [];
+  const panel = await abrirPanel(
+    fakeApi({
+      runs: () => ({ runs: current, at: 0 }),
+      abrir: (input) => {
+        opened.push(input);
+        if (opened.length === 1) {
+          current = detenido({ estado: "explicando" });
+          return { ok: true, mensaje: "explicando: te aviso cuando esté", explicando: true };
+        }
+        return { ok: true, mensaje: "abierto" };
+      },
+    }),
+  );
+  await press(panel, "Explicar");
+  assert.ok(sees(panel, "Explicando por qué se detuvo…"));
+  assert.equal(find(panel, "Explicar"), undefined);
+  current = detenido({ estado: "lista" });
+  await panel.refresh();
+  await panel.refresh();
+  assert.deepEqual(opened, [
+    { run: VF2, que: { tipo: "explicacion" } },
+    { run: VF2, que: { tipo: "explicacion" } },
+  ]);
+  assert.ok(find(panel, "Explicación"));
+});
+
+// Si regresiona, una lectura de los runs que salió antes de tocar Explicar, y llega después, borra el
+// pedido: la explicación ya no se abre sola (revisión de la PR).
+test("una lectura que empezó antes de pedir la explicación no cancela que se abra sola", async () => {
+  let current = detenido();
+  let lenta = false;
+  let soltar: (() => void) | undefined;
+  const opened: { run: string; que: Openable }[] = [];
+  const panel = await abrirPanel(
+    fakeApi({
+      runs: () => {
+        const snap: Snapshot = { runs: current, at: 0 };
+        if (!lenta) return snap;
+        lenta = false;
+        return new Promise<Snapshot>((resolve) => {
+          soltar = () => {
+            resolve(snap);
+          };
+        }) as unknown as Snapshot;
+      },
+      abrir: (input) => {
+        opened.push(input);
+        if (opened.length === 1) {
+          current = detenido({ estado: "explicando" });
+          return { ok: true, mensaje: "explicando: te aviso cuando esté", explicando: true };
+        }
+        return { ok: true, mensaje: "abierto" };
+      },
+    }),
+  );
+  lenta = true;
+  const vieja = panel.refresh();
+  await press(panel, "Explicar");
+  soltar?.();
+  await vieja;
+  current = detenido({ estado: "lista" });
+  await panel.refresh();
+  assert.deepEqual(
+    opened.map((o) => o.que.tipo),
+    ["explicacion", "explicacion"],
+  );
+});
+
+// Si regresiona, una explicación que no se pudo escribir queda «explicando» o sin motivo.
+test("si no se pudo explicar lo dice, y se puede pedir de nuevo", async () => {
+  const panel = await abrirPanel(
+    fakeApi({
+      runs: () => ({
+        runs: detenido({ estado: "fallo", motivo: "la sesión explicar-1 pasó su timeout" }),
+        at: 0,
+      }),
+    }),
+  );
+  assert.ok(sees(panel, "No se pudo explicar: la sesión explicar-1 pasó su timeout"));
+  assert.ok(find(panel, "Explicar de nuevo"));
 });

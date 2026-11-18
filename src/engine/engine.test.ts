@@ -8,7 +8,14 @@ import {
   type Phase,
   type RunEvent,
 } from "../store/events.ts";
-import { correAutofixSolo, MAX_ATTEMPTS, nextAction, stateOf, type RunState } from "./engine.ts";
+import {
+  correAutofixSolo,
+  detencionDe,
+  MAX_ATTEMPTS,
+  nextAction,
+  stateOf,
+  type RunState,
+} from "./engine.ts";
 import { TOKEN_REJECTED } from "./motivos.ts";
 
 const AT = "2026-11-07T10:00:00.000Z";
@@ -1447,5 +1454,83 @@ describe("el feedback sobre la PR abierta (ADR 0038)", () => {
     expect(s).toMatchObject({ status: "entregado", fase: "aprender" });
     expect(nextAction(s, { tick: true })).toMatchObject({ fase: "aprender" });
     expect(state(...rehecho, feedback("otra cosa")).feedback).toBe("otra cosa");
+  });
+});
+
+// Saltear probar a pedido (ADR 0036): una decisión de la persona antes de que probar arranque.
+describe("saltear probar a pedido", () => {
+  const salteado = (motivo = "solo docs") =>
+    ev({ tipo: "probar_salteado", motivo, origen: "terminal" });
+  const restaurado = ev({ tipo: "probar_restaurado", origen: "terminal" });
+  const hastaRevisar = [
+    upTo("preparar", "planificar"),
+    ok("aprobar"),
+    upTo("implementar", "verificar"),
+  ];
+
+  // Si regresiona, la marca de la persona no llega a probar, o llega una que ya no vale.
+  test("aplica mientras probar no arrancó y guarda el motivo", () => {
+    expect(state(upTo("preparar"), [salteado()]).probarSalteado).toBe("solo docs");
+    expect(state(...hastaRevisar, [salteado("sin entorno")]).probarSalteado).toBe("sin entorno");
+  });
+
+  test("en probar en cola o pausado aplica; con probar ya hecho no", () => {
+    const enProbar = [...hastaRevisar, ok("revisar")];
+    const enCola = state(...enProbar, [ev({ tipo: "encolado" }), salteado()]);
+    expect(enCola.fase).toBe("probar");
+    expect(enCola.probarSalteado).toBe("solo docs");
+    const corriendo = state(...enProbar, [salteado()]);
+    expect(corriendo.probarSalteado).toBeUndefined();
+    const entregando = state(...enProbar, ok("probar"), [salteado()]);
+    expect(entregando.probarSalteado).toBeUndefined();
+  });
+
+  test("probar_restaurado la borra; rerun desde probar la borra; desde implementar la mantiene", () => {
+    expect(state(upTo("preparar"), [salteado(), restaurado]).probarSalteado).toBeUndefined();
+    const marcado = [...hastaRevisar, [salteado()]];
+    expect(
+      state(...marcado, [ev({ tipo: "rehacer", desde: "probar" })]).probarSalteado,
+    ).toBeUndefined();
+    expect(state(...marcado, [ev({ tipo: "rehacer", desde: "implementar" })]).probarSalteado).toBe(
+      "solo docs",
+    );
+  });
+});
+
+describe("detencionDe (ADR 0037)", () => {
+  const stop = done("preparar", { tipo: "falla", clase: "entorno", motivo: "base roja" });
+  const explicacion = ev({
+    tipo: "explicacion",
+    fase: "preparar",
+    detencion: 2,
+    sesion: "explicar-1",
+    modelo: "claude-sonnet-5-5",
+    costo_usd: 30,
+    tokens_entrada: 10,
+    tokens_salida: 10,
+    duracion_ms: 1000,
+  });
+
+  // Si regresiona, la explicación de una detención se pierde, o se reusa para otra.
+  test("es la posición del evento que detuvo el run y no cambia con el uso de su explicación", () => {
+    const events = [created, ...stop];
+    expect(detencionDe(events)).toBe(2);
+    expect(detencionDe([...events, explicacion])).toBe(2);
+  });
+
+  test("una detención nueva con el mismo motivo tiene otro número", () => {
+    expect(detencionDe([created, ...stop, ev({ tipo: "reanudado" }), ...stop])).toBe(5);
+  });
+
+  test("sin detención no hay número", () => {
+    expect(detencionDe([created, ...ok("preparar")])).toBeUndefined();
+    expect(detencionDe([created, ...stop, ev({ tipo: "reanudado" })])).toBeUndefined();
+  });
+
+  // Si regresiona, pedir una explicación encarece el run o lo frena por su tope (USD 10 acá).
+  test("el uso de una explicación no suma al costo del run ni lo detiene por presupuesto", () => {
+    const resumed = stateOf([created, ...stop, ev({ tipo: "reanudado" }), explicacion]);
+    expect(resumed.costoUsd).toBe(0);
+    expect(resumed.status).toBe("en_curso");
   });
 });

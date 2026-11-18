@@ -10,6 +10,7 @@ import { approveRun, describePlan, requestChanges, showPlan } from "./approval.t
 import { showReport, showSession, showUnit } from "./report.ts";
 import { showPhase } from "./etapa.ts";
 import { feedbackRun, learnAndNotify, learnInBackground, learnOne, tick } from "./tick.ts";
+import { explainAndNotify, explainInBackground, explainRun } from "./explain.ts";
 import { describeDoctor, doctor } from "./doctor.ts";
 import { installLaunchd, plistPath, uninstallLaunchd } from "./launchd.ts";
 import { installSkill } from "./skill.ts";
@@ -20,8 +21,18 @@ import { join } from "node:path";
 import { closedRuns, loadTree, resolveRun } from "../watch/load.ts";
 
 import { renderRuns, watchLive, watchTargets } from "./watch.ts";
-import { selfUpdate } from "../setup/app.ts";
+import { selfUpdate, sinProcesosVivos } from "../setup/app.ts";
+import { aprobarPlugin, correrTarea, lanzarTarea, listarTareas, type Fin } from "./tareas.ts";
 import { commandDir, describeInit, draftExistingBrain, init } from "../setup/init.ts";
+import {
+  applyAudit,
+  auditBrain,
+  describeAplicar,
+  describeAuditar,
+  proyectoDe,
+  ultimaAuditoria,
+  informe as informeAuditoria,
+} from "../setup/auditar.ts";
 import { productionRuntime } from "../runner/production.ts";
 import { describeStats, describeStatsPorRun, stats, statsPorRun } from "../report/stats.ts";
 import { origenSchema, type Origen } from "../store/events.ts";
@@ -34,6 +45,7 @@ import {
   fixRun,
   rerunRun,
   resumeRun,
+  skipProbar,
   runProcess,
   startRun,
   statusAll,
@@ -67,15 +79,22 @@ const USAGE = `uso: flowrunner <comando> [--json]
   accept-untested <run> "<por qué>"
                                  entrega aunque probar dejó criterios sin probar; el motivo
                                  queda en el informe y en la PR
+  skip-probar <run> "<por qué>"  cuando el run llegue a probar, la saltea; el motivo queda en el
+                                 informe y en la PR. Solo antes de que probar arranque
+  skip-probar <run> --deshacer   vuelve a probar normal
+                                 skip-probar con [--origen terminal|claude|orca]
   pause <run> [--para <run>]     pausa un run: termina lo que está haciendo y suelta su lugar;
                                  con --para, ese run de la cola entra antes; sigue con resume
   prioritize <run>               un run en cola sale primero
                                  pause y prioritize con [--origen terminal|claude|orca]
+  explain <run> [--fondo]        explica por qué el run se detuvo y qué hace cada respuesta; con
+                                 --fondo, en un proceso aparte que avisa al terminar
   abort <run>                    cancela un run y borra sus worktrees; las ramas quedan
   plan <run>                     muestra el plan que espera aprobación
-  approve <run> [--acepto-cambios] [--origen terminal|claude|orca]
+  approve <run> [--acepto-cambios] [--sin-probar "<por qué>"] [--origen terminal|claude|orca]
                                  aprueba el plan y sigue a implementar; si el plan cambia
-                                 lo que ya existe, pide --acepto-cambios
+                                 lo que ya existe, pide --acepto-cambios; con --sin-probar,
+                                 probar se saltea con ese motivo
   changes <run> "<motivo>" [--origen terminal|claude|orca]
                                  vuelve a planificar con tu instrucción
   report <run> [--sesion s]      el informe del run, o el transcript de una sesión
@@ -87,17 +106,27 @@ const USAGE = `uso: flowrunner <comando> [--json]
   feedback <run> "<qué no te gustó>" [--origen terminal|claude|orca]
                                  con la PR abierta: evalúa tu feedback y rehace el run desde
                                  implementar o planificar, sobre la misma PR
-  doctor                         qué le falta a esta máquina para correr runs
-  self-update                    mueve el flowrunner que corre runs a origin/main
+  doctor                         qué le falta a esta máquina para correr runs, y su versión
+  self-update [--fondo]          mueve el flowrunner que corre runs a origin/main; con --fondo,
+                                 en un proceso aparte que deja su estado en tareas
+  tareas                         en qué quedaron las tareas de fondo: self-update, orca install
+                                 y la auditoría del cerebro
   launchd install|uninstall      instala o quita el job que corre tick
   skill install [--confirmar]    instala la skill de Claude Code; con --confirmar, las reglas ask y el hook
   orca install [--approve fp]    carga en Orca el plugin de este flowrunner, esté donde esté clonado
+  orca install --fondo           lo mismo en un proceso aparte; si Orca pide aprobarlo, la tarea
+                                 dice el --approve que corrés vos
   hook session-start             el hook de Claude Code: avisa a la sesión si el repo usa flowrunner
   stats [--runs] [proyecto]      qué fase reintenta más, motivos, costo y lecciones; con --runs,
                                  tiempo activo, costo, planes y rechazos de cada run
   project add <ruta>             registra un repo [--nombre n] [--github-user u]
   brain init <ruta>              escribe las plantillas de .flowrunner/ sin pisar nada; una
                                  plantilla vieja que nadie editó pasa a la de hoy
+  brain audit <ruta> [--fondo]   una sesión de solo lectura revisa el cerebro contra el código y la
+                                 historia de los runs, y propone decisiones; con --fondo, aparte
+  brain audit <ruta> --ultima    la última auditoría del proyecto, con su informe
+  brain apply <proyecto>/<id> --decision Dn [--decision Dm]
+                                 abre una PR con las decisiones elegidas de esa auditoría
   brain draft <ruta> [--reemplazar]
                                  propone en una PR un borrador del cerebro leído del repo;
                                  con --reemplazar, cambia el borrador anterior por uno nuevo`;
@@ -153,12 +182,58 @@ async function reapuntar(env: NodeJS.ProcessEnv): Promise<{ ok: true; reapuntado
   return { ok: true, reapuntado };
 }
 
+/** El trabajo de cada tarea de `_tarea`: lo que el panel lanza y sigue (ADR 0039). */
+async function tarea(
+  nombre: string,
+  args: readonly string[],
+  env: NodeJS.ProcessEnv,
+): Promise<Fin> {
+  if (nombre.startsWith("auditar-")) {
+    const { deps } = await productionRuntime(env, () => undefined);
+    const done = await auditBrain(need(args[0], "la ruta del repo"), deps, () => undefined);
+    return { ok: true, mensaje: describeAuditar(done) };
+  }
+  if (nombre === "self-update") {
+    const updated = await selfUpdate(env);
+    const orca = updated.reapuntado.find((r) => r.startsWith("Orca "));
+    const siguiente = orca === undefined ? undefined : aprobarPlugin(orca);
+    return {
+      ok: true,
+      mensaje: `flowrunner en ${updated.sha.slice(0, 7)}: ${updated.reapuntado.join(", ")}`,
+      ...(siguiente === undefined ? {} : { siguiente }),
+    };
+  }
+  if (nombre === "orca-install") {
+    const done = await installOrcaPlugin(env, undefined);
+    const siguiente = done.ok ? undefined : aprobarPlugin(done.salida);
+    return {
+      ok: done.ok,
+      mensaje: done.ok
+        ? done.salida || "plugin cargado"
+        : siguiente === undefined
+          ? done.salida
+          : "Orca pide aprobar el plugin: corré el comando de abajo en la terminal",
+      ...(siguiente === undefined ? {} : { siguiente }),
+    };
+  }
+  throw new UserError(`tarea desconocida: ${nombre}`);
+}
+
 /** De dónde viene la decisión: la skill pasa `claude`, el panel de Orca `orca` (ADR 0023). */
 function parseOrigen(value: unknown): Origen {
   if (value === undefined) return "terminal";
   const parsed = origenSchema.safeParse(value);
   if (!parsed.success) throw new UserError("--origen tiene que ser terminal, claude u orca");
   return parsed.data;
+}
+
+/**
+ * El motivo de `--sin-probar`: con `strict: false`, el flag sin valor llega como `true`. Ausente es
+ * undefined; presente, un texto, que `approveRun` exige no vacío.
+ */
+function sinProbarArg(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  return typeof value === "string" ? value : "";
 }
 
 /** Un valor de `parseArgs` con `multiple`: siempre una lista de textos. */
@@ -203,9 +278,13 @@ export async function main(
       cerrados: { type: "boolean", default: false },
       fondo: { type: "boolean", default: false },
       runs: { type: "boolean", default: false },
+      ultima: { type: "boolean", default: false },
+      decision: { type: "string", multiple: true },
       "github-user": { type: "string" },
       approve: { type: "string" },
       "acepto-cambios": { type: "boolean", default: false },
+      "sin-probar": { type: "string" },
+      deshacer: { type: "boolean", default: false },
     },
   });
   const json = values.json === true;
@@ -340,6 +419,15 @@ export async function main(
         print(accepted, `run ${accepted.id} ${accepted.accion}`);
         return 0;
       }
+      case "skip-probar": {
+        const skipped = skipProbar(home, runArg(home, first), {
+          motivo: rest.join(" "),
+          deshacer: values.deshacer === true,
+          origen: parseOrigen(values.origen),
+        });
+        print(skipped, `run ${skipped.id}: ${skipped.accion}`);
+        return 0;
+      }
       case "rerun": {
         const desde = typeof values.desde === "string" ? values.desde : undefined;
         const rerun = rerunRun(home, runArg(home, first), desde, env);
@@ -355,6 +443,20 @@ export async function main(
       case "prioritize": {
         const prioritized = prioritizeRun(home, runArg(home, first), parseOrigen(values.origen));
         print(prioritized, `run ${prioritized.id} ${prioritized.accion}`);
+        return 0;
+      }
+      case "explain": {
+        const id = runArg(home, first);
+        const explained =
+          values.fondo === true
+            ? explainInBackground(home, id, env)
+            : await explainRun(home, id, env);
+        print(
+          explained,
+          explained.estado === "lista"
+            ? explained.texto
+            : `${explained.id}: ${explained.resultado}`,
+        );
         return 0;
       }
       case "abort": {
@@ -374,6 +476,7 @@ export async function main(
           env,
           values["acepto-cambios"] === true,
           parseOrigen(values.origen),
+          sinProbarArg(values["sin-probar"]),
         );
         print(approved, `run ${approved.id} ${approved.accion}`);
         return 0;
@@ -439,6 +542,20 @@ export async function main(
         return result.ok ? 0 : 1;
       }
       case "self-update": {
+        if (values.fondo === true) {
+          // Lo que se puede rechazar enseguida, se rechaza acá: el panel lo muestra sin esperar.
+          sinProcesosVivos(home);
+          const started = lanzarTarea(
+            home,
+            "self-update",
+            [],
+            "actualizando flowrunner a origin/main",
+            env,
+            new Date(),
+          );
+          print(started, started.resultado);
+          return 0;
+        }
         const updated = await selfUpdate(env);
         print(
           updated,
@@ -478,6 +595,23 @@ export async function main(
       }
       case "orca": {
         if (first !== "install") break;
+        if (values.fondo === true) {
+          if (typeof values.approve === "string")
+            throw new UserError(
+              "--approve no va con --fondo: aprobar el plugin lo hacés vos en la terminal",
+              `flowrunner orca install --approve ${values.approve}`,
+            );
+          const started = lanzarTarea(
+            home,
+            "orca-install",
+            [],
+            "cargando el plugin en Orca",
+            env,
+            new Date(),
+          );
+          print(started, started.resultado);
+          return 0;
+        }
         const done = await installOrcaPlugin(
           env,
           typeof values.approve === "string" ? values.approve : undefined,
@@ -511,6 +645,55 @@ export async function main(
         return 0;
       }
       case "brain": {
+        if (first === "audit") {
+          const ruta = need(rest[0], "la ruta del repo");
+          if (values.ultima === true) {
+            // Lo que lee el panel: la última auditoría del proyecto, con su informe ya escrito.
+            const { nombre } = await proyectoDe(ruta, env);
+            const ultima = ultimaAuditoria(home, nombre);
+            // Sin el `.md`, por una escritura cortada, se vuelve a armar del registro.
+            const informe =
+              ultima === undefined
+                ? null
+                : existsSync(ultima.md)
+                  ? readFileSync(ultima.md, "utf8")
+                  : informeAuditoria(ultima.registro);
+            print(
+              { ok: true, proyecto: nombre, auditoria: ultima?.registro ?? null, informe },
+              informe ?? `${nombre} todavía no tiene auditorías: flowrunner brain audit ${ruta}`,
+            );
+            return 0;
+          }
+          if (values.fondo === true) {
+            const { nombre, repo } = await proyectoDe(ruta, env);
+            const started = lanzarTarea(
+              home,
+              `auditar-${nombre}`,
+              [repo],
+              `auditando el cerebro de ${nombre}`,
+              env,
+              new Date(),
+            );
+            print({ ...started, proyecto: nombre }, started.resultado);
+            return 0;
+          }
+          const { deps } = await productionRuntime(env, () => undefined);
+          const done = await auditBrain(ruta, deps, progressLog(io, json));
+          print(done, describeAuditar(done));
+          return 0;
+        }
+        if (first === "apply") {
+          const { deps } = await productionRuntime(env, () => undefined);
+          const done = await applyAudit(
+            need(rest[0], "la auditoría, como <proyecto>/<id>"),
+            strings(values.decision),
+            deps,
+            progressLog(io, json),
+          );
+          // `resultado`: lo que muestra el panel de Orca, como en las demás tareas.
+          print({ ...done, resultado: describeAplicar(done) }, describeAplicar(done));
+          return 0;
+        }
         if (first === "draft") {
           const { deps } = await productionRuntime(env, () => undefined);
           const drafted = await draftExistingBrain(
@@ -539,6 +722,32 @@ export async function main(
         const id = runArg(home, first);
         io.out(`aprender ${id}: ${await learnAndNotify(home, id, env)}`);
         return 0;
+      }
+      case "_explain": {
+        const done = await explainAndNotify(home, runArg(home, first), env);
+        io.out(`explicar ${done.id}: ${done.estado}`);
+        return 0;
+      }
+      case "tareas": {
+        const tareas = listarTareas(home, new Date());
+        print(
+          { ok: true, tareas },
+          tareas.map((t) => `${t.nombre}  ${t.estado}  ${t.mensaje}`).join("\n") ||
+            "no corrió ninguna tarea",
+        );
+        return 0;
+      }
+      case "_tarea": {
+        const nombre = need(first, "la tarea");
+        const fin = await correrTarea(
+          home,
+          nombre,
+          "trabajando",
+          () => tarea(nombre, rest, env),
+          env,
+        );
+        io.out(`${nombre}: ${fin.mensaje}`);
+        return fin.ok ? 0 : 1;
       }
       case "_run": {
         const final = await runProcess(home, runArg(home, first), env);

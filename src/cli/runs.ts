@@ -4,7 +4,14 @@ import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { offers, offersFix, reduce, stateOf, type RunState } from "../engine/engine.ts";
+import {
+  offers,
+  offersFix,
+  probarNoArranco,
+  reduce,
+  stateOf,
+  type RunState,
+} from "../engine/engine.ts";
 import { changesSince, commitAll, commitChanges, git, headSha, isAncestor } from "../git/git.ts";
 import { runFixers } from "../phases/fixers.ts";
 import { avisoDeEstado, cambiosDelPlan } from "../notify/estado.ts";
@@ -58,7 +65,7 @@ export const BIN = join(import.meta.dirname, "..", "..", "bin", "flowrunner.js")
 export function spawnRunProcess(
   run: RunPaths,
   env: NodeJS.ProcessEnv,
-  comando: "_run" | "_learn" = "_run",
+  comando: "_run" | "_learn" | "_explain" = "_run",
 ): number {
   const log = openSync(join(run.dir, "run.log"), "a");
   const child = spawn(
@@ -651,6 +658,61 @@ export function acceptUntested(
     "aceptado sin probar",
     lanzarOEncolar(home, id, env),
   );
+}
+
+/**
+ * Saltear probar antes de que arranque, o deshacerlo (ADR 0036). Es una decisión de la persona: sin
+ * motivo no se acepta, y queda en el informe y en la PR. No lanza nada: el run sigue como estaba y,
+ * al llegar a probar, el runner no la corre.
+ */
+export function skipProbar(
+  home: string,
+  id: string,
+  opts: { readonly motivo: string; readonly deshacer: boolean; readonly origen: Origen },
+) {
+  const motivo = opts.motivo.trim();
+  if (!opts.deshacer && motivo === "") {
+    throw new UserError(
+      "falta el motivo: por qué se saltea probar; queda en el informe y en la PR",
+      `flowrunner skip-probar ${id} "<por qué>"`,
+    );
+  }
+  const state = loadOrExplain(home, id);
+  if (!probarNoArranco(state)) {
+    if (state.status === "detenido" && state.sinProbar) {
+      throw new UserError(
+        `el run ${id} ya probó y quedó detenido por criterios sin probar: para entregar igual, decilo con accept-untested`,
+        `flowrunner accept-untested ${id} "<por qué>"`,
+      );
+    }
+    throw new UserError(
+      `probar ya arrancó o pasó: el run ${id} está ${state.status} en ${state.fase}`,
+      `flowrunner status ${id}`,
+    );
+  }
+  if (opts.deshacer && state.probarSalteado === undefined)
+    throw new UserError(`probar no está marcado para saltearse en el run ${id}`);
+  const dir = runPaths(home, id).dir;
+  appendEvent(
+    dir,
+    opts.deshacer
+      ? { tipo: "probar_restaurado", origen: opts.origen }
+      : { tipo: "probar_salteado", motivo, origen: opts.origen },
+  );
+  // El run puede haber entrado a probar entre la lectura y el evento: el reductor lo ignora, y el CLI
+  // no dice que hizo algo que no pasó.
+  const after = loadState(home, id).probarSalteado;
+  if (opts.deshacer ? after !== undefined : after !== motivo) {
+    throw new UserError(
+      `probar arrancó mientras tanto en el run ${id}: no se pudo ${opts.deshacer ? "deshacer" : "saltear"}`,
+      `flowrunner status ${id}`,
+    );
+  }
+  return runStartedSchema.parse({
+    ok: true,
+    id,
+    accion: opts.deshacer ? "probar vuelve a correr" : `probar se va a saltear: ${motivo}`,
+  });
 }
 
 export function rerunRun(

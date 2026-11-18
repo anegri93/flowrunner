@@ -3,16 +3,26 @@
 //
 // El refresco no borra nada: si una lectura falla, quedan los runs anteriores con el error arriba.
 // Nunca dos lecturas a la vez, y una que quedó vieja por un cambio de workspace se descarta.
+import {
+  terminadas,
+  type CerebroSnapshot,
+  type DoctorSnapshot,
+  type Mantenimiento,
+  type TareasSnapshot,
+} from "./doctor";
 import type { Openable, Outcome, Snapshot } from "./protocol";
 import { enColaJunto, planVersion, type Decision, type Run } from "./runs";
 import {
+  DOCTOR_INICIAL,
   ESTADO_INICIAL,
   isOpen,
   pendingFor,
   textFor,
   vista,
   type Accion,
+  type AccionDoctor,
   type Estado,
+  type EstadoDoctor,
 } from "./vista";
 
 /** Lo que el panel necesita de afuera: el worker, el storage del plugin, el navegador y la hora. */
@@ -24,6 +34,13 @@ export interface Api {
   leer(key: string): Promise<unknown>;
   guardar(key: string, value: Readonly<Record<string, string | boolean>>): Promise<void>;
   externo(url: string): Promise<void>;
+  /** El doctor de la máquina y las tareas de fondo (ADR 0039). */
+  doctor(): Promise<DoctorSnapshot>;
+  tareas(): Promise<TareasSnapshot>;
+  mantener(m: Mantenimiento): Promise<Outcome>;
+  /** El cerebro del proyecto enfocado y el informe de su auditoría (ADR 0040). */
+  cerebro(): Promise<CerebroSnapshot>;
+  informeCerebro(): Promise<Outcome>;
   ahora(): number;
 }
 
@@ -82,6 +99,13 @@ export class Panel {
   /** La próxima lectura es por un cambio de proyecto: alcanza con la lectura reciente del worker. */
   #reciente = false;
   #workspace: string | undefined;
+  /**
+   * Las explicaciones que la persona pidió y todavía se escriben: se abren solas cuando una lectura las
+   * ve listas (ADR 0037). Duran lo que el panel; las de otra sesión se abren con su botón.
+   */
+  readonly #explicando = new Map<string, number>();
+  /** Cuántas lecturas de los runs arrancaron: dice si una salió antes de un pedido de explicación. */
+  #lecturas = 0;
   readonly #api: Api;
   readonly #changed: () => void;
 
@@ -131,19 +155,139 @@ export class Panel {
     );
   }
 
-  /** Lee los runs. Una lectura que no cambió nada no vuelve a dibujar. */
+  #setDoctor(patch: Partial<EstadoDoctor>): void {
+    const d = this.#e.doctor;
+    if (d !== null) this.#set({ doctor: { ...d, ...patch } });
+  }
+
+  /** Lo que dice doctor de la máquina: lento, se lee al abrir, al pedirlo y cuando termina una tarea. */
+  async #leerDoctor(): Promise<void> {
+    await Promise.all([this.#leerMaquina(), this.#leerCerebro()]);
+  }
+
+  /** El cerebro del proyecto enfocado; un error se muestra en su sección, no en la máquina. */
+  async #leerCerebro(): Promise<void> {
+    try {
+      this.#setDoctor({ cerebro: await this.#api.cerebro() });
+    } catch (error) {
+      this.#setDoctor({ cerebro: { auditoria: null, error: message(error) } });
+    }
+  }
+
+  async #leerMaquina(): Promise<void> {
+    try {
+      const snap = await this.#api.doctor();
+      this.#setDoctor({
+        ...(snap.doctor === undefined ? {} : { info: snap.doctor }),
+        tareas: snap.tareas,
+        error: snap.error ?? null,
+      });
+    } catch (error) {
+      this.#setDoctor({ error: message(error) });
+    }
+  }
+
+  /** Las tareas, barato: si una terminó, la versión y los chequeos pueden haber cambiado. */
+  async #leerTareas(): Promise<void> {
+    const antes = this.#e.doctor?.tareas ?? [];
+    try {
+      const snap = await this.#api.tareas();
+      if (snap.error !== undefined) {
+        this.#setDoctor({ error: snap.error });
+        return;
+      }
+      if (JSON.stringify(snap.tareas) !== JSON.stringify(antes))
+        this.#setDoctor({ tareas: snap.tareas });
+      if (terminadas(antes, snap.tareas).length > 0) await this.#leerDoctor();
+    } catch (error) {
+      this.#setDoctor({ error: message(error) });
+    }
+  }
+
+  async #mantener(m: Mantenimiento): Promise<void> {
+    this.#setDoctor({ confirmar: null, dicho: null, enviando: true });
+    try {
+      this.#setDoctor({ dicho: await this.#api.mantener(m) });
+    } catch (error) {
+      this.#setDoctor({ dicho: { ok: false, mensaje: message(error) } });
+    } finally {
+      this.#setDoctor({ enviando: false });
+    }
+    // La PR ya está: lo elegido pasa a «en la PR» al releer el cerebro.
+    if (m.accion === "aplicar") {
+      this.#setDoctor({ elegidas: {} });
+      await this.#leerCerebro();
+    }
+    await this.#leerTareas();
+  }
+
+  async #doctor(a: AccionDoctor): Promise<void> {
+    switch (a.t) {
+      case "abrir":
+        this.#set({ doctor: DOCTOR_INICIAL });
+        await this.#leerDoctor();
+        return;
+      case "cerrar":
+        this.#set({ doctor: null });
+        return;
+      case "releer":
+        this.#setDoctor({ info: undefined, error: null });
+        await this.#leerDoctor();
+        return;
+      case "preguntar":
+        this.#setDoctor({ confirmar: a.m });
+        return;
+      case "cancelar":
+        this.#setDoctor({ confirmar: null });
+        return;
+      case "mantener":
+        await this.#mantener(a.m);
+        return;
+      case "elegir": {
+        const elegidas = this.#e.doctor?.elegidas ?? {};
+        this.#setDoctor({ elegidas: { ...elegidas, [a.id]: elegidas[a.id] !== true } });
+        return;
+      }
+      case "informe": {
+        try {
+          const answer = await this.#api.informeCerebro();
+          if (!answer.ok) this.#setDoctor({ dicho: answer });
+        } catch (error) {
+          this.#setDoctor({ dicho: { ok: false, mensaje: message(error) } });
+        }
+        return;
+      }
+    }
+  }
+
+  /**
+   * Lee los runs, y con el doctor abierto, sus tareas. Una lectura que no cambió nada no vuelve a
+   * dibujar.
+   */
   async refresh(): Promise<void> {
+    if (this.#e.doctor !== null) await this.#leerTareas();
     if (this.#reading) return;
     this.#reading = true;
     const asked = this.#generation;
+    const lectura = ++this.#lecturas;
     const reciente = this.#reciente;
     this.#reciente = false;
     try {
       const next = await this.#api.runs(reciente);
       if (asked !== this.#generation) return;
       const prev = this.#e.snapshot;
-      if (next.error === undefined)
+      if (next.error === undefined) {
         for (const id of closedSince(prev, next)) void this.#open(id, { tipo: "informe" });
+        for (const [id, pedida] of [...this.#explicando]) {
+          // Una lectura que salió antes del pedido no sabe todavía que se está escribiendo.
+          if (lectura <= pedida) continue;
+          const run = next.runs.find((r) => r.id === id);
+          if (run?.explicacion?.estado === "explicando") continue;
+          // Lista, se abre; si falló o el run ya no está detenido, deja de esperarla.
+          this.#explicando.delete(id);
+          if (run?.explicacion?.estado === "lista") void this.#open(id, { tipo: "explicacion" });
+        }
+      }
       const shown =
         next.error !== undefined && prev !== null ? { ...prev, error: next.error } : next;
       const same =
@@ -197,6 +341,12 @@ export class Panel {
       const answer = await this.#api.abrir(run, que);
       if (!answer.ok) {
         this.#set({ aviso: { run, texto: answer.mensaje } });
+        return;
+      }
+      if (answer.explicando === true) {
+        // Se está escribiendo: la tarjeta lo dice con la próxima lectura, y al terminar se abre sola.
+        this.#explicando.set(run, this.#lecturas);
+        await this.refresh();
         return;
       }
       const shown = this.#run(run);
@@ -308,7 +458,13 @@ export class Panel {
         const run = this.#run(accion.run);
         const asked = run === undefined ? undefined : textFor(pendingFor(this.#e, run));
         if (asked === undefined || this.#e.borrador.trim() === "") return;
-        await this.#decide(accion.run, asked.decision(this.#e.borrador));
+        const decision = asked.decision(this.#e.borrador.trim());
+        // Aprobar sin probar: con el motivo escrito, se confirma como cualquier Aprobar (ADR 0036).
+        if (decision.accion === "aprobar") {
+          this.#set({ pendiente: { run: accion.run, decision }, borrador: "" });
+          return;
+        }
+        await this.#decide(accion.run, decision);
         return;
       }
       case "abortar":
@@ -337,6 +493,9 @@ export class Panel {
         return;
       case "confirmarAbortar":
         await this.#abort(accion.run);
+        return;
+      case "doctor":
+        await this.#doctor(accion.a);
         return;
     }
   }

@@ -11,6 +11,8 @@ export const AGENT_PHASES = [
   "revisar",
   "probar",
   "aprender",
+  /** La sesión que explica una detención a la persona (ADR 0037): no es una fase del run. */
+  "explicar",
 ] as const;
 export type AgentPhase = (typeof AGENT_PHASES)[number];
 
@@ -27,6 +29,7 @@ export const DEFAULT_MODELS: Record<AgentPhase, ModelChoice> = {
   revisar: { model: "claude-opus-5-5", effort: "high" },
   probar: { model: "claude-sonnet-5-5", effort: "high" },
   aprender: { model: "claude-sonnet-5-5", effort: "medium" },
+  explicar: { model: "claude-sonnet-5-5", effort: "medium" },
 };
 
 const relativePath = z

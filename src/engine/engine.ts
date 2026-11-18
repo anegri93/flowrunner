@@ -1,6 +1,6 @@
 // La máquina de estados del run: una función pura sobre el log. El código decide qué fase toca;
 // la fase solo informa cómo le fue.
-import type { Arreglo, Outcome, Phase, RunEvent } from "../store/events.ts";
+import { PHASES, type Arreglo, type Outcome, type Phase, type RunEvent } from "../store/events.ts";
 import { esCredencial, esFallaDeRed } from "./motivos.ts";
 
 export type RunStatus =
@@ -120,6 +120,11 @@ export interface RunState {
   readonly sinProbar: boolean;
   /** Detenido esperando que la persona arregle el worktree a mano y lo retome (`fix --yo`). */
   readonly aMano: boolean;
+  /**
+   * La persona pidió saltear probar, con este motivo (ADR 0036): cuando el run llega a probar, el
+   * runner no la corre. Sobrevive a un replan; `rehacer` desde probar la borra.
+   */
+  readonly probarSalteado: string | undefined;
   /**
    * Autofix en curso (ADR 0026): el próximo rojo con sub-tasks vuelve a implementar con su motivo en
    * vez de detenerse. Se gasta una vez; cualquier detención lo apaga.
@@ -501,6 +506,7 @@ export function initialState(): RunState {
     pausaPedida: false,
     sinProbar: false,
     aMano: false,
+    probarSalteado: undefined,
     autofix: false,
     autofixCorrio: false,
     directaCorrio: false,
@@ -529,6 +535,22 @@ export const offersFix = (state: RunState, unidades: readonly string[]): boolean
       (state.halt?.unidades ?? []).includes(u) &&
       offers(state, `flowrunner fix ${state.runId} --unidad ${u} `),
   );
+
+/** Cómo empieza el motivo de una probar salteada a pedido de la persona (ADR 0036). */
+export const SALTEADA_POR_LA_PERSONA = "la salteó la persona: ";
+
+/**
+ * Probar todavía no arrancó: el run está en una fase anterior, o en probar en cola o pausado, que
+ * todavía no la corrieron. Es cuando la persona puede pedir saltearla o deshacerlo (ADR 0036). En
+ * probar con un proceso andando, o detenido ahí, ya arrancó.
+ */
+export const probarNoArranco = (state: RunState): boolean =>
+  !TERMINAL.has(state.status) &&
+  state.status !== "entregado" &&
+  (PHASES.indexOf(state.fase) < PHASES.indexOf("probar") ||
+    (state.fase === "probar" &&
+      !state.interrumpida &&
+      (state.status === "en_cola" || state.status === "pausado")));
 
 export function reduce(state: RunState, event: RunEvent): RunState {
   if (state.status === "abortado") return state;
@@ -657,6 +679,11 @@ export function reduce(state: RunState, event: RunEvent): RunState {
         next !== undefined;
       return applies ? enter(state, next, RESPONDIO_LA_PERSONA) : state;
     }
+    case "probar_salteado":
+      return probarNoArranco(state) ? { ...state, probarSalteado: event.motivo } : state;
+    case "probar_restaurado":
+      return probarNoArranco(state) ? { ...state, probarSalteado: undefined } : state;
+    // Rehacer probar es pedir probar: la marca de saltearla no sobrevive (ADR 0036).
     case "rehacer": {
       // Un feedback pendiente va como instrucción si se replanifica, se vuelve a evaluar si se rehace
       // aprender, y se pierde desde cualquier otra fase: la persona eligió no usarlo (ADR 0038).
@@ -666,7 +693,13 @@ export function reduce(state: RunState, event: RunEvent): RunState {
           ? feedbackInstruction(state.feedback)
           : undefined;
       return enter(
-        { ...state, vueltas: NO_ROUNDS, autofix: false, ...RESPONDIO_LA_PERSONA },
+        {
+          ...state,
+          vueltas: NO_ROUNDS,
+          autofix: false,
+          ...RESPONDIO_LA_PERSONA,
+          ...(event.desde === "probar" ? { probarSalteado: undefined } : {}),
+        },
         event.desde,
         { feedback, ...(instruccion === undefined ? {} : { instruccion }) },
       );
@@ -697,8 +730,26 @@ export function reduce(state: RunState, event: RunEvent): RunState {
     case "lecciones":
     case "lecciones_propuestas":
     case "pr":
+    case "explicacion":
       return state;
   }
+}
+
+/**
+ * La detención actual del run, como la posición en el log del evento que la dejó: la clave de su
+ * explicación (ADR 0037). Una detención que sigue igual (eventos que no la cambian, como el uso de una
+ * explicación) conserva su número; una nueva, aunque diga lo mismo, tiene otro. Undefined si el run no
+ * está detenido.
+ */
+export function detencionDe(events: readonly RunEvent[]): number | undefined {
+  let state = initialState();
+  let at: number | undefined;
+  events.forEach((event, index) => {
+    const next = reduce(state, event);
+    if (next.halt !== state.halt) at = next.halt === undefined ? undefined : index;
+    state = next;
+  });
+  return state.status === "detenido" ? at : undefined;
 }
 
 /**

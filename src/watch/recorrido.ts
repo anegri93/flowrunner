@@ -30,6 +30,8 @@ export type TuyoQue =
   | "reanudaste"
   | "pausaste"
   | "priorizaste"
+  | "salteaste probar"
+  | "volviste a probar"
   | "abortaste";
 
 /** Una corrida de una etapa. `clave` es estable: sale del índice de su `accion_iniciada`. */
@@ -317,6 +319,12 @@ export function recorridoOf(input: RecorridoInput): {
         return;
       case "priorizado":
         mine(clave, e.at, "priorizaste");
+        return;
+      case "probar_salteado":
+        mine(clave, e.at, "salteaste probar", e.motivo);
+        return;
+      case "probar_restaurado":
+        mine(clave, e.at, "volviste a probar");
         return;
       default:
         return;

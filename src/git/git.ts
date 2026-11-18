@@ -14,7 +14,7 @@ export class GitError extends Error {
 
 /** Ramas que flowrunner puede empujar. Cualquier otra, `main` incluida, se rechaza. */
 const PUSHABLE =
-  /^(feat\/[A-Za-z0-9._/-]+|chore\/lecciones-[A-Za-z0-9._-]+|chore\/flowrunner-(init|borrador))$/;
+  /^(feat\/[A-Za-z0-9._/-]+|chore\/lecciones-[A-Za-z0-9._-]+|chore\/flowrunner-(init|borrador)|chore\/flowrunner-auditoria-[a-z0-9-]+)$/;
 
 export async function git(
   cwd: string,
@@ -201,7 +201,7 @@ export async function pushBranch(
   if (!PUSHABLE.test(branch))
     throw new GitError(
       ["push", branch],
-      "flowrunner solo empuja ramas feat/, chore/lecciones-, chore/flowrunner-init y chore/flowrunner-borrador",
+      "flowrunner solo empuja ramas feat/, chore/lecciones-, chore/flowrunner-init, chore/flowrunner-borrador y chore/flowrunner-auditoria-",
     );
   // Con el turno de git: el push actualiza refs/remotes/origin, que un fetch de otro run reescribe.
   await conTurnoGit(worktree, () =>

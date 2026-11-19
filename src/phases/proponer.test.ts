@@ -62,6 +62,51 @@ describe("frictions", () => {
     ]);
   });
 
+  // Si regresiona, el aprendizaje vuelve a depender solo de las vueltas: un run derecho no deja nada
+  // aunque haya descubierto algo, y lo que la persona decidió al responder no llega al cerebro.
+  test("suma lo que descubrió implementar, las preguntas respondidas y las decisiones de revisar (flowrunner 2.0)", () => {
+    const found = frictions([
+      {
+        tipo: "descubrimiento",
+        at: AT,
+        fase: "implementar",
+        unidad: "ST-2",
+        que: "Excalidraw descarta un pointermove en window",
+        donde: "src/Conectar.tsx:52",
+        como: "la vista previa no llegaba",
+      },
+      {
+        tipo: "accion_terminada",
+        at: AT,
+        fase: "planificar",
+        resultado: { tipo: "pregunta", motivo: "¿la paleta viaja entera?" },
+      },
+      { tipo: "respondido", at: AT, respuesta: "sí, entera", origen: "claude" },
+      {
+        tipo: "accion_terminada",
+        at: AT,
+        fase: "revisar",
+        resultado: { tipo: "pregunta", motivo: "unpdf pide Node 24", unidades: ["ST-1"] },
+      },
+      { tipo: "aceptado", at: AT, fase: "revisar", motivo: "subir a node 24", origen: "orca" },
+    ]);
+    expect(found).toEqual([
+      {
+        origen: "implementar ST-2, descubrimiento 1",
+        texto:
+          "Excalidraw descarta un pointermove en window (src/Conectar.tsx:52): la vista previa no llegaba",
+      },
+      {
+        origen: "planificar, pregunta 1",
+        texto: "¿la paleta viaja entera?\nRespondiste: sí, entera",
+      },
+      {
+        origen: "revisar, decisión 1",
+        texto: "unpdf pide Node 24\nDecidiste seguir igual: subir a node 24",
+      },
+    ]);
+  });
+
   test("un run sin vueltas ni cambios al plan no tiene fricción", () => {
     expect(frictions([{ tipo: "aprobado", at: AT }])).toEqual([]);
   });
@@ -95,9 +140,12 @@ describe("proposalSchema", () => {
   });
 
   // Si regresiona, cada vuelta vuelve a dejar hasta tres lecciones.
-  test("pasan hasta dos lecciones, y sin sugerencias es una lista vacía", () => {
-    expect(proposalSchema.parse({ lecciones: [lesson, lesson] }).sugerencias).toEqual([]);
-    expect(proposalSchema.safeParse({ lecciones: [lesson, lesson, lesson] }).success).toBe(false);
+  // Hasta tres desde flowrunner 2.0: además de las vueltas, aprende de preguntas y descubrimientos.
+  test("pasan hasta tres lecciones, y sin sugerencias es una lista vacía", () => {
+    expect(proposalSchema.parse({ lecciones: [lesson, lesson, lesson] }).sugerencias).toEqual([]);
+    expect(proposalSchema.safeParse({ lecciones: [lesson, lesson, lesson, lesson] }).success).toBe(
+      false,
+    );
   });
 });
 

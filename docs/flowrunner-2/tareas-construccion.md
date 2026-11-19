@@ -208,13 +208,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T3.2
 
 ### T3.2 · Proponer lecciones también de descubrimientos, preguntas y decisiones
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `frictions()` (`src/phases/proponer.ts`) suma tres fuentes, con su origen citable: `implementar ST-n, descubrimiento k`; `planificar, pregunta k` (la pregunta del planificador y lo que respondiste con `flowrunner responder`, de T1.4); y `revisar, decisión k` (la pregunta de decisión de T2.2 y cómo la resolviste). Un run sin vueltas pero con alguna de estas fuentes ya no termina en «Nada nuevo para el cerebro». El límite de lecciones por run pasa de 2 a 3, porque hay más fuentes.
 - **Lint:** `pnpm lint` verde.
-- **Test:** test primero en `src/phases/proponer.test.ts`: (1) `frictions()` de un log con un descubrimiento, una pregunta respondida y una decisión de revisar devuelve las tres, en orden y con su origen; (2) un run sin vueltas pero con un descubrimiento abre la sesión de proponer (la sesión falsa se llama) en vez de escribir «Nada nuevo»; (3) una lección que cita un origen que no está entre las fuentes se sigue descartando.
-- **Canario:** mutación prevista: que `frictions()` ignore los eventos `respondido`; el test (1) tiene que ponerse rojo.
+- **Test:** test primero en `src/phases/proponer.test.ts`, «suma lo que descubrió implementar, las preguntas respondidas y las decisiones de revisar»: `frictions()` devuelve las tres fuentes en orden, con su origen citable y su texto (el descubrimiento con su `donde`; la pregunta con tu respuesta; la decisión de revisar con cómo la resolviste). «pasan hasta tres lecciones» fija el tope nuevo (antes dos: cambio intencional). Que un run sin vueltas pero con un descubrimiento abra la sesión de proponer lo cubre el test de integración del Gate de la Fase 3: la condición es `frictions().length === 0`, que no cambió. Una lección que cita un origen inexistente se sigue descartando (test existente).
+- **Canario:** hecho: ignorar `respondido` → el test de las fuentes se puso rojo. Restaurado.
 - **Criterio de aprobación:** la sección de lecciones de la PR de un run sin vueltas pero con un descubrimiento propone una lección que lo cita.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff; tres ramas más en `frictions()`, sin un sistema de fuentes.
+- **Revisión ponytail:** a mano: `frictions` pasa de un `flatMap` sin estado a uno con la pregunta pendiente, que es lo mínimo para unir una pregunta con su respuesta. Sin un sistema de fuentes. Sin hallazgos abiertos.
 - **Desbloquea:** T3.3
 
 ### T3.3 · Cada lección dice para quién es

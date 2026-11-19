@@ -329,8 +329,8 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 
 ### T5.1 · Correr las features de medición y escribir el resultado
 - **Estado:** `[!] Bloqueado`
-- **Motivo del bloqueo:** son corridas reales en pizarra-en-vivo, con el ping pong de la skill y decisiones de la persona; no las puede hacer un agente solo. Además necesitan flowrunner 2.0 instalado: las PRs #129 a #153 mergeadas en orden, `flowrunner self-update`, y después la PR en borrador anegri93/pizarra-en-vivo#175 (la config nueva, que la versión instalada hoy rechaza).
-- **Acción:** la persona mergea las PRs en orden, corre `flowrunner self-update`, mergea #175 y corre las features de medición siguiendo `docs/flowrunner-2/medicion.md`; después se escribe `resultado.md`.
+- **Motivo del bloqueo:** son corridas reales en pizarra-en-vivo, con el ping pong de la skill y decisiones de la persona: no las puede hacer un agente solo. Lo previo ya está: flowrunner 2.0 mergeado (#129 a #153), instalado con `flowrunner self-update` en `bdbca3a`, y la config nueva de pizarra (`vueltas: 1`, `aprobar: si_hace_falta`) mergeada en anegri93/pizarra-en-vivo#175 (19-11-2026).
+- **Acción:** la persona corre las features de medición: 5 con `implementar: una_sesion` y 5 con `sub_tasks` (cambiando esa clave en la config de pizarra entre una tanda y otra), y 3 directo en Claude Code, siguiendo `docs/flowrunner-2/medicion.md`. Con eso se escribe `resultado.md` y se decide qué queda por defecto.
 - **Descripción:** en pizarra-en-vivo, con la config de la Fase 2: 5 features con `implementar: una_sesion` y 5 con `sub_tasks`, alternadas, y 3 features directo en Claude Code con el protocolo de T0.1. Todas con el ping pong nuevo. Llenar la planilla de `medicion.md` y escribir `docs/flowrunner-2/resultado.md`: la tabla contra la línea de base, qué opción queda por defecto y si `aprobar: si_hace_falta` pasa a ser el valor por defecto de flowrunner.
 - **Lint:** `pnpm lint` verde (prettier sobre los `.md`).
 - **Test:** N/A — son corridas reales y un informe; verificación: los números de `resultado.md` se reproducen con `flowrunner stats --runs` y la planilla de las corridas directas.

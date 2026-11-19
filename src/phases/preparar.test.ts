@@ -18,6 +18,21 @@ describe("preparar", () => {
     expect(git(done.worktree, "status", "--porcelain")).toBe("");
   });
 
+  // Si regresiona, un lecciones.md largo vuelve a cortar el run (pasó dos veces en pizarra-en-vivo), o
+  // sigue sin que la persona se entere de que conviene auditarlo (flowrunner 2.0, T3.5).
+  test("un lecciones.md por encima de su tope no frena: preparar sigue con un aviso", async () => {
+    const { work } = makeProject({ files: { ".flowrunner/lecciones.md": "x".repeat(15_000) } });
+    const run = newRun(work);
+    expect(await preparar(contextFor(run, "preparar", testDeps()))).toEqual({ tipo: "ok" });
+    expect(readLog(run.dir).events).toContainEqual(
+      expect.objectContaining({
+        tipo: "aviso",
+        fase: "preparar",
+        texto: expect.stringMatching(/lecciones\.md tiene 15000 caracteres/) as unknown,
+      }),
+    );
+  });
+
   // Si regresiona, flowrunner gasta tokens implementando sobre una base que ya estaba rota.
   test("base roja: falla de entorno con la salida de verify y sin reintento", async () => {
     const { work } = makeProject({ verify: 'echo "3 tests fallan" >&2\nexit 1' });

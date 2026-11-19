@@ -44,7 +44,8 @@ export const preparar: PhaseFn = async (ctx) => {
   let config;
   try {
     config = loadRepoConfig(worktree);
-    loadBrain(worktree);
+    for (const texto of loadBrain(worktree).avisos)
+      emit({ tipo: "aviso", fase: "preparar", texto });
   } catch (error) {
     if (error instanceof ConfigError) return entorno(error.message);
     throw error;

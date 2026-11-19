@@ -238,13 +238,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T3.5
 
 ### T3.5 · El tope de lecciones avisa en vez de cortar el run
-- **Estado:** `[ ] Pendiente`
-- **Descripción:** hoy, si `lecciones.md` pasa los 12.000 caracteres (`BRAIN_FILES`, `src/brain/brain.ts:21`), `loadBrain` (`src/brain/brain.ts:91`) lo cuenta como problema, preparar falla y el run no arranca (pasó 2 veces en pizarra). `loadBrain` lo usan también planificar, implementar, revisar y explorar, así que el cambio es en el cerebro, no solo en preparar: para `lecciones` el exceso pasa de problema a aviso. Primero se lee ADR 0040 para entender por qué está el tope; si es por el tamaño del prompt, el run sigue con un `aviso` que propone correr la auditoría del cerebro, y el texto llega entero. Si el ADR da una razón que lo impida, la tarea se replantea antes de tocar código.
+- **Estado:** `[x] Hecho`
+- **Descripción:** hoy, si `lecciones.md` pasa los 12.000 caracteres (`BRAIN_FILES`, `src/brain/brain.ts:21`), `loadBrain` lo cuenta como problema, preparar falla y el run no arranca (pasó 2 veces en pizarra). El tope está en la spec v0 (sección 8) para acotar el prompt, con la regla «nunca se corta en silencio»; ADR 0040 no lo trata. Para `lecciones.md` el exceso pasa de problema a aviso: el texto llega entero, sin cortar, y el aviso propone `flowrunner brain audit`. Los otros archivos del cerebro siguen frenando. La consolidación de aprender, que reescribe también `lecciones-detalle.md`, no cambia: usa `BRAIN_FILES.lecciones.max` directo.
 - **Lint:** `pnpm lint` verde.
-- **Test:** test primero en el test de `src/brain/brain.ts` y en `src/phases/preparar.test.ts`: (1) con un `lecciones.md` de 15.000 caracteres, `loadBrain` devuelve el texto entero y un aviso, y preparar termina en `ok` con un `aviso` que nombra el archivo y el tamaño; (2) los otros archivos del cerebro con su tope siguen como hoy.
-- **Canario:** mutación prevista: devolver otra vez `falla` por el tamaño; el test (1) tiene que ponerse rojo.
+- **Test:** test primero: `src/brain/brain.test.ts` «lecciones.md por encima de su tope se carga entero con un aviso; los otros archivos siguen frenando»; `src/phases/preparar.test.ts` «un lecciones.md por encima de su tope no frena: preparar sigue con un aviso».
+- **Canario:** hecho: (a) volver a tratar el exceso de lecciones como problema → el test de brain rojo; (b) que preparar no emita el aviso → el test de preparar rojo. Restaurado.
 - **Criterio de aprobación:** un run de pizarra con un `lecciones.md` largo arranca y el aviso aparece en el informe.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff; cambia una rama, sin compactar automático.
+- **Revisión ponytail:** a mano: una rama en `loadBrain` y una lista de avisos en `Brain`; sin compactar automático. Sin hallazgos abiertos.
 - **Desbloquea:** Gate Fase 3
 
 ### Gate Fase 3

@@ -2,7 +2,7 @@
 import { realpathSync } from "node:fs";
 import { z } from "zod";
 import type { RepoConfig } from "../config/schemas.ts";
-import type { Feature } from "../feature/feature.ts";
+import { TEMAS, type Feature } from "../feature/feature.ts";
 import { isUnrunnable, runShell, tail, type ProcResult } from "../proc/proc.ts";
 import { ALWAYS_PROTECTED, insideRoot, type Scope } from "../tripwires/rules.ts";
 
@@ -116,20 +116,41 @@ export type Plan = z.infer<typeof planSchema>;
  * La salida de la sesión del planificador: el plan entero, o `{}` si es el último que pasó por
  * `validar_plan`. Así no escribe dos veces el mismo plan (ADR 0033).
  */
-export const salidaPlanSchema = planSchema.partial();
+export const salidaPlanSchema = planSchema.partial().extend({
+  preguntas: z
+    .array(
+      z.object({
+        tema: z.enum(TEMAS),
+        pregunta: z.string().min(1),
+        propuesta: z.string().min(1).describe("lo que harías vos si la persona dice que sí"),
+      }),
+    )
+    .max(5)
+    .optional()
+    .describe(
+      "las decisiones que cambian lo que la persona ve o usa y que las Aclaraciones no cubren. Con alguna, flowrunner te detiene y le pregunta; no devuelvas plan",
+    ),
+});
 export type SalidaPlan = z.infer<typeof salidaPlanSchema>;
+/** Una decisión de producto que el planificador no toma solo: la pregunta y su propuesta. */
+export type PreguntaDelPlan = NonNullable<SalidaPlan["preguntas"]>[number];
+
+/** El motivo de la detención: cada pregunta con su tema y su propuesta, en una línea. */
+export const textoDePreguntas = (preguntas: readonly PreguntaDelPlan[]): string =>
+  `el plan necesita decisiones que la feature no cubre:\n${preguntas.map((p) => `- (${p.tema}) ${p.pregunta} Propuesta: ${p.propuesta}`).join("\n")}`;
 
 /**
  * El plan que devolvió la sesión: el de la salida si vino entero, el último validado si vino vacía. Un
  * texto con qué hacer si no hay ninguno o vino a medias: es un problema del gate, y la sesión se retoma.
  */
 export function planDevuelto(salida: SalidaPlan, validado: Plan | undefined): Plan | string {
-  if (Object.keys(salida).length === 0)
+  const { preguntas: _preguntas, ...resto } = salida;
+  if (Object.keys(resto).length === 0)
     return (
       validado ??
       "no devolviste el plan ni pasaste ninguno por `validar_plan`: pasalo por `validar_plan` y devolvé `{}`, o devolvé el plan entero"
     );
-  const entero = planSchema.safeParse(salida);
+  const entero = planSchema.safeParse(resto);
   return entero.success
     ? entero.data
     : `el plan que devolviste está incompleto (${entero.error.issues.map((i) => i.path.join(".")).join(", ")}): devolvé \`{}\` para usar el último que pasaste por \`validar_plan\`, o el plan entero`;

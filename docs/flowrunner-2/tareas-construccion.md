@@ -96,13 +96,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T1.3
 
 ### T1.3 · El planificador pregunta en vez de decidir producto
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** la salida del planificador (`salidaPlanSchema`, `src/gates/plan.ts:119`, que usa `src/phases/planificar.ts`) suma `preguntas: { pregunta, propuesta, tema }[]`, opcional. El prompt dice: si el plan necesita una decisión que cambia lo que la persona ve o usa y las Aclaraciones no la cubren, no la decidas: devolvela en `preguntas` con tu propuesta. Con al menos una pregunta, planificar devuelve el outcome `pregunta` (ADR 0023), el run se detiene antes de aprobar y el plan no se escribe para implementar. ADR nuevo: "La conversación decide, el plan ejecuta".
 - **Lint:** `pnpm lint` verde.
-- **Test:** test primero en `src/phases/planificar.test.ts`, con la sesión falsa: (1) una salida con `preguntas` da `{ tipo: "pregunta" }` con las preguntas en el motivo y deja la sesión para retomar; (2) una salida con `preguntas: []` sigue como hoy; (3) una pregunta sin `propuesta` es un rechazo del gate con su motivo. Afirma sobre el outcome y sobre lo que queda escrito en el run.
-- **Canario:** mutación prevista: que planificar ignore `preguntas` cuando el plan también viene completo; el test (1) tiene que ponerse rojo.
+- **Test:** test primero en `src/phases/planificar.test.ts`, «el planificador pregunta lo que la feature no cubre», con la sesión falsa: (1) una salida con `preguntas` da `pregunta` con cada una y su propuesta en el motivo, no escribe el plan y deja la sesión marcada para retomar; (2) con preguntas, el plan entero de la misma salida no se usa; (3) con `preguntas: []` el plan sigue como hoy. Una pregunta sin `propuesta` no llega al gate: el schema de la salida estructurada la exige.
+- **Canario:** hecho: usar las preguntas solo si no vino plan (`result.output.plan === undefined`) → el test (2) se puso rojo. Restaurado.
 - **Criterio de aprobación:** el ADR está en `docs/adr/` y `flowrunner status` de un run detenido así muestra cada pregunta con su propuesta.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff; reusa `pregunta` y `halt()`, sin estado nuevo en el engine.
+- **Revisión ponytail:** a mano: reusa `pregunta`, `halt()` y la marca de sesión de ADR 0025; un schema, un archivo con las preguntas para T1.4 y una función de texto. Sin estado nuevo en el engine. Sin hallazgos abiertos.
 - **Desbloquea:** T1.4
 
 ### T1.4 · `flowrunner responder` agrega la aclaración y retoma al planificador

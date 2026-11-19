@@ -302,13 +302,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T4.5
 
 ### T4.5 · `stats --runs` dice con qué modo corrió cada run
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** `src/report/stats.ts` suma la columna `modo` (`sub_tasks` o `una_sesion`, de `run_creado`) y `aprobar` (`vos` o `flowrunner`, del evento `aprobado`), y las medianas por modo al pie. Es lo que la Fase 5 compara.
 - **Lint:** `pnpm lint` verde.
-- **Test:** test primero en `src/report/stats.test.ts`: con dos runs de cada modo, la tabla muestra la columna y las medianas se calculan por separado; un run viejo sin el campo cuenta como `sub_tasks`.
-- **Canario:** mutación prevista: calcular la mediana de `una_sesion` sobre todos los runs; el test tiene que ponerse rojo.
-- **Criterio de aprobación:** `flowrunner stats --runs pizarra-en-vivo` muestra la columna con los runs viejos como `sub_tasks`.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff; dos columnas, sin un sistema de agrupación.
+- **Test:** test primero en `src/report/stats.test.ts`, «separa los runs por modo de implementar y dice quién aprobó, con las medianas de cada modo»: cuatro runs (uno viejo sin el campo, uno `sub_tasks`, dos `una_sesion`) dan `modo` y `aprobó` por run, las medianas por modo separadas, y la tabla y el pie las muestran. Los tests del resumen y del encabezado suman los campos nuevos.
+- **Canario:** hecho: calcular la mediana de `una_sesion` sobre todos los runs → 3 tests rojos. Restaurado.
+- **Criterio de aprobación:** `flowrunner stats --runs pizarra-en-vivo` (desde el código de la rama) muestra las columnas `modo` y `aprobó`, los 35 runs viejos como `sub_tasks` y aprobados por vos, y el pie «sub_tasks: 35 runs, mediana activo 25.4 min, mediana US$ 6.61» (comprobado).
+- **Revisión ponytail:** a mano: dos campos por run y un objeto por modo en el resumen; sin un sistema de agrupación. Sin hallazgos abiertos.
 - **Desbloquea:** Gate Fase 4
 
 ### Gate Fase 4

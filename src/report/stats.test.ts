@@ -106,12 +106,23 @@ function runAt(
   home: string,
   inicio: number,
   pasos: [ms: number, event: NewEvent][],
-  { clave = "SHOP-1", proyecto = "acme" } = {},
+  {
+    clave = "SHOP-1",
+    proyecto = "acme",
+    implementar,
+  }: { clave?: string; proyecto?: string; implementar?: "sub_tasks" | "una_sesion" } = {},
 ): string {
   let t = inicio;
   const r = createRun(
     home,
-    { clave, proyecto, repo: "/r", budgetUsd: 25, featureText: "x" },
+    {
+      clave,
+      proyecto,
+      repo: "/r",
+      budgetUsd: 25,
+      featureText: "x",
+      ...(implementar === undefined ? {} : { implementar }),
+    },
     new Date(t),
   );
   for (const [ms, event] of pasos) {
@@ -155,6 +166,42 @@ const sencillo = (home: string, inicio: number, minutos: number, costo: number) 
   ]);
 
 describe("stats por run", () => {
+  // Si regresiona, la Fase 5 compara los dos modos de implementar mezclados, o un run viejo cuenta en
+  // el modo que no corrió (ADR 0045).
+  test("separa los runs por modo de implementar y dice quién aprobó, con las medianas de cada modo", () => {
+    const home = tempDir("stats-");
+    const corre = (inicio: number, minutos: number, implementar?: "sub_tasks" | "una_sesion") =>
+      runAt(
+        home,
+        inicio,
+        [
+          [0, inicia("planificar")],
+          [minutos * MIN, termina("planificar")],
+          [0, { tipo: "aprobado", origen: implementar === "una_sesion" ? "flowrunner" : "orca" }],
+        ],
+        implementar === undefined ? {} : { implementar },
+      );
+    corre(T0, 10);
+    corre(T0 + 1 * MIN, 20, "sub_tasks");
+    corre(T0 + 2 * MIN, 4, "una_sesion");
+    corre(T0 + 3 * MIN, 6, "una_sesion");
+    const result = statsPorRun(home);
+    expect(result.runs.map((r) => r.modo)).toEqual([
+      "sub_tasks",
+      "sub_tasks",
+      "una_sesion",
+      "una_sesion",
+    ]);
+    expect(result.runs.map((r) => r.aprobo)).toEqual(["vos", "vos", "flowrunner", "flowrunner"]);
+    expect(result.resumen.porModo).toEqual({
+      sub_tasks: { runs: 2, medianaActivoMin: 15, medianaCostoUsd: 0 },
+      una_sesion: { runs: 2, medianaActivoMin: 5, medianaCostoUsd: 0 },
+    });
+    const texto = describeStatsPorRun(result);
+    expect(texto).toMatch(/\| modo +\| aprobó/);
+    expect(texto).toContain("una_sesion: 2 runs, mediana activo 5.0 min, mediana US$ 0.00");
+  });
+
   // Si regresiona, el tiempo de un run incluye las horas que esperó a la persona y la línea de base
   // mide la paciencia de quien aprueba, no la fábrica.
   test("stats por run suma el tiempo activo de las acciones, no las esperas", () => {
@@ -382,6 +429,7 @@ describe("stats por run", () => {
       rechazosBashPorRun: 0,
       derechos: 0,
       explicarUsd: 0,
+      porModo: {},
     });
     const home = tempDir("stats-");
     sencillo(home, T0, 10, 1);
@@ -405,6 +453,7 @@ describe("stats por run", () => {
       rechazosBashPorRun: 2 / 3,
       derechos: 2,
       explicarUsd: 0,
+      porModo: { sub_tasks: { runs: 3, medianaActivoMin: 6, medianaCostoUsd: 3 } },
     });
     sencillo(home, T0 + 3 * MIN, 1, 2);
     expect(statsPorRun(home).resumen).toMatchObject({
@@ -424,11 +473,11 @@ describe("stats por run", () => {
     expect(statsPorRun(home, "otro").runs.map((r) => r.proyecto)).toEqual(["otro"]);
     const lines = describeStatsPorRun(s).split("\n");
     expect(lines[0]).toMatch(
-      /^\| id +\| activo +\| US\$ +\| planes +\| rechazos +\| graft +\| vueltas +\| derecho +\|$/,
+      /^\| id +\| activo +\| US\$ +\| planes +\| rechazos +\| graft +\| vueltas +\| derecho +\| modo +\| aprobó +\|$/,
     );
     expect(lines.filter((l) => l.startsWith("| SHOP-1") || l.startsWith("| AAA-1"))).toHaveLength(
       2,
     );
-    expect(lines.at(-7)).toMatch(/activo/);
+    expect(lines.at(-8)).toMatch(/activo/);
   });
 });

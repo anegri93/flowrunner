@@ -312,13 +312,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** Gate Fase 4
 
 ### Gate Fase 4
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho` — criterio de la persona pendiente
 - **Validación de lint:** `pnpm lint` verde.
 - **Tests:** `pnpm verify` verde.
-- **Test de integración:** un test en `test/` que corre un run con `implementar: una_sesion` por el CLI: el planificador falso devuelve una sub-task, implementar retoma su sesión (se comprueba por el id en el log de la sesión), la sub-task corre `verify.sh` sin rechazo, verificar pasa y `stats --runs` lo cuenta como `una_sesion`.
-- **Canario:** re-canario sobre 3 tests de la fase al azar.
+- **Test de integración:** `test/una-sesion.int.test.ts`, «una_sesion: ST-1 retoma la sesión del planificador, corre el verify y stats lo cuenta aparte»: CLI real, fases reales hasta verificar y SDK simulado, en un repo con `aprobar: si_hace_falta` e `implementar: una_sesion`. Planificar deja marcada su sesión, el único prompt de implementar es el de la sesión retomada, ST-1 corre `./.flowrunner/verify.sh` sin rechazo, verificar pasa y `stats --runs --json` da el run como `una_sesion` aprobado por flowrunner. Que el `resume` lleve el id del planificador lo cubre el test unitario de T4.3: el sim entre procesos no guarda las opciones de la sesión.
+- **Canario:** re-canario hecho: (a) planificar no marca la sesión → rojo; (b) `unitComandos` sin la única sub-task → el verify se rechaza → rojo. Antes, los canarios de T4.2 a T4.5. Restaurado.
 - **Criterio de aprobación:** un run real de pizarra-en-vivo con la opción llega a la PR.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff acumulado + `/ponytail-debt` + `test-debt:` nuevos.
+- **Revisión ponytail:** diff acumulado de la fase: una opción congelada en `run_creado`, una regla en los chequeos estáticos, una función que retoma con respaldo, un parámetro en `unitComandos` y dos columnas en stats. Un atajo marcado con `ponytail:` (reconocer «no se pudo retomar» por el texto del SDK). `/ponytail-debt`: ese, nuevo; sin `test-debt:`.
 - **Desbloquea:** Fase 5
 
 ---

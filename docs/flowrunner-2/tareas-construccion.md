@@ -248,13 +248,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** Gate Fase 3
 
 ### Gate Fase 3
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho` — criterio de la persona pendiente
 - **Validación de lint:** `pnpm lint` verde.
 - **Tests:** `pnpm verify` verde.
-- **Test de integración:** un test en `test/` que recorre el ciclo: un run sin vueltas donde la sesión falsa de implementar declara un descubrimiento → la PR trae la lección propuesta, con `Para: codigo` y el origen citado → se simula el merge → aprender la pasa a `lecciones.md` con su número y su `Para:`. Afirma sobre el archivo de propuestas y sobre `lecciones.md`.
-- **Canario:** re-canario sobre 3 tests de la fase al azar.
+- **Test de integración:** `test/aprender-del-run.int.test.ts`, «un descubrimiento sin vueltas llega a la PR como lección y, al mergear, a lecciones.md con su Para»: CLI real, todas las fases reales, SDK simulado y gh falso. El que implementa llama de verdad a `anotar_descubrimiento` (el sim suma `mcp: true` para ejecutar herramientas MCP en proceso), el run no tiene vueltas, la PR trae la propuesta con `Para: código` y el origen citado, y después del merge `learn` la deja en `lecciones.md` con su número y su `Para:`.
+- **Canario:** re-canario hecho: (a) `frictions()` ignora los descubrimientos → el test de integración rojo; (b) `formatLessons` sin la línea `Para:` → rojo. Antes, los canarios de T3.1 a T3.5 en sus tests unitarios. Restaurado.
 - **Criterio de aprobación:** dos runs reales de pizarra-en-vivo dejan al menos una lección de una fuente nueva, y el ping pong siguiente pregunta una lección de conversación.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff acumulado de la fase + `/ponytail-debt` + `test-debt:` nuevos.
+- **Revisión ponytail:** diff acumulado de la fase: un servidor MCP, tres fuentes en `frictions`, un enum en la lección, dos oraciones en la skill, una rama en `loadBrain`, y `mcp: true` en el sim, opt-in para no cambiar los tests que ya pasan `validar_plan` por el hook. Sin duplicación. `/ponytail-debt`: sin `ponytail:` ni `test-debt:` nuevos.
 - **Desbloquea:** Fase 4
 
 # Fase 4 — Experimento: una sola sesión de Opus

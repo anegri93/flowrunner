@@ -172,23 +172,23 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T2.3
 
 ### T2.3 · pizarra-en-vivo pasa a `vueltas: 1` y `aprobar: si_hace_falta`
-- **Estado:** `[ ] Pendiente`
-- **Descripción:** PR en `pizarra-en-vivo` que cambia `.flowrunner/config.yaml`: `vueltas: 3` → `1` (la vuelta directa de ADR 0030 ya cubre la primera; con 3 se repiten bloqueantes) y `aprobar: si_hace_falta`. El comentario de cada clave dice por qué, con los runs de evidencia.
-- **Lint:** `flowrunner doctor` sobre pizarra-en-vivo sin errores de config.
+- **Estado:** `[x] Hecho` — criterio de la persona pendiente
+- **Descripción:** PR en `pizarra-en-vivo` (anegri93/pizarra-en-vivo#175, en borrador) que cambia `.flowrunner/config.yaml`: `vueltas: 3` → `1` (la vuelta directa de ADR 0030 ya cubre la primera; con 3 se repiten bloqueantes) y `aprobar: si_hace_falta`. El comentario de cada clave dice por qué, con los runs de evidencia. **Se mergea después de flowrunner 2.0 y `flowrunner self-update`:** la config es estricta y la versión instalada hoy rechaza `aprobar` (comprobado: `loadRepoConfig` de `~/.flowrunner/app` la rechaza, la de 2.0 la lee con `vueltas: 1` y `aprobar: si_hace_falta`).
+- **Lint:** `loadRepoConfig` de flowrunner 2.0 lee la config nueva sin errores.
 - **Test:** N/A — es un valor de config en otro repo; verificación: el `run_creado` del próximo run de pizarra lleva `vueltas: 1` y el modo de aprobar nuevo.
 - **Canario:** N/A — sin test; el comportamiento de cada valor lo prueban T1.6 y los tests de ADR 0023.
 - **Criterio de aprobación:** el próximo run de pizarra-en-vivo arranca con la config nueva y no espera aprobación.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff; dos líneas y sus comentarios.
+- **Revisión ponytail:** dos claves y sus comentarios. Sin hallazgos.
 - **Desbloquea:** Gate Fase 2
 
 ### Gate Fase 2
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho` — criterio de la persona pendiente
 - **Validación de lint:** `pnpm lint` verde.
 - **Tests:** `pnpm verify` verde.
-- **Test de integración:** un test en `test/` donde una sub-task falsa lee un archivo de 500 líneas sin rango (el hook lo deja pasar) y la revisión falsa devuelve un bloqueante de decisión: el run se detiene con `pregunta` en revisar sin haber vuelto a implementar.
-- **Canario:** re-canario sobre 2 tests de la fase al azar.
+- **Test de integración:** `test/ajustes.int.test.ts`, «la revisión lee entero un archivo largo y un bloqueante de decisión detiene revisar con una pregunta»: CLI real, fases reales hasta revisar y SDK simulado, en un repo con `aprobar: si_hace_falta`. La revisión (que tiene graft) lee entero un archivo de 500 líneas sin rechazo, y su bloqueante de decisión detiene en revisar con las salidas en el motivo, con una sola entrada a implementar.
+- **Canario:** re-canario hecho: (a) volver a rechazar el Read entero con graft → el test de integración rojo; (b) desactivar la rama de decisión de revisar → rojo; antes, los canarios de T2.1 y T2.2 en sus tests unitarios. Restaurado.
 - **Criterio de aprobación:** 3 runs reales de pizarra-en-vivo con la config nueva; ninguno tiene rechazos por largo de lectura.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff acumulado + `/ponytail-debt` + `test-debt:` nuevos.
+- **Revisión ponytail:** diff acumulado: T2.1 solo borra; T2.2 suma un booleano y una rama; T2.3 es config en otro repo. Sin duplicación. `/ponytail-debt`: sin `ponytail:` ni `test-debt:` nuevos.
 - **Desbloquea:** Fase 3
 
 ---

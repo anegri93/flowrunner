@@ -202,6 +202,24 @@ describe("instalar dependencias", () => {
     }
   });
 
+  // Si regresiona, la única sub-task no puede ver el rojo de verify hasta que verificar le devuelve el
+  // trabajo (21 vueltas por «verify en rojo» en pizarra), o con varias corre un verify que sale rojo
+  // por el trabajo pendiente de las otras (ADR 0045).
+  test("con una sola sub-task, el verify del repo se puede correr; con dos, no; y no abre escribir afuera", () => {
+    const repo = repoConfigSchema.parse({ setup: "true", tests_globs: ["tests/**"] });
+    const own = st("ST-1", ["src/"]);
+    const dir = tempDir();
+    const sola = unitScope(dir, repo, own, [], unitComandos(repo, own, [], false, true));
+    for (const verify of ["./.flowrunner/verify.sh", "bash .flowrunner/verify.sh"])
+      expect(checkCommand(sola, verify).ok, verify).toBe(true);
+    expect(checkCommand(sola, "./.flowrunner/verify.sh > /etc/salida").ok).toBe(false);
+    const conOtras = unitScope(dir, repo, own, [], unitComandos(repo, own, [], false, false));
+    expect(checkCommand(conOtras, "./.flowrunner/verify.sh")).toEqual({
+      ok: false,
+      motivo: expect.stringMatching(/el verify del repo lo corre verificar/) as unknown,
+    });
+  });
+
   test("prefersExact: sí si todas las versiones del manifiesto son exactas, no si alguna es un rango", () => {
     expect(
       prefersExact('{"dependencies":{"a":"1.2.3"},"devDependencies":{"b":"4.0.0-rc.1"}}'),
@@ -279,6 +297,10 @@ describe("implementar", () => {
       expect(opciones?.model).toBe(DEFAULT_MODELS.planificar.model);
       expect(sim.records[0]?.prompt).toContain(opciones?.cwd ?? "?");
       expect(sim.records[0]?.prompt).toContain(featureWt);
+      // La única sub-task corre el verify antes de terminar (T4.4).
+      expect(sim.records[0]?.prompt).toContain(
+        "corré el verify del repo (`./.flowrunner/verify.sh`)",
+      );
     });
 
     // Si regresiona, un Edit sobre la ruta absoluta que leyó el planificador escribe fuera del worktree

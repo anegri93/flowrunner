@@ -292,13 +292,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T4.4
 
 ### T4.4 · Con una sola sub-task, el que implementa puede correr el verify del repo
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho` — criterio de la persona pendiente
 - **Descripción:** `unitComandos` (`src/phases/implementar.ts:150-174`) suma el verify del repo (`.flowrunner/verify.sh`) a lo permitido cuando el plan tiene una sola sub-task. Hoy está afuera porque con varias el verify sale rojo por el trabajo pendiente de las otras; con una, ese motivo no existe. El prompt de implementar le pide correrlo antes de terminar. Verificar sigue como control final, igual de estricto.
 - **Lint:** `pnpm lint` verde.
-- **Test:** test primero en el test de `comandos`/`implementar`: (1) con un plan de una sub-task, `./.flowrunner/verify.sh` y `bash .flowrunner/verify.sh` se permiten; (2) con dos sub-tasks se rechazan con el motivo de hoy; (3) `verify.sh` con un argumento que escribe fuera del alcance se sigue rechazando.
-- **Canario:** mutación prevista: permitir el verify sin mirar cuántas sub-tasks hay; el test (2) tiene que ponerse rojo.
+- **Test:** test primero en `src/phases/implementar.test.ts`, «con una sola sub-task, el verify del repo se puede correr; con dos, no; y no abre escribir afuera»: con una sub-task, `./.flowrunner/verify.sh` y `bash .flowrunner/verify.sh` pasan la política; con dos se rechazan con el motivo de hoy; con una, `verify.sh > /etc/salida` se sigue rechazando por la redirección. Y el test de T4.3 comprueba que el prompt de la única sub-task le pide correrlo.
+- **Canario:** hecho: permitir el verify sin mirar cuántas sub-tasks hay → 3 tests rojos. Restaurado.
 - **Criterio de aprobación:** en un run real con la opción, la sesión de implementar corre `verify.sh` y verificar no devuelve trabajo por un rojo de verify.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff; una condición más en `unitComandos`.
+- **Revisión ponytail:** a mano: un parámetro en `unitComandos`, una función de dos formas del comando y una regla del prompt con dos textos. Sin hallazgos abiertos.
 - **Desbloquea:** T4.5
 
 ### T4.5 · `stats --runs` dice con qué modo corrió cada run

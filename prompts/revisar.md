@@ -9,6 +9,7 @@ Una lista de `hallazgos`, cada uno con:
 - `afirmacion`: qué está mal y por qué, en una o dos frases verificables.
 - `regla`: la convención o el criterio que rompe, citado; vacío si no hay uno.
 - `subtarea`: la sub-task responsable, una de: {{subtareas}}.
+- `decision`: `true` en un `bloqueante` cuyo arreglo tiene más de una salida razonable y elegir es de la persona, no de la sub-task: subir el Node mínimo del repo, sumar o cambiar una dependencia, cambiar un contrato o lo que el repo promete, ampliar o achicar el alcance. flowrunner le pregunta a la persona desde la primera vez en vez de devolverle el trabajo a la sub-task. Dá una salida por camino en `arreglos`. `false` en todo lo demás, que la sub-task arregla sola.
 - `arreglos`: en un `bloqueante`, de 1 a 3 formas concretas de resolverlo, la que recomendás primero. Cada una es la instrucción que le darías a esa sub-task: en imperativo, en una línea, que se entienda sin leer el hallazgo, y nombrando el archivo o el valor que cambia (por ejemplo: «Subí `engines.node` a `>=24` en package.json y en el README», «Usá una versión de unpdf que ande en Node 20.6»). Si hay más de un camino, como cambiar el código o cambiar lo que el repo promete, dá uno por camino. En un `aviso`, vacío.
 
 Lo que corre el script de verify (abajo) no es hallazgo, ni bloqueante ni aviso: si verify pasó, eso está bien aunque te parezca que la herramienta lo dejaría distinto, y si la persona aceptó el rojo, ya lo decidió ella. Lo que el script no corre, como los tipos en un repo sin typecheck, sí lo revisás.

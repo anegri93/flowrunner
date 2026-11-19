@@ -30,6 +30,12 @@ export const findingSchema = z.object({
    * línea (ADR 0028). Con default: un review.json de antes de este campo se sigue leyendo.
    */
   arreglos: z.array(z.string()).default([]),
+  /**
+   * El arreglo tiene más de una salida razonable y elegir es de la persona: subir el Node mínimo,
+   * sumar o cambiar una dependencia, un contrato o el alcance. Pregunta en vez de volver a la sub-task
+   * (enmienda de ADR 0030). Con default: un review.json de antes se sigue leyendo.
+   */
+  decision: z.boolean().default(false),
 });
 export const reviewSchema = z.object({
   hallazgos: z.array(findingSchema),
@@ -256,16 +262,30 @@ export const revisar: PhaseFn = async (ctx) => {
   }
   const blockers = review.hallazgos.filter((h) => h.severidad === "bloqueante");
   if (blockers.length === 0) return { tipo: "ok" };
+  const unidades = [...new Set(blockers.map((b) => b.subtarea))];
+  const lineas = blockers.map(
+    (b) =>
+      `- ${b.subtarea} · ${b.archivo}:${b.linea}: ${b.afirmacion}${b.regla === "" ? "" : ` (regla: ${b.regla})`}`,
+  );
+  // Una decisión de la persona no la resuelve la sub-task sola: en PIZ-3 eso costó siete vueltas.
+  // Pregunta desde la primera vez, con las salidas que propone el revisor (enmienda de ADR 0030).
+  if (blockers.some((b) => b.decision)) {
+    return {
+      tipo: "pregunta",
+      unidades,
+      motivo: `la revisión encontró bloqueantes, y alguno es una decisión tuya:\n${blockers
+        .map(
+          (b, i) =>
+            `${lineas[i] ?? ""}${b.decision && b.arreglos.length > 0 ? `\n  Elegí: ${b.arreglos.join(" · ")}` : ""}`,
+        )
+        .join("\n")}`,
+    };
+  }
   const arreglos = arreglosDe(blockers);
   return {
     tipo: "vuelve",
-    unidades: [...new Set(blockers.map((b) => b.subtarea))],
+    unidades,
     ...(arreglos === undefined ? {} : { arreglos }),
-    motivo: `la revisión encontró bloqueantes:\n${blockers
-      .map(
-        (b) =>
-          `- ${b.subtarea} · ${b.archivo}:${b.linea}: ${b.afirmacion}${b.regla === "" ? "" : ` (regla: ${b.regla})`}`,
-      )
-      .join("\n")}`,
+    motivo: `la revisión encontró bloqueantes:\n${lineas.join("\n")}`,
   };
 };

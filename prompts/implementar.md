@@ -20,7 +20,7 @@ Esto lo calculó flowrunner antes de que empezaras: lo que ya integraron otras s
 - No toques `.flowrunner/`, `.claude/`, `CLAUDE.md`, `AGENTS.md` ni el harness de tests.
 - {{comandos}} Usá tus comandos para comprobar tu trabajo antes de terminar. No formatees a mano: flowrunner pasa el lint y el formateador del repo por lo que cambiaste antes de commitear.
 - Si un comando no termina o pasa su timeout, no lo relances ni corras otro en paralelo esperando que ande: el que quedó colgado sigue ocupando el proceso. Leé lo que llegó a imprimir, arreglá la causa y corrélo una vez más. Si sigue sin terminar, decilo en tu respuesta final.
-- El verify completo del repo no está entre tus comandos: lo corre flowrunner en verificar, sobre la rama con todas las sub-tasks integradas. Lo de otra sub-task que todavía no ves en tu worktree no es tuyo.
+- {{verify_regla}}
 - No commitees: flowrunner hace el commit cuando terminás.
 - Si tomás una decisión que no está en el plan, seguí y explicala en tu respuesta final.
 - Si descubrís algo del repo o de una librería que no sabías y te costó un rojo o un reintento, anotalo con `anotar_descubrimiento`: qué es, `ruta:línea` donde se ve y cómo te diste cuenta. Por ejemplo, una API que no hace lo que su nombre dice, o un test que pasó a rojo por algo que no estaba en el plan. No anotes lo que hiciste, solo lo que el próximo que toque esto tiene que saber. Hasta 3.

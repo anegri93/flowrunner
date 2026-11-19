@@ -148,11 +148,22 @@ export function installCommands(config: RepoConfig, task: Subtask, exact: boolea
   ];
 }
 
+/** Cómo se corre el verify del repo, con o sin `./` adelante en la config. */
+const verifyComandos = (verify: string) => {
+  const ruta = verify.replace(/^\.\//, "");
+  return [`./${ruta}`, `bash ${ruta}`];
+};
+
 export function unitComandos(
   config: RepoConfig,
   task: Subtask,
   acCommands: readonly string[],
   exact: boolean,
+  /**
+   * La única sub-task del plan (ADR 0045): el verify del repo no tiene trabajo de otras pendiente, así
+   * que lo puede correr antes de terminar en vez de enterarse en verificar.
+   */
+  unica = false,
 ): Comandos {
   // Sin el verify del repo: corre en verificar, sobre la rama con todas las sub-tasks integradas. En el
   // worktree de una, antes de que las demás se integren, daba rojos que no eran suyos y costaba minutos.
@@ -167,6 +178,7 @@ export function unitComandos(
       ...new Set([
         ...acCommands.filter((c) => !isVerifyCommand(config, c)),
         ...(config.typecheck === undefined ? [] : [config.typecheck]),
+        ...(unica ? verifyComandos(config.verify) : []),
       ]),
     ],
     exactos: installCommands(config, task, exact),
@@ -391,6 +403,7 @@ export const implementar: PhaseFn = async (ctx) => {
       task,
       acs.map((c) => c.comando),
       exact,
+      plan.subtareas.length === 1,
     );
     const previous = lastOf(task.id);
     // Retomado con el commit hecho y sin integrar: se integra ese commit, sin otra sesión.
@@ -488,6 +501,10 @@ export const implementar: PhaseFn = async (ctx) => {
           dependencias: dependencyText(task),
           bloqueados: locked.join(", "),
           comandos: describeComandos(comandos),
+          verify_regla:
+            plan.subtareas.length === 1
+              ? `Sos la única sub-task del plan: antes de terminar, corré el verify del repo (\`${verifyComandos(config.verify)[0] ?? ""}\`) y dejalo en verde. Verificar lo vuelve a correr igual sobre la rama.`
+              : "El verify completo del repo no está entre tus comandos: lo corre flowrunner en verificar, sobre la rama con todas las sub-tasks integradas. Lo de otra sub-task que todavía no ves en tu worktree no es tuyo.",
           instruccion:
             motivo === undefined ? "" : `# Atención: esto ya se intentó\n\n${motivo}\n\nCorregilo.`,
           feature: featureText(feature),

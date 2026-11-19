@@ -18,12 +18,13 @@ export async function plannedRun(
   deps: Deps,
   project: ProjectOptions = {},
   feature = FEATURE,
+  modos: Parameters<typeof newRun>[3] = {},
 ): Promise<{ run: RunPaths; featureWt: string; work: string; baseSha: string }> {
   const { work } = makeProject({
     config: { setup: "true", tests_globs: ["tests/**"] },
     ...project,
   });
-  const run = newRun(work, feature);
+  const run = newRun(work, feature, [], modos);
   const outcome = await preparar(contextFor(run, "preparar", deps));
   if (outcome.tipo !== "ok") throw new Error(`preparar falló: ${JSON.stringify(outcome)}`);
   const prep = prepared(readLog(run.dir).events);

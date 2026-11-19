@@ -19,7 +19,7 @@ import { runUntilStop } from "../runner/runner.ts";
 import type { Deps, PhaseFn, PhaseRegistry, RunPaths } from "../runner/types.ts";
 import { PHASES, type Outcome, type RunEvent } from "../store/events.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
-import { repoConfigSchema } from "../config/schemas.ts";
+import { DEFAULT_MODELS, repoConfigSchema } from "../config/schemas.ts";
 import { checkCommand } from "../tripwires/comandos.ts";
 import {
   currentEntry,
@@ -31,7 +31,7 @@ import {
   unitScope,
 } from "./implementar.ts";
 import { DESCUBRIMIENTO_TOOL } from "./descubrimientos.ts";
-import { readPlan, writePlanArtifacts } from "./planificar.ts";
+import { marcarSesionParaImplementar, readPlan, writePlanArtifacts } from "./planificar.ts";
 
 const st = (id: string, alcance: string[], extra: Partial<Subtask> = {}): Subtask => ({
   id,
@@ -246,6 +246,77 @@ describe("implementar", () => {
       decision: "allow",
     });
     expect(sim.records[0]?.prompt).toContain("anotar_descubrimiento");
+  });
+
+  describe("con implementar: una_sesion (ADR 0045)", () => {
+    const SESION = "11111111-2222-3333-4444-555555555555";
+    /** Los guiones se arman con la ruta del worktree de la feature, que existe recién después de preparar. */
+    async function unaSesion(guiones: (featureWt: string) => SimScript[]) {
+      const scripts: SimScript[] = [];
+      const sim = simQuery(byUnit({ "ST-1": scripts }));
+      const deps = testDeps({ query: sim.query });
+      const planned = await plannedRun(
+        planWith([st("ST-1", ["src/a/"])]),
+        TESTS,
+        deps,
+        {},
+        undefined,
+        { implementar: "una_sesion" },
+      );
+      scripts.push(...guiones(planned.featureWt));
+      marcarSesionParaImplementar(planned.run, { sessionId: SESION, nombre: "planificar-1" });
+      await implementar(contextFor(planned.run, "implementar", deps));
+      return { ...planned, sim };
+    }
+    const escribe = write("src/a/x.js", "export {};\n");
+
+    // Si regresiona, la sub-task arranca de cero con Sonnet y se pierde lo que el planificador entendió,
+    // que es la hipótesis del experimento.
+    test("ST-1 retoma la sesión del planificador, con su modelo y la ruta de su worktree", async () => {
+      const { sim, featureWt } = await unaSesion(() => [{ calls: [escribe] }]);
+      const opciones = sim.records[0]?.options;
+      expect(opciones?.resume).toBe(SESION);
+      expect(opciones?.model).toBe(DEFAULT_MODELS.planificar.model);
+      expect(sim.records[0]?.prompt).toContain(opciones?.cwd ?? "?");
+      expect(sim.records[0]?.prompt).toContain(featureWt);
+    });
+
+    // Si regresiona, un Edit sobre la ruta absoluta que leyó el planificador escribe fuera del worktree
+    // de la sub-task.
+    test("un Edit sobre la ruta del worktree de la feature se rechaza", async () => {
+      const { sim } = await unaSesion((featureWt) => [
+        { calls: [escribe, write(join(featureWt, "src/a/y.js"), "x\n")] },
+      ]);
+      expect(sim.records[0]?.decisions.at(-1)?.decision).toBe("deny");
+    });
+
+    // Si regresiona, una sesión que no se puede retomar deja la sub-task sin hacer, o la hace Sonnet.
+    test("si no se puede retomar, abre una sesión nueva de Opus y lo avisa", async () => {
+      const { sim, run } = await unaSesion(() => [
+        { throws: "No conversation found with session ID: 1111" },
+        { calls: [escribe] },
+      ]);
+      expect(sim.records).toHaveLength(2);
+      expect(sim.records[1]?.options?.resume).toBeUndefined();
+      expect(sim.records[1]?.options?.model).toBe(DEFAULT_MODELS.planificar.model);
+      expect(readLog(run.dir).events).toContainEqual(
+        expect.objectContaining({
+          tipo: "aviso",
+          texto: expect.stringMatching(/no se pudo retomar/) as unknown,
+        }),
+      );
+    });
+
+    // Si regresiona, un repo sin la opción deja de implementar con Sonnet en sesiones nuevas.
+    test("con sub_tasks, la sesión es nueva y con el modelo de implementar", async () => {
+      const sim = simQuery(byUnit({ "ST-1": [{ calls: [escribe] }] }));
+      const deps = testDeps({ query: sim.query });
+      const { run } = await plannedRun(planWith([st("ST-1", ["src/a/"])]), TESTS, deps);
+      marcarSesionParaImplementar(run, { sessionId: SESION, nombre: "planificar-1" });
+      await implementar(contextFor(run, "implementar", deps));
+      expect(sim.records[0]?.options?.resume).toBeUndefined();
+      expect(sim.records[0]?.options?.model).toBe(DEFAULT_MODELS.implementar.model);
+    });
   });
 
   // Si regresiona, cada sub-task vuelve a correr `npm ci` entero en su worktree: 25 a 37 s cada una en

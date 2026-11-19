@@ -40,6 +40,24 @@ describe("loadBrain", () => {
     );
   });
 
+  // Si regresiona, un lecciones.md largo vuelve a cortar el run en preparar (pasó dos veces en
+  // pizarra-en-vivo), o se corta en silencio y el agente pierde lecciones (flowrunner 2.0, T3.5).
+  test("lecciones.md por encima de su tope se carga entero con un aviso; los otros archivos siguen frenando", () => {
+    const repo = readyRepo();
+    writeFileSync(join(repo, ".flowrunner", "lecciones.md"), "x".repeat(15_000));
+    const brain = loadBrain(repo);
+    expect(brain.lecciones).toHaveLength(15_000);
+    expect(brain.avisos).toEqual([
+      expect.stringMatching(
+        /lecciones\.md tiene 15000 caracteres, más que su tope de 12000.*brain audit/,
+      ),
+    ]);
+    writeFileSync(join(repo, ".flowrunner", "lecciones.md"), "x".repeat(100));
+    expect(loadBrain(repo).avisos).toEqual([]);
+    writeFileSync(join(repo, ".flowrunner", "contexto.md"), "x".repeat(16_001));
+    expect(problemsOf(repo)).toMatch(/contexto\.md: tiene 16001 caracteres/);
+  });
+
   // Si regresiona, un link en el cerebro hace leer a flowrunner un archivo fuera del repo.
   test("un archivo del cerebro que es un link es un error", () => {
     const repo = readyRepo();

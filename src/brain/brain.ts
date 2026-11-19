@@ -60,6 +60,8 @@ export interface Brain {
   readonly ejemplos: readonly string[];
   /** Los primeros 12 caracteres del sha256 de cada archivo que se cargó. */
   readonly hashes: Readonly<Record<string, string>>;
+  /** Lo que no frena el run pero conviene arreglar, como un lecciones.md por encima de su tope. */
+  readonly avisos: readonly string[];
 }
 
 const sha12 = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 12);
@@ -73,6 +75,7 @@ export function loadBrain(repo: string): Brain {
   const problems: Problem[] = [];
   const texts: Partial<Record<BrainKey, string>> = {};
   const hashes: Record<string, string> = {};
+  const avisos: string[] = [];
   for (const [key, { file, max }] of Object.entries(BRAIN_FILES) as [
     BrainKey,
     { file: string; max: number },
@@ -89,7 +92,13 @@ export function loadBrain(repo: string): Brain {
     }
     const text = readFileSync(path, "utf8");
     const length = Array.from(text).length;
-    if (length > max) {
+    // Las lecciones crecen solas, run a run: pasar el tope no corta el run, que pasó dos veces en
+    // pizarra-en-vivo. Llegan enteras, nunca cortadas, con un aviso para auditarlas (flowrunner 2.0).
+    if (length > max && key === "lecciones") {
+      avisos.push(
+        `${where} tiene ${String(length)} caracteres, más que su tope de ${String(max)}: llega entero a cada sesión. Corré \`flowrunner brain audit <ruta del repo>\` para consolidarlo`,
+      );
+    } else if (length > max) {
       problems.push({
         where,
         message: `tiene ${length} caracteres: el máximo es ${max}; pasá el detalle a otro archivo`,
@@ -120,6 +129,7 @@ export function loadBrain(repo: string): Brain {
     lecciones: texts.lecciones ?? "",
     ejemplos,
     hashes,
+    avisos,
   };
 }
 

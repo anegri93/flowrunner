@@ -32,7 +32,7 @@ Si el repo tiene `.flowrunner/`, o el arranque de la sesión avisa que usa flowr
 3. Entrevistá **una pregunta por vez**, y proponé la respuesta cuando puedas. Es la parte que más importa del trabajo: lo que la persona lee y decide es esta conversación, no el plan. Recorré estos cinco temas, en este orden, y no pases al siguiente hasta cerrar el que va:
    - **funcionalidad:** el camino feliz, paso a paso, como lo va a usar la persona;
    - **error:** qué puede fallar y qué ve la persona cuando falla (un servicio que no contesta, un archivo que no sirve, un permiso que falta);
-   - **borde:** los casos que la feature cruza con lo que ya existe. Armalos vos leyendo el código del paso 2: datos viejos o vacíos, grupos, otro formato, otra pestaña, algo que ya estaba en el lugar. Preguntá cada uno que podría salir de dos formas;
+   - **borde:** los casos que la feature cruza con lo que ya existe. Armalos vos leyendo el código del paso 2: datos viejos o vacíos, grupos, otro formato, otra pestaña, algo que ya estaba en el lugar. Preguntá cada uno que podría salir de dos formas. Sumá las lecciones de `.flowrunner/lecciones.md` con `Para: conversación` que se crucen con la feature: son casos que en este repo ya se escaparon una vez. Preguntalas citando su número («L-23 dice que…»);
    - **existente:** lo que hoy funciona y la feature cambia, con la cita del paso 2 («hoy X hace Y; pasa a Z»);
    - **propuesta:** alternativas que la persona no pidió y valen la pena, con tu recomendación.
 

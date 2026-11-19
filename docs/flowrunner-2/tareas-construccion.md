@@ -228,13 +228,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T3.4
 
 ### T3.4 · La skill pregunta lo que el repo aprendió
-- **Estado:** `[ ] Pendiente`
-- **Descripción:** el paso 2 de `skills/flowrunner/SKILL.md` dice que lea las lecciones `Para: conversación` de `.flowrunner/lecciones.md` y que, en el tema de casos borde del ping pong, pregunte cada una que se cruce con la feature, citando la lección (`L-n`).
+- **Estado:** `[x] Hecho` — criterio de la persona pendiente
+- **Descripción:** el tema de casos borde del paso 3 de `skills/flowrunner/SKILL.md` (ahí vive la lista de casos, no en el paso 2) suma: leer las lecciones `Para: conversación` de `.flowrunner/lecciones.md` y preguntar cada una que se cruce con la feature, citando su número (`L-n`).
 - **Lint:** `pnpm lint` verde (prettier sobre el `.md`).
 - **Test:** N/A — es texto de la skill que lee un modelo; verificación: con una lección `Para: conversación` en pizarra-en-vivo, el ping pong de una feature que toca esa parte del repo la pregunta y la cita.
 - **Canario:** N/A — sin test; el control es el criterio de aprobación de abajo.
 - **Criterio de aprobación:** la persona ve la pregunta de la lección en una conversación real, con su número.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff; una o dos frases en la skill.
+- **Revisión ponytail:** dos oraciones en la skill. Sin hallazgos.
 - **Desbloquea:** T3.5
 
 ### T3.5 · El tope de lecciones avisa en vez de cortar el run

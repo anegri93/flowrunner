@@ -8,6 +8,7 @@ import {
   soloChequeosDelRepo,
   soloDocumentacion,
   temasQueFaltan,
+  textosSinCriterio,
 } from "./feature-check.ts";
 
 const feature = (criterios: string) =>
@@ -197,6 +198,41 @@ test("avisa la falta de aclaraciones de errores y de casos borde, sin frenar", (
   expect(
     temasQueFaltan(
       conAclaraciones("- P (error): ¿Si falla? R: Avisa.\n- P (borde): ¿Y vacío? R: Nada."),
+    ),
+  ).toEqual([]);
+});
+
+const conTextos = (criterios: string) =>
+  parseFeature(
+    "f.md",
+    `---
+clave: PIZ-55
+proyecto: acme
+titulo: t
+---
+## Descripción
+El conductor toca «En vivo». Con «Seguir», la vista se pega a la del conductor.
+
+## Criterios
+${criterios}
+
+## Aclaraciones
+- P (error): ¿Y si se corta? R: Ve «Reconectando…» y se pone al día solo.
+`,
+  );
+
+// Regresión de PIZ-55: «Seguir» y «Reconectando…» estaban en la feature y en ningún criterio, así que
+// ni el plan ni revisar ni probar los comprobaron, y se mergearon sin que nadie los viera andar.
+test("avisa los textos entre «» de la descripción y las aclaraciones que ningún criterio nombra", () => {
+  expect(textosSinCriterio(conTextos("- AC-1: «En vivo» abre el diálogo."))).toEqual([
+    expect.stringMatching(/^«Seguir», «Reconectando…» están en la feature y en ningún criterio/),
+  ]);
+  // El mismo texto con otra caja o con tres puntos cuenta como nombrado.
+  expect(
+    textosSinCriterio(
+      conTextos(
+        "- AC-1: «En vivo» abre el diálogo; «seguir» pega la vista; «Reconectando...» aparece.",
+      ),
     ),
   ).toEqual([]);
 });

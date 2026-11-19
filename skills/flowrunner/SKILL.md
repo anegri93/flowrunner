@@ -73,6 +73,8 @@ Si el repo tiene `.flowrunner/`, o el arranque de la sesión avisa que usa flowr
 
    Contexto es opcional, pero cada cita que comprobaste en el paso 2 va ahí, con la forma `ruta:línea — qué hace`. Solo código que ya existe: `feature check` frena una cita a un archivo que no está.
 
+   El plan, revisar y probar se arman solo desde los criterios: lo que no tiene criterio no lo comprueba nadie. Cada paso del camino feliz y cada respuesta de la entrevista que cambia lo que la persona ve o usa lleva su criterio. Lo que solo se ve en la app (seguir una vista, un puntero, un aviso de reconexión) se escribe para probarlo en el entorno, no como test de servidor. En PIZ-55 los siete criterios eran de servidor, y «Seguir», el puntero y «Reconectando…» se mergearon sin que nadie los viera andar.
+
    No pongas como criterio que el repo pase sus chequeos («`npm run check` pasa», «el build pasa»): eso lo corre verificar en cada vuelta y probar no lo puede probar. Si la feature autoriza una dependencia, decí con qué versión de Node tiene que andar: la mínima del repo.
 
 5. Corré `flowrunner feature check <archivo> --json` hasta que salga `ok`. Si trae `avisos`, mostráselos a la persona antes de lanzar:
@@ -81,6 +83,7 @@ Si el repo tiene `.flowrunner/`, o el arranque de la sesión avisa que usa flowr
    - un criterio que se comprueba solo en documentación: proponele a la persona un criterio que ejecute lo documentado, como correr el comando o llamar al endpoint;
    - un criterio que solo pide que el repo pase sus chequeos: sacalo; si al verify del repo le falta ese chequeo, proponé sumarlo en una PR del repo;
    - no hay ninguna aclaración de errores o de casos borde: volvé a ese tema del paso 3 antes de lanzar, salvo que la persona diga que no hay nada que preguntar;
+   - textos entre «» que están en la feature y en ningún criterio: por cada uno, si es algo que la persona ve o usa, proponé el criterio que lo comprueba; si es solo un ejemplo («mirá acá», «Pantalla 3 de 8»), seguí;
    - el repo no tiene `probar` en su config: la fase probar se va a saltear y nadie va a usar la feature en la app antes de la PR. Ofrecé armar esa sección en una PR del repo antes de lanzar, o lanzar igual si la persona lo elige.
 
 6. Si el repo tiene `probar`, preguntale a la persona: «¿Esta feature se prueba en la app?», con tu recomendación. Recomendá **sí** cuando cambia cómo se toca o se ve algo: arrastrar, superponer, animar, abrir o cerrar menús, lo que pasa al hacer clic. Ahí probar encontró los bugs que los tests no ven (PIZ-18, PIZ-19 y PIZ-24). Recomendá **no** cuando son textos, backend, API o docs: probar tarda varios minutos y confirma lo que ya cubren los tests. Si dice que no, cuando lances corré enseguida `flowrunner skip-probar <run> "<motivo>" --origen claude`, antes de que el run llegue a probar, con el motivo en palabras de la persona o el de tu recomendación si la aceptó («son cambios de texto y de API: los cubren sus tests»).

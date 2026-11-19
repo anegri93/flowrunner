@@ -518,6 +518,28 @@ test("arreglar, Autofix y aceptar se traducen a fix y accept con --origen orca",
   }
 });
 
+// Si regresiona, la respuesta al planificador no llega a flowrunner, llega sin decir que vino de Orca,
+// o una vacía se manda igual (ADR 0043).
+test("responder se traduce a responder con --origen orca, y una respuesta vacía se rechaza", async () => {
+  const { worker, calls } = await fakeWorker();
+  const id = "VF-2-20261109-001527";
+  try {
+    const vacia = await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "responder", respuesta: "  " },
+    });
+    assert.equal(vacia.ok, false);
+    assert.match(vacia.mensaje, /falta la respuesta/);
+    await worker.request("flowrunner.decidir", {
+      run: id,
+      decision: { accion: "responder", respuesta: "va la propuesta" },
+    });
+    assert.deepEqual(calls(), [`responder ${id} va la propuesta --origen orca --json`]);
+  } finally {
+    await worker.deactivate();
+  }
+});
+
 // Si regresiona, el panel puede mandar a flowrunner una sub-task que es un comando, o un fix vacío.
 test("un arreglo con una sub-task inválida o sin instrucción se rechaza", async () => {
   const { worker, calls } = await fakeWorker();

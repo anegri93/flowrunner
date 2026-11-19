@@ -264,9 +264,13 @@ function personDecisions(events: readonly RunEvent[]): string[] {
 function decisions(events: readonly RunEvent[]): string[] {
   const byPhase = new Map<string, string[]>();
   for (const e of events) {
-    if (e.tipo !== "decision") continue;
+    if (e.tipo !== "decision" && e.tipo !== "descubrimiento") continue;
     const key = e.unidad === undefined ? e.fase : `${e.fase} · ${e.unidad}`;
-    byPhase.set(key, [...(byPhase.get(key) ?? []), `- ${plain(e.que)}: ${plain(e.por_que)}`]);
+    const line =
+      e.tipo === "decision"
+        ? `- ${plain(e.que)}: ${plain(e.por_que)}`
+        : `- descubrió: ${plain(e.que)} (${e.donde}): ${plain(e.como)}`;
+    byPhase.set(key, [...(byPhase.get(key) ?? []), line]);
   }
   if (byPhase.size === 0) return [];
   return [

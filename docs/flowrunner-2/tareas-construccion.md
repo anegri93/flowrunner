@@ -198,13 +198,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 > Objetivo: que el aprendizaje no dependa solo de las vueltas. Hoy un run derecho no aprende nada aunque haya descubierto mucho, e implementar no registra ninguna decisión (0 en 33 runs). Con 2.0 hay menos vueltas, así que hacen falta fuentes nuevas: lo que descubre el que implementa, las preguntas del planificador y las decisiones de revisar. Y cada lección dice para quién es: la conversación, el plan o el código.
 
 ### T3.1 · Implementar declara lo que descubrió
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho` — criterio de la persona pendiente
 - **Descripción:** la sesión de implementar (`src/phases/implementar.ts`) hoy no tiene salida estructurada: termina con texto. Se le da una herramienta MCP, `anotar_descubrimiento({ que, donde, como })`, como `validar_plan` en planificar, que puede llamar hasta 3 veces por sesión. El prompt pide solo lo que le costó un rojo o un reintento: algo del repo o de una librería que no sabía (por ejemplo, que Excalidraw 0.18.1 descarta un `pointermove` despachado en `window`), incluido un rojo de un test o de `verify.sh` que arregló dentro de la sesión. No es una narración de lo que hizo. Cada uno se escribe como evento `descubrimiento` con su fase y su sub-task. `donde` tiene que ser `archivo:línea` de un archivo que existe en el worktree; uno que no cumple se descarta con un `aviso`.
 - **Lint:** `pnpm lint` verde.
-- **Test:** test primero en `src/phases/implementar.test.ts`, con la sesión falsa: (1) dos llamadas a `anotar_descubrimiento` dejan dos eventos `descubrimiento` en el log con su sub-task, y una cuarta llamada se rechaza con el motivo; (2) uno con `donde` en un archivo que no existe se descarta y deja un `aviso`; (3) una sesión que no la llama sigue como hoy, sin eventos nuevos.
-- **Canario:** mutación prevista: no validar `donde`; el test (2) tiene que ponerse rojo.
+- **Test:** test primero: `src/phases/descubrimientos.test.ts` (1) tres llamadas a `anotar_descubrimiento` dejan tres eventos `descubrimiento` con su sub-task y la cuarta se rechaza con el motivo; (2) un `donde` que no es `ruta:línea` de un archivo del worktree (no existe, sin línea, línea de más, con `..`) se descarta con un `aviso`. `src/phases/implementar.test.ts` «la sesión de la sub-task recibe anotar_descubrimiento, y el hook la deja usar». `src/report/report.test.ts` «el informe muestra en Decisiones lo que descubrió cada sub-task».
+- **Canario:** hecho: no validar `donde` → el test (2) se puso rojo. Restaurado.
 - **Criterio de aprobación:** en un run real de pizarra, el informe muestra los descubrimientos de implementar en «Decisiones».
-- **Revisión ponytail:** `/ponytail-review` sobre el diff; un campo en el schema y un evento, sin un registro aparte.
+- **Revisión ponytail:** a mano: un servidor MCP en proceso como `validar_plan`, un evento y una línea en el informe; el tope por sesión es un contador. Sin hallazgos abiertos.
 - **Desbloquea:** T3.2
 
 ### T3.2 · Proponer lecciones también de descubrimientos, preguntas y decisiones

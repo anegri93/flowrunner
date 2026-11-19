@@ -30,6 +30,7 @@ import {
   unitComandos,
   unitScope,
 } from "./implementar.ts";
+import { DESCUBRIMIENTO_TOOL } from "./descubrimientos.ts";
 import { readPlan, writePlanArtifacts } from "./planificar.ts";
 
 const st = (id: string, alcance: string[], extra: Partial<Subtask> = {}): Subtask => ({
@@ -224,6 +225,27 @@ describe("implementar", () => {
     const motivo = outcome.tipo === "pregunta" ? outcome.motivo : "";
     expect(motivo).toContain("No pude instalar jsqr");
     expect(unitEvents(run.dir)).toEqual(["ST-1:iniciada", "ST-1:fallida"]);
+  });
+
+  // Si regresiona, el que implementa no tiene con qué anotar lo que descubrió, o el hook se lo rechaza,
+  // y el aprendizaje vuelve a depender solo de las vueltas (flowrunner 2.0, T3.1).
+  test("la sesión de la sub-task recibe anotar_descubrimiento, y el hook la deja usar", async () => {
+    const anotar = {
+      tool: DESCUBRIMIENTO_TOOL,
+      input: { que: "x", donde: "src/a/x.js:1", como: "y" },
+    };
+    const sim = simQuery(
+      byUnit({ "ST-1": [{ calls: [write("src/a/x.js", "export {};\n"), anotar] }] }),
+    );
+    const deps = testDeps({ query: sim.query });
+    const { run } = await plannedRun(planWith([st("ST-1", ["src/a/"])]), TESTS, deps);
+    await implementar(contextFor(run, "implementar", deps));
+    expect(Object.keys(sim.records[0]?.options?.mcpServers ?? {})).toEqual(["aprender"]);
+    expect(sim.records[0]?.decisions).toContainEqual({
+      tool: DESCUBRIMIENTO_TOOL,
+      decision: "allow",
+    });
+    expect(sim.records[0]?.prompt).toContain("anotar_descubrimiento");
   });
 
   // Si regresiona, cada sub-task vuelve a correr `npm ci` entero en su worktree: 25 a 37 s cada una en

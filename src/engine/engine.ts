@@ -746,6 +746,7 @@ export function reduce(state: RunState, event: RunEvent): RunState {
         : { ...state, status: "cerrado", prCerrada: true };
     case "rechazo":
     case "decision":
+    case "descubrimiento":
     case "aviso":
     case "unidad":
     case "preparado":

@@ -190,6 +190,39 @@ export function temasQueFaltan(feature: Feature): string[] {
     );
 }
 
+const ENTRE_COMILLAS = /«([^«»]+)»/g;
+/** Para comparar: sin caja, con un solo espacio y «...» igual a «…». */
+const normal = (t: string) =>
+  t
+    .toLowerCase()
+    .replace(/\.\.\./g, "…")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/**
+ * Los textos entre «» de la descripción y las aclaraciones que ningún criterio nombra. El plan, revisar
+ * y probar se arman desde los criterios: en PIZ-55, «Seguir» y «Reconectando…» no tenían criterio y se
+ * mergearon sin que nadie los viera andar. Avisa; no frena, porque un «» puede ser solo un ejemplo.
+ */
+export function textosSinCriterio(feature: Feature): string[] {
+  const criterios = normal(feature.criterios.map((c) => c.text).join("\n"));
+  const fuentes = [
+    feature.descripcion,
+    ...feature.aclaraciones.flatMap((a) => [a.question, a.answer]),
+  ];
+  const faltan = new Map<string, string>();
+  for (const fuente of fuentes)
+    for (const [, texto = ""] of fuente.matchAll(ENTRE_COMILLAS)) {
+      const clave = normal(texto);
+      if (clave !== "" && !criterios.includes(clave) && !faltan.has(clave))
+        faltan.set(clave, texto);
+    }
+  if (faltan.size === 0) return [];
+  return [
+    `${[...faltan.values()].map((t) => `«${t}»`).join(", ")} están en la feature y en ningún criterio: el plan, revisar y probar solo comprueban los criterios. Si es algo que la persona ve o usa, sumale un criterio (en el entorno si solo se ve en la app); si es solo un ejemplo, ignoralo`,
+  ];
+}
+
 /** Sin package.json en la raíz, o si no se puede leer, no hay chequeo de scripts. */
 function readPackageJson(repo: string): string | undefined {
   const pkg = join(repo, "package.json");
@@ -255,6 +288,7 @@ export function checkFeature(path: string, env: NodeJS.ProcessEnv): CheckedFeatu
       ...soloDocumentacion(feature),
       ...soloChequeosDelRepo(feature, repoConfig),
       ...temasQueFaltan(feature),
+      ...textosSinCriterio(feature),
       ...sinProbar(repoConfig),
     ],
   };

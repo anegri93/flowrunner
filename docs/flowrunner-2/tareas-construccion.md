@@ -328,7 +328,9 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 > Objetivo: decidir con números qué queda por defecto, y contestar si el harness rinde más que Claude Code directo.
 
 ### T5.1 · Correr las features de medición y escribir el resultado
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[!] Bloqueado`
+- **Motivo del bloqueo:** son corridas reales en pizarra-en-vivo, con el ping pong de la skill y decisiones de la persona; no las puede hacer un agente solo. Además necesitan flowrunner 2.0 instalado: las PRs #129 a #153 mergeadas en orden, `flowrunner self-update`, y después la PR en borrador anegri93/pizarra-en-vivo#175 (la config nueva, que la versión instalada hoy rechaza).
+- **Acción:** la persona mergea las PRs en orden, corre `flowrunner self-update`, mergea #175 y corre las features de medición siguiendo `docs/flowrunner-2/medicion.md`; después se escribe `resultado.md`.
 - **Descripción:** en pizarra-en-vivo, con la config de la Fase 2: 5 features con `implementar: una_sesion` y 5 con `sub_tasks`, alternadas, y 3 features directo en Claude Code con el protocolo de T0.1. Todas con el ping pong nuevo. Llenar la planilla de `medicion.md` y escribir `docs/flowrunner-2/resultado.md`: la tabla contra la línea de base, qué opción queda por defecto y si `aprobar: si_hace_falta` pasa a ser el valor por defecto de flowrunner.
 - **Lint:** `pnpm lint` verde (prettier sobre los `.md`).
 - **Test:** N/A — son corridas reales y un informe; verificación: los números de `resultado.md` se reproducen con `flowrunner stats --runs` y la planilla de las corridas directas.
@@ -352,10 +354,10 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 # Cierre del proyecto
 
 ### Gate final
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[~] En progreso` — la parte automática está hecha; falta la Fase 5
 - **Validación de lint:** todo el repo verde.
-- **Tests:** `pnpm verify` verde.
-- **Test de integración:** los tests de integración de los gates 1 a 4 corren juntos en `pnpm test:integration`.
-- **Canario:** se rompe el invariante central de 2.0, que el run nunca toma una decisión de producto sin preguntar: el planificador ignora `preguntas`. La suite se tiene que poner roja.
-- **Criterio de aprobación:** README, la skill y el artifact «La fábrica flowrunner hoy» describen la línea nueva; la opción que perdió en la Fase 5 está borrada con su código.
+- **Tests:** `pnpm verify` verde al cierre de la Fase 4: lint, 780 unitarios (`--testTimeout=60000`; con el timeout por defecto, 3 o 4 tests lentos de `implementar.test.ts` y `revisar.test.ts` cortan bajo carga, y uno falla igual en `main` antes de 2.0) y 179 de integración.
+- **Test de integración:** los tests de los gates 1 a 4 (`conversacion`, `ajustes`, `aprender-del-run`, `una-sesion`) corren juntos en `pnpm test:integration`: 179/179.
+- **Canario:** hecho: el planificador ignora `preguntas` → 3 tests de `planificar.test.ts` rojos. Restaurado.
+- **Criterio de aprobación:** pendiente de la Fase 5: README y skill ya describen la línea nueva (T1.2, T1.6, T2.1, T3.4); falta actualizar el artifact «La fábrica flowrunner hoy» y borrar la opción que pierda en la Fase 5.
 - **Revisión ponytail:** `/ponytail-review` sobre el diff completo del proyecto + `/ponytail-debt` con el ledger final + el ledger de `test-debt:` sin resolver.

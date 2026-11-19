@@ -1,10 +1,10 @@
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { HookInput } from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, test } from "vitest";
 import { tempDir } from "../../test/helpers/git.ts";
 import type { NewEvent } from "../store/events.ts";
-import { LECTURA_ENTERA_MAX, tripwireHook, type HookPolicy } from "./hook.ts";
+import { tripwireHook, type HookPolicy } from "./hook.ts";
 
 function policy(extra: Partial<HookPolicy> = {}): HookPolicy {
   return {
@@ -160,65 +160,26 @@ describe("tripwireHook", () => {
     expect(r.reason).toMatch(/secreto/);
   });
 
-  describe("con graft, un archivo largo se lee por rango (issue 97)", () => {
-    function planner() {
+  describe("un archivo largo se lee entero (flowrunner 2.0)", () => {
+    // Si regresiona, el hook vuelve a rechazar leer entero un archivo largo: 14 rechazos en 33 runs de
+    // pizarra-en-vivo, 11 en los últimos 10, un turno perdido cada uno, sin proteger nada.
+    test("Read sin limit de un archivo de 500 líneas pasa, también en planificar con graft", async () => {
       const { unidad: _, ...p } = policy({ fase: "planificar", agents: true, graft: true });
       mkdirSync(join(p.scope.root, "src"), { recursive: true });
-      const lineas = (n: number) =>
-        `${Array.from({ length: n }, (_, i) => `l${String(i)}`).join("\n")}\n`;
-      writeFileSync(join(p.scope.root, "src", "largo.tsx"), lineas(LECTURA_ENTERA_MAX + 1));
-      writeFileSync(join(p.scope.root, "src", "justo.css"), lineas(LECTURA_ENTERA_MAX));
-      // Un binario puede traer muchos saltos de línea: no son líneas que leer.
       writeFileSync(
-        join(p.scope.root, "logo.png"),
-        Buffer.from([0x89, 0x50, 0, ...Array<number>(LECTURA_ENTERA_MAX * 2).fill(0x0a)]),
+        join(p.scope.root, "src", "largo.tsx"),
+        `${Array.from({ length: 500 }, (_, i) => `l${String(i)}`).join("\n")}\n`,
       );
-      return p;
-    }
-
-    // Si regresiona, planificar vuelve a leer enteros los archivos que la feature ya citaba con su línea.
-    test("Read sin limit de un archivo de más líneas que el máximo: deny, y el motivo dice cómo seguir", async () => {
-      const p = planner();
       const r = await call(p, "Read", { file_path: join(p.scope.root, "src", "largo.tsx") });
+      expect(r.decision).toBe("allow");
+      expect(r.emitted).toEqual([]);
+    });
+
+    // Si regresiona, sacar el límite de largo abrió también leer fuera del worktree.
+    test("un Read fuera del worktree se sigue rechazando", async () => {
+      const { unidad: _, ...p } = policy({ fase: "planificar", agents: true, graft: true });
+      const r = await call(p, "Read", { file_path: "/etc/hosts" });
       expect(r.decision).toBe("deny");
-      expect(r.reason).toBe(
-        `src/largo.tsx tiene ${String(LECTURA_ENTERA_MAX + 1)} líneas: leé solo el rango que necesitás, con \`offset\` y \`limit\` (hasta ${String(LECTURA_ENTERA_MAX)}). Ubicá las líneas antes: en código, con graft (\`graft_file_api\`, \`graft_find_code\`); en CSS, JSON o texto literal, con Grep y \`-n\`.`,
-      );
-      expect(r.emitted).toEqual([
-        { tipo: "rechazo", fase: "planificar", herramienta: "Read", motivo: r.reason },
-      ]);
-    });
-
-    // Si regresiona, la regla frena también lo que ya se lee bien: un rango, un archivo corto, un binario.
-    test("pasa con limit, con un offset que deja pocas líneas, hasta el máximo, un binario o lo que no existe", async () => {
-      const p = planner();
-      const largo = join(p.scope.root, "src", "largo.tsx");
-      for (const input of [
-        { file_path: largo, offset: 40, limit: 20 },
-        { file_path: largo, limit: 5000 },
-        { file_path: largo, offset: 3 },
-        { file_path: "src/justo.css" },
-        { file_path: "logo.png" },
-        { file_path: "src/no-existe.ts" },
-        { file_path: "src" },
-      ])
-        expect((await call(p, "Read", input)).decision, JSON.stringify(input)).toBe("allow");
-    });
-
-    // Si regresiona, un prompt promete un máximo que no es el que aplica el hook.
-    test("los prompts de las sesiones con graft dicen el mismo máximo que aplica el hook", () => {
-      for (const prompt of ["planificar", "explorar", "revisar"]) {
-        const text = readFileSync(new URL(`../../prompts/${prompt}.md`, import.meta.url), "utf8");
-        expect(text, prompt).toContain(
-          `rechaza leer entero un archivo de más de ${String(LECTURA_ENTERA_MAX)} líneas`,
-        );
-      }
-    });
-
-    // Si regresiona, implementar, que no tiene graft con qué ubicar, no puede leer el archivo que edita.
-    test("sin graft, un archivo largo se lee entero", async () => {
-      const p = { ...planner(), fase: "implementar" as const, graft: false };
-      expect((await call(p, "Read", { file_path: "src/largo.tsx" })).decision).toBe("allow");
     });
   });
 });

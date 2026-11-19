@@ -1,7 +1,5 @@
 // El hook PreToolUse de cada sesión: aplica las reglas en el momento en que el agente intenta usar
 // una herramienta, devuelve el motivo del rechazo al agente y lo deja en el log.
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import type { HookCallback, SyncHookJSONOutput } from "@anthropic-ai/claude-agent-sdk";
 import { scrubCommand } from "../agent/env.ts";
 import type { NewEvent, Phase } from "../store/events.ts";
@@ -24,10 +22,7 @@ export interface HookPolicy {
   readonly bash: boolean;
   /** Subagentes de solo lectura, como el explorador de planificar. */
   readonly agents: boolean;
-  /**
-   * Las herramientas del servidor MCP de graft. Con ellas, un archivo de más de
-   * `LECTURA_ENTERA_MAX` líneas se lee por rango: hay con qué ubicar la línea antes de leer.
-   */
+  /** Las herramientas del servidor MCP de graft. */
   readonly graft: boolean;
   /** Otras herramientas MCP permitidas, por nombre completo: `mcp__<servidor>__<herramienta>`. */
   readonly mcp?: readonly string[];
@@ -37,40 +32,6 @@ const READ_ONLY = new Set(["Read", "Grep", "Glob", "TodoWrite", "StructuredOutpu
 
 const asString = (value: unknown): string | undefined =>
   typeof value === "string" ? value : undefined;
-
-/**
- * Hasta cuántas líneas se lee entero un archivo en una sesión con graft. Cada archivo leído entero se
- * arrastra en todos los turnos que siguen: en el issue 97, planificar leyó enteros los archivos que
- * la feature ya citaba con su línea.
- */
-export const LECTURA_ENTERA_MAX = 200;
-
-/**
- * Un Read sin `limit` de un archivo largo, con graft a mano: se rechaza y se pide el rango. Un archivo
- * que no se puede leer pasa, para que Read diga por qué; uno binario, como una imagen, no tiene líneas.
- */
-function checkRange(scope: Scope, path: string, input: Record<string, unknown>): Verdict {
-  // ponytail: un `limit` grande pasa igual; el agente que pide un rango ya eligió qué leer.
-  if (input.limit !== undefined) return { ok: true };
-  let content: Buffer;
-  try {
-    // ponytail: lee el archivo entero para contarlo; Read lo iba a leer igual.
-    content = readFileSync(resolve(scope.root, path));
-  } catch {
-    return { ok: true };
-  }
-  if (content.includes(0)) return { ok: true };
-  const text = content.toString("utf8");
-  const total = text.split("\n").length - (text.endsWith("\n") ? 1 : 0);
-  const desde = typeof input.offset === "number" && input.offset > 1 ? input.offset : 1;
-  const lineas = total - desde + 1;
-  if (lineas <= LECTURA_ENTERA_MAX) return { ok: true };
-  const rel = insideRoot(scope, path) ?? path;
-  return {
-    ok: false,
-    motivo: `${rel} tiene ${String(total)} líneas: leé solo el rango que necesitás, con \`offset\` y \`limit\` (hasta ${String(LECTURA_ENTERA_MAX)}). Ubicá las líneas antes: en código, con graft (\`graft_file_api\`, \`graft_find_code\`); en CSS, JSON o texto literal, con Grep y \`-n\`.`,
-  };
-}
 
 function checkWrite(policy: HookPolicy, path: string | undefined, added: string[]): Verdict {
   if (!policy.write) return { ok: false, motivo: `${policy.fase} no escribe archivos` };
@@ -94,8 +55,7 @@ export function decide(
     case "Read": {
       const path = asString(input.file_path);
       const verdict = checkReadPath(policy.scope, path);
-      if (!verdict.ok || !policy.graft || path === undefined) return { verdict };
-      return { verdict: checkRange(policy.scope, path, input) };
+      return { verdict };
     }
     case "Grep":
       return { verdict: checkSearchPath(policy.scope, asString(input.path)) };

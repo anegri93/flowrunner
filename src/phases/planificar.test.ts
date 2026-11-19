@@ -258,6 +258,50 @@ describe("planificar", () => {
     });
   });
 
+  describe("el planificador pregunta lo que la feature no cubre (flowrunner 2.0)", () => {
+    const pregunta = {
+      tema: "borde" as const,
+      pregunta: "Una paleta dentro de una zona, ¿se acomoda por dentro o viaja entera?",
+      propuesta: "Viaja entera, como un dibujo.",
+    };
+
+    // Si regresiona, el planificador decide solo una decisión de producto que la persona no tomó, y
+    // la revisión la encuentra después de implementar (PIZ-19: grupos dentro de una zona).
+    test("una salida con preguntas detiene planificar con cada una y su propuesta, sin escribir el plan", async () => {
+      const { run, deps, sim } = await prepared_([
+        { calls: [writeTest], output: { preguntas: [pregunta] } },
+      ]);
+      const outcome = await planificar(contextFor(run, "planificar", deps));
+      expect(outcome).toMatchObject({ tipo: "pregunta" });
+      expect(outcome.tipo === "pregunta" && outcome.motivo).toBe(
+        "el plan necesita decisiones que la feature no cubre:\n- (borde) Una paleta dentro de una zona, ¿se acomoda por dentro o viaja entera? Propuesta: Viaja entera, como un dibujo.",
+      );
+      expect(() => readPlan(run)).toThrow();
+      // La conversación queda para retomarla con la respuesta (T1.4).
+      expect(sesionAnterior(run)?.sessionId).toBe(sim.records[0]?.options?.sessionId);
+      expect(sim.records[0]?.prompt).toContain("`preguntas`");
+    });
+
+    // Si regresiona, un plan que trae preguntas se implementa igual y la decisión queda tomada sin la persona.
+    test("con preguntas, el plan que venga en la misma salida no se usa", async () => {
+      const { run, deps } = await prepared_([
+        { calls: [writeTest], output: { ...goodPlan, preguntas: [pregunta] } },
+      ]);
+      expect(await planificar(contextFor(run, "planificar", deps))).toMatchObject({
+        tipo: "pregunta",
+      });
+      expect(() => readPlan(run)).toThrow();
+    });
+
+    // Si regresiona, un plan sin preguntas deja de pasar o se detiene sin motivo.
+    test("con preguntas vacías, el plan sigue como siempre", async () => {
+      const { run, deps } = await prepared_([
+        { calls: [writeTest], output: { ...goodPlan, preguntas: [] } },
+      ]);
+      expect(await planificar(contextFor(run, "planificar", deps))).toEqual({ tipo: "ok" });
+    });
+  });
+
   test("la sesión del planificador recibe validar_plan, y el hook la permite", async () => {
     const validar = { tool: "mcp__gate__validar_plan", input: goodPlan };
     const { run, deps, sim } = await prepared_([{ calls: [writeTest, validar], output: goodPlan }]);

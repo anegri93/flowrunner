@@ -26,6 +26,7 @@ import {
   delRun,
   planDevuelto,
   salidaPlanSchema,
+  textoDePreguntas,
   type Plan,
   type SalidaPlan,
 } from "../gates/plan.ts";
@@ -260,6 +261,9 @@ interface Intento {
  * proceso que muere a mitad de camino deja al siguiente intento planificando de cero.
  */
 const sesionFile = (run: RunPaths) => join(run.dir, "planificar-sesion.json");
+
+/** Las preguntas de la última detención de planificar, para que `responder` sepa qué se respondió. */
+export const preguntasFile = (run: RunPaths) => join(run.dir, "planificar-preguntas.json");
 const sesionSchema = z.object({
   sessionId: z.string().min(1),
   nombre: z.string().min(1),
@@ -684,6 +688,17 @@ async function gateYCierre(ctx: PhaseContext, comun: Comun, intento: Intento): P
     return result.tipo === "limite"
       ? result
       : { tipo: "falla", clase: result.clase, motivo: result.motivo };
+  // Una decisión de producto que la feature no cubre no la toma el planificador: el run se detiene y
+  // le pregunta a la persona, y la misma sesión sigue con la respuesta (ADR 0043). El plan que venga
+  // con las preguntas no se usa: decidiría lo que la persona todavía no decidió.
+  const preguntas = result.output.preguntas ?? [];
+  if (preguntas.length > 0) {
+    const motivo = textoDePreguntas(preguntas);
+    if (sinIndice === undefined || armada.candidatas.length === 0)
+      writeFileSync(sesionFile(run), `${JSON.stringify({ ...intento.sesion, motivo })}\n`);
+    writeFileSync(preguntasFile(run), `${JSON.stringify(preguntas)}\n`);
+    return { tipo: "pregunta", motivo };
+  }
   // Sin plan, o a medias, es un problema del gate: se retoma la misma sesión con qué hacer (ADR 0033).
   const devuelto = planDevuelto(result.output, intento.validado());
   if (typeof devuelto === "string") {

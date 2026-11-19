@@ -27,6 +27,8 @@ export interface NewRun {
   readonly vueltas?: number | undefined;
   /** Cómo se aprueba el plan, de la config del repo (ADR 0044). */
   readonly aprobar?: "siempre" | "si_hace_falta" | undefined;
+  /** Cómo se implementa, de la config del repo (ADR 0045). */
+  readonly implementar?: "sub_tasks" | "una_sesion" | undefined;
   readonly featureText: string;
 }
 
@@ -47,6 +49,7 @@ export function createRun(home: string, run: NewRun, now: Date): RunPaths {
       ...(run.budgetUsd === undefined ? {} : { budget_usd: run.budgetUsd }),
       ...(run.vueltas === undefined ? {} : { vueltas: run.vueltas }),
       ...(run.aprobar === undefined ? {} : { aprobar: run.aprobar }),
+      ...(run.implementar === undefined ? {} : { implementar: run.implementar }),
       reintentos_red: MAX_NETWORK_RETRIES,
       vuelta_directa: true,
     },

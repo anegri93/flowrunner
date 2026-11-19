@@ -67,6 +67,11 @@ export const repoConfigSchema = z
      * versión que sirva; las decisiones se toman en la feature (ADR 0044).
      */
     aprobar: z.enum(["siempre", "si_hace_falta"]).default("siempre"),
+    /**
+     * `sub_tasks`: Sonnet implementa cada sub-task. `una_sesion`: la sesión de Opus que planificó
+     * implementa una sola sub-task con todo el alcance (experimento, ADR 0045).
+     */
+    implementar: z.enum(["sub_tasks", "una_sesion"]).default("sub_tasks"),
     /** Tope opcional en USD por run. Sin él, el run no se corta por gasto. */
     budget: z.strictObject({ run_usd: z.number().positive() }).optional(),
     /** Una sesión de Sonnet explora antes del primer plan y le deja a Opus un informe (PR 13). */

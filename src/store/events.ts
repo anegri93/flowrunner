@@ -117,6 +117,8 @@ export const eventSchema = z.discriminatedUnion("tipo", [
     vuelta_directa: z.literal(true).optional(),
     /** Cómo se aprueba el plan, de la config del repo al crear el run; sin el campo, `siempre` (ADR 0044). */
     aprobar: z.enum(["siempre", "si_hace_falta"]).optional(),
+    /** Cómo se implementa, de la config del repo al crear el run; sin el campo, `sub_tasks` (ADR 0045). */
+    implementar: z.enum(["sub_tasks", "una_sesion"]).optional(),
   }),
   z.strictObject({ tipo: z.literal("accion_iniciada"), at, fase: phaseSchema }),
   z.strictObject({

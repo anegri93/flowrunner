@@ -120,6 +120,7 @@ test("formatLessons escribe las lecciones sin número, con dónde aplican, el ru
         titulo: "Grilla de la barra",
         regla: "Sumar una columna al agregar un hijo.",
         aplica: "src/Barra.tsx",
+        para: "codigo",
         origen: "revisar, vuelta 1",
       },
     ],
@@ -127,12 +128,27 @@ test("formatLessons escribe las lecciones sin número, con dónde aplican, el ru
     "2026-11-07",
   );
   expect(text).toBe(
-    "\n### Grilla de la barra\n\nRegla: Sumar una columna al agregar un hijo.\n\nAplica: src/Barra.tsx\n\nOrigen: run PIZ-1-x · revisar, vuelta 1 · 2026-11-07\n",
+    "\n### Grilla de la barra\n\nRegla: Sumar una columna al agregar un hijo.\n\nAplica: src/Barra.tsx\n\nPara: código\n\nOrigen: run PIZ-1-x · revisar, vuelta 1 · 2026-11-07\n",
   );
 });
 
 describe("proposalSchema", () => {
-  const lesson = { titulo: "t", regla: "r", aplica: "src/a.ts", origen: "revisar, vuelta 1" };
+  const lesson = {
+    titulo: "t",
+    regla: "r",
+    aplica: "src/a.ts",
+    para: "plan",
+    origen: "revisar, vuelta 1",
+  };
+  // Si regresiona, una lección no dice a quién le sirve y la skill no sabe cuáles preguntar en el
+  // ping pong (flowrunner 2.0, T3.3).
+  test("una lección sin para quién es no pasa", () => {
+    const { para: _, ...sinPara } = lesson;
+    expect(proposalSchema.safeParse({ lecciones: [sinPara] }).success).toBe(false);
+    expect(proposalSchema.safeParse({ lecciones: [{ ...lesson, para: "todos" }] }).success).toBe(
+      false,
+    );
+  });
   // Si regresiona, entran lecciones que no dicen dónde valen: las de una sola feature.
   test("una lección sin dónde aplica no pasa", () => {
     const { aplica: _, ...sinAplica } = lesson;
@@ -158,6 +174,7 @@ describe("propuestas de una entrega anterior de la misma PR", () => {
         titulo: "Los CSV llevan encabezado",
         regla: "r",
         aplica: "src/",
+        para: "plan",
         origen: "revisar, vuelta 1",
       },
     ],
@@ -176,7 +193,15 @@ describe("propuestas de una entrega anterior de la misma PR", () => {
     });
     expect(cuantasLecciones(partes.lecciones)).toBe(1);
     const nueva = formatLessons(
-      [{ titulo: "Separar con punto y coma", regla: "r", aplica: "src/", origen: "tu feedback" }],
+      [
+        {
+          titulo: "Separar con punto y coma",
+          regla: "r",
+          aplica: "src/",
+          para: "plan",
+          origen: "tu feedback",
+        },
+      ],
       "R1",
       "2026-11-18",
     );

@@ -75,6 +75,7 @@ describe("lecciones propuestas en la PR de entrega", () => {
             titulo: "Los CSV llevan encabezado",
             regla: "Escribir la fila de encabezado primero.",
             aplica: "src/export/",
+            para: "plan",
             origen: "revisar, vuelta 1",
           },
         ],
@@ -101,7 +102,9 @@ describe("lecciones propuestas en la PR de entrega", () => {
     const { w, id, body } = await withRound({
       match: PROPOSER,
       output: {
-        lecciones: [{ titulo: "x", regla: "y", aplica: "src/", origen: "revisar, vuelta 9" }],
+        lecciones: [
+          { titulo: "x", regla: "y", aplica: "src/", para: "plan", origen: "revisar, vuelta 9" },
+        ],
       },
     });
     const subjects = git(w.remote, "log", "--format=%s", `main..${BRANCH}`).split("\n");

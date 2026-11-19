@@ -98,8 +98,15 @@ const lessonSchema = z.object({
   regla: z.string().min(1),
   /** Dónde del repo vale la regla. Una lección que no puede decirlo era de esa feature y no sirve. */
   aplica: z.string().min(1),
+  /**
+   * A quién le sirve (flowrunner 2.0): `conversacion`, un caso borde o una decisión que la skill tiene
+   * que preguntar en este repo; `plan`, una regla para planificar o implementar; `codigo`, cómo se
+   * comporta algo del repo o de una librería.
+   */
+  para: z.enum(["conversacion", "plan", "codigo"]),
   origen: z.string().min(1),
 });
+const PARA_TEXTO = { conversacion: "conversación", plan: "plan", codigo: "código" } as const;
 export const proposalSchema = z.object({
   lecciones: z.array(lessonSchema).max(3),
   /** Lo que se arregla en la configuración del repo (format, typecheck, un script), no con una lección. */
@@ -120,7 +127,7 @@ export function formatLessons(lessons: readonly Lesson[], runId: string, today: 
   return lessons
     .map(
       (l) =>
-        `\n### ${l.titulo}\n\nRegla: ${l.regla}\n\nAplica: ${l.aplica}\n\nOrigen: run ${runId} · ${l.origen} · ${today}\n`,
+        `\n### ${l.titulo}\n\nRegla: ${l.regla}\n\nAplica: ${l.aplica}\n\nPara: ${PARA_TEXTO[l.para]}\n\nOrigen: run ${runId} · ${l.origen} · ${today}\n`,
     )
     .join("");
 }

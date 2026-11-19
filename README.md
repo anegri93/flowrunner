@@ -324,10 +324,10 @@ estén en rojo; si rechaza el plan, el reintento retoma esa misma conversación 
 planificar de cero (ADR 0025). Un criterio que pide el repo en verde corre el `verify.sh` del repo tal
 cual y es «del run»: no se asigna a una sub-task, lo comprueba verificar.
 
-Las sesiones que tienen graft (planificar con su explorador, explorar y revisar) leen por rango: un
-Read sin `limit` de un archivo de más de 200 líneas se rechaza, y el motivo le dice al agente que ubique
-las líneas con graft, o con Grep en CSS, JSON o texto literal. Cada archivo leído entero se arrastra en
-todos los turnos que siguen. Para ver si el planificador ubica o lee de más, `flowrunner stats --runs`
+Las sesiones que tienen graft (planificar con su explorador, explorar y revisar) leen por rango: sus
+prompts les piden ubicar las líneas con graft, o con Grep en CSS, JSON o texto literal, porque cada
+archivo leído entero se arrastra en todos los turnos que siguen. No es una regla del hook: rechazarlo
+costaba un turno por vez sin proteger nada. Para ver si el planificador ubica o lee de más, `flowrunner stats --runs`
 muestra, por run, sus llamadas a graft y sus intentos de leer un archivo entero.
 
 Si un run se replanifica, el código de las sub-tasks que el plan nuevo no cambia se conserva: el

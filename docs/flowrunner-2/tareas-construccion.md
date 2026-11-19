@@ -152,13 +152,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 > Objetivo: sacar lo que hoy cuesta turnos o vueltas sin proteger nada.
 
 ### T2.1 · Sacar el límite de 200 líneas de Read
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** sacar `LECTURA_ENTERA_MAX` y su chequeo de `src/tripwires/hook.ts:46-71`, y la frase que lo describe en los prompts de las fases. Se queda el resto del hook de Read: rutas fuera del worktree y `env_files`. Fueron 14 rechazos en los 33 runs y 11 en los últimos 10.
 - **Lint:** `pnpm lint` verde.
-- **Test:** test primero en el test del hook: (1) un Read sin `offset` de un archivo de 500 líneas dentro del worktree se permite; (2) un Read de un archivo fuera del worktree se sigue rechazando con su motivo; (3) un Read de un `env_file` se sigue rechazando.
-- **Canario:** mutación prevista: volver a poner el chequeo de largo; el test (1) tiene que ponerse rojo. Y sacar el chequeo de worktree; el test (2) tiene que ponerse rojo.
-- **Criterio de aprobación:** `grep -rn "LECTURA_ENTERA_MAX\|leé solo el rango" src` no encuentra nada.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff; solo borra.
+- **Test:** test primero en `src/tripwires/hook.test.ts`, «un archivo largo se lee entero»: (1) un Read sin `limit` de un archivo de 500 líneas pasa en planificar con graft y no emite rechazo; (2) un Read fuera del worktree se sigue rechazando. Los tests del límite viejo (issue 97) se reemplazan: probaban la regla que se saca. El rechazo de `env_files` lo siguen cubriendo los tests de `rules`.
+- **Canario:** hecho: (a) volver a rechazar el Read sin `limit` con graft → el test (1) rojo; (b) sacar `checkReadPath` → los dos tests rojos. Restaurado.
+- **Criterio de aprobación:** `grep -rn "LECTURA_ENTERA_MAX\|leé solo el rango" src` no encuentra nada (comprobado). Los prompts siguen pidiendo leer por rango, ahora como consejo, y el README lo explica.
+- **Revisión ponytail:** solo borra: la función `checkRange`, la constante y sus imports. `stats --runs` sigue contando los Read sin `limit` desde los transcripts, así que el efecto en el costo se ve en la Fase 5. Sin hallazgos abiertos.
 - **Desbloquea:** T2.2
 
 ### T2.2 · Revisar pregunta directo cuando el arreglo es una decisión tuya

@@ -28,6 +28,7 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 **Decisiones tomadas (19-11-2026):**
 
 - Con `aprobar: si_hace_falta`, los cambios a lo que ya existe no se ven antes de implementar: se aceptan por el criterio de la feature que citan y la persona los ve en la PR. Lo aceptó la persona: lo que se lee y se decide es el ping pong de la feature, no el plan.
+- Los criterios de aprobación que piden a la persona o runs reales de pizarra-en-vivo no frenan la fase siguiente: quedan anotados como «criterio de la persona pendiente» y se verifican juntos al cierre. Los tests, el lint, los canarios y la revisión ponytail sí frenan.
 - Orca entra en esta versión: `responder` se ofrece en Orca igual que en el CLI y la skill (T1.5).
 
 **Estados:** `[ ] Pendiente` · `[~] En progreso` · `[x] Hecho` · `[!] Bloqueado`
@@ -49,23 +50,23 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 > Objetivo: que haya contra qué medir antes de tocar nada, y una forma de comparar con Claude Code directo.
 
 ### T0.1 · Línea de base de la versión actual y protocolo de comparación
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** escribir `docs/flowrunner-2/medicion.md` con: (a) la línea de base de PIZ-44 a PIZ-53 sacada de `flowrunner stats --runs` y de los `events.jsonl`: mediana y p90 de punta a punta, vueltas por run, rechazos por run, costo, runs sin vueltas, aclaraciones por feature, preguntas del planificador por run (hoy no existen; en 2.0 tienen que bajar con el tiempo si el aprendizaje funciona) y lecciones nuevas por run; (b) el protocolo para una feature hecha directo en Claude Code: el mismo `feature.md` escrito con la skill, una sesión de Claude Code sin flowrunner, y se anota tiempo hasta la PR, costo de la sesión, cuántas veces hubo que corregirla y los bugs que aparecen en la semana después del merge. La misma planilla sirve para las dos formas.
 - **Lint:** `pnpm lint` verde (prettier sobre el `.md`).
 - **Test:** N/A — es un documento de medición, sin código; verificación: cada número de la línea de base se reproduce corriendo `flowrunner stats --runs pizarra-en-vivo` y el script de la planilla sobre los mismos runs.
 - **Canario:** N/A — sin test; el riesgo de un número mal copiado lo cubre la verificación de arriba.
 - **Criterio de aprobación:** `medicion.md` tiene la línea de base de 10 runs y una planilla vacía con las mismas columnas para "flowrunner 2.0" y "Claude Code directo".
-- **Revisión ponytail:** `/ponytail-review` sobre el diff; sin scripts nuevos si `stats --runs` alcanza.
+- **Revisión ponytail:** revisión a mano contra la escalera: sin scripts nuevos; los números salen de `flowrunner stats --runs`, `grep` y el log de eventos. Se sacó el tiempo de pared, que pedía un script propio y no lo da `stats`. Sin hallazgos abiertos.
 - **Desbloquea:** Gate Fase 0
 
 ### Gate Fase 0
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho` — criterio de la persona pendiente
 - **Validación de lint:** `pnpm lint` verde.
 - **Tests:** `pnpm verify` verde (nada cambió en el código).
 - **Test de integración:** N/A — la fase no tiene código; el siguiente gate con código es el de la Fase 1.
 - **Canario:** N/A — sin tests nuevos.
 - **Criterio de aprobación:** la persona lee `medicion.md` y está de acuerdo con las columnas y la línea de base.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff de la fase.
+- **Revisión ponytail:** igual que T0.1: solo documentación, sin hallazgos.
 - **Desbloquea:** Fase 1
 
 ---

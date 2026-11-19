@@ -115,6 +115,8 @@ export const eventSchema = z.discriminatedUnion("tipo", [
      * anterior sin el campo se detiene y corre Autofix solo, como antes (C8).
      */
     vuelta_directa: z.literal(true).optional(),
+    /** Cómo se aprueba el plan, de la config del repo al crear el run; sin el campo, `siempre` (ADR 0044). */
+    aprobar: z.enum(["siempre", "si_hace_falta"]).optional(),
   }),
   z.strictObject({ tipo: z.literal("accion_iniciada"), at, fase: phaseSchema }),
   z.strictObject({
@@ -183,7 +185,7 @@ export const eventSchema = z.discriminatedUnion("tipo", [
     /** Cuántos cambios a lo existente aceptó la persona al aprobar; falta en runs anteriores. */
     cambios_aceptados: z.int().nonnegative().optional(),
     /** De dónde vino la aprobación; falta en runs anteriores (ADR 0023). */
-    origen: origenSchema.optional(),
+    origen: origenAutofixSchema.optional(),
   }),
   z.strictObject({
     tipo: z.literal("cambios_pedidos"),

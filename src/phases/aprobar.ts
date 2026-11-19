@@ -33,5 +33,19 @@ export const aprobar: PhaseFn = async (ctx) => {
       };
     }
   }
+  // Con `aprobar: si_hace_falta`, las decisiones se tomaron en la feature: solo espera a la persona
+  // una dependencia sin versión que sirva, que pide elegir otra librería o subir el Node (ADR 0044).
+  // Los cambios a lo que existe se aceptan por el criterio que citan y van en la PR.
+  if (ctx.state.aprobarSolo) {
+    const plan = readPlan(ctx.run);
+    if ((plan.versiones?.sin_version ?? []).length === 0) {
+      ctx.emit({
+        tipo: "aprobado",
+        cambios_aceptados: plan.cambia_lo_existente.length,
+        origen: "flowrunner",
+      });
+      return { tipo: "ok" };
+    }
+  }
   return { tipo: "espera" };
 };

@@ -145,6 +145,8 @@ export interface RunState {
    * (ADR 0030). Lo congela `run_creado`: un run anterior sigue como antes.
    */
   readonly vueltaDirecta: boolean;
+  /** El plan sigue solo si no hay nada que decidir: `aprobar: si_hace_falta` en `run_creado` (ADR 0044). */
+  readonly aprobarSolo: boolean;
   /**
    * El feedback de la persona sobre la PR abierta que aprender tiene que evaluar (ADR 0038). Se gasta
    * cuando el run vuelve a trabajar, o cuando aprender ve que la PR ya no está abierta.
@@ -525,6 +527,7 @@ export function initialState(): RunState {
     autofixCorrio: false,
     directaCorrio: false,
     vueltaDirecta: false,
+    aprobarSolo: false,
     feedback: undefined,
     prCerrada: false,
   };
@@ -580,6 +583,7 @@ export function reduce(state: RunState, event: RunEvent): RunState {
         vueltasMax: event.vueltas ?? LEGACY_ROUNDS,
         reintentosRed: event.reintentos_red,
         vueltaDirecta: event.vuelta_directa === true,
+        aprobarSolo: event.aprobar === "si_hace_falta",
       };
     case "accion_iniciada":
       return { ...state, interrumpida: true };

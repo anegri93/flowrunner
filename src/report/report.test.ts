@@ -404,6 +404,22 @@ test("el informe dice de dónde vino cada decisión y cuánto tardó", () => {
   expect(buildReport(waitingForYou(), run)).not.toContain("Tus decisiones");
 });
 
+// Si regresiona, un plan que flowrunner aprobó solo no deja rastro en el informe, o figura como si lo
+// hubiera aprobado la persona (ADR 0044).
+test("el informe dice cuando flowrunner aprobó el plan solo, con los cambios aceptados por su criterio", () => {
+  const solo = [
+    created,
+    ...step("preparar", { tipo: "ok" }),
+    ...step("planificar", { tipo: "ok" }),
+    atHour({ tipo: "accion_iniciada", fase: "aprobar" }, "01:07:35"),
+    atHour({ tipo: "aprobado", cambios_aceptados: 2, origen: "flowrunner" }, "01:07:36"),
+    atHour({ tipo: "accion_terminada", fase: "aprobar", resultado: { tipo: "ok" } }, "01:07:36"),
+  ];
+  expect(buildReport(solo, run)).toContain(
+    "flowrunner aprobó el plan solo: no había nada que decidir, sin esperarte (2 cambios aceptados)",
+  );
+});
+
 // Si regresiona, el informe lista como tuya una respuesta que el run ignoró porque otra llegó antes, o
 // mide la demora de una respuesta a una pregunta desde una espera que no era la suya.
 test("Tus decisiones lista solo las que el run tomó, con la demora desde que te esperó", () => {

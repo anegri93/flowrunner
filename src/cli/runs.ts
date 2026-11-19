@@ -236,6 +236,7 @@ export function startRun(home: string, file: string, env: NodeJS.ProcessEnv, now
       repo: checked.project.path,
       budgetUsd: checked.repoConfig.budget?.run_usd,
       vueltas: checked.repoConfig.vueltas,
+      aprobar: checked.repoConfig.aprobar,
       featureText,
     },
     now,

@@ -265,6 +265,8 @@ export function recorridoOf(input: RecorridoInput): {
       }
       case "aprobado":
       case "cambios_pedidos": {
+        // Lo aprobó flowrunner solo (ADR 0044): no es una respuesta tuya.
+        if (e.tipo === "aprobado" && e.origen === "flowrunner") return;
         // Tu respuesta reemplaza a aprobar esperando, en el mismo lugar: las claves no se corren.
         const at = pasos.findLastIndex(
           (p) => p.tipo === "etapa" && p.fase === "aprobar" && p.resultado === "espera",

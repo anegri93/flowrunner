@@ -126,13 +126,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T1.6
 
 ### T1.6 · Aprobar solo cuando hace falta
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho` — criterio de la persona pendiente
 - **Descripción:** opción `aprobar: siempre | si_hace_falta` en la config del repo (por defecto `siempre`), congelada en `run_creado`. Con `si_hace_falta`, la fase aprobar (`src/phases/aprobar.ts`) sigue fijando versiones y: si alguna dependencia queda sin versión, se detiene con una pregunta (no hay nada que aprobar sin decidirlo); si no, escribe `aprobado` con `origen: "flowrunner"` y sigue a implementar. Hoy `aprobado` solo acepta `terminal`, `claude` u `orca` (`origenSchema`, `src/store/events.ts:88`); se amplía como ya se hizo con `origenAutofixSchema`, sin tocar el `--origen` del CLI. Los cambios a lo que existe se aceptan por el criterio que citan y van, como hoy, en la PR y en el informe con "aceptado por AC-n". `skip-probar` sigue disponible para saltear probar sin aprobar. ADR nuevo.
 - **Lint:** `pnpm lint` verde.
-- **Test:** test primero en `src/phases/aprobar.test.ts` y `src/engine/engine.test.ts`: (1) con `si_hace_falta` y versiones resueltas, el log tiene `aprobado` de origen `flowrunner` y la fase siguiente es implementar; (2) con una dependencia sin versión se detiene y no hay `aprobado`; (3) con `siempre` espera como hoy; (4) un run creado sin el campo espera como hoy.
-- **Canario:** mutación prevista: que `si_hace_falta` apruebe también con una dependencia sin versión; el test (2) tiene que ponerse rojo.
+- **Test:** test primero en `src/phases/aprobar.test.ts`, «aprobar solo cuando hace falta»: (1) con `si_hace_falta` y versiones resueltas devuelve `ok` y deja `aprobado` de origen `flowrunner` con los cambios aceptados; (2) con una dependencia sin versión espera y no hay `aprobado`; (3) con `siempre`, o con un run creado sin el campo, espera como hoy. Y `src/report/report.test.ts` «el informe dice cuando flowrunner aprobó el plan solo»: el informe lo cuenta aunque el evento no cambie el estado.
+- **Canario:** hecho: aprobar sola aunque haya una dependencia sin versión (`if (true)`) → el test (2) se puso rojo. Restaurado.
 - **Criterio de aprobación:** en pizarra-en-vivo con `aprobar: si_hace_falta`, un run pasa de planificar a implementar sin esperar, y el informe dice "aprobado por flowrunner" con los cambios aceptados y su criterio.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff; dos valores, sin una política configurable.
+- **Revisión ponytail:** a mano: dos valores en la config y un booleano en el estado, congelado en `run_creado` como `vueltas`; la fase emite el `aprobado` que ya existía, con el origen ampliado a `flowrunner` como en Autofix. Sin hallazgos abiertos. README y ADR 0044 actualizados.
 - **Desbloquea:** Gate Fase 1
 
 ### Gate Fase 1

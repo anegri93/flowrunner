@@ -162,7 +162,10 @@ function decided(e: RunEvent): Decided | undefined {
     case "aprobado": {
       const n = e.cambios_aceptados ?? 0;
       return {
-        que: "aprobaste el plan",
+        que:
+          e.origen === "flowrunner"
+            ? "flowrunner aprobó el plan solo: no había nada que decidir"
+            : "aprobaste el plan",
         origen: e.origen,
         alPlan: true,
         cola: n === 0 ? "" : ` (${String(n)} ${n === 1 ? "cambio aceptado" : "cambios aceptados"})`,
@@ -237,7 +240,10 @@ function personDecisions(events: readonly RunEvent[]): string[] {
       return;
     }
     const decision = decided(e);
-    if (decision === undefined || after === before) return;
+    // Un plan que flowrunner aprobó solo no cambia el estado: lo hace el `ok` de aprobar que sigue.
+    // Igual se cuenta, porque es lo que la persona no hizo (ADR 0044).
+    const aprobadoSolo = e.tipo === "aprobado" && e.origen === "flowrunner";
+    if (decision === undefined || (after === before && !aprobadoSolo)) return;
     // Lo que flowrunner hizo sin esperarte no tiene origen ni demora: va en orden, entre lo tuyo.
     if (decision.origen === "flowrunner") {
       lines.push(`- ${hour(e.at)} · ${decision.que}, sin esperarte${decision.cola}`);

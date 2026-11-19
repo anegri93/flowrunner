@@ -10,7 +10,7 @@ import { summarize } from "../cli/contracts.ts";
 import { esFallaDeRed } from "../engine/motivos.ts";
 import type { Plan } from "../gates/plan.ts";
 import type { RunPaths } from "../runner/types.ts";
-import { appendEvent } from "../store/run-log.ts";
+import { appendEvent, readLog } from "../store/run-log.ts";
 import { loadState } from "../store/runs.ts";
 import type { Consulta, Registro } from "../versiones/versiones.ts";
 import { aprobar } from "./aprobar.ts";
@@ -35,10 +35,14 @@ const UNPDF: Consulta = {
 };
 
 /** Un run planificado sobre un worktree con estos archivos, a punto de entrar a aprobar. */
-function planificado(files: Record<string, string>, plan: Plan = CON_DEPS): RunPaths {
+function planificado(
+  files: Record<string, string>,
+  plan: Plan = CON_DEPS,
+  aprobarModo?: "siempre" | "si_hace_falta",
+): RunPaths {
   const worktree = tempDir("fr-aprobar-");
   for (const [name, content] of Object.entries(files)) writeFileSync(join(worktree, name), content);
-  const run = newRun(worktree);
+  const run = newRun(worktree, undefined, [], aprobarModo);
   appendEvent(run.dir, { tipo: "preparado", rama: "flowrunner/x", worktree, base_sha: "abc" });
   writePlanArtifacts(run, plan, {});
   for (const fase of ["preparar", "planificar"] as const) {
@@ -154,5 +158,52 @@ describe("aprobar", () => {
     writePlanArtifacts(run, PLAN, {});
     expect(readPlan(run).versiones).toBeUndefined();
     expect(JSON.parse(readFileSync(join(run.dir, "tasks.json"), "utf8"))).toEqual(PLAN.subtareas);
+  });
+});
+
+describe("aprobar solo cuando hace falta (flowrunner 2.0)", () => {
+  const NODE_20 = { "package.json": JSON.stringify({ engines: { node: ">=20.6" } }) };
+  const CAMBIA: Plan = {
+    ...CON_DEPS,
+    cambia_lo_existente: [{ que: "hoy X; pasa a Y", donde: "src/a.ts:1", criterio: "AC-1" }],
+  };
+
+  // Si regresiona, el run espera una aprobación que no decide nada (33 de 33 aprobados sin cambios,
+  // en una mediana de 27 s), o sigue solo sin dejar escrito que lo aprobó flowrunner.
+  test("con si_hace_falta y versiones resueltas, aprobar sigue sola y lo deja escrito", async () => {
+    const run = planificado(NODE_20, CAMBIA, "si_hace_falta");
+    const out = await aprobar(
+      contextFor(run, "aprobar", testDeps({ registro: registro({ unpdf: UNPDF }) })),
+    );
+    expect(out).toEqual({ tipo: "ok" });
+    expect(readLog(run.dir).events).toContainEqual(
+      expect.objectContaining({ tipo: "aprobado", cambios_aceptados: 1, origen: "flowrunner" }),
+    );
+  });
+
+  // Si regresiona, flowrunner aprueba un plan con una dependencia que no anda con el Node del repo:
+  // eso sí es una decisión de la persona (PIZ-3).
+  test("con una dependencia sin versión que sirva, espera a la persona aunque sea si_hace_falta", async () => {
+    const run = planificado(
+      { "package.json": JSON.stringify({ engines: { node: ">=18" } }) },
+      CON_DEPS,
+      "si_hace_falta",
+    );
+    const out = await aprobar(
+      contextFor(run, "aprobar", testDeps({ registro: registro({ unpdf: UNPDF }) })),
+    );
+    expect(out).toEqual({ tipo: "espera" });
+    expect(readLog(run.dir).events.some((e) => e.tipo === "aprobado")).toBe(false);
+  });
+
+  // Si regresiona, un repo que no pidió el modo nuevo, o un run creado antes, deja de esperar.
+  test("con siempre, o sin el campo, espera como hoy", async () => {
+    for (const modo of ["siempre", undefined] as const) {
+      const run = planificado(NODE_20, CAMBIA, modo);
+      const out = await aprobar(
+        contextFor(run, "aprobar", testDeps({ registro: registro({ unpdf: UNPDF }) })),
+      );
+      expect(out).toEqual({ tipo: "espera" });
+    }
   });
 });

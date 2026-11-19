@@ -25,6 +25,8 @@ export interface NewRun {
   readonly budgetUsd?: number | undefined;
   /** Las vueltas automáticas de la config del repo; sin ellas, el run vale las de antes (2). */
   readonly vueltas?: number | undefined;
+  /** Cómo se aprueba el plan, de la config del repo (ADR 0044). */
+  readonly aprobar?: "siempre" | "si_hace_falta" | undefined;
   readonly featureText: string;
 }
 
@@ -44,6 +46,7 @@ export function createRun(home: string, run: NewRun, now: Date): RunPaths {
       repo: run.repo,
       ...(run.budgetUsd === undefined ? {} : { budget_usd: run.budgetUsd }),
       ...(run.vueltas === undefined ? {} : { vueltas: run.vueltas }),
+      ...(run.aprobar === undefined ? {} : { aprobar: run.aprobar }),
       reintentos_red: MAX_NETWORK_RETRIES,
       vuelta_directa: true,
     },

@@ -284,18 +284,32 @@ informe y la etapa Probar del panel de Orca los enlazan para que los revises.
 Cada run pasa por puestos en orden. Los grises los hace código, sin modelo; los azules, un agente; los
 naranjas, vos.
 
-| Puesto          | Quién          | Qué hace                                                                | Qué deja               |
-| --------------- | -------------- | ----------------------------------------------------------------------- | ---------------------- |
-| 0 · Feature     | vos            | La escribís conversando con la skill en Claude Code                     | `feature.md`           |
-| 1 · Preparar    | código         | Una copia de trabajo aparte, dependencias instaladas y la base en verde | la base comprobada     |
-| 2 · Planificar  | Opus           | Lee el código, escribe los tests de aceptación y divide en sub-tasks    | `plan.md` y los tests  |
-| 3 · Aprobar     | vos            | Aprobás el plan o pedís cambios con tu motivo                           | el plan aprobado       |
-| 4 · Implementar | Sonnet × N     | Cada sub-task en su propia copia, en paralelo si no se pisan            | un commit por sub-task |
-| 5 · Verificar   | código         | Corre los criterios y el `verify.sh` del repo                           | los criterios en verde |
-| 6 · Revisar     | Opus, solo lee | Compara el cambio con las convenciones del repo                         | la revisión            |
-| 7 · Probar      | Sonnet         | Levanta el entorno con la feature y la usa por la API y el navegador    | las pruebas y el video |
-| 8 · Entregar    | código         | Sube la rama y abre la PR, con lo que aprendió el run                   | la PR y el informe     |
-| 9 · Aprender    | agente         | Después del merge, convierte tus correcciones en lecciones              | una PR de lecciones    |
+| Puesto          | Quién          | Qué hace                                                                                        | Qué deja               |
+| --------------- | -------------- | ----------------------------------------------------------------------------------------------- | ---------------------- |
+| 0 · Feature     | vos            | La escribís conversando con la skill en Claude Code                                             | `feature.md`           |
+| 1 · Preparar    | código         | Una copia de trabajo aparte, dependencias instaladas y la base en verde                         | la base comprobada     |
+| 2 · Planificar  | Opus           | Lee el código, escribe los tests y divide en sub-tasks; si falta una decisión tuya, te pregunta | `plan.md` y los tests  |
+| 3 · Aprobar     | vos            | Aprobás el plan o pedís cambios con tu motivo; con `aprobar: si_hace_falta`, sigue solo         | el plan aprobado       |
+| 4 · Implementar | Sonnet × N     | Cada sub-task en su propia copia, en paralelo si no se pisan                                    | un commit por sub-task |
+| 5 · Verificar   | código         | Corre los criterios y el `verify.sh` del repo                                                   | los criterios en verde |
+| 6 · Revisar     | Opus, solo lee | Compara el cambio con las convenciones del repo                                                 | la revisión            |
+| 7 · Probar      | Sonnet         | Levanta el entorno con la feature y la usa por la API y el navegador                            | las pruebas y el video |
+| 8 · Entregar    | código         | Sube la rama y abre la PR, con lo que aprendió el run                                           | la PR y el informe     |
+| 9 · Aprender    | agente         | Después del merge, convierte tus correcciones en lecciones                                      | una PR de lecciones    |
+
+Lo que decidís de verdad es la conversación de la feature: la skill recorre funcionalidad, errores, casos
+borde, lo que cambia de lo que ya existe y propuestas, y cada aclaración lleva su tema (`- P (borde): …
+R: …`). Si al planificador le falta una decisión que cambia lo que ves o usás, no la toma: el run se
+detiene con la pregunta y su propuesta, y seguís con `flowrunner responder <run> "<respuesta>"`, que la
+suma a la feature (ADR 0043). Con eso, aprobar el plan puede dejar de esperarte:
+
+```yaml
+aprobar: si_hace_falta # o siempre, el valor por defecto. Un run toma el valor de cuando se creó
+```
+
+Con `si_hace_falta`, el plan sigue solo a implementar y el informe dice que lo aprobó flowrunner. Solo te
+espera una dependencia sin una versión que ande con el Node del repo. Los cambios a lo que ya existe se
+aceptan por el criterio de la feature que citan, y los ves en la PR (ADR 0044).
 
 Las líneas punteadas del diagrama son el trabajo que vuelve atrás: un criterio en rojo, un bloqueante de
 la revisión o una prueba que falla en el entorno vuelven a implementar, y tus cambios al plan vuelven a

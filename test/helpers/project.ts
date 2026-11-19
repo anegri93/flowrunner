@@ -65,10 +65,22 @@ export const testDeps = (overrides: Partial<Deps> = {}): Deps => ({
 });
 
 /** Un run de SHOP-214 sobre `repo`, con eventos previos opcionales. */
-export function newRun(repo: string, feature = FEATURE, events: NewEvent[] = []): RunPaths {
+export function newRun(
+  repo: string,
+  feature = FEATURE,
+  events: NewEvent[] = [],
+  aprobar?: "siempre" | "si_hace_falta",
+): RunPaths {
   const run = createRun(
     tempDir("flowrunner-home-"),
-    { clave: "SHOP-214", proyecto: "acme-api", repo, budgetUsd: 25, featureText: feature },
+    {
+      clave: "SHOP-214",
+      proyecto: "acme-api",
+      repo,
+      budgetUsd: 25,
+      featureText: feature,
+      ...(aprobar === undefined ? {} : { aprobar }),
+    },
     new Date("2026-11-07T10:00:00Z"),
   );
   for (const event of events) appendEvent(run.dir, event);

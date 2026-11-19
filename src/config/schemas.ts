@@ -22,11 +22,17 @@ export const MAX_RUNS_DEFAULT = 2;
 const modelChoice = z.strictObject({ model: z.enum(MODEL_IDS), effort: z.enum(EFFORTS) });
 export type ModelChoice = z.infer<typeof modelChoice>;
 
+/**
+ * Opus 5.5 en esfuerzo alto donde se decide o se encuentran errores: planificar, implementar y revisar.
+ * Implementar pasó de Sonnet a Opus porque, con Sonnet, la revisión devolvía trabajo seguido (ADR 0046).
+ * El resto es mecánico o lo revisa la persona, y sigue con Sonnet. Un repo lo cambia en `models`.
+ */
+const OPUS_ALTO: ModelChoice = { model: "claude-opus-5-5", effort: "high" };
 export const DEFAULT_MODELS: Record<AgentPhase, ModelChoice> = {
-  planificar: { model: "claude-opus-5-5", effort: "high" },
+  planificar: OPUS_ALTO,
   explorar: { model: "claude-sonnet-5-5", effort: "medium" },
-  implementar: { model: "claude-sonnet-5-5", effort: "high" },
-  revisar: { model: "claude-opus-5-5", effort: "high" },
+  implementar: OPUS_ALTO,
+  revisar: OPUS_ALTO,
   probar: { model: "claude-sonnet-5-5", effort: "high" },
   aprender: { model: "claude-sonnet-5-5", effort: "medium" },
   explicar: { model: "claude-sonnet-5-5", effort: "medium" },

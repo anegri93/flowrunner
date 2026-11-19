@@ -82,12 +82,11 @@ const fake: PhaseFn = async (ctx) => {
       writePlanArtifacts(ctx.run, PLAN, {});
     }
   }
-  if (
-    ctx.action.fase === "planificar" &&
-    process.env.FAKE_PLANIFICAR_PREGUNTA === "1" &&
-    ran() === 1
-  ) {
-    return { tipo: "pregunta", motivo: "el plan necesita decisiones que la feature no cubre" };
+  if (ctx.action.fase === "planificar" && process.env.FAKE_PLANIFICAR_PREGUNTA === "1") {
+    if (ran() === 1)
+      return { tipo: "pregunta", motivo: "el plan necesita decisiones que la feature no cubre" };
+    // Con la respuesta, deja el plan que leerían aprobar e implementar si corren de verdad.
+    writePlanArtifacts(ctx.run, PLAN, {});
   }
   const pregunta = (process.env.FAKE_PREGUNTA ?? "").split(",").filter((u) => u !== "");
   if (ctx.action.fase === "implementar" && pregunta.length > 0 && ran() === 1) {

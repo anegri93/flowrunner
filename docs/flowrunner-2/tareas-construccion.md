@@ -136,13 +136,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** Gate Fase 1
 
 ### Gate Fase 1
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho` — criterio de la persona pendiente
 - **Validación de lint:** `pnpm lint` verde.
 - **Tests:** `pnpm verify` verde.
-- **Test de integración:** un test nuevo en `test/` que recorre por el CLI: `feature check` de una feature con temas → `run` con `aprobar: si_hace_falta` → el planificador falso devuelve una pregunta → el run se detiene → `responder` → el planificador falso retoma la misma sesión y devuelve un plan sin preguntas → aprobar sigue sola → implementar arranca. Afirma sobre el log de eventos y la feature del run.
-- **Canario:** re-canario sobre 3 tests de la fase al azar: se rompieron, se pusieron rojos, se restauraron.
+- **Test de integración:** `test/conversacion.int.test.ts`, «feature check sin avisos de tema, el planificador pregunta, responder retoma y aprobar sigue sola»: CLI real, preparar y aprobar de verdad, planificar falso que pregunta la primera vez. Afirma sobre el log: `respondido`, `aprobado` de flowrunner, ninguna espera de aprobar, planificar dos veces e implementar. La retoma de la sesión con la respuesta la cubre el test unitario de T1.4, porque planificar es falso acá.
+- **Canario:** re-canario hecho: (a) el parser ignora el tema → 3 tests de `feature.test.ts` rojos; (b) el motivo de las preguntas sin tema ni propuesta → el test de planificar rojo; (c) `aprobarSolo` siempre falso → el test de aprobar y el de integración rojos. Restaurado.
 - **Criterio de aprobación:** una feature real de pizarra-en-vivo: ping pong con la skill nueva, el run no espera aprobación y llega a la PR. Si el planificador pregunta, la respuesta destraba el run.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff acumulado de la fase + `/ponytail-debt` + listado de `test-debt:` nuevos.
+- **Revisión ponytail:** diff acumulado de la fase (37 archivos, +913/−70): sin duplicación entre tareas; `responder` y `aprobar` reusan `offers`, `halt`, `pregunta` y el `aprobado` existente; Orca reusa el patrón de `aceptar`. `/ponytail-debt`: ningún `ponytail:` ni `test-debt:` nuevo.
 - **Desbloquea:** Fase 2
 
 ---

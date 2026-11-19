@@ -6,10 +6,17 @@ import { dirname, isAbsolute, join } from "node:path";
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { QueryFn } from "../../src/runner/types.ts";
 import { stream } from "./fake-query.ts";
+import { llamarHerramienta } from "./mcp.ts";
 
 export interface SimCall {
   readonly tool: string;
   readonly input: Record<string, unknown>;
+  /**
+   * Una herramienta `mcp__<servidor>__<herramienta>` de un servidor en proceso de la sesión: si el hook
+   * la permite, se llama de verdad, como lo haría el CLI, y su texto es el resultado. Sin esto, el sim
+   * solo la pasa por el hook.
+   */
+  readonly mcp?: true;
 }
 
 export interface SimScript {
@@ -142,8 +149,14 @@ export function simQuery(
           type: "assistant",
           message: { content: [{ type: "tool_use", id, name: call.tool, input: call.input }] },
         } as unknown as SDKMessage;
+        const [, servidor = "", herramienta = ""] = /^mcp__([^_]+)__(.+)$/.exec(call.tool) ?? [];
         const content =
-          decision === "allow" ? apply(cwd, { tool: call.tool, input }) : (reason ?? "denied");
+          decision !== "allow"
+            ? (reason ?? "denied")
+            : call.mcp === true
+              ? ((await llamarHerramienta(options?.mcpServers?.[servidor], herramienta, input))
+                  .content[0]?.text ?? "")
+              : apply(cwd, { tool: call.tool, input });
         yield {
           type: "user",
           message: { content: [{ type: "tool_result", tool_use_id: id, content }] },

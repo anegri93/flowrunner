@@ -116,6 +116,10 @@ export interface RunStats {
   readonly vueltas: number;
   readonly fallas: number;
   readonly derecho: boolean;
+  /** Cómo se implementó, de `run_creado`; un run de antes cuenta como `sub_tasks` (ADR 0045). */
+  readonly modo: "sub_tasks" | "una_sesion";
+  /** Quién aprobó el último plan; `-` si no se aprobó (ADR 0044). */
+  readonly aprobo: "vos" | "flowrunner" | "-";
   /**
    * La sesión principal de planificar; lo del subagente explorador, aparte. `readsEnteros` son los
    * Read sin `limit`, también los que el tripwire rechazó: cuántas veces intentó leer un archivo entero.
@@ -134,6 +138,12 @@ export interface RunStats {
 }
 
 const WRITE_TOOLS: ReadonlySet<string> = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
+
+function aprobadoPor(events: readonly RunEvent[]): RunStats["aprobo"] {
+  const ultimo = events.findLast((e) => e.tipo === "aprobado");
+  if (ultimo?.tipo !== "aprobado") return "-";
+  return ultimo.origen === "flowrunner" ? "flowrunner" : "vos";
+}
 
 /** Los números de un run, de su log y de las sesiones de planificar. */
 export function runStats(dir: string, events: readonly RunEvent[]): RunStats {
@@ -196,6 +206,8 @@ export function runStats(dir: string, events: readonly RunEvent[]): RunStats {
     vueltas,
     fallas,
     derecho: vueltas === 0 && fallas === 0,
+    modo: state.unaSesion ? "una_sesion" : "sub_tasks",
+    aprobo: aprobadoPor(events),
     graftPlanificar: planningSessions(join(dir, "sesiones")),
   };
 }
@@ -295,12 +307,40 @@ export function statsPorRun(home: string, project?: string) {
       rechazosBashPorRun: perRun(sum((r) => r.rechazosBash)),
       derechos: runs.filter((r) => r.derecho).length,
       explicarUsd: sum((r) => r.costoExplicarUsd),
+      porModo: Object.fromEntries(
+        (["sub_tasks", "una_sesion"] as const).flatMap((modo) => {
+          const delModo = runs.filter((r) => r.modo === modo);
+          return delModo.length === 0
+            ? []
+            : [
+                [
+                  modo,
+                  {
+                    runs: delModo.length,
+                    medianaActivoMin: median(delModo.map((r) => r.activoMin)),
+                    medianaCostoUsd: median(delModo.map((r) => r.costoUsd)),
+                  },
+                ],
+              ];
+        }),
+      ),
     },
   };
 }
 
 export function describeStatsPorRun(s: ReturnType<typeof statsPorRun>): string {
-  const header = ["id", "activo", "US$", "planes", "rechazos", "graft", "vueltas", "derecho"];
+  const header = [
+    "id",
+    "activo",
+    "US$",
+    "planes",
+    "rechazos",
+    "graft",
+    "vueltas",
+    "derecho",
+    "modo",
+    "aprobó",
+  ];
   const rows = s.runs.map((r) => [
     r.id,
     `${r.activoMin.toFixed(0)} min`,
@@ -310,6 +350,8 @@ export function describeStatsPorRun(s: ReturnType<typeof statsPorRun>): string {
     `${String(r.graftPlanificar.llamadas)}/${String(r.graftPlanificar.readsEnteros)}`,
     String(r.vueltas),
     r.derecho ? "sí" : "no",
+    r.modo,
+    r.aprobo,
   ]);
   const widths = header.map((h, i) =>
     Math.max(h.length, ...rows.map((row) => row[i]?.length ?? 0)),
@@ -328,6 +370,10 @@ export function describeStatsPorRun(s: ReturnType<typeof statsPorRun>): string {
     `rechazos de Bash por run: ${r.rechazosBashPorRun.toFixed(1)} (la columna rechazos es Bash/escritura)`,
     "la columna graft es, en planificar, llamadas a graft/intentos de leer un archivo entero",
     `derechos: ${String(r.derechos)} de ${String(r.runs)} runs`,
+    ...Object.entries(r.porModo).map(
+      ([modo, m]) =>
+        `${modo}: ${String(m.runs)} runs, mediana activo ${m.medianaActivoMin.toFixed(1)} min, mediana US$ ${m.medianaCostoUsd.toFixed(2)}`,
+    ),
     ...(r.explicarUsd > 0
       ? [`explicaciones de detenciones: US$ ${r.explicarUsd.toFixed(2)}, aparte de la columna US$`]
       : []),

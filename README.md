@@ -290,7 +290,7 @@ naranjas, vos.
 | 1 · Preparar    | código         | Una copia de trabajo aparte, dependencias instaladas y la base en verde                         | la base comprobada     |
 | 2 · Planificar  | Opus           | Lee el código, escribe los tests y divide en sub-tasks; si falta una decisión tuya, te pregunta | `plan.md` y los tests  |
 | 3 · Aprobar     | vos            | Aprobás el plan o pedís cambios con tu motivo; con `aprobar: si_hace_falta`, sigue solo         | el plan aprobado       |
-| 4 · Implementar | Sonnet × N     | Cada sub-task en su propia copia, en paralelo si no se pisan                                    | un commit por sub-task |
+| 4 · Implementar | Opus × N       | Cada sub-task en su propia copia, en paralelo si no se pisan                                    | un commit por sub-task |
 | 5 · Verificar   | código         | Corre los criterios y el `verify.sh` del repo                                                   | los criterios en verde |
 | 6 · Revisar     | Opus, solo lee | Compara el cambio con las convenciones del repo                                                 | la revisión            |
 | 7 · Probar      | Sonnet         | Levanta el entorno con la feature y la usa por la API y el navegador                            | las pruebas y el video |

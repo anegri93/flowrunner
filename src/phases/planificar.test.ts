@@ -9,6 +9,7 @@ import { git, tempDir } from "../../test/helpers/git.ts";
 import { contextFor, makeProject, newRun, testDeps } from "../../test/helpers/project.ts";
 import { validandoAlFinal } from "../../test/helpers/mcp.ts";
 import { simQuery, type SimScript } from "../../test/helpers/sim-sdk.ts";
+import { DEFAULT_MODELS } from "../config/schemas.ts";
 import type { Plan } from "../gates/plan.ts";
 import { contextoGraft } from "../graft/contexto.ts";
 import { buildIndex } from "../graft/graft.ts";
@@ -1275,7 +1276,7 @@ describe("planificar", () => {
       expect(await planificar(contextFor(run, "planificar", deps))).toEqual({ tipo: "ok" });
       expect(sim.records).toHaveLength(2);
       const [explorador, planificador] = sim.records;
-      expect(explorador?.options?.model).toBe("claude-sonnet-5-5");
+      expect(explorador?.options?.model).toBe(DEFAULT_MODELS.explorar.model);
       expect(Object.keys(explorador?.options?.mcpServers ?? {})).toEqual(["graft"]);
       expect(explorador?.options?.tools).not.toContain("Write");
       expect(explorador?.options?.tools).not.toContain("Agent");

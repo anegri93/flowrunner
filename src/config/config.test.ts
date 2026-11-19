@@ -72,12 +72,22 @@ describe("config del repo", () => {
     expect(config.models.planificar).toEqual(DEFAULT_MODELS.planificar);
   });
 
-  // Si regresiona, un repo que no tocó nada paga una sesión de exploración más por run, o el explorador
-  // vuelve a ser Haiku y su informe queda corto: Opus vuelve a leer lo que el informe tenía que darle.
-  test("explorar_antes viene apagado y el explorador usa Sonnet por defecto", () => {
-    const config = loadRepoConfig(repoWithConfig(MINIMAL));
-    expect(config.explorar_antes).toBe(false);
-    expect(config.models.explorar).toEqual({ model: "claude-sonnet-5-5", effort: "medium" });
+  // Si regresiona, un repo que no tocó nada paga una sesión de exploración más por run.
+  test("explorar_antes viene apagado", () => {
+    expect(loadRepoConfig(repoWithConfig(MINIMAL)).explorar_antes).toBe(false);
+  });
+
+  // Si regresiona, un repo que no eligió modelos vuelve a implementar con Sonnet, que dejaba trabajo que
+  // la revisión devolvía, o paga Opus en fases mecánicas que no lo necesitan (ADR 0046).
+  test("por defecto, planificar, implementar y revisar usan Opus 5.5 alto; el resto, Sonnet", () => {
+    const { models } = loadRepoConfig(repoWithConfig(MINIMAL));
+    const opus = { model: "claude-opus-5-5", effort: "high" };
+    expect(models.planificar).toEqual(opus);
+    expect(models.implementar).toEqual(opus);
+    expect(models.revisar).toEqual(opus);
+    expect(models.probar).toEqual({ model: "claude-sonnet-5-5", effort: "high" });
+    for (const fase of ["explorar", "aprender", "explicar"] as const)
+      expect(models[fase], fase).toEqual({ model: "claude-sonnet-5-5", effort: "medium" });
   });
 
   test("varios problemas a la vez llegan todos juntos", () => {

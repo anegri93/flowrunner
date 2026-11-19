@@ -147,6 +147,8 @@ export interface RunState {
   readonly vueltaDirecta: boolean;
   /** El plan sigue solo si no hay nada que decidir: `aprobar: si_hace_falta` en `run_creado` (ADR 0044). */
   readonly aprobarSolo: boolean;
+  /** La sesión que planificó también implementa: `implementar: una_sesion` en `run_creado` (ADR 0045). */
+  readonly unaSesion: boolean;
   /**
    * El feedback de la persona sobre la PR abierta que aprender tiene que evaluar (ADR 0038). Se gasta
    * cuando el run vuelve a trabajar, o cuando aprender ve que la PR ya no está abierta.
@@ -528,6 +530,7 @@ export function initialState(): RunState {
     directaCorrio: false,
     vueltaDirecta: false,
     aprobarSolo: false,
+    unaSesion: false,
     feedback: undefined,
     prCerrada: false,
   };
@@ -584,6 +587,7 @@ export function reduce(state: RunState, event: RunEvent): RunState {
         reintentosRed: event.reintentos_red,
         vueltaDirecta: event.vuelta_directa === true,
         aprobarSolo: event.aprobar === "si_hace_falta",
+        unaSesion: event.implementar === "una_sesion",
       };
     case "accion_iniciada":
       return { ...state, interrumpida: true };

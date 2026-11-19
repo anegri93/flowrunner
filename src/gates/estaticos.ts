@@ -33,12 +33,21 @@ export interface EstaticosInput {
    * rama que ve la sesión no es la que va a chequear el gate, que antes saca lo que no se conserva.
    */
   readonly rama?: boolean;
+  /**
+   * El run se creó con `implementar: una_sesion` (ADR 0045): el plan tiene una sola sub-task. Del
+   * `run_creado`, no de la config del worktree: un run no cambia de modo a mitad de camino.
+   */
+  readonly unaSesion?: boolean;
 }
 
 /** Los problemas del plan que se ven sin correr nada, en el orden del gate. */
 export async function chequeosEstaticos(input: EstaticosInput): Promise<string[]> {
   const { plan, feature, worktree, config, esVerify } = input;
   const problems = checkPlanShape(plan, feature, worktree, config, esVerify);
+  if (input.unaSesion === true && plan.subtareas.length !== 1)
+    problems.push(
+      `con implementar: una_sesion, el plan tiene una sola sub-task, ST-1, con todo el alcance; este tiene ${String(plan.subtareas.length)}`,
+    );
   if (input.rama !== false) problems.push(...(await chequeosDeRama(input)));
   if (input.conserva !== undefined) problems.push(...checkConserva(input.conserva));
   return problems;

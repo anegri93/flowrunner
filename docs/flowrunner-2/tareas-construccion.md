@@ -272,13 +272,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T4.2
 
 ### T4.2 · La opción `implementar: una_sesion` y su gate
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** opción `implementar: sub_tasks | una_sesion` en la config del repo (por defecto `sub_tasks`), congelada en `run_creado`. Con `una_sesion`, el prompt del planificador pide una sola sub-task con todo el alcance, y el gate del plan (`src/gates/plan.ts`) rechaza un plan con más de una. Todo lo que hoy depende de las sub-tasks (`fix --unidad`, conservar al replanificar, el informe, Orca) sigue funcionando sin cambios porque hay una, `ST-1`. ADR nuevo con la hipótesis, el costo esperado y cómo se mide.
 - **Lint:** `pnpm lint` verde.
-- **Test:** test primero en `src/gates/plan.test.ts`: (1) con `una_sesion`, un plan de dos sub-tasks se rechaza con el motivo; (2) con `una_sesion`, un plan de una pasa; (3) con `sub_tasks`, un plan de dos pasa como hoy.
-- **Canario:** mutación prevista: que el gate mire la opción del worktree y no la de `run_creado`; o que cuente `<= 2`; el test (1) tiene que ponerse rojo.
-- **Criterio de aprobación:** el ADR está en `docs/adr/` y `flowrunner plan` de un run con la opción muestra una sola sub-task.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff; sin un modo de implementación abstracto, una rama del gate.
+- **Test:** test primero en `src/phases/planificar.test.ts`, «con implementar: una_sesion»: (1) con un run creado en `una_sesion`, un plan de dos sub-tasks es un rechazo del gate con el motivo, y uno de una pasa, con el prompt pidiendo una sola sub-task; (2) con `sub_tasks`, un plan de dos pasa como hoy y el prompt no lo pide. El chequeo vive en `chequeosEstaticos`, así `validar_plan` y el gate dicen lo mismo.
+- **Canario:** hecho: que el gate lea el modo de la config del worktree y no de `run_creado` → el test (1) se puso rojo. Restaurado.
+- **Criterio de aprobación:** ADR 0045 (escrito en T4.1) tiene la hipótesis, el costo esperado y cómo se mide; el prompt de un run con la opción pide una sola sub-task.
+- **Revisión ponytail:** a mano: una opción congelada en `run_creado` como `aprobar`, un booleano en el estado y una regla en los chequeos estáticos; sin un modo de implementación abstracto. Sin hallazgos abiertos.
 - **Desbloquea:** T4.3
 
 ### T4.3 · Implementar retoma la sesión del planificador con Opus

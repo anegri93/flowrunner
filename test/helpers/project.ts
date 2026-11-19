@@ -7,7 +7,7 @@ import { stateOf } from "../../src/engine/engine.ts";
 import type { Deps, PhaseContext, RunPaths } from "../../src/runner/types.ts";
 import type { NewEvent, Phase } from "../../src/store/events.ts";
 import { appendEvent, readLog } from "../../src/store/run-log.ts";
-import { createRun } from "../../src/store/runs.ts";
+import { createRun, type NewRun } from "../../src/store/runs.ts";
 import { git, repoWith, tempDir } from "./git.ts";
 import { FEATURE } from "./runs.ts";
 
@@ -69,7 +69,7 @@ export function newRun(
   repo: string,
   feature = FEATURE,
   events: NewEvent[] = [],
-  aprobar?: "siempre" | "si_hace_falta",
+  modos: Pick<NewRun, "aprobar" | "implementar"> = {},
 ): RunPaths {
   const run = createRun(
     tempDir("flowrunner-home-"),
@@ -79,7 +79,8 @@ export function newRun(
       repo,
       budgetUsd: 25,
       featureText: feature,
-      ...(aprobar === undefined ? {} : { aprobar }),
+      ...(modos.aprobar === undefined ? {} : { aprobar: modos.aprobar }),
+      ...(modos.implementar === undefined ? {} : { implementar: modos.implementar }),
     },
     new Date("2026-11-07T10:00:00Z"),
   );

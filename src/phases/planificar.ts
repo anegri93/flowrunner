@@ -474,6 +474,7 @@ function servidores(
       config,
       env: ctx.deps.env,
       esVerify,
+      unaSesion: ctx.state.unaSesion,
       candidatas: conserva.candidatas.map((c) => c.id),
       conservaDe: (plan) => conservaDelPlan(plan, conserva),
       alValidar: (plan) => {
@@ -645,6 +646,9 @@ async function intentoNuevo(ctx: PhaseContext, comun: Comun, sessionId: string):
               instruccion,
               codigo_ubicado: codigo,
               exploracion: informe.md ?? "(no hubo exploración previa)",
+              una_sesion: ctx.state.unaSesion
+                ? "Este run implementa en una sola sesión: la tuya sigue e implementa después del gate. Hacé una sola sub-task, `ST-1`, con todo el alcance de la feature; el gate rechaza un plan con más."
+                : "",
               ...brainVars(brain),
             }),
           },
@@ -847,6 +851,7 @@ async function gateYCierre(ctx: PhaseContext, comun: Comun, intento: Intento): P
     env: deps.env,
     esVerify,
     ...(conserva === undefined ? {} : { conserva }),
+    unaSesion: ctx.state.unaSesion,
   });
   const written = (await changesSince(worktree, inicioTests, deps.env))
     .filter((c) => c.status !== "borrado")

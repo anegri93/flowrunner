@@ -42,7 +42,12 @@ function planificado(
 ): RunPaths {
   const worktree = tempDir("fr-aprobar-");
   for (const [name, content] of Object.entries(files)) writeFileSync(join(worktree, name), content);
-  const run = newRun(worktree, undefined, [], aprobarModo);
+  const run = newRun(
+    worktree,
+    undefined,
+    [],
+    aprobarModo === undefined ? {} : { aprobar: aprobarModo },
+  );
   appendEvent(run.dir, { tipo: "preparado", rama: "flowrunner/x", worktree, base_sha: "abc" });
   writePlanArtifacts(run, plan, {});
   for (const fase of ["preparar", "planificar"] as const) {

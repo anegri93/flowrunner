@@ -64,6 +64,7 @@ async function prepared_(
   lint_fix?: string,
   files?: Record<string, string>,
   feature = FEATURE,
+  implementarModo?: "sub_tasks" | "una_sesion",
 ) {
   const { work } = makeProject({
     ...(files === undefined ? {} : { files }),
@@ -74,7 +75,12 @@ async function prepared_(
       ...(lint_fix === undefined ? {} : { lint_fix }),
     },
   });
-  const run = newRun(work, feature);
+  const run = newRun(
+    work,
+    feature,
+    [],
+    implementarModo === undefined ? {} : { implementar: implementarModo },
+  );
   const sim = simQuery(scripts);
   const deps = testDeps({ query: sim.query });
   expect(await preparar(contextFor(run, "preparar", deps))).toEqual({ tipo: "ok" });
@@ -255,6 +261,60 @@ describe("planificar", () => {
         );
         expect(existsSync(join(run.dir, "planificar-sesion.json"))).toBe(true);
       }
+    });
+  });
+
+  describe("con implementar: una_sesion (ADR 0045)", () => {
+    const dos: Plan = {
+      ...goodPlan,
+      subtareas: [
+        ...goodPlan.subtareas,
+        {
+          id: "ST-2",
+          titulo: "Docs",
+          descripcion: "d",
+          alcance: ["docs/"],
+          dependencias: [],
+          depende_de: [],
+        },
+      ],
+    };
+
+    // Si regresiona, un plan de varias sub-tasks entra a un run que implementa en una sola sesión, y
+    // la sesión del planificador no tiene a cuál retomar.
+    test("el gate rechaza un plan de dos sub-tasks si el run se creó con una_sesion, y deja pasar uno", async () => {
+      const conDos = await prepared_(
+        [{ calls: [writeTest], output: dos }],
+        undefined,
+        undefined,
+        undefined,
+        FEATURE,
+        "una_sesion",
+      );
+      const out = await planificar(contextFor(conDos.run, "planificar", conDos.deps));
+      expect(out).toMatchObject({ tipo: "falla", clase: "gate" });
+      expect(out.tipo === "falla" && out.motivo).toContain(
+        "con implementar: una_sesion, el plan tiene una sola sub-task",
+      );
+      const conUna = await prepared_(
+        [{ calls: [writeTest], output: goodPlan }],
+        undefined,
+        undefined,
+        undefined,
+        FEATURE,
+        "una_sesion",
+      );
+      expect(await planificar(contextFor(conUna.run, "planificar", conUna.deps))).toEqual({
+        tipo: "ok",
+      });
+      expect(conUna.sim.records[0]?.prompt).toContain("una sola sub-task");
+    });
+
+    // Si regresiona, un repo sin la opción deja de poder partir el trabajo en sub-tasks.
+    test("con sub_tasks, un plan de dos sub-tasks pasa como hoy", async () => {
+      const { run, deps, sim } = await prepared_([{ calls: [writeTest], output: dos }]);
+      expect(await planificar(contextFor(run, "planificar", deps))).toMatchObject({ tipo: "ok" });
+      expect(sim.records[0]?.prompt).not.toContain("una sola sub-task");
     });
   });
 

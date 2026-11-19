@@ -15,6 +15,10 @@ Un administrador descarga los pedidos como CSV.
 
 ## Criterios
 - AC-1: GET /pedidos.csv devuelve text/csv.
+
+## Aclaraciones
+- P (error): ¿Y si la consulta falla? R: Devuelve 500 sin un CSV a medias.
+- P (borde): ¿Y un rango sin pedidos? R: Devuelve solo el encabezado.
 `;
 
 const SIN_PROBAR =

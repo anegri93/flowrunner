@@ -76,13 +76,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 > Objetivo: que las decisiones de producto se tomen en el ping pong de la feature (funcionalidad, errores, casos borde, lo que cambia y propuestas), que el planificador pregunte en vez de decidir producto, y que aprobar el plan sea opcional.
 
 ### T1.1 · Aclaraciones con tema, y feature check avisa lo que faltó preguntar
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** el parser de la feature (`src/feature/`) acepta un tema opcional en cada aclaración: `- P (funcionalidad|error|borde|existente|propuesta): … R: …`. Una aclaración sin tema se sigue leyendo igual. `feature check` (`src/cli/feature-check.ts`) suma dos avisos, que no frenan: "no hay ninguna aclaración de errores" y "no hay ninguna aclaración de casos borde". El resumen cuenta las aclaraciones por tema. `src/prompts/render.ts` pasa el tema al planificador.
 - **Lint:** `pnpm lint` verde.
 - **Test:** test primero en `src/cli/feature-check.test.ts` y en el test del parser: (1) una feature sin aclaraciones de `error` ni `borde` da los dos avisos y `ok: true`; (2) una feature con las dos no da avisos; (3) una aclaración vieja sin tema se parsea con tema `null` y no da error; (4) un tema que no existe (`P (otro):`) es un error de `feature check` con el motivo. Afirma sobre la salida JSON de `feature check`.
-- **Canario:** mutación prevista: que el aviso de casos borde mire el tema `error` en vez de `borde`; el test (1) o (2) tiene que ponerse rojo.
+- **Canario:** hecho: (a) el aviso de casos borde mirando el tema `error` → el test de avisos se puso rojo; (b) aceptar cualquier tema (`else if (true)`) → el test del tema que no existe se puso rojo. Restaurado.
 - **Criterio de aprobación:** `flowrunner feature check` sobre PIZ-21 (una sola aclaración) muestra los dos avisos; sobre PIZ-50 cuenta sus 7 aclaraciones.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff; el tema es un string de una lista cerrada, sin tipos ni clases nuevas.
+- **Revisión ponytail:** a mano contra la escalera: el tema es un string de una lista cerrada (`TEMAS`), con un type guard en vez de un cast; `porTema` es la única función nueva fuera de lo pedido y la pide el criterio (el resumen cuenta por tema). Sin hallazgos abiertos. Nota: `test/fase0.int.test.ts` suma dos aclaraciones con tema a su feature para que sus asserts sigan midiendo solo lo suyo.
 - **Desbloquea:** T1.2
 
 ### T1.2 · La skill recorre los cinco temas en el ping pong

@@ -19,7 +19,7 @@ export function featureText(feature: {
   titulo: string;
   descripcion: string;
   criterios: readonly { id: string; text: string }[];
-  aclaraciones: readonly { question: string; answer: string }[];
+  aclaraciones: readonly { tema?: string; question: string; answer: string }[];
   fueraDeAlcance: readonly string[];
 }): string {
   return [
@@ -34,7 +34,9 @@ export function featureText(feature: {
       : [
           "",
           "### Aclaraciones de la persona",
-          ...feature.aclaraciones.map((a) => `- ${a.question} ${a.answer}`),
+          ...feature.aclaraciones.map(
+            (a) => `- ${a.tema === undefined ? "" : `(${a.tema}) `}${a.question} ${a.answer}`,
+          ),
         ]),
     ...(feature.fueraDeAlcance.length === 0
       ? []

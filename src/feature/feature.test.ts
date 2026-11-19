@@ -48,6 +48,33 @@ describe("parseFeature", () => {
     expect(feature.fueraDeAlcance).toEqual(["Exportar a Excel."]);
   });
 
+  // Si regresiona, el planificador no sabe qué aclaración es un caso borde y feature check no puede
+  // avisar lo que faltó preguntar (flowrunner 2.0, T1.1).
+  test("una aclaración puede llevar su tema, y una sin tema se sigue leyendo igual", () => {
+    const feature = parseFeature(
+      "f.md",
+      VALID.replace(
+        "- P: ¿Entran los pedidos cancelados?",
+        "- P (borde): ¿Y si el rango está vacío?\n  R: Devuelve solo el encabezado.\n- P: ¿Entran los pedidos cancelados?",
+      ),
+    );
+    expect(feature.aclaraciones).toEqual([
+      {
+        tema: "borde",
+        question: "¿Y si el rango está vacío?",
+        answer: "Devuelve solo el encabezado.",
+      },
+      { question: "¿Entran los pedidos cancelados?", answer: "No. Solo confirmados y entregados." },
+    ]);
+  });
+
+  // Si regresiona, un tema mal escrito se pierde callado y el aviso de lo que faltó preguntar miente.
+  test("un tema que no existe es un error que nombra los que valen", () => {
+    expect(problemsOf(VALID.replace("- P: ¿Entran", "- P (otro): ¿Entran"))).toMatch(
+      /tema "otro".*funcionalidad, error, borde, existente o propuesta/,
+    );
+  });
+
   // Si regresiona, se lanza un run que nunca va a tener nada que verificar.
   test("sin criterios es un error", () => {
     expect(

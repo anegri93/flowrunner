@@ -7,6 +7,7 @@ import {
   scriptsInexistentes,
   soloChequeosDelRepo,
   soloDocumentacion,
+  temasQueFaltan,
 } from "./feature-check.ts";
 
 const feature = (criterios: string) =>
@@ -162,4 +163,40 @@ test("no avisa un criterio que corre un test puntual o pide un comportamiento", 
     ].join("\n"),
   );
   expect(soloChequeosDelRepo(f, config)).toEqual([]);
+});
+
+const conAclaraciones = (aclaraciones: string) =>
+  parseFeature(
+    "f.md",
+    `---
+clave: PIZ-21
+proyecto: acme
+titulo: t
+---
+## Descripción
+d
+
+## Criterios
+- AC-1: algo
+
+## Aclaraciones
+${aclaraciones}
+`,
+  );
+
+// Si regresiona, una feature sin preguntas de errores ni de casos borde se lanza sin que nadie lo note:
+// en PIZ-17 a PIZ-21 hubo una aclaración por feature y la revisión encontró después los casos borde.
+test("avisa la falta de aclaraciones de errores y de casos borde, sin frenar", () => {
+  expect(temasQueFaltan(conAclaraciones("- P: ¿Va? R: Sí."))).toEqual([
+    expect.stringMatching(/ninguna aclaración de errores/),
+    expect.stringMatching(/ninguna aclaración de casos borde/),
+  ]);
+  expect(temasQueFaltan(conAclaraciones("- P (error): ¿Si falla? R: Avisa."))).toEqual([
+    expect.stringMatching(/ninguna aclaración de casos borde/),
+  ]);
+  expect(
+    temasQueFaltan(
+      conAclaraciones("- P (error): ¿Si falla? R: Avisa.\n- P (borde): ¿Y vacío? R: Nada."),
+    ),
+  ).toEqual([]);
 });

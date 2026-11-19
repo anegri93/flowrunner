@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { isVerifyCommand, loadGlobalConfig, loadRepoConfig } from "../config/load.ts";
 import { ConfigError, type RepoConfig } from "../config/schemas.ts";
 import { checkCitas } from "../feature/citas.ts";
-import { parseFeature, type Feature } from "../feature/feature.ts";
+import { parseFeature, type Feature, type Tema } from "../feature/feature.ts";
 import { UserError } from "./output.ts";
 
 export interface CheckedFeature {
@@ -171,6 +171,25 @@ export function soloChequeosDelRepo(feature: Feature, config: RepoConfig): strin
   return avisos;
 }
 
+/**
+ * Los temas del ping pong que no tienen ninguna aclaración. Errores y casos borde son los que más se
+ * escapan: en PIZ-17 a PIZ-21 hubo una aclaración por feature y la revisión encontró después casos
+ * borde que nadie había preguntado. Avisa; no frena, porque hay features chicas sin nada que preguntar.
+ */
+export function temasQueFaltan(feature: Feature): string[] {
+  const temas = new Set(feature.aclaraciones.map((a) => a.tema));
+  const faltan: [Tema, string][] = [
+    ["error", "errores: qué falla y qué ve la persona cuando falla"],
+    ["borde", "casos borde: lo que ya existe y se cruza con la feature"],
+  ];
+  return faltan
+    .filter(([tema]) => !temas.has(tema))
+    .map(
+      ([tema, que]) =>
+        `no hay ninguna aclaración de ${que}. Si ya se habló, anotala como «- P (${tema}): … R: …»; si no, preguntalo antes de lanzar`,
+    );
+}
+
 /** Sin package.json en la raíz, o si no se puede leer, no hay chequeo de scripts. */
 function readPackageJson(repo: string): string | undefined {
   const pkg = join(repo, "package.json");
@@ -235,9 +254,20 @@ export function checkFeature(path: string, env: NodeJS.ProcessEnv): CheckedFeatu
       ),
       ...soloDocumentacion(feature),
       ...soloChequeosDelRepo(feature, repoConfig),
+      ...temasQueFaltan(feature),
       ...sinProbar(repoConfig),
     ],
   };
+}
+
+/** « (2 borde, 1 error)»: cuántas aclaraciones hay de cada tema; vacío si ninguna tiene tema. */
+function porTema(feature: Feature): string {
+  const cuenta = new Map<Tema, number>();
+  for (const a of feature.aclaraciones)
+    if (a.tema !== undefined) cuenta.set(a.tema, (cuenta.get(a.tema) ?? 0) + 1);
+  return cuenta.size === 0
+    ? ""
+    : ` (${[...cuenta].map(([tema, n]) => `${String(n)} ${tema}`).join(", ")})`;
 }
 
 export function describeCheckedFeature(checked: CheckedFeature): string {
@@ -245,7 +275,7 @@ export function describeCheckedFeature(checked: CheckedFeature): string {
   return [
     `${feature.clave} · ${feature.titulo}`,
     `proyecto ${project.name} en ${project.path}`,
-    `${feature.criterios.length} criterios, ${feature.aclaraciones.length} aclaraciones`,
+    `${feature.criterios.length} criterios, ${feature.aclaraciones.length} aclaraciones${porTema(feature)}`,
     `${feature.contexto.length} citas de código en Contexto`,
     ...feature.criterios.map((c) => `  ${c.id}: ${c.text}`),
     ...checked.avisos.map((a) => `⚠ ${a}`),

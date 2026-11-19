@@ -14,7 +14,14 @@ export interface Criterion {
   readonly text: string;
 }
 
+/** De qué trata una aclaración: los cinco temas que recorre el ping pong de la skill (flowrunner 2.0). */
+export const TEMAS = ["funcionalidad", "error", "borde", "existente", "propuesta"] as const;
+export type Tema = (typeof TEMAS)[number];
+const esTema = (t: string): t is Tema => (TEMAS as readonly string[]).includes(t);
+
 export interface Clarification {
+  /** Sin tema en una feature escrita antes de los temas: se lee igual. */
+  readonly tema?: Tema;
   readonly question: string;
   readonly answer: string;
 }
@@ -124,14 +131,25 @@ export function parseFeature(file: string, text: string): Feature {
 
   const aclaraciones: Clarification[] = [];
   for (const item of listItems(sections.get("aclaraciones") ?? [])) {
-    const qa = /^P:\s*(.+?)\s+R:\s*(.+)$/.exec(item);
+    const qa = /^P(?:\s*\(([^)]*)\))?:\s*(.+?)\s+R:\s*(.+)$/.exec(item);
     if (qa === null) {
       problems.push({
         where: `${file} › Aclaraciones`,
-        message: `"${item}" no tiene la forma P: … R: …`,
+        message: `"${item}" no tiene la forma P: … R: … o P (tema): … R: …`,
       });
+      continue;
+    }
+    const [, rawTema, question = "", answer = ""] = qa;
+    const tema = rawTema?.trim();
+    if (tema === undefined) {
+      aclaraciones.push({ question, answer });
+    } else if (esTema(tema)) {
+      aclaraciones.push({ tema, question, answer });
     } else {
-      aclaraciones.push({ question: qa[1] ?? "", answer: qa[2] ?? "" });
+      problems.push({
+        where: `${file} › Aclaraciones`,
+        message: `"${item}": el tema "${tema}" no existe; usá funcionalidad, error, borde, existente o propuesta`,
+      });
     }
   }
 

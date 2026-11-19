@@ -262,13 +262,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 > Objetivo: que la sesión de Opus que planificó también implemente, con todo el contexto, detrás de una opción. Revisar sigue en otra sesión de Opus; probar sigue con Sonnet.
 
 ### T4.1 · Prueba de una hora: ¿se puede retomar la sesión del planificador para implementar?
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** antes de escribir código del experimento, un script en `smoke/` con el SDK real comprueba: (a) retomar con `resume` una sesión abierta en la carpeta A desde la carpeta B; (b) retomarla en la misma carpeta con otras herramientas (de solo lectura a escritura) y otro hook; (c) cuántos tokens de entrada cuesta el primer turno retomado. Con el resultado se elige el camino de T4.3 y se escribe en el ADR del experimento: **camino A**, `ST-1` sigue en su propio worktree y el mensaje al retomar le da la ruta nueva; **camino B**, con `una_sesion`, `ST-1` corre en el worktree de la feature, sin worktree propio ni cherry-pick, y retoma en la misma carpeta.
 - **Lint:** `pnpm lint` verde.
-- **Test:** N/A — es una prueba de factibilidad contra el SDK real y gasta suscripción, como los smoke de hoy; verificación: el script corre con `pnpm smoke` y su salida queda pegada en el ADR.
-- **Canario:** N/A — sin test; la decisión queda escrita con la evidencia.
-- **Criterio de aprobación:** el ADR del experimento dice qué camino se eligió y por qué, con la salida del script.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff; un solo archivo de smoke.
+- **Test:** N/A — es una prueba de factibilidad contra el SDK real que gasta suscripción, como los smoke de hoy; verificación: `smoke/retomar-sesion.smoke.ts` corrió con `vitest --project smoke` y su salida está en ADR 0045. Retomar desde otra carpeta y en la misma carpeta, con Read y Write, terminan bien, escriben el archivo y la sesión recuerda qué leyó.
+- **Canario:** N/A — sin test; el smoke afirma que la sesión retomada recuerda el archivo leído, que fallaría si `resume` abriera una conversación nueva.
+- **Criterio de aprobación:** ADR 0045 elige el camino A (`ST-1` en su propio worktree) con la salida del smoke.
+- **Revisión ponytail:** un solo archivo de smoke. Sin hallazgos.
 - **Desbloquea:** T4.2
 
 ### T4.2 · La opción `implementar: una_sesion` y su gate

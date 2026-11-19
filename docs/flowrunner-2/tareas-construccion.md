@@ -86,13 +86,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T1.2
 
 ### T1.2 · La skill recorre los cinco temas en el ping pong
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho` — criterio de la persona pendiente
 - **Descripción:** reescribir el paso 3 de `skills/flowrunner/SKILL.md`. Sigue siendo una pregunta por vez y con una respuesta propuesta, pero recorre los temas en orden: funcionalidad (el camino feliz paso a paso), errores (qué falla y qué ve la persona), casos borde (la skill los arma leyendo el código: lo que ya existe y se cruza con la feature, como grupos, pestaña oculta, datos viejos, otro formato), lo que cambia de lo que ya existe, y propuestas (alternativas con una recomendación). Cada respuesta va a Aclaraciones con su tema y, si se puede comprobar con un comando, también como criterio. Se saca la frase "las dudas de cómo construirlo no se preguntan" y se reemplaza por: "lo técnico lo decide el planificador; lo que cambia lo que la persona ve o usa, se pregunta acá".
 - **Lint:** `pnpm lint` verde (prettier sobre el `.md`).
 - **Test:** N/A — es texto de la skill que lee un modelo, no hay salida que afirmar sin gastar suscripción; verificación: una conversación real con la skill sobre una feature nueva de pizarra-en-vivo termina en un `feature.md` con aclaraciones de los cinco temas y `feature check` sin los avisos de T1.1.
 - **Canario:** N/A — sin test; el aviso de T1.1 es el control automático de que la conversación cubrió errores y casos borde.
 - **Criterio de aprobación:** la persona hace el ping pong de una feature real y dice que las preguntas fueron las que importan; `feature check` sale sin avisos de tema.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff; la skill no crece más de lo que se saca.
+- **Revisión ponytail:** a mano: el paso 3 crece 11 líneas y se saca la frase «las dudas de cómo construirlo no se preguntan»; el formato de Aclaraciones y los avisos de feature check suman una línea cada uno. Sin hallazgos abiertos.
 - **Desbloquea:** T1.3
 
 ### T1.3 · El planificador pregunta en vez de decidir producto

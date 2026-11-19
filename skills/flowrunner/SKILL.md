@@ -28,7 +28,15 @@ Si el repo tiene `.flowrunner/`, o el arranque de la sesión avisa que usa flowr
 
 1. Preguntá el proyecto; `flowrunner status --json` y la config global dicen cuáles hay. Si falta, corré `flowrunner init <ruta> --json`, mostrale a la persona qué está, qué se infirió y qué falta, y solo con su sí corré `flowrunner init <ruta> --aplicar --json`. Eso abre la PR del cerebro: el proyecto queda listo cuando la persona la mergea. Si init propuso `probar`, mostrale el comando y las URLs y pedile que lo revise en la PR: corre en su máquina en cada run. Si dice que falta, explicale que sin eso la fase probar se saltea.
 2. Leé el código del repo y su `.flowrunner/` con herramientas de lectura. **Todo lo que la feature diga sobre cómo funciona hoy lo comprobás en el código y lo citás con `archivo:línea`**, incluidas las validaciones y los tests que ya fijan ese comportamiento. Si la feature cambia algo que hoy funciona, lo decís así en la Descripción («hoy X rechaza Y; pasa a aceptarlo») y lo preguntás. Una suposición sin comprobar termina en un plan que cambia una regla vigente sin que nadie lo haya pedido. Esas citas van en la sección `## Contexto` de la feature: el planificador arranca por ahí.
-3. Entrevistá **una pregunta por vez**, solo sobre decisiones que son de la persona: qué datos se pierden, quién puede hacer qué, formatos, límites, qué pasa con lo existente. Proponé la respuesta cuando puedas. Las dudas de cómo construirlo no se preguntan: quedan para el planificador.
+3. Entrevistá **una pregunta por vez**, y proponé la respuesta cuando puedas. Es la parte que más importa del trabajo: lo que la persona lee y decide es esta conversación, no el plan. Recorré estos cinco temas, en este orden, y no pases al siguiente hasta cerrar el que va:
+   - **funcionalidad:** el camino feliz, paso a paso, como lo va a usar la persona;
+   - **error:** qué puede fallar y qué ve la persona cuando falla (un servicio que no contesta, un archivo que no sirve, un permiso que falta);
+   - **borde:** los casos que la feature cruza con lo que ya existe. Armalos vos leyendo el código del paso 2: datos viejos o vacíos, grupos, otro formato, otra pestaña, algo que ya estaba en el lugar. Preguntá cada uno que podría salir de dos formas;
+   - **existente:** lo que hoy funciona y la feature cambia, con la cita del paso 2 («hoy X hace Y; pasa a Z»);
+   - **propuesta:** alternativas que la persona no pidió y valen la pena, con tu recomendación.
+
+   Lo técnico lo decide el planificador: no preguntes cómo construirlo. Lo que cambia lo que la persona ve o usa se pregunta acá: si no, lo decide el planificador sin que nadie lo sepa, o el run se detiene a preguntarlo. Cada respuesta va a Aclaraciones con su tema y, si se puede comprobar con un comando, también como criterio.
+
 4. Escribí `~/.flowrunner/features/<proyecto>/<clave>.md` con este formato exacto:
 
    ```markdown
@@ -53,12 +61,14 @@ Si el repo tiene `.flowrunner/`, o el arranque de la sesión avisa que usa flowr
 
    ## Aclaraciones
 
-   - P: <pregunta> R: <respuesta de la persona>
+   - P (<tema>): <pregunta> R: <respuesta de la persona>
 
    ## Fuera de alcance
 
    - <lo que no entra>
    ```
+
+   El tema de cada aclaración es uno de `funcionalidad`, `error`, `borde`, `existente` o `propuesta`.
 
    Contexto es opcional, pero cada cita que comprobaste en el paso 2 va ahí, con la forma `ruta:línea — qué hace`. Solo código que ya existe: `feature check` frena una cita a un archivo que no está.
 
@@ -69,6 +79,7 @@ Si el repo tiene `.flowrunner/`, o el arranque de la sesión avisa que usa flowr
    - un criterio que usa un script que no existe en el `package.json` del repo: si la feature lo crea, está bien; si no, el criterio no se puede cumplir;
    - un criterio que se comprueba solo en documentación: proponele a la persona un criterio que ejecute lo documentado, como correr el comando o llamar al endpoint;
    - un criterio que solo pide que el repo pase sus chequeos: sacalo; si al verify del repo le falta ese chequeo, proponé sumarlo en una PR del repo;
+   - no hay ninguna aclaración de errores o de casos borde: volvé a ese tema del paso 3 antes de lanzar, salvo que la persona diga que no hay nada que preguntar;
    - el repo no tiene `probar` en su config: la fase probar se va a saltear y nadie va a usar la feature en la app antes de la PR. Ofrecé armar esa sección en una PR del repo antes de lanzar, o lanzar igual si la persona lo elige.
 
    Después ofrecé lanzar.

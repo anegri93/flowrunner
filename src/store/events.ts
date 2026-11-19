@@ -264,6 +264,16 @@ export const eventSchema = z.discriminatedUnion("tipo", [
     origen: origenAutofixSchema,
     sha: z.string().nullable(),
   }),
+  /** Algo del repo que el que implementa descubrió y le costó un rojo o un reintento (flowrunner 2.0). */
+  z.strictObject({
+    tipo: z.literal("descubrimiento"),
+    at,
+    fase: phaseSchema,
+    unidad: z.string().min(1),
+    que: z.string().min(1),
+    donde: z.string().min(1),
+    como: z.string().min(1),
+  }),
   /**
    * La persona contestó las preguntas del planificador (ADR 0043): la respuesta se suma a la feature del
    * run como aclaración y planificar sigue en la misma conversación.

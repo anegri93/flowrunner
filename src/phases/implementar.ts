@@ -3,6 +3,7 @@
 // Una sub-task sin cambios no reintenta: la fase termina en una pregunta (ADR 0023).
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
+import { DESCUBRIMIENTO_TOOL, descubrimientosServer } from "./descubrimientos.ts";
 import { runSession } from "../agent/session.ts";
 import { loadBrain } from "../brain/brain.ts";
 import { isVerifyCommand, loadRepoConfig } from "../config/load.ts";
@@ -461,6 +462,10 @@ export const implementar: PhaseFn = async (ctx) => {
           cwd: wt,
           model: config.models.implementar,
           tools: ["Read", "Grep", "Glob", "Write", "Edit", "MultiEdit", "Bash"],
+          // Lo que descubre del repo queda como evento, para que proponer lo vuelva lección.
+          mcpServers: {
+            aprender: descubrimientosServer({ worktree: wt, unidad: task.id, emit }),
+          },
           hook: tripwireHook(
             {
               scope,
@@ -470,6 +475,7 @@ export const implementar: PhaseFn = async (ctx) => {
               bash: true,
               agents: false,
               graft: false,
+              mcp: [DESCUBRIMIENTO_TOOL],
             },
             sessionEmit,
           ),

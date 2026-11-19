@@ -404,6 +404,25 @@ test("el informe dice de dónde vino cada decisión y cuánto tardó", () => {
   expect(buildReport(waitingForYou(), run)).not.toContain("Tus decisiones");
 });
 
+// Si regresiona, lo que descubrió el que implementa no se ve en el informe y nadie lo revisa antes de
+// que se vuelva lección (flowrunner 2.0, T3.1).
+test("el informe muestra en Decisiones lo que descubrió cada sub-task", () => {
+  const events = [
+    created,
+    ev({
+      tipo: "descubrimiento",
+      fase: "implementar",
+      unidad: "ST-1",
+      que: "Excalidraw descarta un pointermove despachado en window",
+      donde: "src/Conectar.tsx:52",
+      como: "la vista previa no llegaba al cursor",
+    }),
+  ];
+  expect(buildReport(events, run)).toContain(
+    "### implementar · ST-1\n\n- descubrió: Excalidraw descarta un pointermove despachado en window (src/Conectar.tsx:52): la vista previa no llegaba al cursor",
+  );
+});
+
 // Si regresiona, un plan que flowrunner aprobó solo no deja rastro en el informe, o figura como si lo
 // hubiera aprobado la persona (ADR 0044).
 test("el informe dice cuando flowrunner aprobó el plan solo, con los cambios aceptados por su criterio", () => {

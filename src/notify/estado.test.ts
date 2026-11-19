@@ -68,6 +68,36 @@ describe("avisoDeEstado", () => {
     );
   });
 
+  // Regresión de PIZ-55: la PR se mergeó a los 3 minutos con avisos de la revisión que nadie leyó,
+  // porque el aviso decía solo «PR abierta, 1 vuelta».
+  test("PR abierta cuenta los avisos de la última revisión y pide verlos antes de mergear", () => {
+    const aviso = (texto: string, fase: "revisar" | "probar" = "revisar"): RunEvent => ({
+      tipo: "aviso",
+      at,
+      fase,
+      texto,
+    });
+    const revisar: RunEvent = { tipo: "accion_iniciada", at, fase: "revisar" };
+    const events = [
+      revisar,
+      aviso("a.ts:1: viejo"),
+      revisar,
+      aviso("a.ts:2: uno"),
+      aviso("b.ts:3: dos"),
+      aviso("probar se salteó: x", "probar"),
+    ];
+    const entregado = run({
+      status: "entregado",
+      vueltas: { verificar: 0, revisar: 1, probar: 0 },
+    });
+    expect(body("en_curso", entregado, ctx({ events }))).toBe(
+      "⚠ SHOP-1: PR abierta, 1 vuelta, 2 avisos de la revisión. Pedile a Claude que te los muestre antes de mergear.",
+    );
+    expect(body("en_curso", entregado, ctx({ events: [revisar, aviso("a.ts:1: uno")] }))).toBe(
+      "⚠ SHOP-1: PR abierta, 1 vuelta, 1 aviso de la revisión. Pedile a Claude que te lo muestre antes de mergear.",
+    );
+  });
+
   // Si regresiona, un run en cola arranca solo y nadie se entera hasta que el plan espera.
   test("salir de la cola y volver de una pausa dicen en qué fase sigue", () => {
     const running = run({ status: "en_curso", fase: "implementar" });

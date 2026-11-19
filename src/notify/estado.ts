@@ -59,8 +59,14 @@ export function avisoDeEstado(
     }
     case "entregado": {
       const rounds = Object.values(despues.vueltas).reduce((a, b) => a + b, 0);
+      const vueltas =
+        rounds === 0 ? "" : `, ${String(rounds)} ${rounds === 1 ? "vuelta" : "vueltas"}`;
+      const n = avisosDeLaRevision(ctx.events);
+      // Con avisos, la PR no está para mergear sin leer: en PIZ-55 se mergeó a los 3 minutos con avisos.
       return aviso(
-        `${clave}: PR abierta${rounds === 0 ? "" : `, ${String(rounds)} ${rounds === 1 ? "vuelta" : "vueltas"}`}. Pedile a Claude que te explique el informe.`,
+        n === 0
+          ? `${clave}: PR abierta${vueltas}. Pedile a Claude que te explique el informe.`
+          : `⚠ ${clave}: PR abierta${vueltas}, ${String(n)} ${n === 1 ? "aviso" : "avisos"} de la revisión. Pedile a Claude que ${n === 1 ? "te lo muestre" : "te los muestre"} antes de mergear.`,
       );
     }
     case "pausado_por_limite":
@@ -95,6 +101,16 @@ export function avisoDeEstado(
     case "abortado":
       return aviso(`${clave}: abortado`);
   }
+}
+
+/**
+ * Los avisos de la última revisión: cada vuelta revisa el diff entero y dice de nuevo lo que sigue en
+ * pie, así que los de una revisión anterior ya están contados o quedaron resueltos.
+ */
+export function avisosDeLaRevision(events: readonly RunEvent[]): number {
+  const desde = events.findLastIndex((e) => e.tipo === "accion_iniciada" && e.fase === "revisar");
+  if (desde === -1) return 0;
+  return events.slice(desde).filter((e) => e.tipo === "aviso" && e.fase === "revisar").length;
 }
 
 /** Lo que cambia del plan, leído del run. Un aviso que no sale no puede tirar abajo el proceso. */

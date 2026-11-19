@@ -181,6 +181,16 @@ describe("autoMergeAllowed", () => {
 });
 
 describe("numberProposals", () => {
+  // Si regresiona, la línea Para: se pierde al numerar y lecciones.md no dice a quién le sirve cada
+  // lección; una vieja sin Para: tiene que numerarse igual (flowrunner 2.0, T3.3).
+  test("conserva la línea Para: de cada lección, y numera igual las que no la tienen", () => {
+    const text =
+      "# Lecciones propuestas por PIZ-1\n\n### Una\n\nRegla: a.\n\nPara: conversación\n\n### Dos\n\nRegla: b.\n";
+    expect(numberProposals(text, 7).added).toBe(
+      "\n### L-7 · Una\n\nRegla: a.\n\nPara: conversación\n\n### L-8 · Dos\n\nRegla: b.\n",
+    );
+  });
+
   // Si regresiona, las lecciones propuestas en la PR de una feature no llegan a lecciones.md o
   // repiten un número.
   test("numera cada propuesta desde el primero libre y descarta el encabezado del archivo", () => {

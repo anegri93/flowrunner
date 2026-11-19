@@ -218,13 +218,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T3.3
 
 ### T3.3 · Cada lección dice para quién es
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho` — criterio de la persona pendiente
 - **Descripción:** `lessonSchema` suma `para: "conversacion" | "plan" | "codigo"`. Conversación: un caso borde o una decisión que la skill tiene que preguntar en este repo. Plan: una regla para planificar o implementar, como L-2. Código: cómo se comporta algo del repo o de una librería. Se sigue usando un solo archivo, `lecciones.md`, con una línea `Para:` en cada lección; aprender la copia al numerarla. Una lección vieja sin `Para:` cuenta como `plan`.
 - **Lint:** `pnpm lint` verde.
-- **Test:** test primero en `src/phases/proponer.test.ts` y `src/phases/aprender.test.ts`: (1) una lección propuesta sin `para` es un error del schema; (2) al mergear, aprender escribe la lección en `lecciones.md` con su número y su línea `Para:`; (3) un `lecciones.md` con lecciones viejas sin `Para:` se lee igual y numera la siguiente bien.
-- **Canario:** mutación prevista: que aprender no copie la línea `Para:`; el test (2) tiene que ponerse rojo.
+- **Test:** test primero: `src/phases/proponer.test.ts` «una lección sin para quién es no pasa» (sin el campo, o con un valor que no existe) y «formatLessons escribe…», que ahora espera la línea `Para: código`; `src/phases/aprender.test.ts` «conserva la línea Para: de cada lección, y numera igual las que no la tienen»: es un resguardo, porque `numberProposals` ya copiaba el bloque tal cual. Los guiones de `test/proponer.int.test.ts` suman `para`.
+- **Canario:** hecho: que aprender borre la línea `Para:` al numerar → el test de aprender se puso rojo. Restaurado.
 - **Criterio de aprobación:** `lecciones.md` de pizarra-en-vivo, después del primer merge con 2.0, tiene una lección con `Para:`.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff; una línea más por lección, sin archivos nuevos.
+- **Revisión ponytail:** a mano: un enum en el schema y una línea más por lección en el mismo `lecciones.md`, sin archivos nuevos; aprender no cambió. Sin hallazgos abiertos.
 - **Desbloquea:** T3.4
 
 ### T3.4 · La skill pregunta lo que el repo aprendió

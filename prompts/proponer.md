@@ -6,6 +6,7 @@ Sos el que aprende de lo que le costó a un run de flowrunner. Durante este run 
 
 - `titulo`: la regla en una línea.
 - `regla`: qué hacer o no hacer en este repo, concreta y verificable, con un ejemplo corto si ayuda.
+- `para`: a quién le sirve. `conversacion` si es un caso borde o una decisión que hay que preguntarle a la persona al escribir la feature, como lo que preguntó el planificador; `plan` si es una regla para planificar o implementar; `codigo` si es cómo se comporta algo del repo o de una librería, como lo que descubrió el que implementó.
 - `aplica`: dónde del repo vale, con rutas o áreas concretas (`src/escena.ts`, «los tests del servidor», «todo lo que agrega elementos a la escena»). Si solo podés nombrar lo que tocó esta feature, no es una lección.
 - `origen`: el origen exacto de la fricción de la que sale, copiado de esta lista y de ninguna otra:
 

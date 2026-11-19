@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tablero · Tareas de construcción</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  :root {
+    --ink:#0D2942; --muted:#6b7280; --bg:#fafaf7; --panel:#fff; --rule:#e5e3dc;
+    --blue:#0B6FC7; --blue-dark:#08214B; --soft:#f3f1ea;
+    --pend:#9aa3ad; --prog:#3994EA; --done:#0BC7C1; --block:#C70B6F; --amber:#E5AD05;
+  }
+  *{box-sizing:border-box;}
+  body{font-family:'Inter',-apple-system,sans-serif; margin:0; background:var(--bg); color:var(--ink); line-height:1.55;}
+  .wrap{max-width:1080px; margin:0 auto; padding:28px 24px 80px;}
+
+  header.top{position:sticky; top:0; z-index:20; background:rgba(250,250,247,0.92);
+    backdrop-filter:blur(8px); border-bottom:1px solid var(--rule); margin:-28px -24px 22px; padding:18px 24px;}
+  .top-row{display:flex; align-items:center; gap:14px; flex-wrap:wrap;}
+  h1{font-size:21px; font-weight:700; letter-spacing:-0.02em; margin:0;}
+  .src{font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--muted);}
+  .status{margin-left:auto; display:flex; align-items:center; gap:7px; font-size:12px; font-weight:600; color:var(--muted);}
+  .dot{width:8px; height:8px; border-radius:99px; background:var(--done);}
+  .dot.err{background:var(--block);}
+  .dot.live{animation:pulse 1.6s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+
+  .overall{display:flex; align-items:center; gap:16px; margin-top:14px;}
+  .overall .big{font-size:30px; font-weight:700; letter-spacing:-0.02em; font-variant-numeric:tabular-nums;}
+  .overall .bar{flex:1; height:10px; background:var(--rule); border-radius:99px; overflow:hidden;}
+  .overall .fill{height:100%; background:linear-gradient(90deg,var(--done),var(--blue)); border-radius:99px; transition:width .4s ease;}
+  .legend{display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-top:10px;}
+  .legend span{display:inline-flex; align-items:center; gap:6px;}
+  .legend i{width:10px; height:10px; border-radius:3px; display:inline-block;}
+
+  .filters{display:flex; gap:8px; flex-wrap:wrap; margin:18px 0 8px;}
+  .chip{border:1px solid var(--rule); background:var(--panel); border-radius:99px; padding:6px 13px;
+    font-size:12.5px; font-weight:600; cursor:pointer; color:var(--muted); transition:all .12s ease;}
+  .chip.active{background:var(--blue); border-color:var(--blue); color:#fff;}
+
+  .phase{background:var(--panel); border:1px solid var(--rule); border-radius:14px; margin:16px 0; overflow:hidden;}
+  .phase-head{display:flex; align-items:center; gap:14px; padding:15px 18px; cursor:pointer;}
+  .phase-head h2{font-size:16px; font-weight:700; margin:0; flex:1;}
+  .phase-bar{width:120px; height:6px; background:var(--rule); border-radius:99px; overflow:hidden;}
+  .phase-bar .f{height:100%; background:var(--done); border-radius:99px; transition:width .4s ease;}
+  .phase-pct{font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--muted); min-width:74px; text-align:right;}
+  .phase-body{padding:0 18px 14px; display:block;}
+  .phase.collapsed .phase-body{display:none;}
+  .chev{color:var(--muted); transition:transform .15s ease; font-size:13px;}
+  .phase.collapsed .chev{transform:rotate(-90deg);}
+
+  .intro{font-size:13.5px; color:var(--muted); border-bottom:1px solid var(--rule); padding-bottom:10px; margin-bottom:12px;}
+  .intro p{margin:4px 0;}
+
+  .task{border:1px solid var(--rule); border-radius:11px; margin:9px 0; overflow:hidden; transition:border-color .12s;}
+  .task.gate{border-color:var(--blue); box-shadow:0 0 0 1px var(--blue) inset; background:#f4f9ff;}
+  .task summary{list-style:none; cursor:pointer; display:flex; align-items:center; gap:11px; padding:11px 14px;}
+  .task summary::-webkit-details-marker{display:none;}
+  .task .ttl{font-size:13.5px; font-weight:600; flex:1;}
+  .task.gate .ttl{font-weight:700;}
+  .badge{font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600; padding:3px 9px; border-radius:99px; white-space:nowrap;}
+  .b-pend{background:#eef0f2; color:#5b636b;}
+  .b-prog{background:#e6f1fd; color:#1b6fc0;}
+  .b-done{background:#e1fefb; color:#067e7c;}
+  .b-block{background:#ffe5ec; color:#C70B6F;}
+  .b-na{background:#f3f1ea; color:#8a8170;}
+  .fields{padding:4px 16px 14px 16px; border-top:1px solid var(--rule); background:#fff;}
+  .fields dl{margin:0; display:grid; grid-template-columns:140px 1fr; gap:6px 14px; font-size:13px;}
+  .fields dt{font-weight:600; color:var(--blue-dark);}
+  .fields dd{margin:0; color:var(--ink);}
+  .fields code{font-family:'JetBrains Mono',monospace; background:var(--soft); padding:1px 5px; border-radius:4px; font-size:.86em;}
+  .unlock{font-family:'JetBrains Mono',monospace; font-size:11px;}
+
+  .err-box{background:#ffe5ec; border:1px solid #f3b6c6; color:#8a1840; padding:16px 18px; border-radius:12px; font-size:13.5px; margin:16px 0;}
+  .err-box code{font-family:'JetBrains Mono',monospace; background:#fff; padding:2px 6px; border-radius:4px;}
+  @media(max-width:640px){ .fields dl{grid-template-columns:1fr;} .fields dt{margin-top:6px;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="top-row">
+      <h1>Tareas de construcción</h1>
+      <span class="src" id="src">tareas-construccion.md</span>
+      <div class="status"><span class="dot live" id="dot"></span><span id="statusTxt">conectando…</span></div>
+    </div>
+    <div class="overall">
+      <span class="big" id="overallPct">—</span>
+      <div class="bar"><div class="fill" id="overallFill" style="width:0%"></div></div>
+      <span class="src" id="overallCount"></span>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--done)"></i>Hecho</span>
+      <span><i style="background:var(--prog)"></i>En progreso</span>
+      <span><i style="background:var(--pend)"></i>Pendiente</span>
+      <span><i style="background:var(--block)"></i>Bloqueado</span>
+    </div>
+    <div class="filters" id="filters">
+      <span class="chip active" data-f="all">Todas</span>
+      <span class="chip" data-f="pend">Pendientes</span>
+      <span class="chip" data-f="prog">En progreso</span>
+      <span class="chip" data-f="done">Hechas</span>
+      <span class="chip" data-f="block">Bloqueadas</span>
+    </div>
+  </header>
+  <main id="root"></main>
+</div>
+
+<script>
+// El .md vive en la misma carpeta que este html. Cambiar si el archivo se llama distinto.
+const MD_URL = './tareas-construccion.md';
+const STATE = { ' ':'pend', 'x':'done', '~':'prog', '!':'block' };
+const BADGE = { pend:['b-pend','Pendiente'], done:['b-done','Hecho'], prog:['b-prog','En progreso'], block:['b-block','Bloqueado'], na:['b-na','—'] };
+let lastText = '';
+let activeFilter = 'all';
+let collapsed = {};   // phase title -> bool
+
+const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const inl = s => (window.marked ? marked.parseInline(s) : esc(s));
+
+function stateOf(block){
+  const e = block.fields['Estado'] || '';
+  const m = e.match(/\[([ x~!])\]/);
+  return m ? STATE[m[1]] : 'na';
+}
+
+function parse(md){
+  const lines = md.split('\n');
+  const phases = []; let cur=null, block=null;
+  const closeBlock = () => { if(block && cur){ cur.blocks.push(block); } block=null; };
+  const closePhase = () => { closeBlock(); if(cur) phases.push(cur); cur=null; };
+  for(const ln of lines){
+    if(/^#\s+(?!#)/.test(ln) || /^#\s/.test(ln) && !/^##/.test(ln)){
+      if(/^#\s+/.test(ln) && !/^##/.test(ln)){ closePhase(); cur={title:ln.replace(/^#\s+/,'').trim(), intro:[], blocks:[]}; continue; }
+    }
+    if(!cur) continue;
+    if(/^###\s+/.test(ln)){ closeBlock(); const t=ln.replace(/^###\s+/,'').trim(); block={title:t, fields:{}, gate:/gate/i.test(t)}; continue; }
+    if(/^##\s+/.test(ln)){ closeBlock(); continue; }
+    if(block){
+      const m = ln.match(/^\s*-\s+\*\*(.+?):\*\*\s*(.*)$/);
+      if(m) block.fields[m[1].trim()] = m[2].trim();
+    } else if(ln.trim() && !/^>/.test(ln) && !/^---/.test(ln)){
+      cur.intro.push(ln);
+    }
+  }
+  closePhase();
+  return phases;
+}
+
+function fieldDl(b){
+  // Cualquier campo `- **X:** …` se parsea; solo se renderizan los de esta lista, en este orden.
+  // 'Test unitario'/'Tests' son alias históricos de 'Test' — los tres se muestran igual.
+  const order = ['Regresión de','Descripción','Motivo del bloqueo','Acción','Lint','Validación de lint','Test','Test unitario','Tests','Test de integración','Canario','Criterio de aprobación','Revisión ponytail','Desbloquea'];
+  let html='<dl>';
+  for(const k of order){
+    if(b.fields[k]==null) continue;
+    const v = k==='Desbloquea' ? '<span class="unlock">'+inl(b.fields[k])+'</span>' : inl(b.fields[k]);
+    html += '<dt>'+esc(k)+'</dt><dd>'+v+'</dd>';
+  }
+  html+='</dl>';
+  return html;
+}
+
+function render(md){
+  const phases = parse(md);
+  const root = document.getElementById('root');
+  let totalTasks=0, doneTasks=0;
+  let html='';
+
+  phases.forEach((p,pi) => {
+    const tasks = p.blocks;                       // todas las entradas con ### (tareas + gates)
+    const counted = tasks.filter(b => stateOf(b)!=='na');
+    const done = counted.filter(b => stateOf(b)==='done').length;
+    totalTasks += counted.length; doneTasks += done;
+    const pct = counted.length ? Math.round(done/counted.length*100) : 0;
+    const isCollapsed = collapsed[p.title];
+
+    let body = '';
+    if(p.intro.length){ body += '<div class="intro">'+ (window.marked?marked.parse(p.intro.join('\n')):esc(p.intro.join('\n'))) +'</div>'; }
+    tasks.forEach(b => {
+      const st = stateOf(b);
+      const [cls,label] = BADGE[st];
+      body += '<details class="task'+(b.gate?' gate':'')+'" data-state="'+st+'">'+
+                '<summary><span class="ttl">'+esc(b.title)+'</span><span class="badge '+cls+'">'+label+'</span></summary>'+
+                '<div class="fields">'+fieldDl(b)+'</div>'+
+              '</details>';
+    });
+
+    const meter = counted.length
+      ? '<div class="phase-bar"><div class="f" style="width:'+pct+'%"></div></div>'+
+        '<span class="phase-pct">'+done+'/'+counted.length+' · '+pct+'%</span>'
+      : '';
+    html += '<section class="phase'+(isCollapsed?' collapsed':'')+'" data-phase="'+esc(p.title)+'">'+
+              '<div class="phase-head">'+
+                '<span class="chev">▾</span>'+
+                '<h2>'+esc(p.title)+'</h2>'+
+                meter+
+              '</div>'+
+              '<div class="phase-body">'+body+'</div>'+
+            '</section>';
+  });
+
+  root.innerHTML = html;
+
+  const opct = totalTasks ? Math.round(doneTasks/totalTasks*100) : 0;
+  document.getElementById('overallPct').textContent = opct+'%';
+  document.getElementById('overallFill').style.width = opct+'%';
+  document.getElementById('overallCount').textContent = doneTasks+' / '+totalTasks+' tareas';
+
+  wireCollapse();
+  applyFilter();
+}
+
+function wireCollapse(){
+  document.querySelectorAll('.phase-head').forEach(h => {
+    h.addEventListener('click', () => {
+      const sec = h.closest('.phase'); const t = sec.dataset.phase;
+      collapsed[t] = !sec.classList.contains('collapsed');
+      sec.classList.toggle('collapsed');
+    });
+  });
+}
+
+function applyFilter(){
+  document.querySelectorAll('.task').forEach(t => {
+    const show = activeFilter==='all' || t.dataset.state===activeFilter;
+    t.style.display = show ? '' : 'none';
+  });
+}
+
+document.getElementById('filters').addEventListener('click', e => {
+  const c = e.target.closest('.chip'); if(!c) return;
+  activeFilter = c.dataset.f;
+  document.querySelectorAll('.chip').forEach(x=>x.classList.toggle('active', x===c));
+  applyFilter();
+});
+
+function setStatus(ok, msg){
+  const dot=document.getElementById('dot'), txt=document.getElementById('statusTxt');
+  if(ok){ dot.className='dot live'; txt.textContent='en vivo · '+msg; }
+  else { dot.className='dot err'; txt.textContent='sin conexión'; }
+}
+
+async function tick(){
+  try{
+    const r = await fetch(MD_URL+'?t='+Date.now(), {cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const txt = await r.text();
+    if(txt !== lastText){ lastText = txt; render(txt); }
+    const t = new Date().toLocaleTimeString('es-PY',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    setStatus(true, 'act. '+t);
+  }catch(e){
+    setStatus(false);
+    if(!lastText){
+      document.getElementById('root').innerHTML =
+        '<div class="err-box"><strong>No pude leer el .md.</strong> Abrí esta página vía un servidor, no con <code>file://</code> '+
+        '(el navegador bloquea <code>fetch</code> de archivos locales).<br><br>En esta carpeta corré:<br>'+
+        '<code>python3 -m http.server 8765</code><br>y abrí <code>http://localhost:8765/tablero.html</code>.<br><br>'+
+        'Detalle: '+esc(e.message)+'</div>';
+    }
+  }
+}
+setInterval(tick, 2000);
+tick();
+</script>
+</body>
+</html>

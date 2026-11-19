@@ -198,3 +198,24 @@ export function parseFeature(file: string, text: string): Feature {
     contexto,
   };
 }
+
+/** Una aclaración como renglón de `## Aclaraciones`: sin saltos, que el parser cortaría. */
+const renglon = (a: Clarification) =>
+  `- P${a.tema === undefined ? "" : ` (${a.tema})`}: ${a.question.replace(/\s+/g, " ")} R: ${a.answer.replace(/\s+/g, " ")}`;
+
+/**
+ * El texto de la feature con estas aclaraciones al final de `## Aclaraciones`, que se crea si falta.
+ * Una que ya está no se repite: planificar puede volver a sumar la misma respuesta si se reintenta.
+ */
+export function sumarAclaraciones(text: string, nuevas: readonly Clarification[]): string {
+  const faltan = nuevas.map(renglon).filter((r) => !text.split("\n").includes(r));
+  if (faltan.length === 0) return text;
+  const lines = text.replace(/\n+$/, "").split("\n");
+  const inicio = lines.findIndex((l) => /^##\s+aclaraciones\s*$/i.test(l));
+  if (inicio === -1) return `${lines.join("\n")}\n\n## Aclaraciones\n${faltan.join("\n")}\n`;
+  const siguiente = lines.findIndex((l, i) => i > inicio && /^##\s/.test(l));
+  let fin = siguiente === -1 ? lines.length : siguiente;
+  while (fin > inicio + 1 && (lines[fin - 1] ?? "").trim() === "") fin--;
+  lines.splice(fin, 0, ...faltan);
+  return `${lines.join("\n")}\n`;
+}

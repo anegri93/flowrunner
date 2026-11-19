@@ -282,6 +282,36 @@ describe("planificar", () => {
       expect(sim.records[0]?.prompt).toContain("`preguntas`");
     });
 
+    // Si regresiona, la respuesta de la persona no llega al planificador, o llega a una sesión nueva que
+    // vuelve a explorar todo el repo, o se pierde de la feature y el próximo replan la pregunta de nuevo.
+    test("con la respuesta, planificar retoma la misma sesión y la suma a la feature del run", async () => {
+      const { run, deps, sim } = await prepared_([
+        { calls: [writeTest], output: { preguntas: [pregunta] } },
+        { calls: [], output: goodPlan },
+      ]);
+      appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+      const first = await planificar(contextFor(run, "planificar", deps));
+      if (first.tipo !== "pregunta") throw new Error("el primer intento tenía que preguntar");
+      appendEvent(run.dir, { tipo: "accion_terminada", fase: "planificar", resultado: first });
+      appendEvent(run.dir, {
+        tipo: "respondido",
+        respuesta: "Sí, viaja entera.",
+        origen: "claude",
+      });
+      appendEvent(run.dir, { tipo: "accion_iniciada", fase: "planificar" });
+      const second = await planificar(
+        contextFor(run, "planificar", deps, { instruccion: "Sí, viaja entera." }),
+      );
+      expect(second).toEqual({ tipo: "ok" });
+      expect(sim.records[1]?.options?.resume).toBe(sim.records[0]?.options?.sessionId);
+      const prompt = sim.records[1]?.prompt ?? "";
+      expect(prompt).toContain(pregunta.pregunta);
+      expect(prompt).toContain("Sí, viaja entera.");
+      expect(readFileSync(join(run.dir, "feature.md"), "utf8")).toContain(
+        `- P (borde): ${pregunta.pregunta} R: Sí, viaja entera.`,
+      );
+    });
+
     // Si regresiona, un plan que trae preguntas se implementa igual y la decisión queda tomada sin la persona.
     test("con preguntas, el plan que venga en la misma salida no se usa", async () => {
       const { run, deps } = await prepared_([

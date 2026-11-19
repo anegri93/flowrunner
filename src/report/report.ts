@@ -199,6 +199,13 @@ function decided(e: RunEvent): Decided | undefined {
         alPr: true,
         cola: `: ${quote(e.texto)}`,
       };
+    case "respondido":
+      return {
+        que: "respondiste lo que preguntó el planificador",
+        origen: e.origen,
+        alPlan: false,
+        cola: `: ${quote(e.respuesta)}`,
+      };
     case "aceptado":
       return {
         que: `aceptaste seguir con ${e.fase} en rojo`,

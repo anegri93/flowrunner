@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { ConfigError } from "../config/schemas.ts";
-import { parseFeature } from "./feature.ts";
+import { parseFeature, sumarAclaraciones } from "./feature.ts";
 
 const VALID = `---
 clave: SHOP-214
@@ -140,5 +140,23 @@ describe("parseFeature", () => {
       '"/abs.ts:1 — x": la ruta va relativa al repo, sin ./ ni .., y las líneas desde 1, con desde <= hasta',
       '"src/a.ts:9-3 — x": la ruta va relativa al repo, sin ./ ni .., y las líneas desde 1, con desde <= hasta',
     ]);
+  });
+});
+
+describe("sumarAclaraciones", () => {
+  // Si regresiona, la respuesta a una pregunta del planificador rompe la feature del run, se suma dos
+  // veces si planificar se reintenta, o queda partida en renglones que el parser no lee.
+  test("suma a la sección, una sola vez, en un renglón, y la crea si falta", () => {
+    const nueva = { tema: "borde" as const, question: "¿Vacío?", answer: "Solo\nel encabezado." };
+    const una = sumarAclaraciones(VALID, [nueva]);
+    expect(parseFeature("f.md", una).aclaraciones).toEqual([
+      { question: "¿Entran los pedidos cancelados?", answer: "No. Solo confirmados y entregados." },
+      { tema: "borde", question: "¿Vacío?", answer: "Solo el encabezado." },
+    ]);
+    expect(sumarAclaraciones(una, [nueva])).toBe(una);
+    const sinSeccion = VALID.replace(/## Aclaraciones[\s\S]*?## Fuera/, "## Fuera");
+    expect(parseFeature("f.md", sumarAclaraciones(sinSeccion, [nueva])).aclaraciones).toHaveLength(
+      1,
+    );
   });
 });

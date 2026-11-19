@@ -173,9 +173,14 @@ const DOCTOR = "flowrunner doctor";
  */
 const shellQuote = (text: string) => `'${text.replaceAll("'", `'\\''`)}'`;
 
+/** La respuesta a las preguntas del planificador (ADR 0043). */
+const responderComando = (runId: string) => `flowrunner responder ${runId} "<tu respuesta>"`;
+
 /** Qué hace un comando de la fila «cualquier otro» de `opcionesDe`, en palabras. */
 function queHace(comando: string, runId: string, fase: Phase): string {
   if (comando === `flowrunner resume ${runId}`) return `retomar en ${fase}`;
+  if (comando === responderComando(runId))
+    return "contestar lo que preguntó; se suma a la feature y el plan sigue";
   if (comando === DOCTOR) return "revisá la credencial; después retomá el run";
   const desde = /^flowrunner rerun \S+ --desde (\S+)$/.exec(comando)?.[1];
   if (desde !== undefined) return `rehacer desde ${desde}`;
@@ -265,6 +270,7 @@ export function opcionesDe(
   const resume = `flowrunner resume ${R}`;
   const siguiente = state.halt?.siguiente ?? resume;
   const first: Opcion = { comando: siguiente, que: queHace(siguiente, R, fase) };
+  if (siguiente === responderComando(R)) return [first, replan, abort];
   // doctor no retoma nada: después de revisar la credencial, la persona retoma el run.
   if (siguiente === DOCTOR)
     return [first, { comando: resume, que: queHace(resume, R, fase) }, abort];
@@ -433,6 +439,9 @@ function onOutcome(state: RunState, fase: Phase, outcome: Outcome): RunState {
           `${fase}: ${outcome.motivo}`,
           `flowrunner rerun ${state.runId} --desde planificar`,
         );
+      // Lo que pregunta el planificador lo contesta la persona: la respuesta lo retoma (ADR 0043).
+      if (fase === "planificar")
+        return halt(state, `${fase}: ${outcome.motivo}`, responderComando(state.runId));
       return halt(state, `${fase}: ${outcome.motivo}`, undefined, outcome.unidades);
     case "falla": {
       // Reintentar no ayuda: lo que faltó para probar (una falla que simular, un dato) no lo arregla
@@ -674,6 +683,10 @@ export function reduce(state: RunState, event: RunEvent): RunState {
     case "autofix":
       return offers(state, `flowrunner fix ${state.runId} --auto`)
         ? enter(state, "verificar", { autofix: true, autofixCorrio: true })
+        : state;
+    case "respondido":
+      return offers(state, responderComando(state.runId)) && state.fase === "planificar"
+        ? enter(state, "planificar", { instruccion: event.respuesta, ...RESPONDIO_LA_PERSONA })
         : state;
     case "aceptado": {
       const next = NEXT[event.fase];

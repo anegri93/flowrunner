@@ -262,6 +262,16 @@ export const eventSchema = z.discriminatedUnion("tipo", [
     origen: origenAutofixSchema,
     sha: z.string().nullable(),
   }),
+  /**
+   * La persona contestó las preguntas del planificador (ADR 0043): la respuesta se suma a la feature del
+   * run como aclaración y planificar sigue en la misma conversación.
+   */
+  z.strictObject({
+    tipo: z.literal("respondido"),
+    at,
+    respuesta: z.string().min(1),
+    origen: origenSchema,
+  }),
   /** La persona decidió seguir a la fase siguiente con la fase en rojo, y dijo por qué. */
   z.strictObject({
     tipo: z.literal("aceptado"),

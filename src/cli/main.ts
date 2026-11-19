@@ -41,6 +41,7 @@ import {
   abortRun,
   acceptRun,
   acceptUntested,
+  responderRun,
   BIN,
   autofixRun,
   fixRun,
@@ -74,7 +75,9 @@ const USAGE = `uso: flowrunner <comando> [--json]
   fix <run> --auto               formateador y lint del repo y vuelve a verificar; si sigue en
                                  rojo, las sub-tasks lo corrigen solas, una vez
   accept <run> "<por qué>"       seguir a la fase siguiente igual
-                                 fix y accept, solo si el run detenido lo ofrece, con
+  responder <run> "<respuesta>"  contesta lo que preguntó el planificador; se suma a la feature
+                                 del run y el plan sigue
+                                 fix, accept y responder, solo si el run detenido lo ofrece, con
                                  [--origen terminal|claude|orca]; por defecto terminal
   rerun <run> --desde <fase>     rehace un run desde una fase
   accept-untested <run> "<por qué>"
@@ -415,6 +418,17 @@ export async function main(
           env,
         );
         print(accepted, `run ${accepted.id} ${accepted.accion}`);
+        return 0;
+      }
+      case "responder": {
+        const answered = responderRun(
+          home,
+          runArg(home, first),
+          rest.join(" "),
+          parseOrigen(values.origen),
+          env,
+        );
+        print(answered, `run ${answered.id} ${answered.accion}`);
         return 0;
       }
       case "accept-untested": {

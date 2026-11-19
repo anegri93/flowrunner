@@ -155,6 +155,8 @@ describe("lecciones propuestas en la PR de entrega", () => {
     const d = await delivered();
     expect(d.prompts()).not.toContain(PROPOSER);
     expect(git(d.remote, "log", "--format=%s", `main..${BRANCH}`)).not.toContain("docs(lecciones)");
-    expect(d.ghState().prs[0]?.body).toContain("no hubo vueltas ni cambios al plan");
+    expect(d.ghState().prs[0]?.body).toContain(
+      "no hubo vueltas, cambios al plan, preguntas ni descubrimientos",
+    );
   }, 180_000);
 });

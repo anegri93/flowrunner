@@ -26,7 +26,9 @@ export interface Friction {
 
 /**
  * Lo que el run tuvo que corregir: las vueltas de verificar y revisar, los cambios al plan y tu
- * feedback sobre la PR.
+ * feedback sobre la PR. Y lo que aprendió sin vueltas (flowrunner 2.0): lo que descubrió el que
+ * implementa, lo que preguntó el planificador con tu respuesta, y las decisiones de revisar con cómo
+ * las resolviste.
  */
 export function frictions(events: readonly RunEvent[]): Friction[] {
   const counts = new Map<string, number>();
@@ -35,7 +37,48 @@ export function frictions(events: readonly RunEvent[]): Friction[] {
     counts.set(key, n);
     return n;
   };
+  // La pregunta que espera tu respuesta: la de planificar se responde con `respondido`; la de revisar,
+  // con cualquier respuesta a la detención.
+  let pendiente: { fase: "planificar" | "revisar"; motivo: string } | undefined;
+  const resuelta = (como: string): Friction[] => {
+    if (pendiente?.fase !== "revisar") return [];
+    const f = {
+      origen: `revisar, decisión ${String(next("decision"))}`,
+      texto: `${pendiente.motivo}\n${como}`,
+    };
+    pendiente = undefined;
+    return [f];
+  };
   return events.flatMap((e): Friction[] => {
+    if (e.tipo === "descubrimiento") {
+      return [
+        {
+          origen: `${e.fase} ${e.unidad}, descubrimiento ${String(next(`desc-${e.unidad}`))}`,
+          texto: `${e.que} (${e.donde}): ${e.como}`,
+        },
+      ];
+    }
+    if (
+      e.tipo === "accion_terminada" &&
+      e.resultado.tipo === "pregunta" &&
+      (e.fase === "planificar" || e.fase === "revisar")
+    ) {
+      pendiente = { fase: e.fase, motivo: e.resultado.motivo };
+      return [];
+    }
+    if (e.tipo === "respondido" && pendiente?.fase === "planificar") {
+      const f = {
+        origen: `planificar, pregunta ${String(next("pregunta"))}`,
+        texto: `${pendiente.motivo}\nRespondiste: ${e.respuesta}`,
+      };
+      pendiente = undefined;
+      return [f];
+    }
+    if (e.tipo === "aceptado") return resuelta(`Decidiste seguir igual: ${e.motivo}`);
+    if (e.tipo === "arreglo_pedido")
+      return resuelta(`Pediste que ${e.unidades.join(", ")} lo corrija: ${e.instruccion}`);
+    if (e.tipo === "arreglo_manual_iniciado") return resuelta("Lo arreglaste a mano");
+    if (e.tipo === "rehacer") return resuelta(`Rehiciste desde ${e.desde}`);
     // Tu feedback sobre la PR es una corrección: lo que el run entregó no era lo que pedías (ADR 0038).
     if (e.tipo === "feedback_pedido") {
       return [{ origen: `tu feedback sobre la PR ${String(next("feedback"))}`, texto: e.texto }];
@@ -58,7 +101,7 @@ const lessonSchema = z.object({
   origen: z.string().min(1),
 });
 export const proposalSchema = z.object({
-  lecciones: z.array(lessonSchema).max(2),
+  lecciones: z.array(lessonSchema).max(3),
   /** Lo que se arregla en la configuración del repo (format, typecheck, un script), no con una lección. */
   sugerencias: z.array(z.string().min(1)).max(3).default([]),
   /** Lecciones que ya estaban, cubrían la fricción y no la evitaron. */
@@ -150,7 +193,9 @@ export async function proposeLessons(
     else write(`${howToReject(file)}${bloquePrevio}\nEn esta entrega: ${porque}`, cuantasPrevias);
   };
   if (found.length === 0) {
-    nadaNuevo("Nada nuevo para el cerebro: no hubo vueltas ni cambios al plan.");
+    nadaNuevo(
+      "Nada nuevo para el cerebro: no hubo vueltas, cambios al plan, preguntas ni descubrimientos.",
+    );
     return;
   }
   const lessonsFile = join(worktree, ".flowrunner", BRAIN_FILES.lecciones.file);

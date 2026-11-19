@@ -16,7 +16,13 @@ import { respuestaValidar } from "../gates/validar-plan.ts";
 import type { RunEvent } from "../store/events.ts";
 import { appendEvent, readLog } from "../store/run-log.ts";
 import { graftIndex, prepared } from "./inputs.ts";
-import { gateRechazado, planificar, readPlan, sesionAnterior } from "./planificar.ts";
+import {
+  gateRechazado,
+  planificar,
+  readPlan,
+  sesionAnterior,
+  sesionParaImplementar,
+} from "./planificar.ts";
 import { preparar } from "./preparar.ts";
 
 const FEATURE = `---
@@ -308,6 +314,32 @@ describe("planificar", () => {
         tipo: "ok",
       });
       expect(conUna.sim.records[0]?.prompt).toContain("una sola sub-task");
+    });
+
+    // Si regresiona, planificar borra su conversación al terminar e implementar no tiene qué retomar.
+    test("con el plan aprobado por el gate, la sesión queda marcada para implementar y no se borra", async () => {
+      const preparado = await prepared_(
+        [{ calls: [writeTest], output: goodPlan }],
+        undefined,
+        undefined,
+        undefined,
+        FEATURE,
+        "una_sesion",
+      );
+      const borradas: string[] = [];
+      const deps = {
+        ...preparado.deps,
+        deleteSession: (id: string) => {
+          borradas.push(id);
+          return Promise.resolve();
+        },
+      };
+      expect(await planificar(contextFor(preparado.run, "planificar", deps))).toEqual({
+        tipo: "ok",
+      });
+      const id = preparado.sim.records[0]?.options?.sessionId;
+      expect(sesionParaImplementar(preparado.run)?.sessionId).toBe(id);
+      expect(borradas).toEqual([]);
     });
 
     // Si regresiona, un repo sin la opción deja de poder partir el trabajo en sub-tasks.

@@ -4,7 +4,7 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { DESCUBRIMIENTO_TOOL, descubrimientosServer } from "./descubrimientos.ts";
-import { runSession } from "../agent/session.ts";
+import { runSession, type SessionResult, type SessionSpec } from "../agent/session.ts";
 import { loadBrain } from "../brain/brain.ts";
 import { isVerifyCommand, loadRepoConfig } from "../config/load.ts";
 import type { RepoConfig } from "../config/schemas.ts";
@@ -36,7 +36,7 @@ import { tripwireHook } from "../tripwires/hook.ts";
 import { dependencySectionsChanged, WRITE_TOOLS, type Scope } from "../tripwires/rules.ts";
 import { copyEnvFiles } from "./env-files.ts";
 import { featureWorktree, graftIndex, prepared, runFeature, unitWorktree } from "./inputs.ts";
-import { brainVars, readPlan, sessionName } from "./planificar.ts";
+import { brainVars, readPlan, sesionParaImplementar, sessionName } from "./planificar.ts";
 import { runFixers } from "./fixers.ts";
 import { SETUP_TIMEOUT_MS } from "./preparar.ts";
 import { reusarDependencias } from "./reinstalar.ts";
@@ -301,6 +301,45 @@ export function loQueDijo(texto: string): string {
   return chars.length > MAX_DICHO ? `…${chars.slice(-MAX_DICHO).join("")}` : chars.join("");
 }
 
+/**
+ * La sesión de una sub-task. Con `implementar: una_sesion` (ADR 0045), la retoma de la sesión del
+ * planificador con su modelo, desde el worktree de la sub-task; si no se puede retomar, abre una nueva
+ * con el mismo modelo y lo avisa.
+ */
+async function sesionDeLaSubTask(
+  spec: SessionSpec<unknown>,
+  opts: {
+    readonly unaSesion: boolean;
+    readonly retomar: { sessionId: string } | undefined;
+    readonly modeloPlanificar: SessionSpec<unknown>["model"];
+    readonly featureWt: string;
+    readonly rt: Parameters<typeof runSession>[1];
+  },
+): Promise<SessionResult<unknown>> {
+  if (!opts.unaSesion) return runSession(spec, opts.rt);
+  const opus = { ...spec, model: opts.modeloPlanificar };
+  if (opts.retomar !== undefined) {
+    const retomada = await runSession(
+      {
+        ...opus,
+        resume: opts.retomar.sessionId,
+        prompt: `Ahora implementás vos el plan que escribiste, en esta misma conversación. Tu directorio cambió: trabajás en ${spec.cwd}, no en ${opts.featureWt}. Las rutas relativas son las mismas; lo que leíste con la ruta de antes, leelo o editalo con la ruta nueva: escribir en la de antes se rechaza.\n\n${spec.prompt}`,
+      },
+      opts.rt,
+    );
+    // ponytail: reconoce «no se pudo retomar» por el texto del error del SDK; si el SDK lo cambia,
+    // la sub-task falla como cualquier sesión y el run pregunta, sin perder nada.
+    const noSeRetomo = retomada.tipo === "falla" && /conversation|session/i.test(retomada.motivo);
+    if (!noSeRetomo) return retomada;
+    opts.rt.emit({
+      tipo: "aviso",
+      fase: "implementar",
+      texto: `no se pudo retomar la sesión del planificador (${retomada.motivo}): implementa una sesión nueva con el mismo modelo`,
+    });
+  }
+  return runSession(opus, opts.rt);
+}
+
 export const implementar: PhaseFn = async (ctx) => {
   const { run, deps, emit, action, state } = ctx;
   const featureWt = featureWorktree(run);
@@ -427,62 +466,64 @@ export const implementar: PhaseFn = async (ctx) => {
           rejectedWrites.push(event.motivo);
         return emit(event);
       };
-      const result = await runSession(
-        {
-          fase: "implementar",
-          unidad: task.id,
-          nombre: sessionName(run, `implementar-${task.id}`),
-          prompt: render("implementar", {
-            id: task.id,
-            titulo: task.titulo,
-            descripcion: task.descripcion,
-            alcance: task.alcance.join(", "),
-            criterios:
-              acs.length === 0
-                ? "(ninguno directo)"
-                : acs
-                    .map((c) =>
-                      isVerifyCommand(config, c.comando)
-                        ? `${c.id}: lo corre verificar sobre la rama integrada, no lo corras vos`
-                        : `${c.id}: \`${c.comando}\``,
-                    )
-                    .join(", "),
-            dependencias: dependencyText(task),
-            bloqueados: locked.join(", "),
-            comandos: describeComandos(comandos),
-            instruccion:
-              motivo === undefined
-                ? ""
-                : `# Atención: esto ya se intentó\n\n${motivo}\n\nCorregilo.`,
-            feature: featureText(feature),
-            plan: plan.plan,
-            orientacion,
-            ...brainVars(brain),
-          }),
-          cwd: wt,
-          model: config.models.implementar,
-          tools: ["Read", "Grep", "Glob", "Write", "Edit", "MultiEdit", "Bash"],
-          // Lo que descubre del repo queda como evento, para que proponer lo vuelva lección.
-          mcpServers: {
-            aprender: descubrimientosServer({ worktree: wt, unidad: task.id, emit }),
-          },
-          hook: tripwireHook(
-            {
-              scope,
-              fase: "implementar",
-              unidad: task.id,
-              write: true,
-              bash: true,
-              agents: false,
-              graft: false,
-              mcp: [DESCUBRIMIENTO_TOOL],
-            },
-            sessionEmit,
-          ),
-          timeoutMs: UNIT_TIMEOUT_MS,
+      const spec: SessionSpec<unknown> = {
+        fase: "implementar",
+        unidad: task.id,
+        nombre: sessionName(run, `implementar-${task.id}`),
+        prompt: render("implementar", {
+          id: task.id,
+          titulo: task.titulo,
+          descripcion: task.descripcion,
+          alcance: task.alcance.join(", "),
+          criterios:
+            acs.length === 0
+              ? "(ninguno directo)"
+              : acs
+                  .map((c) =>
+                    isVerifyCommand(config, c.comando)
+                      ? `${c.id}: lo corre verificar sobre la rama integrada, no lo corras vos`
+                      : `${c.id}: \`${c.comando}\``,
+                  )
+                  .join(", "),
+          dependencias: dependencyText(task),
+          bloqueados: locked.join(", "),
+          comandos: describeComandos(comandos),
+          instruccion:
+            motivo === undefined ? "" : `# Atención: esto ya se intentó\n\n${motivo}\n\nCorregilo.`,
+          feature: featureText(feature),
+          plan: plan.plan,
+          orientacion,
+          ...brainVars(brain),
+        }),
+        cwd: wt,
+        model: config.models.implementar,
+        tools: ["Read", "Grep", "Glob", "Write", "Edit", "MultiEdit", "Bash"],
+        // Lo que descubre del repo queda como evento, para que proponer lo vuelva lección.
+        mcpServers: {
+          aprender: descubrimientosServer({ worktree: wt, unidad: task.id, emit }),
         },
-        { run, deps, emit },
-      ).finally(env.remove);
+        hook: tripwireHook(
+          {
+            scope,
+            fase: "implementar",
+            unidad: task.id,
+            write: true,
+            bash: true,
+            agents: false,
+            graft: false,
+            mcp: [DESCUBRIMIENTO_TOOL],
+          },
+          sessionEmit,
+        ),
+        timeoutMs: UNIT_TIMEOUT_MS,
+      };
+      const result = await sesionDeLaSubTask(spec, {
+        unaSesion: state.unaSesion,
+        retomar: state.unaSesion ? sesionParaImplementar(run) : undefined,
+        modeloPlanificar: config.models.planificar,
+        featureWt,
+        rt: { run, deps, emit },
+      }).finally(env.remove);
       if (result.tipo === "limite") return { ok: false, motivo: "límite", fatal: result };
       if (result.tipo === "falla") {
         if (result.clase === "entorno")

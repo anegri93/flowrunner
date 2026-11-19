@@ -264,6 +264,31 @@ interface Intento {
  */
 const sesionFile = (run: RunPaths) => join(run.dir, "planificar-sesion.json");
 
+/**
+ * La sesión del planificador que implementar retoma con `implementar: una_sesion` (ADR 0045). Se escribe
+ * cuando el plan pasa el gate y no se borra al terminar planificar.
+ */
+const implementarSesionFile = (run: RunPaths) => join(run.dir, "implementar-sesion.json");
+const sesionDelPlanSchema = z.object({ sessionId: z.string().min(1), nombre: z.string().min(1) });
+
+export function marcarSesionParaImplementar(
+  run: RunPaths,
+  sesion: z.infer<typeof sesionDelPlanSchema>,
+): void {
+  writeFileSync(implementarSesionFile(run), `${JSON.stringify(sesion)}\n`);
+}
+
+/** La sesión del planificador para retomar al implementar, o undefined. Un archivo roto cuenta como ausente. */
+export function sesionParaImplementar(
+  run: RunPaths,
+): z.infer<typeof sesionDelPlanSchema> | undefined {
+  try {
+    return sesionDelPlanSchema.parse(JSON.parse(readFileSync(implementarSesionFile(run), "utf8")));
+  } catch {
+    return undefined;
+  }
+}
+
 /** Las preguntas de la última detención de planificar, para que `responder` sepa qué se respondió. */
 export const preguntasFile = (run: RunPaths) => join(run.dir, "planificar-preguntas.json");
 const sesionSchema = z.object({
@@ -379,8 +404,9 @@ async function olvidarSesiones(
   usadas: readonly string[],
 ): Promise<void> {
   const marcada = sesionAnterior(ctx.run)?.sessionId;
+  const paraImplementar = sesionParaImplementar(ctx.run)?.sessionId;
   for (const id of new Set(usadas)) {
-    if (id === marcada) continue;
+    if (id === marcada || id === paraImplementar) continue;
     try {
       await ctx.deps.deleteSession(id, { dir: worktree });
     } catch {
@@ -919,6 +945,8 @@ async function gateYCierre(ctx: PhaseContext, comun: Comun, intento: Intento): P
     locked,
     Object.fromEntries(kept.flatMap((id) => (nuevos[id] === undefined ? [] : [[id, nuevos[id]]]))),
   );
+  // La misma conversación sigue e implementa: no se borra al terminar (ADR 0045).
+  if (ctx.state.unaSesion) marcarSesionParaImplementar(run, intento.sesion);
   return { tipo: "ok" };
 }
 

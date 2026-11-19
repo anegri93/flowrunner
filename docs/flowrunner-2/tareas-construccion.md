@@ -282,13 +282,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T4.3
 
 ### T4.3 · Implementar retoma la sesión del planificador con Opus
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho` — criterio de la persona pendiente
 - **Descripción:** con `una_sesion`, implementar (`src/phases/implementar.ts`) corre `ST-1` retomando la sesión del planificador (el mismo mecanismo de retomar de ADR 0025), con el modelo de planificar y el alcance y la política de comandos de `ST-1`. Si la sesión ya no se puede retomar (expiró o se replanificó), abre una sesión nueva de Opus con el plan y la feature, y deja un aviso. Dónde corre lo decide T4.1: en el camino A, `ST-1` sigue en su propio worktree y el mensaje al retomar dice la ruta nueva y que las rutas relativas son las mismas, y el hook sigue rechazando lo que apunte al worktree viejo; en el camino B, `ST-1` corre en el worktree de la feature y commitea directo en su rama, sin cherry-pick, y el test (4) cambia a «el commit de `ST-1` queda en la rama de la feature sin worktree propio». El commit, los fixers y el doble control del diff no cambian.
 - **Lint:** `pnpm lint` verde.
-- **Test:** test primero en `src/phases/implementar.test.ts`, con la sesión falsa: (1) con `una_sesion`, la sesión de `ST-1` se abre con `resume` igual al id de la sesión de planificar y el modelo de planificar; (2) si `resume` falla, abre una nueva con el mismo modelo y queda un `aviso` en el log; (3) con `sub_tasks`, la sesión es nueva y con el modelo de implementar, como hoy; (4) al retomar, el primer mensaje nombra la ruta del worktree de `ST-1`, y un Edit falso sobre la ruta absoluta del worktree de la feature se rechaza.
-- **Canario:** mutación prevista: pasar el modelo de implementar en vez del de planificar; el test (1) tiene que ponerse rojo.
+- **Test:** test primero en `src/phases/implementar.test.ts`, «con implementar: una_sesion»: (1) la sesión de `ST-1` se abre con `resume` igual a la sesión marcada del planificador, el modelo de planificar, y el prompt nombra el worktree de `ST-1` y el de la feature; (2) un Write sobre la ruta absoluta del worktree de la feature se rechaza; (3) si retomar falla («No conversation found»), abre una sesión nueva con el modelo de planificar y deja un aviso; (4) con `sub_tasks`, sesión nueva con el modelo de implementar. Y en `src/phases/planificar.test.ts` «con el plan aprobado por el gate, la sesión queda marcada para implementar y no se borra».
+- **Canario:** hecho: (a) la sesión de `una_sesion` con el modelo de implementar → los tests (1) y (3) rojos; (b) planificar no marca la sesión → el test de planificar rojo. Restaurado.
 - **Criterio de aprobación:** en el informe de un run con la opción, implementar figura con el modelo de Opus y una sola ejecución.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff; reusa el retomar existente.
+- **Revisión ponytail:** a mano: una función que envuelve `runSession` con el retomar y el respaldo; planificar escribe una marca y no la borra. Atajo marcado con `ponytail:`: el «no se pudo retomar» se reconoce por el texto del error del SDK. Camino A de ADR 0045: el worktree, el commit, los fixers y el doble control no cambian.
 - **Desbloquea:** T4.4
 
 ### T4.4 · Con una sola sub-task, el que implementa puede correr el verify del repo

@@ -199,6 +199,25 @@ const asked: Run = {
   ],
 };
 
+// Si regresiona, una pregunta del planificador deja el run trabado en el panel, o el panel ofrece
+// arreglar o seguir igual, que flowrunner rechaza en esa detención (ADR 0043).
+test("un run detenido por una pregunta del planificador ofrece responder y rehacer, nada más", () => {
+  const pregunta: Run = {
+    ...asked,
+    fase: "planificar",
+    unidades: undefined,
+    siguiente: `flowrunner responder ${ID} "<tu respuesta>"`,
+    opciones: [
+      { comando: `flowrunner responder ${ID} "<tu respuesta>"`, que: "contestar lo que preguntó" },
+      { comando: `flowrunner rerun ${ID} --desde planificar`, que: "replanificar" },
+      { comando: `flowrunner abort ${ID}`, que: "cortar el run" },
+    ],
+  };
+  assert.deepEqual(decisionsFor(pregunta), ["responder", "rehacer"]);
+  assert.equal(offers(pregunta, "responder"), true);
+  assert.equal(offers(asked, "responder"), false);
+});
+
 // Si regresiona, el panel no ofrece las respuestas que el run espera, u ofrece una que rechaza.
 // «Lo arreglo yo» quedó solo en el CLI: en el panel lo reemplaza Autofix (ADR 0026).
 test("un run detenido con opciones ofrece arreglar por sub-task, Autofix y seguir igual", () => {

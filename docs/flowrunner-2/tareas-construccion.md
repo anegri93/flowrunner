@@ -116,13 +116,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T1.5
 
 ### T1.5 · Orca ofrece responder la pregunta del planificador
-- **Estado:** `[ ] Pendiente`
-- **Descripción:** en Orca, un run detenido por una pregunta de planificar muestra cada pregunta con la propuesta del planificador y un campo para responder, con la propuesta ya escrita para aceptarla con un clic. Suma la acción `responder` a `Decision` y a `stoppedDecisions` (`orca/src/runs.ts:866`), detectada con `offers` como `accept` y `resume`, y el formulario en `orca/src/vista.ts`. Llama a `flowrunner responder <run> "<respuesta>" --origen orca`. Las otras opciones de esa detención (rehacer, abortar) siguen como hoy.
-- **Lint:** `pnpm lint` verde y `pnpm orca:test` verde.
-- **Test:** test primero en `orca/src/estado.test.ts` y el test de la vista: (1) un run detenido con la opción `flowrunner responder` ofrece la acción `responder` y no `arreglar`; (2) la acción manda el comando con la respuesta escrita y `--origen orca`; (3) una respuesta vacía no manda nada y dice por qué; (4) un run detenido sin esa opción no muestra el formulario.
-- **Canario:** mutación prevista: que `stoppedDecisions` no mire `offers(run, "responder")`; el test (1) tiene que ponerse rojo.
+- **Estado:** `[x] Hecho` — criterio de la persona pendiente
+- **Descripción:** en Orca, un run detenido por una pregunta de planificar muestra el motivo (cada pregunta con su propuesta) y un botón «Responder» que abre un campo para la respuesta. Suma la acción `responder` a `Decision`, a `offers` y a `stoppedDecisions` (`orca/src/runs.ts`), el formulario y el botón en `orca/src/vista.ts`, y la traducción en `orca/src/worker.ts`: `flowrunner responder <run> "<respuesta>" --origen orca`. Simplificación: el campo no viene con la propuesta ya escrita, porque Orca recibe las preguntas solo dentro del motivo; el placeholder dice «va la propuesta». Las otras opciones de esa detención (rehacer, abortar) siguen como hoy.
+- **Lint:** `pnpm lint` verde y `orca plugin test` verde (122/122).
+- **Test:** test primero: `orca/src/runs.test.ts` «un run detenido por una pregunta del planificador ofrece responder y rehacer, nada más»; `orca/src/worker.test.ts` «responder se traduce a responder con --origen orca, y una respuesta vacía se rechaza».
+- **Canario:** hecho: sacar `offers(run, "responder")` de `stoppedDecisions` → el test de runs se puso rojo. Restaurado.
 - **Criterio de aprobación:** con un run de prueba detenido por una pregunta, se responde desde Orca y el run sigue a planificar.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff; reusa el patrón de `feedback` y `arreglar`, sin componentes nuevos.
+- **Revisión ponytail:** a mano: reusa el patrón de `aceptar` (acción, `pedirTexto`, `personText`); sin componentes nuevos. Sin hallazgos abiertos.
 - **Desbloquea:** T1.6
 
 ### T1.6 · Aprobar solo cuando hace falta

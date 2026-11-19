@@ -258,6 +258,12 @@ export function textFor(
         decision: (sinProbar) => ({ ...aprobar, sinProbar }),
       };
     }
+    case "responder":
+      return {
+        label: "Tu respuesta a lo que preguntó el planificador; se suma a la feature",
+        placeholder: "Por ejemplo: va la propuesta, o qué hacer en su lugar",
+        decision: (respuesta) => ({ accion: "responder", respuesta }),
+      };
     case "aceptar":
       return {
         label: "Por qué seguir así; queda en la PR",
@@ -438,6 +444,9 @@ function decisiones(e: Estado, run: Run): string {
     offered.includes("cambios") ? boton(ask({ accion: "cambios", motivo: "" }), "Cambios") : "",
     run.status === "esperando_aprobacion"
       ? boton({ t: "abrir", run: run.id, que: { tipo: "plan" } }, "Plan", { clase: "btn ghost" })
+      : "",
+    offered.includes("responder")
+      ? boton(ask({ accion: "responder", respuesta: "" }), "Responder", { clase: "btn solid" })
       : "",
     ...units.map((unidad) =>
       boton(ask({ accion: "arreglar", unidad, instruccion: "" }), `Arreglar ${unidad}`),

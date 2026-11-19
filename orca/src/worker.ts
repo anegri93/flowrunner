@@ -191,6 +191,14 @@ export function decisionArgs(id: string, decision: Decision): string {
     }
     case "autofix":
       return `fix ${quote(id)} --auto --origen orca`;
+    case "responder": {
+      const respuesta = personText(
+        decision.respuesta,
+        "falta la respuesta a lo que preguntó el planificador",
+        "la respuesta es demasiado larga",
+      );
+      return `responder ${quote(id)} ${quote(respuesta)} --origen orca`;
+    }
     case "aceptar": {
       const motivo = personText(
         decision.motivo,

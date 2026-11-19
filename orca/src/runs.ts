@@ -812,6 +812,8 @@ export type Decision =
   | { readonly accion: "autofix" }
   /** Seguir a la fase siguiente igual; el motivo queda en la PR. */
   | { readonly accion: "aceptar"; readonly motivo: string }
+  /** Contestar lo que preguntó el planificador; se suma a la feature y el plan sigue (ADR 0043). */
+  | { readonly accion: "responder"; readonly respuesta: string }
   /** Pausar al terminar lo que hace; `para`, el run en cola que entra en su lugar. */
   | { readonly accion: "pausar"; readonly para?: string }
   /** Que el run en cola salga primero. */
@@ -853,10 +855,14 @@ export const suggestedFixes = (run: Run): Arreglo[] =>
   (run.opciones ?? []).flatMap((o) => (o.arreglo === undefined ? [] : [o.arreglo]));
 
 /** El run detenido ofrece ese comando entre sus opciones. */
-export function offers(run: Run, comando: "fix --auto" | "accept" | "resume"): boolean {
+export function offers(
+  run: Run,
+  comando: "fix --auto" | "accept" | "resume" | "responder",
+): boolean {
   const matches: Record<typeof comando, RegExp> = {
     "fix --auto": /^flowrunner fix \S+ --auto$/,
     accept: /^flowrunner accept \S+ /,
+    responder: /^flowrunner responder \S+ /,
     resume: /^flowrunner resume \S+$/,
   };
   return (run.opciones ?? []).some((o) => matches[comando].test(o.comando));
@@ -867,6 +873,7 @@ function stoppedDecisions(run: Run): Decision["accion"][] {
   if (run.opciones === undefined)
     return rerunPhase(run) === undefined ? ["reanudar"] : ["reanudar", "rehacer"];
   const out: Decision["accion"][] = [];
+  if (offers(run, "responder")) out.push("responder");
   if (fixUnits(run).length > 0 || suggestedFixes(run).length > 0) out.push("arreglar");
   if (offers(run, "fix --auto")) out.push("autofix");
   if (offers(run, "accept")) out.push("aceptar");

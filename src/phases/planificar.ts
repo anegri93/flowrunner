@@ -26,8 +26,10 @@ import {
   delRun,
   planDevuelto,
   salidaPlanSchema,
+  preguntaDelPlanSchema,
   textoDePreguntas,
   type Plan,
+  type PreguntaDelPlan,
   type SalidaPlan,
 } from "../gates/plan.ts";
 import { VALIDAR_PLAN_TOOL, validarPlanServer } from "../gates/validar-plan.ts";
@@ -38,7 +40,7 @@ import { featureText, render } from "../prompts/render.ts";
 import { readLog } from "../store/run-log.ts";
 import type { Outcome, RunEvent } from "../store/events.ts";
 import { archivosNombrados, desajusteDe } from "../feature/citas.ts";
-import type { Feature } from "../feature/feature.ts";
+import { sumarAclaraciones, type Feature } from "../feature/feature.ts";
 import type { PhaseContext, PhaseFn, RunPaths } from "../runner/types.ts";
 import { runSession, type SessionResult, type SessionSpec } from "../agent/session.ts";
 import { SIN_COMANDOS } from "../tripwires/comandos.ts";
@@ -314,6 +316,54 @@ export function gateRechazado(
     ? undefined
     : instruccion;
 }
+
+/**
+ * La respuesta de la persona a las preguntas de la última detención de planificar (ADR 0043): la
+ * última `accion_terminada` de planificar es una `pregunta`, después hay un `respondido`, y no hubo
+ * `rehacer` ni `cambios_pedidos`. `motivo` es el de la pregunta: así se reconoce la sesión marcada.
+ */
+export function respuestaPendiente(
+  events: readonly RunEvent[],
+): { motivo: string; respuesta: string } | undefined {
+  const last = events.findLastIndex(
+    (e) => e.tipo === "accion_terminada" && e.fase === "planificar",
+  );
+  const terminada = events[last];
+  if (terminada?.tipo !== "accion_terminada" || terminada.resultado.tipo !== "pregunta")
+    return undefined;
+  const despues = events.slice(last + 1);
+  if (despues.some((e) => e.tipo === "rehacer" || e.tipo === "cambios_pedidos")) return undefined;
+  const respondido = despues.findLast((e) => e.tipo === "respondido");
+  return respondido?.tipo === "respondido"
+    ? { motivo: terminada.resultado.motivo, respuesta: respondido.respuesta }
+    : undefined;
+}
+
+/** Suma a la feature del run cada pregunta del planificador con la respuesta de la persona. */
+function sumarRespuesta(run: RunPaths, respuesta: string): void {
+  let preguntas: PreguntaDelPlan[] = [];
+  try {
+    preguntas = z
+      .array(preguntaDelPlanSchema)
+      .parse(JSON.parse(readFileSync(preguntasFile(run), "utf8")));
+  } catch {
+    // Sin las preguntas guardadas, la respuesta llega igual al planificador en el mensaje; solo no
+    // queda en la feature.
+    return;
+  }
+  const file = join(run.dir, "feature.md");
+  writeFileSync(
+    file,
+    sumarAclaraciones(
+      readFileSync(file, "utf8"),
+      preguntas.map((p) => ({ tema: p.tema, question: p.pregunta, answer: respuesta })),
+    ),
+  );
+}
+
+/** El único mensaje de un intento retomado con la respuesta de la persona. */
+export const mensajeRespondido = (motivo: string, respuesta: string) =>
+  `Le preguntaste a la persona:\n\n${motivo}\n\nRespondió:\n\n${respuesta}\n\nYa quedó en las Aclaraciones de la feature. Seguí con el plan en este mismo worktree, sin volver a explorar lo que ya leíste. Pasalo por \`validar_plan\` y devolvé \`{}\`, o devolvé el plan entero. Si todavía falta una decisión de la persona, devolvé solo \`preguntas\`.`;
 
 /** El único mensaje de un intento retomado. */
 export const mensajeRetomado = (motivo: string) =>
@@ -624,7 +674,7 @@ async function intentoRetomado(
   ctx: PhaseContext,
   comun: Comun,
   sesion: { sessionId: string; nombre: string },
-  motivo: string,
+  prompt: string,
 ): Promise<Intento> {
   const { run, deps, emit, action } = ctx;
   const { worktree } = comun;
@@ -658,7 +708,7 @@ async function intentoRetomado(
       ),
       nombre: sessionName(run, "planificar"),
       resume: sesion.sessionId,
-      prompt: mensajeRetomado(motivo),
+      prompt,
     },
     { run, deps, emit },
   );
@@ -868,13 +918,20 @@ async function gateYCierre(ctx: PhaseContext, comun: Comun, intento: Intento): P
 }
 
 export const planificar: PhaseFn = async (ctx) => {
+  // Antes de leer la feature: un plan de cero, si no se puede retomar, también tiene que verla.
+  const respondida = respuestaPendiente(ctx.events);
+  if (respondida !== undefined) sumarRespuesta(ctx.run, respondida.respuesta);
   const comun = armarComun(ctx);
   const sesion = tomarSesion(ctx.run);
-  const motivo = gateRechazado(ctx.events, ctx.action.instruccion);
+  const motivo = respondida?.motivo ?? gateRechazado(ctx.events, ctx.action.instruccion);
   const usadas = sesion === undefined ? [] : [sesion.sessionId];
   try {
     if (sesion !== undefined && motivo !== undefined && sesion.motivo === motivo) {
-      const retomado = await intentoRetomado(ctx, comun, sesion, motivo);
+      const prompt =
+        respondida === undefined
+          ? mensajeRetomado(motivo)
+          : mensajeRespondido(motivo, respondida.respuesta);
+      const retomado = await intentoRetomado(ctx, comun, sesion, prompt);
       if (retomado.result.tipo === "ok" || retomado.result.tipo === "limite")
         return await gateYCierre(ctx, comun, retomado);
       // Si lo que gastó la sesión retomada detuvo el run por su tope, otra sesión entera lo pasaría más.

@@ -106,13 +106,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T1.4
 
 ### T1.4 · `flowrunner responder` agrega la aclaración y retoma al planificador
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** comando nuevo `flowrunner responder <run> "<respuesta>" [--origen]`. Vale solo si el halt actual es una pregunta de planificar (`opcionesDe` lo ofrece primero, junto a `rerun --desde planificar` y `abort`). Escribe un evento `respondido`, agrega la aclaración a la copia de la feature del run (`- P (<tema>): <pregunta> R: <respuesta>`) y vuelve a planificar retomando la misma sesión con la respuesta, como el reintento tras el gate (ADR 0025). Lo respondido aparece en "Tus decisiones" del informe. La skill ofrece la respuesta; Orca, en T1.5.
 - **Lint:** `pnpm lint` verde.
-- **Test:** test primero: en `src/engine/engine.test.ts`, `respondido` fuera de una pregunta de planificar no hace nada y dentro vuelve a planificar sin sumar vueltas; en un test de integración nuevo, `responder` sin respuesta sale 1, sobre un run que no está en esa pregunta sale 1 y no escribe nada, y con respuesta deja la aclaración en la feature del run y el evento en el log.
-- **Canario:** mutación prevista: que el reductor acepte `respondido` en cualquier detención; el test del engine tiene que ponerse rojo.
+- **Test:** test primero: `src/engine/engine.test.ts` «una pregunta de planificar ofrece responder primero…» (las opciones son responder, replanificar y abortar; `respondido` vuelve a planificar con la respuesta como instrucción; fuera de esa detención no hace nada); `src/phases/planificar.test.ts` «con la respuesta, planificar retoma la misma sesión y la suma a la feature del run»; `src/feature/feature.test.ts` «sumarAclaraciones» (una sola vez, en un renglón, crea la sección); `test/pregunta.int.test.ts` «una pregunta de planificar se contesta con responder» (CLI real: respuesta vacía sale 1 y no escribe, `accept` no se ofrece, con respuesta el run llega a entregado y planificar corre dos veces).
+- **Canario:** hecho: que el reductor acepte `respondido` en cualquier detención → el test del engine se puso rojo. Restaurado.
 - **Criterio de aprobación:** con un run de prueba detenido por una pregunta, `responder` lo destraba y el plan nuevo cita la aclaración.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff; sin un sistema de preguntas genérico, solo esta detención.
+- **Revisión ponytail:** a mano: reusa `halt`, `offers`, `conTurnoSync`, `launchAnswer` y la sesión marcada de ADR 0025; `intentoRetomado` pasa a recibir el prompt en vez del motivo para servir a los dos casos. La respuesta se suma a la feature en planificar y no en el CLI: así un plan de cero, si la sesión no se puede retomar, también la ve. Sin hallazgos abiertos.
 - **Desbloquea:** T1.5
 
 ### T1.5 · Orca ofrece responder la pregunta del planificador

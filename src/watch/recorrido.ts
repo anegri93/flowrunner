@@ -25,6 +25,7 @@ export type TuyoQue =
   | "pediste un arreglo"
   | "aceptaste"
   | "aceptaste sin probar"
+  | "respondiste"
   | "diste feedback"
   | "rehiciste"
   | "reanudaste"
@@ -291,6 +292,9 @@ export function recorridoOf(input: RecorridoInput): {
         return;
       case "aceptado":
         mine(clave, e.at, "aceptaste", e.motivo);
+        return;
+      case "respondido":
+        mine(clave, e.at, "respondiste", e.respuesta);
         return;
       case "sin_probar_aceptado":
         mine(clave, e.at, "aceptaste sin probar", e.motivo);

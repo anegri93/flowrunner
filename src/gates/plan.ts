@@ -116,15 +116,14 @@ export type Plan = z.infer<typeof planSchema>;
  * La salida de la sesión del planificador: el plan entero, o `{}` si es el último que pasó por
  * `validar_plan`. Así no escribe dos veces el mismo plan (ADR 0033).
  */
+export const preguntaDelPlanSchema = z.object({
+  tema: z.enum(TEMAS),
+  pregunta: z.string().min(1),
+  propuesta: z.string().min(1).describe("lo que harías vos si la persona dice que sí"),
+});
 export const salidaPlanSchema = planSchema.partial().extend({
   preguntas: z
-    .array(
-      z.object({
-        tema: z.enum(TEMAS),
-        pregunta: z.string().min(1),
-        propuesta: z.string().min(1).describe("lo que harías vos si la persona dice que sí"),
-      }),
-    )
+    .array(preguntaDelPlanSchema)
     .max(5)
     .optional()
     .describe(
@@ -133,7 +132,7 @@ export const salidaPlanSchema = planSchema.partial().extend({
 });
 export type SalidaPlan = z.infer<typeof salidaPlanSchema>;
 /** Una decisión de producto que el planificador no toma solo: la pregunta y su propuesta. */
-export type PreguntaDelPlan = NonNullable<SalidaPlan["preguntas"]>[number];
+export type PreguntaDelPlan = z.infer<typeof preguntaDelPlanSchema>;
 
 /** El motivo de la detención: cada pregunta con su tema y su propuesta, en una línea. */
 export const textoDePreguntas = (preguntas: readonly PreguntaDelPlan[]): string =>

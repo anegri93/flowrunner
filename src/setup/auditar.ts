@@ -213,6 +213,8 @@ function respuesta(e: RunEvent, halt: Halt | undefined): string | undefined {
     }
     case "aceptado":
       return `siguió igual: ${primera(e.motivo)}`;
+    case "respondido":
+      return `respondió al planificador: ${primera(e.respuesta)}`;
     case "sin_probar_aceptado":
       return `entregó sin probar: ${primera(e.motivo)}`;
     case "autofix":

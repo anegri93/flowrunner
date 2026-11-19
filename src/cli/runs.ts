@@ -628,6 +628,42 @@ export function acceptRun(
 }
 
 /**
+ * Contestar lo que preguntó el planificador (ADR 0043). La respuesta se suma a la feature del run como
+ * aclaración y planificar sigue en la misma conversación. Es de la persona: sin respuesta no hay nada.
+ */
+export function responderRun(
+  home: string,
+  id: string,
+  respuesta: string | undefined,
+  origen: Origen,
+  env: NodeJS.ProcessEnv,
+) {
+  loadOrExplain(home, id);
+  const run = runPaths(home, id);
+  const answer = conTurnoSync(answerTurno(home, id), id, () => {
+    const state = loadState(home, id);
+    requireOffered(state, id, offers(state, `flowrunner responder ${id} `));
+    if (respuesta === undefined || respuesta.trim() === "") {
+      throw new UserError(
+        "falta la respuesta: qué decidís sobre lo que preguntó el planificador",
+        `flowrunner responder ${id} "<tu respuesta>"`,
+      );
+    }
+    if (isRunning(home, state))
+      throw new UserError(`el run ${id} ya está corriendo`, `flowrunner status ${id}`);
+    return appendEvent(run.dir, { tipo: "respondido", respuesta: respuesta.trim(), origen });
+  });
+  return launchAnswer(
+    home,
+    id,
+    answer,
+    "respondido: planificar arrancó",
+    "respondido: sigue en planificar",
+    env,
+  );
+}
+
+/**
  * Entregar aunque probar dejó criterios sin probar. Es una decisión de la persona y queda escrita con
  * su motivo en el informe y en la PR: sin motivo no se acepta. Ver ADR 0017.
  */

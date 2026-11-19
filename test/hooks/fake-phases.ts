@@ -11,6 +11,7 @@
 // FAKE_MAL_FORMATO: un archivo que implementar, la primera vez, escribe sin formatear y commitea en el
 //   worktree de la feature, como lo dejaría una sub-task. Deja también el plan, que planificar no escribe.
 // FAKE_PREGUNTA: sub-tasks separadas por comas: implementar pregunta por ellas la primera vez.
+// FAKE_PLANIFICAR_PREGUNTA: planificar le pregunta a la persona la primera vez (ADR 0043).
 // FAKE_FALLA: "fase:clase", como "preparar:entorno": esa fase falla siempre, con otro motivo cada vez.
 //   Con la clase "credencial", falla de entorno con el texto de la credencial rechazada.
 import { execFileSync } from "node:child_process";
@@ -80,6 +81,13 @@ const fake: PhaseFn = async (ctx) => {
       execFileSync("git", ["-C", wt, "commit", "-q", "-m", "feat: ST-1"]);
       writePlanArtifacts(ctx.run, PLAN, {});
     }
+  }
+  if (
+    ctx.action.fase === "planificar" &&
+    process.env.FAKE_PLANIFICAR_PREGUNTA === "1" &&
+    ran() === 1
+  ) {
+    return { tipo: "pregunta", motivo: "el plan necesita decisiones que la feature no cubre" };
   }
   const pregunta = (process.env.FAKE_PREGUNTA ?? "").split(",").filter((u) => u !== "");
   if (ctx.action.fase === "implementar" && pregunta.length > 0 && ran() === 1) {

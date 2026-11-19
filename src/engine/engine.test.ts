@@ -676,6 +676,37 @@ describe("detenerse y preguntar (ADR 0023)", () => {
     );
   });
 
+  // Si regresiona, la persona no tiene cómo contestar lo que preguntó el planificador, o un responder
+  // suelto manda a planificar un run que se detuvo por otra cosa (flowrunner 2.0, T1.4).
+  test("una pregunta de planificar ofrece responder primero, y respondido vuelve a planificar con la respuesta", () => {
+    const asked = [
+      withRounds(0),
+      ...ok("preparar"),
+      ...done("planificar", { tipo: "pregunta", motivo: "el plan necesita decisiones" }),
+    ];
+    const halted = stateOf(asked);
+    expect(halted.status).toBe("detenido");
+    expect(commands(halted)).toEqual([
+      `flowrunner responder ${R} "<tu respuesta>"`,
+      `flowrunner rerun ${R} --desde planificar`,
+      `flowrunner abort ${R}`,
+    ]);
+    const answered = stateOf([
+      ...asked,
+      ev({ tipo: "respondido", respuesta: "viaja entera", origen: "claude" }),
+    ]);
+    expect(nextAction(answered)).toMatchObject({
+      fase: "planificar",
+      intento: 1,
+      instruccion: "viaja entera",
+    });
+    expect(answered.vueltas.verificar).toBe(0);
+    // Fuera de esa detención no hace nada.
+    expect(
+      stateOf([...verifyQuestion, ev({ tipo: "respondido", respuesta: "x", origen: "terminal" })]),
+    ).toEqual(stateOf(verifyQuestion));
+  });
+
   // Si regresiona, se entrega una sub-task sin hacer, o se saltea una fase que no se aceptó.
   test("aceptado en verificar sigue a revisar; en implementar no hace nada", () => {
     const accepted = stateOf([

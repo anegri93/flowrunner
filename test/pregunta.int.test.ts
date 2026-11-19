@@ -61,6 +61,35 @@ describe("detenido con pregunta", () => {
     );
   });
 
+  // Si regresiona, la pregunta del planificador deja el run trabado sin forma de contestarla, o una
+  // respuesta vacía o fuera de lugar se escribe en el log (ADR 0043).
+  test("una pregunta de planificar se contesta con responder, y el run sigue", async () => {
+    const w = world({ FAKE_PLANIFICAR_PREGUNTA: "1" });
+    const id = launch(w);
+    await waitStopped(w, id, 60_000);
+    expect(stateNow(w, id).fase).toBe("planificar");
+    expect(runCli(["status", id], w.env).stdout).toContain(
+      `flowrunner responder ${id} "<tu respuesta>"`,
+    );
+    const before = readFileSync(join(runDir(w, id), "events.jsonl"), "utf8");
+    const vacia = runCli(["responder", id, " "], w.env);
+    expect(vacia.status).toBe(1);
+    expect(vacia.stderr).toMatch(/falta la respuesta/);
+    expect(runCli(["accept", id, "x"], w.env).status).toBe(1);
+    expect(readFileSync(join(runDir(w, id), "events.jsonl"), "utf8")).toBe(before);
+
+    const answered = runCli(
+      ["responder", id, "viaja entera", "--origen", "claude", "--json"],
+      w.env,
+    );
+    expect(answered.status, answered.stdout + answered.stderr).toBe(0);
+    await waitFor("el run entregado", () => stateNow(w, id).status === "entregado");
+    expect(executions(w, id).filter((f) => f === "planificar")).toHaveLength(2);
+    expect(events(runDir(w, id))).toContainEqual(
+      expect.objectContaining({ tipo: "respondido", respuesta: "viaja entera", origen: "claude" }),
+    );
+  });
+
   // Si regresiona, un comando escribe una respuesta que el run no esperaba y el log queda con ella.
   test("fix sobre un run que no ofrece fix sale 1 y lista las opciones", async () => {
     const w = world({ FAKE_VUELVE: "ST-1" });

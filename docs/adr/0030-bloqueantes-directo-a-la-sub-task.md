@@ -79,3 +79,17 @@ vuelta directa hacía que uno le quitara el otro; de ahí `directaCorrio`.
 - `test/vuelta-directa.int.test.ts`, con el CLI real: un bloqueante de revisar vuelve a implementar
   sin detenerse ni correr Autofix, y el run entrega.
 - `src/report/report.test.ts`: el informe cuenta las devueltas sin nada que cambiar.
+
+## Enmienda · 2026-11-19 · Un bloqueante que es una decisión de la persona pregunta
+
+En PIZ-3 la revisión devolvió el mismo bloqueante siete veces: `unpdf` 2.1.0 pide Node 24 y el repo
+promete 20.6. El propio revisor escribía «con el visto bueno de la persona»: el arreglo tenía dos
+salidas, subir el Node o cambiar de librería, y elegir no era de la sub-task. Se destrabó cuando la
+persona aceptó subir a Node 24.
+
+El hallazgo suma `decision: boolean`. Un bloqueante con `decision: true` no pasa por la vuelta directa:
+revisar devuelve `pregunta` desde la primera vez, con las salidas que propone el revisor en el motivo
+(«Elegí: … · …»), y las respuestas de siempre (arreglar por sub-task, seguir igual, replanificar). Si
+hay bloqueantes de código al lado, van en la misma pregunta. Sin el campo, un review.json viejo se lee
+igual y el bloqueante vuelve como antes. Verificación: `src/phases/revisar.test.ts`, «un bloqueante que
+es una decisión de la persona pregunta en vez de volver».

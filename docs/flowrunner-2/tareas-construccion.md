@@ -162,13 +162,13 @@ Cada tarea desbloquea a la siguiente; cada fase cierra con un **gate** que desbl
 - **Desbloquea:** T2.2
 
 ### T2.2 · Revisar pregunta directo cuando el arreglo es una decisión tuya
-- **Estado:** `[ ] Pendiente`
+- **Estado:** `[x] Hecho`
 - **Descripción:** el hallazgo de revisar (`findingSchema`, `src/phases/revisar.ts:22`) suma `decision: boolean`, opcional. El prompt la define: el arreglo tiene más de una salida razonable y elegir es de la persona (subir el Node mínimo, sumar o cambiar una dependencia, cambiar un contrato o el alcance). Un bloqueante con `decision: true` devuelve `pregunta` sin pasar por la vuelta directa (ADR 0030), con las salidas que propone el revisor en el motivo. Caso de referencia: PIZ-3 y `unpdf`/Node 24. Se agrega al ADR 0030 como enmienda.
 - **Lint:** `pnpm lint` verde.
-- **Test:** test primero en `src/phases/revisar.test.ts`: (1) una revisión con un bloqueante `decision: true` da `pregunta` y no `vuelve`, aunque haya vueltas disponibles; (2) un bloqueante sin el campo vuelve como hoy; (3) una mezcla de un bloqueante de código y uno de decisión da `pregunta` con los dos en el motivo.
-- **Canario:** mutación prevista: que `decision` solo cuente si es el único bloqueante; el test (3) tiene que ponerse rojo.
-- **Criterio de aprobación:** con la revisión falsa de PIZ-3, `flowrunner status` muestra la pregunta con las dos salidas y `accept` con motivo sigue a probar.
-- **Revisión ponytail:** `/ponytail-review` sobre el diff; un booleano, sin una taxonomía de hallazgos.
+- **Test:** test primero en `src/phases/revisar.test.ts`, «un bloqueante que es una decisión de la persona pregunta en vez de volver»: (1) un bloqueante con `decision: true` da `pregunta` con las salidas («Elegí: …») en el motivo; (2) junto a un bloqueante de código da `pregunta` con los dos; (3) sin el campo vuelve como hoy.
+- **Canario:** hecho: que la decisión solo cuente si es el único bloqueante → el caso (2) se puso rojo. Restaurado.
+- **Criterio de aprobación:** la pregunta trae las respuestas de siempre de una detención de revisar con sub-tasks: arreglar por sub-task, seguir igual (`accept`, que sigue a probar), replanificar y abortar; lo cubren los tests del engine de ADR 0023. Pendiente de la persona: verlo en un run real.
+- **Revisión ponytail:** a mano: un booleano en el hallazgo y una rama antes de la vuelta directa; las salidas viajan en el motivo, sin campo nuevo en el outcome. Enmienda en ADR 0030. Sin hallazgos abiertos.
 - **Desbloquea:** T2.3
 
 ### T2.3 · pizarra-en-vivo pasa a `vueltas: 1` y `aprobar: si_hace_falta`

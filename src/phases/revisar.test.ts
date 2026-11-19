@@ -110,6 +110,33 @@ describe("revisar", () => {
     expect(sim.records[0]?.prompt ?? "").toContain("`arreglos`");
   });
 
+  // Si regresiona, un bloqueante que es una decisión de la persona vuelve a la sub-task una y otra vez:
+  // en PIZ-3, siete vueltas por `unpdf` y Node 24 hasta que la persona eligió subir el Node.
+  test("un bloqueante que es una decisión de la persona pregunta en vez de volver, con las salidas en el motivo", async () => {
+    const decision = finding({
+      afirmacion: "unpdf 2.1.0 pide Node >=24 y el repo promete >=20.6",
+      decision: true,
+      arreglos: ["Subí `engines.node` a `>=24`", "Usá una versión que ande en Node 20.6"],
+    });
+    const { outcome } = await reviewWith({ hallazgos: [decision], decisiones: [] });
+    expect(outcome).toMatchObject({ tipo: "pregunta", unidades: ["ST-2"] });
+    expect(outcome.tipo === "pregunta" && outcome.motivo).toContain(
+      "Elegí: Subí `engines.node` a `>=24` · Usá una versión que ande en Node 20.6",
+    );
+    // Con un bloqueante de código al lado, pregunta igual, con los dos en el motivo.
+    const mezcla = await reviewWith({
+      hallazgos: [decision, finding({ afirmacion: "usa var en vez de const" })],
+      decisiones: [],
+    });
+    expect(mezcla.outcome).toMatchObject({ tipo: "pregunta" });
+    expect(mezcla.outcome.tipo === "pregunta" && mezcla.outcome.motivo).toContain(
+      "usa var en vez de const",
+    );
+    // Sin el campo, vuelve como siempre.
+    const codigo = await reviewWith({ hallazgos: [finding({})], decisiones: [] });
+    expect(codigo.outcome).toMatchObject({ tipo: "vuelve" });
+  });
+
   test("solo avisos: avanza, los avisos quedan como eventos y review.json en el run", async () => {
     const { outcome, run } = await reviewWith({
       hallazgos: [finding({ severidad: "aviso" })],
